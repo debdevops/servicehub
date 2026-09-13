@@ -18,6 +18,8 @@ import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 import { toDatetimeLocalValue } from '@servicehub/ui-shared/lib/utils';
 import toast from 'react-hot-toast';
+import { HelpTooltip } from '@/components/help';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
 
 /**
  * Derives the "scheduling unsupported" panel copy from the shared provider-capabilities
@@ -573,16 +575,16 @@ export function ScheduledMessagesPage() {
   const selectedQueue = searchParams.get('queue') ?? '';
 
   const setNamespace = (id: string) => {
-    setSearchParams(id ? { namespace: id } : {});
+    setSearchParams(id ? { namespace: id } : {}, { replace: true });
   };
 
   const setQueue = (name: string) => {
     if (!name) {
       const next = new URLSearchParams(searchParams);
       next.delete('queue');
-      setSearchParams(next);
+      setSearchParams(next, { replace: true });
     } else {
-      setSearchParams({ namespace: selectedNamespaceId, queue: name });
+      setSearchParams({ namespace: selectedNamespaceId, queue: name }, { replace: true });
     }
   };
 
@@ -611,7 +613,10 @@ export function ScheduledMessagesPage() {
           <div className="flex items-center gap-3">
             <Calendar className="w-6 h-6 text-white/80" />
             <div>
-              <h1 className="text-xl font-semibold text-white">Scheduled Messages</h1>
+              <h1 className="text-xl font-semibold text-white flex items-center gap-1.5">
+                Scheduled Messages
+                <HelpTooltip {...tooltips.scheduledMessages.overview} position="bottom" />
+              </h1>
               <p className="text-sky-100 text-sm">
                 View and cancel messages queued for future delivery
               </p>

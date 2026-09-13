@@ -16,20 +16,41 @@ import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 
 type BadgeKind = 'current' | 'bounded' | 'human' | 'future' | 'optional';
 
-const BADGE_STYLES: Record<BadgeKind, { label: string; className: string }> = {
-  current: { label: 'CURRENT', className: 'bg-emerald-100 text-emerald-700 border-emerald-300' },
-  bounded: { label: 'BOUNDED', className: 'bg-blue-100 text-blue-700 border-blue-300' },
-  human: { label: 'HUMAN REQUIRED', className: 'bg-amber-100 text-amber-800 border-amber-300' },
-  future: { label: 'FUTURE', className: 'bg-gray-100 text-gray-600 border-gray-300' },
+const BADGE_STYLES: Record<BadgeKind, { label: string; className: string; explanation: string }> = {
+  current: {
+    label: 'CURRENT',
+    className: 'bg-emerald-100 text-emerald-700 border-emerald-300',
+    explanation: 'Live in ServiceHub today — you can use this now.',
+  },
+  bounded: {
+    label: 'BOUNDED',
+    className: 'bg-blue-100 text-blue-700 border-blue-300',
+    explanation: 'Live today, but deliberately limited by hard-coded safety limits (rate limits, recurrence caps, environment guards) rather than left to run freely.',
+  },
+  human: {
+    label: 'HUMAN REQUIRED',
+    className: 'bg-amber-100 text-amber-800 border-amber-300',
+    explanation: 'ServiceHub will propose or evaluate, but a person must review and approve before anything executes.',
+  },
+  future: {
+    label: 'FUTURE',
+    className: 'bg-gray-100 text-gray-600 border-gray-300',
+    explanation: 'Not built yet — on the roadmap, not available in the product today.',
+  },
   // Shipped, but off unless an operator turns it on — distinct from both CURRENT (running now)
   // and FUTURE (not built). The reasoning companion is the only section that is genuinely this.
-  optional: { label: 'OPT-IN', className: 'bg-purple-100 text-purple-700 border-purple-300' },
+  optional: {
+    label: 'OPT-IN',
+    className: 'bg-purple-100 text-purple-700 border-purple-300',
+    explanation: 'Built and available, but switched off by default — an operator has to turn it on.',
+  },
 };
 
 function Badge({ kind }: { kind: BadgeKind }) {
-  const { label, className } = BADGE_STYLES[kind];
+  const { label, className, explanation } = BADGE_STYLES[kind];
   return (
     <span
+      title={explanation}
       className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide border ${className}`}
     >
       {label}

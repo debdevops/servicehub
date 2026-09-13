@@ -13,6 +13,10 @@ import {
 } from '@servicehub/ui-shared/lib/api/recovery';
 import { VerificationResultNote } from '@/components/recovery/VerificationResultNote';
 import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
+import { HelpTooltip } from '@/components/help';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
+
+const EVENTS_PAGE_SIZE = 5;
 
 const NON_TERMINAL: RecoveryLedgerEntry['state'][] = ['Executing', 'Observing', 'ExecutionUnknown'];
 
@@ -114,7 +118,8 @@ export default function RecoveryOperationDetailPage() {
   const verifyChain = useVerifyChain();
   const downloadExport = useDownloadRecoveryExport();
   const [writeOffEntry, setWriteOffEntry] = useState<RecoveryLedgerEntry | null>(null);
-  const [showEvents, setShowEvents] = useState(false);
+  const [showEvents, setShowEvents] = useState(true);
+  const [eventPage, setEventPage] = useState(0);
   const rehearse = useRehearseRecoveryEntry();
   const [rehearsals, setRehearsals] = useState<Record<string, RecoveryRehearsal>>({});
 
@@ -154,6 +159,13 @@ export default function RecoveryOperationDetailPage() {
     if (reason) reasonByEntryId.set(evt.entryId, reason);
   }
 
+  const eventPageCount = Math.max(1, Math.ceil(events.length / EVENTS_PAGE_SIZE));
+  const clampedEventPage = Math.min(eventPage, eventPageCount - 1);
+  const pagedEvents = events.slice(
+    clampedEventPage * EVENTS_PAGE_SIZE,
+    clampedEventPage * EVENTS_PAGE_SIZE + EVENTS_PAGE_SIZE,
+  );
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="bg-white border-b border-gray-200 px-6 py-4 shrink-0">
@@ -172,15 +184,18 @@ export default function RecoveryOperationDetailPage() {
             {operation.reason && <p className="text-sm text-gray-600 mt-1 italic">"{operation.reason}"</p>}
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => operationId && verifyChain.mutate(operationId)}
-              disabled={verifyChain.isPending}
-              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm disabled:opacity-50"
-            >
-              <ShieldQuestion className="w-4 h-4" />
-              Verify chain
-            </button>
-            <div className="relative group">
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => operationId && verifyChain.mutate(operationId)}
+                disabled={verifyChain.isPending}
+                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm disabled:opacity-50"
+              >
+                <ShieldQuestion className="w-4 h-4" />
+                Verify chain
+              </button>
+              <HelpTooltip {...tooltips.recoveryDetail.verifyChain} position="bottom" />
+            </div>
+            <div className="flex items-center gap-1">
               <button
                 onClick={() => operationId && downloadExport.mutate({ operationId, format: 'json' })}
                 disabled={downloadExport.isPending}
@@ -189,6 +204,7 @@ export default function RecoveryOperationDetailPage() {
                 <Download className="w-4 h-4" />
                 Export evidence
               </button>
+              <HelpTooltip {...tooltips.recoveryDetail.exportEvidence} position="bottom" />
             </div>
           </div>
         </div>
@@ -216,13 +232,19 @@ export default function RecoveryOperationDetailPage() {
         {/* Entries table */}
         <section>
           <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">Entries ({entries.length})</h2>
-          <div className="border border-gray-200 rounded-xl overflow-hidden">
+          <div className="border border-gray-200 rounded-xl">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Target</th>
-                  <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Body Hash</th>
-                  <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Result</th>
+                  <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-500">
+                    <span className="inline-flex items-center gap-1">Target <HelpTooltip {...tooltips.recoveryDetail.target} size={12} position="bottom" /></span>
+                  </th>
+                  <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-500">
+                    <span className="inline-flex items-center gap-1">Body Hash <HelpTooltip {...tooltips.recoveryDetail.bodyHash} size={12} position="bottom" /></span>
+                  </th>
+                  <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-500">
+                    <span className="inline-flex items-center gap-1">Result <HelpTooltip {...tooltips.recoveryDetail.result} size={12} position="bottom" /></span>
+                  </th>
                   <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-500 w-28">Action</th>
                 </tr>
               </thead>
@@ -237,25 +259,30 @@ export default function RecoveryOperationDetailPage() {
                     </td>
                     <td className="px-3 py-2 align-top">
                       <div className="flex flex-col items-start gap-1">
-                        <button
-                          onClick={() => rehearse.mutate(
-                            { entryId: entry.id },
-                            { onSuccess: r => setRehearsals(prev => ({ ...prev, [entry.id]: r })) },
-                          )}
-                          disabled={rehearse.isPending}
-                          className="text-xs text-gray-500 hover:text-teal-700 underline inline-flex items-center gap-1 disabled:opacity-50"
-                          title="Ask the Eligibility Gate what it would decide about this entry right now. Reads only — it cannot reach a broker."
-                        >
-                          <FlaskConical className="w-3 h-3" />
-                          Rehearse
-                        </button>
-                        {NON_TERMINAL.includes(entry.state) && (
+                        <div className="flex items-center gap-1">
                           <button
-                            onClick={() => setWriteOffEntry(entry)}
-                            className="text-xs text-gray-500 hover:text-red-600 underline"
+                            onClick={() => rehearse.mutate(
+                              { entryId: entry.id },
+                              { onSuccess: r => setRehearsals(prev => ({ ...prev, [entry.id]: r })) },
+                            )}
+                            disabled={rehearse.isPending}
+                            className="text-xs text-gray-500 hover:text-teal-700 underline inline-flex items-center gap-1 disabled:opacity-50"
                           >
-                            Write off
+                            <FlaskConical className="w-3 h-3" />
+                            Rehearse
                           </button>
+                          <HelpTooltip {...tooltips.recoveryDetail.rehearse} size={12} position="left" />
+                        </div>
+                        {NON_TERMINAL.includes(entry.state) && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => setWriteOffEntry(entry)}
+                              className="text-xs text-gray-500 hover:text-red-600 underline"
+                            >
+                              Write off
+                            </button>
+                            <HelpTooltip {...tooltips.recoveryDetail.writeOff} size={12} position="left" />
+                          </div>
                         )}
                       </div>
                     </td>
@@ -268,40 +295,77 @@ export default function RecoveryOperationDetailPage() {
 
         {/* Event chain */}
         <section>
-          <button
-            onClick={() => setShowEvents(v => !v)}
-            className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2"
-          >
-            <Hash className="w-4 h-4 text-teal-600" />
-            Event chain ({events.length}) {showEvents ? '▾' : '▸'}
-          </button>
+          <div className="flex items-center gap-1.5 mb-2">
+            <button
+              onClick={() => setShowEvents(v => !v)}
+              className="flex items-center gap-1.5 text-sm font-semibold text-gray-700 uppercase tracking-wide"
+            >
+              <Hash className="w-4 h-4 text-teal-600" />
+              Event chain ({events.length}) {showEvents ? '▾' : '▸'}
+            </button>
+            <HelpTooltip {...tooltips.recoveryDetail.eventChain} />
+          </div>
           {showEvents && (
-            <div className="border border-gray-200 rounded-xl overflow-hidden overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th scope="col" className="px-3 py-2 text-left font-semibold text-gray-500">Seq</th>
-                    <th scope="col" className="px-3 py-2 text-left font-semibold text-gray-500">Event</th>
-                    <th scope="col" className="px-3 py-2 text-left font-semibold text-gray-500">Occurred</th>
-                    <th scope="col" className="px-3 py-2 text-left font-semibold text-gray-500">Actor</th>
-                    <th scope="col" className="px-3 py-2 text-left font-semibold text-gray-500">Detail</th>
-                    <th scope="col" className="px-3 py-2 text-left font-semibold text-gray-500">Hash</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {events.map(evt => (
-                    <tr key={evt.id}>
-                      <td className="px-3 py-2 font-mono text-gray-500">{evt.seq}</td>
-                      <td className="px-3 py-2 font-medium text-gray-800">{evt.eventType}</td>
-                      <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{new Date(evt.occurredAt).toLocaleString()}</td>
-                      <td className="px-3 py-2 text-gray-600">{evt.actorIdentity}</td>
-                      <td className="px-3 py-2 text-gray-600 max-w-[220px]">{describeRecoveryDetailReason(evt.detailJson) ?? '—'}</td>
-                      <td className="px-3 py-2 font-mono text-gray-400 truncate max-w-[140px]" title={evt.entryHash}>{evt.entryHash}</td>
+            <>
+              <div className="border border-gray-200 rounded-xl overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th scope="col" className="px-3 py-2 text-left font-semibold text-gray-500">Seq</th>
+                      <th scope="col" className="px-3 py-2 text-left font-semibold text-gray-500">Event</th>
+                      <th scope="col" className="px-3 py-2 text-left font-semibold text-gray-500">Occurred</th>
+                      <th scope="col" className="px-3 py-2 text-left font-semibold text-gray-500">
+                        {/* Hover-only (no detail popover): this table scrolls horizontally, which per the
+                            CSS overflow spec forces its vertical overflow to clip too, so a click-expand
+                            popover here would be cut off. */}
+                        <span className="inline-flex items-center gap-1">Actor <HelpTooltip text={tooltips.recoveryDetail.eventActor.text} size={12} position="bottom" /></span>
+                      </th>
+                      <th scope="col" className="px-3 py-2 text-left font-semibold text-gray-500">Detail</th>
+                      <th scope="col" className="px-3 py-2 text-left font-semibold text-gray-500">
+                        <span className="inline-flex items-center gap-1">Hash <HelpTooltip text={tooltips.recoveryDetail.eventHash.text} size={12} position="bottom" /></span>
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {pagedEvents.map(evt => (
+                      <tr key={evt.id}>
+                        <td className="px-3 py-2 font-mono text-gray-500">{evt.seq}</td>
+                        <td className="px-3 py-2 font-medium text-gray-800">{evt.eventType}</td>
+                        <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{new Date(evt.occurredAt).toLocaleString()}</td>
+                        <td className="px-3 py-2 text-gray-600">{evt.actorIdentity}</td>
+                        <td className="px-3 py-2 text-gray-600 max-w-[220px]">{describeRecoveryDetailReason(evt.detailJson) ?? '—'}</td>
+                        <td className="px-3 py-2 font-mono text-gray-400 truncate max-w-[140px]" title={evt.entryHash}>{evt.entryHash}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {eventPageCount > 1 && (
+                <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
+                  <span>
+                    Showing {clampedEventPage * EVENTS_PAGE_SIZE + 1}
+                    –{Math.min(events.length, clampedEventPage * EVENTS_PAGE_SIZE + EVENTS_PAGE_SIZE)} of {events.length}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setEventPage(p => Math.max(0, p - 1))}
+                      disabled={clampedEventPage === 0}
+                      className="px-2 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent"
+                    >
+                      Previous
+                    </button>
+                    <span>Page {clampedEventPage + 1} of {eventPageCount}</span>
+                    <button
+                      onClick={() => setEventPage(p => Math.min(eventPageCount - 1, p + 1))}
+                      disabled={clampedEventPage >= eventPageCount - 1}
+                      className="px-2 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </section>
       </div>

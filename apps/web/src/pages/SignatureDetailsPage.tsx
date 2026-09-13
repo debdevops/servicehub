@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useSearchParams, Link } from 'react-router-dom';
-import { ArrowLeft, RefreshCw, Lightbulb, AlertCircle } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Lightbulb, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   useDlqSignatureDetail,
   useSignatureTimeline,
@@ -35,6 +35,7 @@ import {
   CrossCloudTraceLink,
   getTrendRecommendation,
 } from '@/components/dlq';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
 
 function formatDate(ts: string): string {
   return new Date(ts).toLocaleString(undefined, {
@@ -44,6 +45,37 @@ function formatDate(ts: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function formatRelative(ts: string): string {
+  const minutes = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+const MESSAGES_PAGE_SIZE = 10;
+
+// Every message in this list shares the signature's entity and (usually) its dead-letter
+// reason — a signature is scoped to one entity/cause pair, so repeating either per row is pure
+// noise (already shown once in the page header above). Correlation ID is the one field that
+// actually varies message-to-message and is what an operator would search logs/traces for, so
+// it leads; only fall back toward entity-level facts when a message has no correlation ID.
+function messageIdentity(message: {
+  correlationId: string | null;
+  deadLetterReason: string | null;
+  messageId: string;
+}): { primary: string; badge: string | null; showMessageId: boolean } {
+  if (message.correlationId) {
+    return { primary: message.correlationId, badge: 'Correlation ID', showMessageId: true };
+  }
+  if (message.deadLetterReason) {
+    return { primary: message.deadLetterReason, badge: null, showMessageId: true };
+  }
+  return { primary: message.messageId, badge: null, showMessageId: false };
 }
 
 export function SignatureDetailsPage() {
@@ -70,6 +102,13 @@ export function SignatureDetailsPage() {
   const [selectedMessageId, setSelectedMessageId] = useState<number | null>(null);
   const [showReplayPreview, setShowReplayPreview] = useState(false);
   const [replayJobId, setReplayJobId] = useState<string | null>(null);
+  const [messagePage, setMessagePage] = useState(1);
+
+  // Reset pagination when navigating to a different signature — otherwise a page number left
+  // over from a longer message list can land past the end of a shorter one.
+  useEffect(() => {
+    setMessagePage(1);
+  }, [namespaceId, signatureHash]);
 
   // Same query SignatureReplayProgressPanel polls (React Query dedupes it) — used here only to
   // decide whether "Replay Signature" should be clickable. Until the first poll response lands,
@@ -185,7 +224,7 @@ export function SignatureDetailsPage() {
                 <span className="font-medium text-gray-900">{namespace?.displayName || namespace?.name || '—'}</span>
               </div>
               <div>
-                <span className="text-gray-500 block text-xs">% of this namespace's DLQ</span>
+                <span className="text-gray-500 block text-xs" title={tooltips.signatureDetails.dlqShare.detail}>% of this namespace's DLQ</span>
                 <span className="font-medium text-gray-900">
                   {dlqSummary && dlqSummary.activeMessages > 0
                     ? `${Math.round((detail.size / dlqSummary.activeMessages) * 100)}%`
@@ -210,12 +249,12 @@ export function SignatureDetailsPage() {
                 <span className="font-medium text-gray-900">{detail.occurrenceCount}</span>
               </div>
               <div>
-                <span className="text-gray-500 block text-xs">Confidence</span>
+                <span className="text-gray-500 block text-xs" title={tooltips.signatureDetails.confidence.detail}>Confidence</span>
                 <span className="font-medium text-gray-900">{detail.confidence}</span>
               </div>
               {!detail.isCurrentlyClustered && (
                 <div>
-                  <span className="text-gray-500 block text-xs">Currently Clustered</span>
+                  <span className="text-gray-500 block text-xs" title={tooltips.signatureDetails.currentlyClustered.detail}>Currently Clustered</span>
                   <span className="font-medium text-gray-900">No — historical record</span>
                 </div>
               )}
@@ -318,21 +357,82 @@ export function SignatureDetailsPage() {
             {detail.relatedMessages.length === 0 ? (
               <p className="text-sm text-gray-500">No related messages available.</p>
             ) : (
-              <div className="divide-y divide-gray-100">
-                {detail.relatedMessages.map(message => (
-                  <button
-                    key={message.id}
-                    onClick={() => setSelectedMessageId(message.id)}
-                    className="w-full text-left py-2.5 flex items-center justify-between gap-3 hover:bg-gray-50 rounded-lg px-2 -mx-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{message.messageId}</p>
-                      <p className="text-xs text-gray-500 truncate">{message.entityName}</p>
+              (() => {
+                const totalPages = Math.max(1, Math.ceil(detail.relatedMessages.length / MESSAGES_PAGE_SIZE));
+                const currentPage = Math.min(messagePage, totalPages);
+                const start = (currentPage - 1) * MESSAGES_PAGE_SIZE;
+                const pageMessages = detail.relatedMessages.slice(start, start + MESSAGES_PAGE_SIZE);
+
+                return (
+                  <>
+                    <div className="divide-y divide-gray-100">
+                      {pageMessages.map(message => {
+                        const identity = messageIdentity(message);
+                        return (
+                          <button
+                            key={message.id}
+                            onClick={() => setSelectedMessageId(message.id)}
+                            className="w-full text-left py-2.5 flex items-center justify-between gap-3 hover:bg-gray-50 rounded-lg px-2 -mx-2"
+                          >
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <p className="text-sm font-medium text-gray-900 font-mono truncate">
+                                  {identity.primary}
+                                </p>
+                                {identity.badge && (
+                                  <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 font-medium">
+                                    {identity.badge}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-500 truncate mt-0.5">
+                                {message.deliveryCount != null && (
+                                  <>{message.deliveryCount} {message.deliveryCount === 1 ? 'delivery' : 'deliveries'}</>
+                                )}
+                                {message.deadLetterTimeUtc && <> · dead-lettered {formatRelative(message.deadLetterTimeUtc)}</>}
+                              </p>
+                              {identity.showMessageId && (
+                                <p className="text-[11px] text-gray-400 font-mono truncate mt-0.5">{message.messageId}</p>
+                              )}
+                            </div>
+                            <StatusBadge status={message.status} />
+                          </button>
+                        );
+                      })}
                     </div>
-                    <StatusBadge status={message.status} />
-                  </button>
-                ))}
-              </div>
+
+                    {totalPages > 1 && (
+                      <div className="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-gray-100">
+                        <p className="text-xs text-gray-500">
+                          Showing {start + 1}–{Math.min(start + MESSAGES_PAGE_SIZE, detail.relatedMessages.length)} of{' '}
+                          {detail.relatedMessages.length}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setMessagePage(p => Math.max(1, p - 1))}
+                            disabled={currentPage === 1}
+                            className="p-1 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                            aria-label="Previous page"
+                          >
+                            <ChevronLeft className="w-4 h-4" />
+                          </button>
+                          <span className="text-xs text-gray-600">
+                            Page {currentPage} of {totalPages}
+                          </span>
+                          <button
+                            onClick={() => setMessagePage(p => Math.min(totalPages, p + 1))}
+                            disabled={currentPage === totalPages}
+                            className="p-1 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                            aria-label="Next page"
+                          >
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()
             )}
           </div>
 

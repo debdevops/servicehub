@@ -1,10 +1,21 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Route, Cloud, AlertCircle, CheckCircle2, Clock, ChevronDown, ChevronRight, Info } from 'lucide-react';
 import { useCrossCloudTrace } from '@servicehub/ui-shared/hooks/useCrossCloudTrace';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { getProviderStyle } from '@servicehub/ui-shared/lib/providerStyles';
 import type { CrossCloudTraceHop, CrossCloudNamespaceSummary, CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
+import { HelpTooltip } from '@/components/help';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
+
+const HOP_STATE_EXPLANATIONS: Record<string, string> = {
+  Active: 'Waiting to be processed.',
+  DeadLettered: 'Failed processing and moved to the dead-letter queue.',
+  Scheduled: 'Queued for future delivery, not sent yet.',
+  Deferred: 'Explicitly set aside by the consumer to be picked up again later.',
+  Resolved: 'Reached a terminal, successfully-handled state.',
+  Replayed: 'Resent to the original queue or topic for reprocessing.',
+};
 
 // ── Cloud provider visual identity ───────────────────────────────────────────
 // Badge color/label/dot come from lib/providerStyles.tsx (single source of truth).
@@ -106,7 +117,7 @@ function HopCard({ hop }: HopCardProps) {
           <p className="text-xs text-gray-500 truncate">{hop.entityPath ?? hop.entityName}</p>
         </div>
         {/* State */}
-        <span className={`flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold ${stateClass}`}>
+        <span className={`flex-shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold ${stateClass}`} title={HOP_STATE_EXPLANATIONS[hop.state]}>
           {hop.state}
         </span>
         {/* Timestamp */}
@@ -169,24 +180,16 @@ export function CrossCloudTracePage() {
   const [searchParams] = useSearchParams();
   const initialTraceId = searchParams.get('traceId') ?? '';
   const [traceId, setTraceId] = useState(initialTraceId);
-  const [submitted, setSubmitted] = useState('');
+  // Seeds from the deep link (e.g. from the message Properties tab) on first render — the trace
+  // hook itself starts searching immediately when given an initial ID, no mount effect needed.
+  const [submitted, setSubmitted] = useState(initialTraceId);
 
   const { data: namespaces } = useNamespaces();
-  const { mutate: runTrace, data: result, isPending, isSuccess, isError, error } = useCrossCloudTrace();
+  const { mutate: runTrace, data: result, isPending, isSuccess, isError, error } = useCrossCloudTrace(initialTraceId);
 
   // Compute distinct clouds connected
   const connectedClouds = new Set((namespaces ?? []).map(n => n.cloudProvider ?? 'azure'));
   const hasMultiCloud = connectedClouds.size >= 2;
-
-  // Auto-run when deep-linked with ?traceId= (e.g. from the message Properties tab)
-  const autoRanRef = useRef(false);
-  useEffect(() => {
-    if (initialTraceId && !autoRanRef.current) {
-      autoRanRef.current = true;
-      setSubmitted(initialTraceId);
-      runTrace(initialTraceId);
-    }
-  }, [initialTraceId, runTrace]);
 
   const handleTrace = () => {
     const trimmed = traceId.trim();
@@ -205,7 +208,10 @@ export function CrossCloudTracePage() {
           <Route className="w-5 h-5 text-violet-600" />
         </div>
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Multi-Cloud Trace</h1>
+          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-1.5">
+            Multi-Cloud Trace
+            <HelpTooltip {...tooltips.crossCloudTrace.overview} position="bottom" />
+          </h1>
           <p className="text-sm text-gray-500">Trace a message as it routes across Azure, AWS, and GCP</p>
         </div>
       </div>
@@ -322,13 +328,13 @@ export function CrossCloudTracePage() {
               <span className="text-sm font-semibold text-gray-800 font-mono truncate max-w-xs">{submitted}</span>
             </div>
             <div className="flex gap-4 text-sm text-gray-600 ml-auto">
-              <span><strong className="text-gray-900">{result.totalHops}</strong> hops</span>
+              <span title={tooltips.crossCloudTrace.hops.text}><strong className="text-gray-900">{result.totalHops}</strong> hops</span>
               <span><strong className="text-gray-900">{result.cloudsInvolved}</strong> cloud{result.cloudsInvolved !== 1 ? 's' : ''}</span>
               <span><strong className="text-gray-900">{result.namespacesSearched}</strong> namespaces searched</span>
               <span><strong className="text-gray-900">{result.searchDurationMs}</strong> ms</span>
             </div>
             {result.isPartialResult && (
-              <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full font-medium border border-amber-200">
+              <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full font-medium border border-amber-200" title={tooltips.crossCloudTrace.partialTimeout.detail}>
                 Partial — timed out
               </span>
             )}

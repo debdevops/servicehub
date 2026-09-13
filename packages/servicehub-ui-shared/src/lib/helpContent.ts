@@ -236,6 +236,89 @@ export const tooltips = {
     } as TooltipContent,
   },
 
+  // ── Recovery Evidence Detail Page ──────────────
+  recoveryDetail: {
+    verifyChain: {
+      text: 'Recompute the hash chain and confirm nothing was altered',
+      detail:
+        'Walks every event in this operation in order, recomputing each event\'s hash from its own content plus the previous event\'s hash. A mismatch means the record was tampered with or corrupted after it was written.',
+    } as TooltipContent,
+    exportEvidence: {
+      text: 'Download this operation as a permanent evidence file',
+      detail:
+        'Exports the operation header, every entry, and the full hash-chained event log as JSON — everything needed to independently prove what ServiceHub decided and what it subsequently observed.',
+    } as TooltipContent,
+    target: {
+      text: 'The queue or topic this entry acted on',
+    } as TooltipContent,
+    bodyHash: {
+      text: 'SHA-256 hash of the message body',
+      detail:
+        'Lets this entry be matched back to a specific dead-lettered message later without ServiceHub having to store the message body itself.',
+    } as TooltipContent,
+    result: {
+      text: 'What ServiceHub decided, and what it actually observed afterwards',
+      detail:
+        'The state (e.g. Recovered, Declined, Unverified) is ServiceHub\'s own determination — it never means the downstream business transaction completed, only what ServiceHub was able to observe on the queue.',
+    } as TooltipContent,
+    rehearse: {
+      text: 'Preview what the Eligibility Gate would decide, right now',
+      detail:
+        'Re-runs the same policy checks (recurrence cap, environment guard, approval requirements) against this entry\'s recorded identity. It cannot reach a broker and nothing is executed or written to either ledger — it only reports the verdict.',
+    } as TooltipContent,
+    writeOff: {
+      text: 'Mark this entry as permanently unrecoverable',
+      detail:
+        'Use when ServiceHub cannot reach a verdict on its own — for example an entry still Executing or Observing after its window closed — and a human is closing it out by hand. A reason is required and becomes part of the permanent evidence record.',
+    } as TooltipContent,
+    eventChain: {
+      text: 'The append-only, hash-chained log behind this operation',
+      detail:
+        'Every step ServiceHub took on this operation — opened, evaluated, executed, observed, closed — recorded as one event each, with each event\'s hash derived from the one before it. This is the raw evidence that "Verify chain" checks.',
+    } as TooltipContent,
+    eventActor: {
+      text: 'Who or what caused this event',
+      detail: 'A human identity, an Auto-Replay rule, or ServiceHub itself (for example, its observation-window timer closing an entry).',
+    } as TooltipContent,
+    eventHash: {
+      text: 'This event\'s position in the hash chain',
+      detail: 'Derived from this event\'s own content plus the previous event\'s hash. "Verify chain" recomputes these to confirm none were altered after being written.',
+    } as TooltipContent,
+  },
+
+  // ── Audit Trail Page ────────────────────────────
+  audit: {
+    overview: {
+      text: 'What gets logged here',
+      detail:
+        'Every send, replay, purge, dead-letter, and rule change is recorded with a timestamp, the acting user, cloud/environment, and outcome. Read-only browsing (viewing messages) is not logged.',
+      action: 'Defaults to the last 7 days — widen the window or clear filters to see further back.',
+    } as TooltipContent,
+    totalEvents: {
+      text: 'All logged events in the selected time window',
+      detail: 'Counts every row that matches your current filters — action type, outcome, search, and date range.',
+    } as TooltipContent,
+    successRate: {
+      text: 'Share of events that completed without error',
+      detail: 'Successful events ÷ total events, for the selected time window and filters.',
+    } as TooltipContent,
+    failures: {
+      text: 'Events that ended in an error',
+      detail: 'Click a failed row to open its detail drawer and see the recorded error message and HTTP context.',
+    } as TooltipContent,
+    activeUsers: {
+      text: 'Distinct user identities with at least one event in this window',
+    } as TooltipContent,
+    datePresets: {
+      text: 'Time window for the events below',
+      detail: 'Defaults to the last 7 days from now. Pick a shorter window to narrow in, or a longer one to look further back.',
+    } as TooltipContent,
+    export: {
+      text: 'Download exactly what’s on screen',
+      detail: 'Exports the currently filtered events — same date window, action type, outcome, and search — as CSV or JSON.',
+    } as TooltipContent,
+  },
+
   // ── Health Page ────────────────────────────────
   health: {
     uptime: {
@@ -249,6 +332,419 @@ export const tooltips = {
     threads: {
       text: 'Active thread count',
       detail: 'Number of threads in the .NET thread pool. Spikes may indicate thread starvation from blocking calls.',
+    } as TooltipContent,
+    gcCollections: {
+      text: '.NET garbage-collection generations',
+      detail: 'Gen0 / Gen1 / Gen2 collection counts. Gen0 collects most often and is cheap; frequent Gen2 collections are more expensive and worth investigating if they keep climbing.',
+    } as TooltipContent,
+  },
+
+  // ── Approval Queue Page ─────────────────────────
+  approvalQueue: {
+    overview: {
+      text: 'Replays a person needs to sign off on',
+      detail:
+        'An auto-replay rule matched these messages, but the Eligibility Gate escalated them for manual review instead of replaying automatically. Approving an entry replays it exactly as if you had replayed it by hand.',
+      action: 'Select entries and click "Review & Approve" to see the proposal before anything runs.',
+    } as TooltipContent,
+  },
+
+  // ── Autonomy Control Center ─────────────────────
+  autonomy: {
+    overview: {
+      text: 'What ServiceHub can safely do on its own',
+      detail:
+        'Autonomy is earned per failure signature from verified outcomes — it can never be switched on directly. This page shows the current ladder position, guardrails, and what still needs a human.',
+    } as TooltipContent,
+    recoveredUnattended: {
+      text: 'Recoveries that ran with no human involved',
+      detail: 'Replays executed automatically because the specific failure signature had already earned Standing (L4) or Unattended (L5) trust.',
+    } as TooltipContent,
+    waitingForHuman: {
+      text: 'Replays and proposals awaiting a decision',
+      detail: 'Combines the Approval Queue (auto-replay matches escalated by the gate) with Playbook proposals still marked "awaiting a decision."',
+    } as TooltipContent,
+    unsafeRefused: {
+      text: 'Attempts the Eligibility Gate blocked',
+      detail: 'Recovery attempts that did not meet safety criteria (recurrence cap, environment guard, missing proof of DLQ absence, etc.) and were refused before reaching the provider.',
+    } as TooltipContent,
+    safetyStatus: {
+      text: 'Whether any safety guardrail has tripped',
+      detail: '"Guardrails on" means nothing is stopped. "N tripped" means a circuit breaker disabled a rule after repeated failures. "Emergency stop" blocks all new unattended recovery until an Admin clears it.',
+    } as TooltipContent,
+  },
+
+  // ── Governance Page ─────────────────────────────
+  governance: {
+    overview: {
+      text: 'Who may act, and where',
+      detail:
+        'Grants control which people or API keys can act on a namespace, scoped to one of the four autonomy pillars (Investigate, Correlate, Prevent, Recover). A grant is permission to act — it never grants autonomy itself.',
+    } as TooltipContent,
+    pillar: {
+      text: 'The four pillars of autonomy',
+      detail: 'Investigate: classify and explain failures. Correlate: connect related failures across namespaces. Prevent: catch drift before it dead-letters messages. Recover: replay or purge dead-lettered messages.',
+    } as TooltipContent,
+    yourRole: {
+      text: 'Your fleet-wide role',
+      detail: 'The highest permission level you hold across every namespace. A namespace-scoped grant can still give you more (or less) access on a specific namespace than this role implies.',
+    } as TooltipContent,
+  },
+
+  // ── Playbook Ledger Page ────────────────────────
+  playbookLedger: {
+    overview: {
+      text: 'Everything ServiceHub has noticed or proposed',
+      detail:
+        'Every finding, correlation, prevention trigger, and recovery proposal across the four pillars, what a human decided, and whether later evidence proved the decision right. Approving an entry here never executes anything by itself.',
+    } as TooltipContent,
+    proposals: {
+      text: 'Total entries ever proposed',
+    } as TooltipContent,
+    awaiting: {
+      text: 'Proposed or under review',
+      detail: 'Entries that have not yet been approved, rejected, or otherwise closed out by a human.',
+    } as TooltipContent,
+    approved: {
+      text: 'Entries a human approved',
+    } as TooltipContent,
+    rejected: {
+      text: 'Entries a human rejected',
+    } as TooltipContent,
+    pillarBadge: {
+      text: 'Which of the four autonomy pillars this came from',
+      detail: 'Investigate: classifies a failure. Correlate: links related failures. Prevent: flags drift before it causes a failure. Recover: proposes a replay or purge.',
+    } as TooltipContent,
+    fleetWide: {
+      text: 'Not scoped to a single namespace',
+      detail: 'This proposal was raised from a pattern seen across multiple namespaces rather than one.',
+    } as TooltipContent,
+    learningLoop: {
+      text: 'How ServiceHub gets better over time',
+      detail: 'Incident → Observation → Pattern → Proposal → Human decision → Corroborated (later evidence confirms the decision was right) → Better decisions next time. Nothing here executes anything on its own.',
+    } as TooltipContent,
+  },
+
+  // ── Recovery Ledger Page (Recovery Evidence) ────
+  recoveryLedger: {
+    recoveries: {
+      text: 'Total replay and purge operations',
+    } as TooltipContent,
+    failedOrReturned: {
+      text: 'Operations that didn’t stick',
+      detail: 'The replay itself failed, or the message was redelivered but dead-lettered again — either way, ServiceHub could not confirm the message was actually recovered.',
+    } as TooltipContent,
+    evidenceIntegrity: {
+      text: 'Hash-chained, tamper-evident — not tamper-proof',
+      detail: 'Each event’s hash is derived from its own content plus the previous event’s hash. Recomputing the chain proves whether any event was altered after it was written; it cannot prevent someone with direct database access from editing it.',
+    } as TooltipContent,
+    kindBadge: {
+      text: 'Purge or Replay',
+      detail: 'Purge permanently deletes the message. Replay resends it to the original queue or topic for reprocessing.',
+    } as TooltipContent,
+  },
+
+  // ── Recovery Ageing Page ────────────────────────
+  recoveryAgeing: {
+    overview: {
+      text: 'Every recovery entry still open, oldest first',
+      detail:
+        'A recovery entry should always reach a terminal state (recovered, failed, written off) eventually. This page exists so nothing can get stuck open and silently forgotten.',
+    } as TooltipContent,
+    flagged: {
+      text: 'Open for 7 days or more',
+      detail: 'Entries flagged this way have been open unusually long and are worth checking by hand — they may be stuck waiting on an observation window or a decision.',
+    } as TooltipContent,
+  },
+
+  // ── Home Page ────────────────────────────────────
+  home: {
+    activeMessages: {
+      text: 'Messages currently live in queues and topics',
+      detail: 'Waiting to be picked up and processed — not yet failed or dead-lettered.',
+    } as TooltipContent,
+    dlqMessages: {
+      text: 'Messages that failed processing',
+      detail: 'Moved to the dead-letter queue after exceeding the max delivery count or failing validation. They won’t be retried automatically.',
+    } as TooltipContent,
+    oldestDlq: {
+      text: 'Age of the longest-stuck dead-lettered message',
+      detail: 'A large value here usually means something has been failing for a while without anyone investigating it.',
+    } as TooltipContent,
+    recovered: {
+      text: 'Messages successfully recovered this week',
+      detail: 'Replayed and confirmed to have left the dead-letter queue.',
+    } as TooltipContent,
+    writtenOff: {
+      text: 'Messages abandoned rather than recovered',
+      detail: 'Marked permanently unrecoverable — by a human, or by the observation window closing without success.',
+    } as TooltipContent,
+    medianTimeToRecovered: {
+      text: 'Typical time from failure to confirmed recovery',
+    } as TooltipContent,
+    noApprovalNeeded: {
+      text: 'Recoveries that ran with no human sign-off',
+      detail: 'The failure signature had already earned Standing (L4) or Unattended (L5) trust from prior verified outcomes.',
+    } as TooltipContent,
+    badReplaysRefused: {
+      text: 'Replays the safety gate blocked before they ran',
+    } as TooltipContent,
+    blastRadius: {
+      text: 'How many messages this failure signature currently affects',
+    } as TooltipContent,
+    pendingDecisions: {
+      text: 'Playbook proposals awaiting a human decision',
+    } as TooltipContent,
+    recurring: {
+      text: 'This failure pattern has reappeared before',
+      detail: 'Not a one-off — the same signature has been detected more than once over time.',
+    } as TooltipContent,
+  },
+
+  // ── Incident Workspace Page ─────────────────────
+  incidentWorkspace: {
+    overview: {
+      text: 'One failure signature, everything about it in one place',
+      detail: 'Summary, Evidence, Recommended Recovery, and Activity for a single recurring dead-letter pattern — so the fifth time it repeats, you’re managing a known case instead of re-diagnosing from scratch.',
+    } as TooltipContent,
+    occurrenceCount: {
+      text: 'How many times this pattern has been detected',
+      detail: 'Not the number of affected messages — see the message count for that.',
+    } as TooltipContent,
+    statGrid: {
+      text: 'Playbook activity tied to this signature',
+      detail: 'Each count is a different kind of proposal the Playbook has raised for this signature: recovery entries, pending decisions, anomaly flags, drift findings, correlation hypotheses, prevention triggers, and replay plans.',
+    } as TooltipContent,
+  },
+
+  // ── Live Tail Page ───────────────────────────────
+  liveTail: {
+    overview: {
+      text: 'Watch new messages arrive in real time',
+      detail: 'A non-persistent, live view of one queue or subscription. Available for Azure and GCP — AWS SQS has no non-destructive peek, so it can’t be tailed safely.',
+    } as TooltipContent,
+    deliveryCount: {
+      text: 'How many times this message has been delivered',
+      detail: 'A rising count before it lands here usually means a consumer is failing to process it and it keeps being redelivered.',
+    } as TooltipContent,
+  },
+
+  // ── Messages Overview Page ──────────────────────
+  messagesOverview: {
+    overview: {
+      text: 'Every queue and topic, across every namespace',
+      detail: 'A fleet-wide entry point for browsing active or dead-lettered messages without picking a namespace first.',
+    } as TooltipContent,
+    totalMessages: {
+      text: 'Sum across all connected namespaces',
+    } as TooltipContent,
+    namespacesWithMessages: {
+      text: 'Namespaces with at least one matching message',
+      detail: 'Shown as "X of Y" — how many of your connected namespaces currently have ≥ 1 active (or dead-lettered) message.',
+    } as TooltipContent,
+    fanOut: {
+      text: 'See every subscription for this topic',
+      detail: 'A topic delivers a copy of each message to every subscription attached to it — this opens the per-subscription breakdown.',
+    } as TooltipContent,
+  },
+
+  // ── Proactive Insights Page ─────────────────────
+  proactiveInsights: {
+    overview: {
+      text: 'On-demand AI analysis — nothing here is saved',
+      detail: 'Auto-narration, cross-namespace correlation detection, backlog-breach forecasting, and contract-violation export. Each tab computes fresh when you click it; nothing is persisted between visits.',
+    } as TooltipContent,
+    severity: {
+      text: 'Severity score, 0–100',
+      detail: 'Higher means a bigger blast radius or a more urgent pattern. It is a relative ranking, not a guarantee of business impact.',
+    } as TooltipContent,
+    crossNamespace: {
+      text: 'Ties findings together across namespaces',
+      detail: 'This narration synthesizes activity from more than one namespace rather than describing just one.',
+    } as TooltipContent,
+    crossCloud: {
+      text: 'Spans more than one cloud provider',
+      detail: 'The correlated anomalies were detected on different cloud providers, not just different namespaces on the same one.',
+    } as TooltipContent,
+    growthRate: {
+      text: 'How fast the backlog is growing',
+      detail: 'Messages added to the dead-letter queue per hour, based on recent trend.',
+    } as TooltipContent,
+    projectedBreach: {
+      text: 'When the backlog is expected to cross the alert threshold',
+      detail: 'A forecast based on the current growth rate — not a guarantee, since the rate can change.',
+    } as TooltipContent,
+  },
+
+  // ── Scheduled Messages Page ─────────────────────
+  scheduledMessages: {
+    overview: {
+      text: 'Messages queued for future delivery',
+      detail: 'View, reschedule, or cancel messages that haven’t been sent yet. Azure Service Bus only — AWS and GCP don’t support scheduled delivery, so those namespaces show an honest "not supported" panel instead of an empty table.',
+    } as TooltipContent,
+  },
+
+  // ── Signature Details Page ──────────────────────
+  signatureDetails: {
+    dlqShare: {
+      text: 'Share of this namespace’s dead-letter backlog',
+      detail: 'What percentage of this namespace’s currently active dead-lettered messages this one signature accounts for.',
+    } as TooltipContent,
+    confidence: {
+      text: 'How sure ServiceHub is that this is one real pattern',
+      detail: 'Based on how tightly the clustered messages share an error, entity, and shape. "Medium" confidence means the cluster could still include unrelated messages — worth a manual look before trusting it fully.',
+    } as TooltipContent,
+    currentlyClustered: {
+      text: 'Whether live messages still match this signature',
+      detail: '"No — historical record" means this pattern no longer matches any currently dead-lettered message. It’s a past pattern kept for reference, not an active one.',
+    } as TooltipContent,
+    trend: {
+      text: 'How this pattern is behaving over time',
+      detail: 'New: first time seen. Recurring: has reappeared before. Escalating: happening more often or affecting more messages recently.',
+    } as TooltipContent,
+  },
+
+  // ── Signature List Page ─────────────────────────
+  signatureList: {
+    overview: {
+      text: 'Recurring dead-letter patterns, clustered',
+      detail: 'Each signature groups many individual dead-lettered messages that share the same root cause into one named, trackable case.',
+    } as TooltipContent,
+    statusFilter: {
+      text: 'Signature lifecycle status',
+      detail: 'Active: still occurring. Resolved: fixed and confirmed. Reopened: was resolved, happened again. Suppressed: manually muted so it stops surfacing even though it still occurs. Archived: kept for history only.',
+    } as TooltipContent,
+    trendFilter: {
+      text: 'How the pattern is trending',
+      detail: 'New: first time seen. Recurring: has reappeared before. Escalating: happening more often or affecting more messages recently.',
+    } as TooltipContent,
+    reviewFilter: {
+      text: 'Operator-set review schedule',
+      detail: 'A signature can have a review date set as a reminder to re-check it. "Due" and "Overdue" flag ones that need attention soon or are past that date.',
+    } as TooltipContent,
+  },
+
+  // ── Cloud Bridge Page ────────────────────────────
+  cloudBridge: {
+    overview: {
+      text: 'Every queue, topic, and subscription, one browser',
+      detail: 'A provider-agnostic view across Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub — the same screen regardless of which cloud you’re looking at.',
+    } as TooltipContent,
+    noLiveCount: {
+      text: 'This provider has no message-count API',
+      detail: 'Different from "no backlog" (a confirmed zero) — this cloud simply doesn’t expose a way to count messages without consuming them.',
+    } as TooltipContent,
+  },
+
+  // ── Cross-Cloud Trace Page ───────────────────────
+  crossCloudTrace: {
+    overview: {
+      text: 'Follow one message across every connected cloud',
+      detail: 'Search by Correlation ID or message GUID to see every hop the message took across Azure, AWS, and GCP namespaces at once.',
+    } as TooltipContent,
+    hops: {
+      text: 'Each queue or topic the message passed through',
+    } as TooltipContent,
+    partialTimeout: {
+      text: 'The search didn’t finish in time',
+      detail: 'Not every connected namespace could be scanned before the search timed out — results shown may be incomplete.',
+    } as TooltipContent,
+  },
+
+  // ── Namespace Overview (Dashboard) Page ─────────
+  dashboard: {
+    overview: {
+      text: 'Every namespace’s health, at a glance',
+      detail: 'Per-namespace active/DLQ/scheduled counts plus fleet-wide totals, sorted worst-first so the namespace needing attention is always at the top.',
+    } as TooltipContent,
+    dlqSpikes: {
+      text: 'Namespaces over the dead-letter spike threshold',
+      detail: 'Flagged when a namespace’s dead-letter count crosses 10 — a simple, fixed threshold meant to catch sudden backlog growth, not a statistical anomaly detector.',
+    } as TooltipContent,
+    critical: {
+      text: 'Needs attention now',
+      detail: 'A namespace crosses into "Critical" based on its dead-letter backlog and recent trend, not just a raw count.',
+    } as TooltipContent,
+    notMonitored: {
+      text: 'No health data available for this namespace',
+      detail: 'Usually means the connection hasn’t successfully polled yet, or the provider doesn’t expose the metrics this page needs.',
+    } as TooltipContent,
+  },
+
+  // ── DLQ Overview Page ────────────────────────────
+  dlqOverview: {
+    overview: {
+      text: 'Cross-cloud dead-letter triage',
+      detail: 'Every dead-lettered message across every connected namespace, grouped by provider, with trends and reason breakdowns.',
+    } as TooltipContent,
+    replaySafety: {
+      text: 'ServiceHub’s judgment on whether this is safe to replay',
+      detail: 'Safe: low risk of repeating the same failure. Requires Review: ambiguous, check before replaying. Unsafe: replaying is likely to fail again or cause harm.',
+    } as TooltipContent,
+    statusFilter: {
+      text: 'What happened to this dead-lettered message',
+      detail: 'Replayed: resent for processing. Archived: kept but not acted on. Discarded: deleted. Replay Failed: a replay attempt didn’t stick. Resolved: closed out successfully.',
+    } as TooltipContent,
+    topReasons: {
+      text: 'Most common reasons messages are dead-lettering',
+      detail: '"Max Delivery" means the message exceeded its maximum delivery/retry count before landing here — the most common reason across most namespaces.',
+    } as TooltipContent,
+  },
+
+  // ── Incident Center (Failure Intelligence) Page ─
+  failureIntelligenceCenter: {
+    overview: {
+      text: 'Every recurring failure, deduplicated into incidents',
+      detail: 'Groups dead-lettered messages by failure signature so you investigate a pattern once instead of triaging the same error message by message.',
+    } as TooltipContent,
+    totalSignatures: {
+      text: 'Distinct recurring failure patterns detected',
+    } as TooltipContent,
+    suppressed: {
+      text: 'Manually muted',
+      detail: 'An incident someone marked to stop surfacing here, even though matching messages may still be arriving.',
+    } as TooltipContent,
+    requiresAction: {
+      text: 'Incidents ServiceHub thinks need a decision',
+      detail: 'Based on severity, blast radius, and how long the incident has gone without a reviewed decision.',
+    } as TooltipContent,
+    reopened: {
+      text: 'Was resolved, then happened again',
+    } as TooltipContent,
+    knowledge: {
+      text: 'Saved notes and runbook for this signature',
+      detail: 'Attach what you learned once so the next person (or your future self) doesn’t re-diagnose the same pattern from scratch.',
+    } as TooltipContent,
+    replayPreview: {
+      text: 'See what a replay would do — without doing it',
+      detail: 'Previews the scope and outcome of replaying this incident’s messages. Nothing is executed or written anywhere.',
+    } as TooltipContent,
+    escalatingOnly: {
+      text: 'Only show incidents trending worse',
+      detail: 'Frequency or severity has been increasing recently.',
+    } as TooltipContent,
+    missingKnowledgeOnly: {
+      text: 'Only show incidents with no saved notes yet',
+    } as TooltipContent,
+  },
+
+  // ── Fleet Overview Page ──────────────────────────
+  fleet: {
+    overview: {
+      text: 'Dead-letter health across every namespace',
+      detail: 'Ranked worst-first — total backlog, what changed recently, and which namespaces need attention.',
+    } as TooltipContent,
+    atRisk: {
+      text: 'Namespaces not currently healthy',
+      detail: 'Anything whose severity is above "healthy" — includes both "needs attention" and "critical" namespaces.',
+    } as TooltipContent,
+    dlqSpikes: {
+      text: 'Namespaces over the dead-letter spike threshold',
+      detail: 'Flagged when a namespace’s dead-letter count crosses 10 — a simple, fixed threshold meant to catch sudden backlog growth.',
+    } as TooltipContent,
+    needsAttention: {
+      text: 'Elevated dead-letter backlog or trend',
+      detail: 'Below "Critical" but above "Healthy" — worth a look before it gets worse.',
     } as TooltipContent,
   },
 } as const;

@@ -23,6 +23,8 @@ import { EnvironmentBadge } from '@/components/EnvironmentBadge';
 import { EmptyState } from '@/components/EmptyState';
 import { StatusBadge } from '@/components/dlq';
 import { RecoveryStateBadge } from '@/components/recovery/RecoveryStateBadge';
+import { HelpTooltip } from '@/components/help';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
 
 const EVIDENCE_PROPOSAL_KINDS = new Set(['AnomalyFlag', 'DriftFinding', 'CorrelationHypothesis', 'ReasoningCompanionObservation']);
 const RECOVERY_PROPOSAL_KINDS = new Set(['ReplayPlan', 'PreventionTrigger']);
@@ -325,8 +327,9 @@ export function IncidentWorkspacePage() {
             <div className="bg-white border border-gray-200 rounded-xl p-5 mb-4">
               <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
                 <div>
-                  <h1 className="text-lg font-semibold text-gray-900">
+                  <h1 className="text-lg font-semibold text-gray-900 flex items-center gap-1.5">
                     {incident.dominantDeadletterReason ?? 'Failure signature'}
+                    <HelpTooltip {...tooltips.incidentWorkspace.overview} position="bottom" />
                   </h1>
                   <p className="text-xs text-gray-400 font-mono mt-0.5 break-all">Fingerprint: {incident.signatureHash}</p>
                 </div>
@@ -361,7 +364,7 @@ export function IncidentWorkspacePage() {
                   <span className="font-medium text-gray-900">{formatDate(incident.lastSeenAt)}</span>
                 </div>
                 <div>
-                  <span className="text-gray-500 block text-xs">Occurrence Count</span>
+                  <span className="text-gray-500 block text-xs" title={tooltips.incidentWorkspace.occurrenceCount.detail}>Occurrence Count</span>
                   <span className="font-medium text-gray-900">{incident.occurrenceCount}</span>
                 </div>
               </div>
@@ -400,7 +403,10 @@ export function IncidentWorkspacePage() {
 
             {activeTab === 'summary' && (
               <div className="bg-white border border-gray-200 rounded-xl p-5">
-                <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-4">Summary</h2>
+                <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-4 flex items-center gap-1">
+                  Summary
+                  <HelpTooltip {...tooltips.incidentWorkspace.statGrid} size={12} position="bottom" />
+                </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
                   <div>
                     <span className="text-gray-500 block text-xs">Recovery Entries</span>

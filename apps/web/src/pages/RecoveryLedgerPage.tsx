@@ -19,6 +19,8 @@ import {
   Pagination, Pill, SearchInput, StatCard, Tabs, buttonClass, formatDateTime, formatFullDateTime, navPrefixFor,
   normalizeProvider, plural, type Tone,
 } from '@/components/autonomy/ui';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
+import { HelpTooltip } from '@/components/help';
 import {
   OUTCOME_META, TRIGGER_LABELS, buildRecoveryLifecycle, displayActor, bucketEntryState, computeLedgerStats, groupEntriesByOperation,
   summarizeOperation, type LifecycleStep, type OperationOutcome, type OperationSummary, type StepStatus,
@@ -42,7 +44,9 @@ const OUTCOME_OPTIONS: ReadonlyArray<{ value: '' | OperationOutcome; label: stri
 ];
 
 function KindBadge({ kind }: { kind: RecoveryOperation['kind'] }) {
-  return kind === 'Purge' ? <Pill tone="red">Purge</Pill> : <Pill tone="blue">Replay</Pill>;
+  return kind === 'Purge'
+    ? <Pill tone="red" title={tooltips.recoveryLedger.kindBadge.detail}>Purge</Pill>
+    : <Pill tone="blue" title={tooltips.recoveryLedger.kindBadge.detail}>Replay</Pill>;
 }
 
 function OutcomeBadge({ summary }: { summary: OperationSummary }) {
@@ -86,12 +90,15 @@ export default function RecoveryLedgerPage() {
 
   const updateParam = useCallback(
     (key: string, value: string | null) => {
+      // Selecting/closing a row or changing a filter is in-page view state, not a new
+      // destination — replace so it doesn't pile up history entries the toolbar's Back/Forward
+      // then has to click through one at a time before it can actually leave this page.
       setSearchParams(prev => {
         const next = new URLSearchParams(prev);
         if (value) next.set(key, value);
         else next.delete(key);
         return next;
-      });
+      }, { replace: true });
     },
     [setSearchParams],
   );
@@ -149,6 +156,7 @@ export default function RecoveryLedgerPage() {
         tone="teal"
         title="Recovery Evidence"
         subtitle="Proof of every recovery ServiceHub has executed — who decided, what the provider was asked to do, and what was observed afterwards."
+        titleTooltip={{ text: 'The permanent, hash-chained record of every replay and purge', detail: 'Proof a recovery happened, not just a log line saying it was attempted — includes who decided, what the provider was asked to do, and what ServiceHub subsequently observed.' }}
         actions={
           <button type="button" onClick={() => refetch()} disabled={isFetching || isDemoMode} className={buttonClass.secondary}>
             <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
@@ -173,6 +181,7 @@ export default function RecoveryLedgerPage() {
               label="Recoveries"
               value={operations ? (operations.length >= FETCH_LIMIT ? `${FETCH_LIMIT}+` : operations.length) : '…'}
               hint={stats.counts.inProgress > 0 ? `${stats.counts.inProgress} in progress now` : 'None in progress'}
+              tooltip={tooltips.recoveryLedger.recoveries}
             />
             <StatCard
               icon={CheckCircle2}
@@ -182,7 +191,7 @@ export default function RecoveryLedgerPage() {
               hint={stats.verifiedRecoveryRate != null ? `${Math.round(stats.verifiedRecoveryRate * 100)}% of verified outcomes` : 'No verified outcomes yet'}
               title="Recovered ÷ (recovered + failed). Unverified and blocked messages are not counted either way."
             />
-            <StatCard icon={XCircle} tone="red" label="Failed or returned" value={stats.counts.failed} hint="Rejected, or back in the DLQ" />
+            <StatCard icon={XCircle} tone="red" label="Failed or returned" value={stats.counts.failed} hint="Rejected, or back in the DLQ" tooltip={tooltips.recoveryLedger.failedOrReturned} />
             <StatCard
               icon={HelpCircle}
               tone="amber"
@@ -387,7 +396,10 @@ function IntegrityCard({
   const Icon = status.icon;
   return (
     <div className="col-span-2 @3xl:col-span-1 bg-white border border-gray-200 rounded-xl p-4 shadow-sm flex flex-col gap-2">
-      <div className="text-xs font-medium text-gray-500">Evidence integrity</div>
+      <div className="text-xs font-medium text-gray-500 flex items-center gap-1">
+        Evidence integrity
+        <HelpTooltip {...tooltips.recoveryLedger.evidenceIntegrity} size={12} position="bottom" />
+      </div>
       <div className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
         <Icon className={`w-4 h-4 ${status.tone === 'green' ? 'text-green-600' : status.tone === 'red' ? 'text-red-600' : 'text-gray-400'}`} />
         {status.text}

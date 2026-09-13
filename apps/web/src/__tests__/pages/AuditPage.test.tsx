@@ -185,4 +185,32 @@ describe('AuditPage', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByText('Audit Entry Detail')).not.toBeInTheDocument();
   });
+
+  // Regression: a "Recent Changes Before Failure" deep link (?from=&to=) legitimately finds zero
+  // audit events most of the time — that just means nothing was changed in the namespace during
+  // that narrow window. The page used to show the same "No audit logs found / Try adjusting your
+  // filters" copy as a broken/misconfigured filter, which read as an error rather than an
+  // expected, reassuring result.
+  it('shows a reassuring empty state (not a generic filter error) for a deep-linked failure window with no events', () => {
+    mockUseAuditLogs.mockReturnValue({
+      data: { ...mockAuditData, items: [], totalCount: 0 },
+      isLoading: false,
+      refetch: vi.fn(),
+      isFetching: false,
+    });
+    const Wrapper = createWrapper(
+      '/audit?namespace=ns1&from=2026-09-04T12%3A07%3A43.234Z&to=2026-09-05T12%3A07%3A43.234572%2B00%3A00'
+    );
+    render(<Wrapper><AuditPage /></Wrapper>);
+
+    expect(screen.getByText('No configuration changes in this window')).toBeInTheDocument();
+    expect(screen.queryByText('No audit logs found')).not.toBeInTheDocument();
+    expect(screen.getByText(/isn't a sign of missing data/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'See all audit events' }));
+    const calls = mockUseAuditLogs.mock.calls;
+    const params = calls[calls.length - 1][0];
+    expect(params.from).toBeUndefined();
+    expect(params.to).toBeUndefined();
+  });
 });

@@ -21,6 +21,7 @@ import {
   Card, Callout, ErrorBlock, FilterSelect, IconTile, LoadingBlock, PageHeader, Pill, StatCard,
   buttonClass, formatDateTime, navPrefixFor, plural, truncateMiddle, PROVIDER_LABELS, type Tone,
 } from '@/components/autonomy/ui';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
 import { computePlaybookStats, summarizeProposal } from '@/components/autonomy/playbookSummary';
 import { displayActor, groupEntriesByOperation, summarizeOperation, type OperationOutcome } from '@/components/autonomy/recoveryOutcome';
 
@@ -145,7 +146,7 @@ function LadderStep({ step, reached, isFloor, count }: { step: (typeof LADDER)[n
       </div>
       <div className={`mt-1.5 text-xs font-semibold ${reached ? 'text-gray-900' : 'text-gray-400'}`}>{step.name}</div>
       <div className="text-[11px] text-gray-500 leading-tight">{step.blurb}</div>
-      {isFloor && <div className="mt-1"><Pill tone="gray">Floor</Pill></div>}
+      {isFloor && <div className="mt-1"><Pill tone="gray" title="Every failure signature starts here and can be demoted back to it — the permanent human-approval baseline.">Floor</Pill></div>}
       {count !== undefined && (
         <div className={`mt-1 text-[11px] font-medium ${count > 0 ? 'text-green-700' : 'text-gray-400'}`}>
           {plural(count, 'signature')}
@@ -302,6 +303,7 @@ export default function AutonomyPage() {
         tone="blue"
         title="Autonomy Control Center"
         subtitle="What ServiceHub can safely do on its own, why, and what still needs a person. Autonomy is earned from evidence — it can't be switched on."
+        titleTooltip={tooltips.autonomy.overview}
         actions={
           <>
             <FilterSelect
@@ -354,6 +356,7 @@ export default function AutonomyPage() {
                 value={outcomesValue(outcomes.data?.autonomousRecoveries)}
                 hint="Under earned L4/L5 trust"
                 to={`${prefix}/recovery`}
+                tooltip={tooltips.autonomy.recoveredUnattended}
               />
               <StatCard
                 icon={Clock}
@@ -362,6 +365,7 @@ export default function AutonomyPage() {
                 value={approvalQueueCount >= APPROVAL_QUEUE_LIMIT || proposalsCapped ? `${approvalQueueCount + playbookStats.awaiting}+` : approvalQueueCount + playbookStats.awaiting}
                 hint={`${approvalQueueLabel} replays · ${awaitingLabel} proposals`}
                 to={approvalQueueCount > 0 ? `${prefix}/approval-queue` : `${prefix}/playbook?state=awaiting`}
+                tooltip={tooltips.autonomy.waitingForHuman}
               />
               <StatCard
                 icon={ShieldX}
@@ -369,8 +373,9 @@ export default function AutonomyPage() {
                 label="Unsafe attempts refused"
                 value={outcomesValue(outcomes.data?.gateRefusals)}
                 hint="Blocked by the Eligibility Gate"
+                tooltip={tooltips.autonomy.unsafeRefused}
               />
-              <StatCard icon={ShieldCheck} tone={safetyStatus.tone} label="Safety status" value={<span className="text-lg">{safetyStatus.value}</span>} hint={safetyStatus.hint} />
+              <StatCard icon={ShieldCheck} tone={safetyStatus.tone} label="Safety status" value={<span className="text-lg">{safetyStatus.value}</span>} hint={safetyStatus.hint} tooltip={tooltips.autonomy.safetyStatus} />
             </div>
 
             {/* Current autonomy + guardrails */}
@@ -385,7 +390,7 @@ export default function AutonomyPage() {
                       {highest === 3 ? (
                         <Pill tone="amber" icon={Hand}>Human approval required</Pill>
                       ) : (
-                        <Pill tone="green" icon={BadgeCheck}>Earned by {plural(highest === 5 ? l5 : l4, 'signature')}</Pill>
+                        <Pill tone="green" icon={BadgeCheck} title="A signature is one specific (owner, error type, action) failure pattern — not a whole namespace. Each one earns trust independently from its own verified outcomes.">Earned by {plural(highest === 5 ? l5 : l4, 'signature')}</Pill>
                       )}
                     </div>
                     <p className="text-sm text-gray-600 mt-1.5">
@@ -546,7 +551,7 @@ export default function AutonomyPage() {
                       <tr>
                         <th scope="col" className="px-4 py-2 text-left font-semibold">Provider</th>
                         <th scope="col" className="px-4 py-2 text-left font-semibold">Connected</th>
-                        <th scope="col" className="px-4 py-2 text-left font-semibold">Can prove DLQ absence</th>
+                        <th scope="col" className="px-4 py-2 text-left font-semibold" title="Whether this cloud provider can confirm a replayed message actually left the dead-letter queue — required before any signature on it can earn unattended (L4/L5) trust.">Can prove DLQ absence</th>
                         <th scope="col" className="px-4 py-2 text-left font-semibold">Highest possible level</th>
                       </tr>
                     </thead>
@@ -590,7 +595,7 @@ export default function AutonomyPage() {
                 question="What happened — and can we prove it?"
                 metrics={[
                   { label: `recovered (${days}d)`, value: outcomesValue(outcomes.data?.messagesRecovered) },
-                  { label: `written off (${days}d)`, value: outcomesValue(outcomes.data?.messagesAbandoned) },
+                  { label: `written off (${days}d)`, value: outcomesValue(outcomes.data?.messagesAbandoned), title: 'Messages permanently marked unrecoverable rather than replayed — closed out by hand or by the observation-window timer.' },
                 ]}
                 cta="View evidence"
                 to={`${prefix}/recovery`}
@@ -684,7 +689,7 @@ function PillarSummary({
   tone: Tone;
   title: string;
   question: string;
-  metrics: Array<{ label: string; value: ReactNode }>;
+  metrics: Array<{ label: string; value: ReactNode; title?: string }>;
   cta: string;
   to: string;
 }) {
@@ -699,7 +704,7 @@ function PillarSummary({
       </div>
       <dl className="mt-4 grid grid-cols-2 gap-3 flex-1">
         {metrics.map(m => (
-          <div key={m.label}>
+          <div key={m.label} title={m.title}>
             <dd className="text-2xl font-bold text-gray-900 leading-tight">{m.value}</dd>
             <dt className="text-xs text-gray-500">{m.label}</dt>
           </div>

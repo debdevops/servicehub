@@ -43,6 +43,8 @@ import { useFleetOverview } from '@servicehub/ui-shared/hooks/useFleet';
 import { useAuditLogs } from '@servicehub/ui-shared/hooks/useAudit';
 import type { FleetHealthSeverity, FleetNamespaceHealth } from '@servicehub/ui-shared/lib/api/fleet';
 import type { AuditLogItem } from '@servicehub/ui-shared/lib/api/audit';
+import { HelpTooltip } from '@/components/help';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
 
 const DLQ_SPIKE_THRESHOLD = 10;
 
@@ -143,6 +145,7 @@ function AggregateSummaryBar({ stats }: { stats: AggregateStats }) {
       value: stats.isLoading ? '…' : stats.spikeCount,
       colorClass: stats.spikeCount > 0 ? 'text-orange-700 font-bold' : 'text-gray-500',
       bg: stats.spikeCount > 0 ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-gray-100',
+      tooltip: tooltips.dashboard.dlqSpikes.detail,
     },
   ];
 
@@ -152,6 +155,7 @@ function AggregateSummaryBar({ stats }: { stats: AggregateStats }) {
         <div
           key={cell.label}
           className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${cell.bg}`}
+          title={cell.tooltip}
         >
           {cell.icon}
           <div>
@@ -185,10 +189,10 @@ interface AttentionItem {
   note?: string | null;
 }
 
-const ATTENTION_REASON_STYLE: Record<AttentionItem['reason'], { label: string; chip: string }> = {
-  dlq: { label: 'DLQ backlog', chip: 'bg-red-100 text-red-700 border-red-200' },
-  critical: { label: 'Critical', chip: 'bg-red-100 text-red-700 border-red-200' },
-  unmonitored: { label: 'Not monitored', chip: 'bg-amber-100 text-amber-700 border-amber-200' },
+const ATTENTION_REASON_STYLE: Record<AttentionItem['reason'], { label: string; chip: string; explanation?: string }> = {
+  dlq: { label: 'DLQ backlog', chip: 'bg-red-100 text-red-700 border-red-200', explanation: 'Ranked here by dead-letter message count.' },
+  critical: { label: 'Critical', chip: 'bg-red-100 text-red-700 border-red-200', explanation: tooltips.dashboard.critical.detail },
+  unmonitored: { label: 'Not monitored', chip: 'bg-amber-100 text-amber-700 border-amber-200', explanation: tooltips.dashboard.notMonitored.detail },
 };
 
 function AttentionPanel({ items, maxDlq }: { items: AttentionItem[]; maxDlq: number }) {
@@ -246,7 +250,7 @@ function AttentionPanel({ items, maxDlq }: { items: AttentionItem[]; maxDlq: num
                   </span>
                 </>
               ) : (
-                <span className={`flex-1 text-xs font-medium px-2 py-0.5 rounded-full border w-fit ${style.chip}`}>
+                <span className={`flex-1 text-xs font-medium px-2 py-0.5 rounded-full border w-fit ${style.chip}`} title={item.note ?? style.explanation}>
                   {style.label}
                 </span>
               )}
@@ -1056,7 +1060,10 @@ export function DashboardPage() {
           <div className="flex items-center gap-3">
             <Globe className="w-6 h-6 text-white/80" />
             <div>
-              <h1 className="text-xl font-semibold text-white">Namespace Overview</h1>
+              <h1 className="text-xl font-semibold text-white flex items-center gap-1.5">
+                Namespace Overview
+                <HelpTooltip {...tooltips.dashboard.overview} position="bottom" />
+              </h1>
               <div className="flex items-center gap-3 mt-0.5 flex-wrap">
                 <p className="text-indigo-100 text-sm">
                   {namespaces && namespaces.length > 0

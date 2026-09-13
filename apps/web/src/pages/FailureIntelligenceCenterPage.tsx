@@ -30,6 +30,8 @@ import { ProviderBadge } from '@servicehub/ui-shared/lib/providerStyles';
 import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 import { StatusBadge, CategoryBadge } from '@/components/dlq';
 import { IncidentDetailPanel, SeverityBadge } from '@/components/incidents/IncidentDetailPanel';
+import { HelpTooltip } from '@/components/help';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
 
 const DAYS_OPTIONS = [
   { label: 'Last 24 hours', days: 1 },
@@ -85,13 +87,13 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
   URL.revokeObjectURL(url);
 }
 
-function StatTile({ icon, label, value, tone }: { icon: ReactNode; label: string; value: number; tone: string }) {
+function StatTile({ icon, label, value, tone, tooltip }: { icon: ReactNode; label: string; value: number; tone: string; tooltip?: string }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex items-center gap-3">
       <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${tone}`}>{icon}</div>
       <div className="min-w-0">
         <div className="text-2xl font-semibold text-gray-900 leading-none">{value}</div>
-        <div className="text-xs text-gray-500 mt-1 truncate" title={label}>{label}</div>
+        <div className="text-xs text-gray-500 mt-1 truncate" title={tooltip ?? label}>{label}</div>
       </div>
     </div>
   );
@@ -253,6 +255,7 @@ function IncidentRow({
                   <button
                     onClick={() => { setMenuOpen(false); onKnowledge(); }}
                     aria-label={`${item.hasKnowledge ? 'Update' : 'Add'} knowledge for ${item.displayName}`}
+                    title={tooltips.failureIntelligenceCenter.knowledge.detail}
                     className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
                   >
                     <BookOpen className="w-3.5 h-3.5" />
@@ -261,6 +264,7 @@ function IncidentRow({
                   <button
                     onClick={() => { setMenuOpen(false); onReplay(); }}
                     aria-label={`Replay preview for ${item.displayName}`}
+                    title={tooltips.failureIntelligenceCenter.replayPreview.detail}
                     className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
                   >
                     <History className="w-3.5 h-3.5" />
@@ -407,7 +411,10 @@ export function FailureIntelligenceCenterPage() {
               <AlertTriangle className="w-5 h-5 text-red-600" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">Incident Center</h1>
+              <h1 className="text-xl font-bold text-gray-900 flex items-center gap-1.5">
+                Incident Center
+                <HelpTooltip {...tooltips.failureIntelligenceCenter.overview} position="bottom" />
+              </h1>
               <p className="text-sm text-gray-500">Operational command center for failure investigation and remediation.</p>
             </div>
           </div>
@@ -467,12 +474,12 @@ export function FailureIntelligenceCenterPage() {
           <>
             {/* KPI tiles */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-              <StatTile icon={<Layers className="w-5 h-5 text-purple-600" />} label="Total Signatures" value={data.metrics.totalSignatures} tone="bg-purple-50" />
+              <StatTile icon={<Layers className="w-5 h-5 text-purple-600" />} label="Total Signatures" value={data.metrics.totalSignatures} tone="bg-purple-50" tooltip={tooltips.failureIntelligenceCenter.totalSignatures.detail} />
               <StatTile icon={<AlertTriangle className="w-5 h-5 text-red-600" />} label="Active Incidents" value={data.metrics.activeSignatures} tone="bg-red-50" />
               <StatTile icon={<CheckCircle2 className="w-5 h-5 text-green-600" />} label="Resolved" value={data.metrics.resolvedSignatures} tone="bg-green-50" />
-              <StatTile icon={<Ban className="w-5 h-5 text-gray-500" />} label="Suppressed" value={data.metrics.suppressedSignatures} tone="bg-gray-100" />
+              <StatTile icon={<Ban className="w-5 h-5 text-gray-500" />} label="Suppressed" value={data.metrics.suppressedSignatures} tone="bg-gray-100" tooltip={tooltips.failureIntelligenceCenter.suppressed.detail} />
               <StatTile icon={<Archive className="w-5 h-5 text-gray-500" />} label="Archived" value={data.metrics.archivedSignatures} tone="bg-gray-100" />
-              <StatTile icon={<AlertCircle className="w-5 h-5 text-orange-600" />} label="Requires Action" value={data.metrics.requiresAction} tone="bg-orange-50" />
+              <StatTile icon={<AlertCircle className="w-5 h-5 text-orange-600" />} label="Requires Action" value={data.metrics.requiresAction} tone="bg-orange-50" tooltip={tooltips.failureIntelligenceCenter.requiresAction.detail} />
             </div>
 
             {/* Trend + categories */}
@@ -549,11 +556,11 @@ export function FailureIntelligenceCenterPage() {
 
               {moreFiltersOpen && (
                 <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-gray-100 text-sm">
-                  <label className="flex items-center gap-1.5 text-gray-600">
+                  <label className="flex items-center gap-1.5 text-gray-600" title={tooltips.failureIntelligenceCenter.escalatingOnly.detail}>
                     <input type="checkbox" checked={escalatingOnly} onChange={(e) => setEscalatingOnly(e.target.checked)} />
                     Escalating only
                   </label>
-                  <label className="flex items-center gap-1.5 text-gray-600">
+                  <label className="flex items-center gap-1.5 text-gray-600" title={tooltips.failureIntelligenceCenter.missingKnowledgeOnly.detail}>
                     <input type="checkbox" checked={missingKnowledgeOnly} onChange={(e) => setMissingKnowledgeOnly(e.target.checked)} />
                     Missing knowledge only
                   </label>

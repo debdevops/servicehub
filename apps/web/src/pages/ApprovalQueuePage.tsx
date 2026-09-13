@@ -10,6 +10,8 @@ import { EnvironmentBadge } from '@/components/EnvironmentBadge';
 import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 import type { ApprovalQueueEntry } from '@servicehub/ui-shared/lib/api/recovery';
 import toast from 'react-hot-toast';
+import { HelpTooltip } from '@/components/help';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
 
 const KNOWN_PROVIDERS: readonly CloudProviderType[] = ['azure', 'aws', 'gcp'];
 
@@ -159,6 +161,7 @@ export default function ApprovalQueuePage() {
             <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
               <CheckCircle2 className="w-5 h-5 text-amber-600" />
               Approval Queue
+              <HelpTooltip {...tooltips.approvalQueue.overview} position="bottom" />
             </h1>
             <p className="text-sm text-gray-500 mt-0.5">
               Auto-replay rule matches the Eligibility Gate escalated for manual review. Approving

@@ -33,6 +33,8 @@ import { setThemeProvider } from '@servicehub/ui-shared/lib/providerTheme';
 import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
 import { getProviderCapabilities } from '@servicehub/ui-shared/lib/api/cloudBridge';
 import type { Namespace, CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
+import { HelpTooltip } from '@/components/help';
+import { tooltips, type TooltipContent } from '@servicehub/ui-shared/lib/helpContent';
 
 // ============================================================================
 // MessagesOverviewPage — multi-cloud entry point for Active / Dead-Letter
@@ -142,6 +144,7 @@ function StatTile({
   value,
   tone,
   loading,
+  tooltip,
 }: {
   icon: ReactNode;
   label: string;
@@ -150,6 +153,7 @@ function StatTile({
   /** True while the value's backing query is on its first fetch — shows a placeholder instead
    * of the value so a still-loading tile can't be misread as a confirmed zero. */
   loading?: boolean;
+  tooltip?: TooltipContent;
 }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex items-center gap-3">
@@ -160,7 +164,10 @@ function StatTile({
         ) : (
           <div className="text-2xl font-semibold text-gray-900 leading-none">{value}</div>
         )}
-        <div className="text-xs text-gray-500 mt-1 truncate">{label}</div>
+        <div className="text-xs text-gray-500 mt-1 truncate flex items-center gap-1">
+          {label}
+          {tooltip && <HelpTooltip {...tooltip} size={12} position="bottom" />}
+        </div>
       </div>
     </div>
   );
@@ -378,6 +385,7 @@ function TopicRow({
               navigate(`${navPrefix}/messages?namespace=${namespace.id}&topic=${encodeURIComponent(topic.name)}`);
             }}
             className="px-2.5 py-1 text-xs font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-lg transition-colors"
+            title={tooltips.messagesOverview.fanOut.detail}
           >
             Fan-out →
           </button>
@@ -406,6 +414,7 @@ function TopicRow({
             onClick={() => setExpanded((v) => !v)}
             aria-expanded={expanded}
             className="px-2.5 py-1 text-xs font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-lg transition-colors"
+            title={expanded ? undefined : tooltips.messagesOverview.fanOut.detail}
           >
             {expanded ? 'Hide subscriptions' : 'Fan-out →'}
           </button>
@@ -738,8 +747,9 @@ export function MessagesOverviewPage() {
             </div>
             <div>
               <p className="text-xs text-gray-400 mb-0.5">Messages / {isDeadLetter ? 'Dead-Letter' : 'Active Messages'}</p>
-              <h1 className="text-xl font-bold text-gray-900">
+              <h1 className="text-xl font-bold text-gray-900 flex items-center gap-1.5">
                 {isDeadLetter ? 'Dead-Letter Overview' : 'Active Messages Overview'}
+                <HelpTooltip {...tooltips.messagesOverview.overview} position="bottom" />
               </h1>
               <p className="text-sm text-gray-500">
                 All connected clouds — pick an entity to open its {isDeadLetter ? 'DLQ' : 'messages'}
@@ -823,6 +833,7 @@ export function MessagesOverviewPage() {
                 value={aggregate.totalMessages.toLocaleString()}
                 tone={isDeadLetter ? 'bg-red-50' : 'bg-sky-50'}
                 loading={dlqOverviewLoading}
+                tooltip={tooltips.messagesOverview.totalMessages}
               />
               <StatTile
                 icon={<MessageSquare className="w-5 h-5 text-indigo-600" />}
@@ -842,6 +853,7 @@ export function MessagesOverviewPage() {
                 value={`${aggregate.namespacesWithMessages} / ${namespaces.length}`}
                 tone="bg-emerald-50"
                 loading={dlqOverviewLoading}
+                tooltip={tooltips.messagesOverview.namespacesWithMessages}
               />
             </div>
 

@@ -102,13 +102,24 @@ describe('RecentChangesPanel', () => {
     ).toBeInTheDocument();
   });
 
-  it('links to the full audit trail pre-filtered to the namespace', () => {
+  it('links to the full audit trail pre-filtered to the namespace and the same lookback window', () => {
     mockUseAuditLogs.mockReturnValue({ data: page([]), isLoading: false, error: null });
 
     renderPanel();
 
     const link = screen.getByRole('link', { name: /View full audit trail/ });
-    expect(link).toHaveAttribute('href', '/audit?namespace=ns-1');
+    expect(link).toHaveAttribute(
+      'href',
+      `/audit?namespace=ns-1&from=${encodeURIComponent('2026-08-02T14:00:00.000Z')}&to=${encodeURIComponent('2026-08-03T14:00:00.000Z')}`,
+    );
+  });
+
+  it('clarifies the audit trail is namespace-wide, not limited to this signature', () => {
+    mockUseAuditLogs.mockReturnValue({ data: page([]), isLoading: false, error: null });
+
+    renderPanel();
+
+    expect(screen.getByText(/not limited to messages in this signature/)).toBeInTheDocument();
   });
 
   it('renders literal window boundary text so the fixed lookback is never hidden', () => {

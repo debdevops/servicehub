@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { X, ChevronLeft, ChevronRight, Search, AlertCircle, Info } from 'lucide-react';
 import { ProviderBadge } from '@servicehub/ui-shared/lib/providerStyles';
 import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
+import { HelpTooltip } from '@/components/help';
+import type { TooltipContent } from '@servicehub/ui-shared/lib/helpContent';
 
 /**
  * Shared building blocks for the four Autonomous ServiceHub pages (Autonomy Control Center,
@@ -62,7 +64,7 @@ export function IconTile({ icon: Icon, tone, size = 'md' }: { icon: IconType; to
 
 /** Page title block: icon, title, one-line purpose, and right-aligned actions. */
 export function PageHeader({
-  icon, tone, title, subtitle, actions, children,
+  icon, tone, title, subtitle, actions, children, titleTooltip,
 }: {
   icon: IconType;
   tone: Tone;
@@ -71,6 +73,8 @@ export function PageHeader({
   actions?: ReactNode;
   /** Banners (demo mode, emergency stop) rendered under the title row. */
   children?: ReactNode;
+  /** Info-icon popover explaining what this page is, for a first-time visitor. */
+  titleTooltip?: TooltipContent;
 }) {
   return (
     <header className="bg-white border-b border-gray-200 px-4 sm:px-6 py-4 shrink-0">
@@ -78,7 +82,10 @@ export function PageHeader({
         <div className="flex items-start gap-3 min-w-0">
           <IconTile icon={icon} tone={tone} size="lg" />
           <div className="min-w-0">
-            <h1 className="text-xl font-bold text-gray-900 leading-tight">{title}</h1>
+            <h1 className="text-xl font-bold text-gray-900 leading-tight flex items-center gap-1.5">
+              {title}
+              {titleTooltip && <HelpTooltip {...titleTooltip} position="bottom" />}
+            </h1>
             <p className="text-sm text-gray-500 mt-0.5 max-w-3xl">{subtitle}</p>
           </div>
         </div>
@@ -91,7 +98,7 @@ export function PageHeader({
 
 /** A headline number. `value` is rendered as-is — pass "—" (with a `hint`) rather than a fabricated 0. */
 export function StatCard({
-  icon, tone, label, value, hint, to, title,
+  icon, tone, label, value, hint, to, title, tooltip,
 }: {
   icon: IconType;
   tone: Tone;
@@ -100,6 +107,8 @@ export function StatCard({
   hint?: ReactNode;
   to?: string;
   title?: string;
+  /** Info-icon popover next to the label, for a metric whose meaning isn't obvious from the name alone. */
+  tooltip?: TooltipContent;
 }) {
   const body = (
     <div
@@ -110,7 +119,10 @@ export function StatCard({
     >
       <IconTile icon={icon} tone={tone} />
       <div className="min-w-0">
-        <div className="text-xs font-medium text-gray-500">{label}</div>
+        <div className="text-xs font-medium text-gray-500 flex items-center gap-1">
+          {label}
+          {tooltip && <HelpTooltip {...tooltip} size={12} position="bottom" />}
+        </div>
         <div className="text-2xl font-bold text-gray-900 leading-tight mt-0.5">{value}</div>
         {hint && <div className="text-xs text-gray-500 mt-0.5">{hint}</div>}
       </div>

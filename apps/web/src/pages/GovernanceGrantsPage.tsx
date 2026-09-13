@@ -18,6 +18,7 @@ import {
   Callout, Card, DetailPanel, EmptyBlock, ErrorBlock, FilterSelect, LoadingBlock, PageHeader, Pill, SearchInput,
   StatCard, Tabs, buttonClass, formatDateTime, plural,
 } from '@/components/autonomy/ui';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
 import {
   GOVERNED_ACTIONS, ROLE_ORDER, ROLE_TONE, describeGrantee, evaluateGrantee, groupGrantees, roleMeets, type Grantee,
 } from '@/components/autonomy/governanceModel';
@@ -116,7 +117,7 @@ function NewGrantDialog({
                 </select>
               </div>
               <div>
-                <label htmlFor="grant-pillar" className="block text-xs font-semibold text-gray-600 mb-1">Pillar</label>
+                <label htmlFor="grant-pillar" className="block text-xs font-semibold text-gray-600 mb-1" title={tooltips.governance.pillar.detail}>Pillar</label>
                 <select id="grant-pillar" value={pillarKind} onChange={e => setPillarKind(e.target.value as '' | PillarKind)} className={field}>
                   <option value="">All pillars</option>
                   {PILLARS.map(p => <option key={p} value={p}>{p}</option>)}
@@ -207,6 +208,7 @@ export default function GovernanceGrantsPage() {
         tone="red"
         title="Governance"
         subtitle="Who may approve, operate and manage decisions in Autonomous ServiceHub — scoped by namespace and pillar."
+        titleTooltip={tooltips.governance.overview}
         actions={
           <>
             <button type="button" onClick={() => setNewGrant({})} disabled={isDemoMode || forbidden} className={buttonClass.primary}>
@@ -235,6 +237,7 @@ export default function GovernanceGrantsPage() {
                 label="Your fleet-wide role"
                 value={<span className="text-lg">{myRole ?? 'None'}</span>}
                 hint={myRole ? GOVERNANCE_ROLE_EXPLANATIONS[myRole as GovernanceRole]?.split('.')[0] : isDemoMode ? 'Demo Mode' : 'Only namespace-scoped grants, if any'}
+                tooltip={tooltips.governance.yourRole}
               />
               <StatCard icon={Users} tone="blue" label="People & keys" value={forbidden || isError ? '—' : grantees.length} hint="With an active grant" />
               <StatCard icon={ShieldCheck} tone="green" label="Active grants" value={forbidden || isError ? '—' : activeGrants.length} hint={forbidden ? 'Admin only' : `${fleetAdmins} fleet-wide Admin${fleetAdmins === 1 ? '' : 's'}`} />

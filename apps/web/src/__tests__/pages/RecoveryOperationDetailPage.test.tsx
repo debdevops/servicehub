@@ -92,7 +92,8 @@ describe('RecoveryOperationDetailPage', () => {
 
     renderPage();
     expect(screen.getByText(/Replay — entity=orders-dlq/)).toBeInTheDocument();
-    expect(screen.getByText('alex@contoso.com')).toBeInTheDocument();
+    // Appears in the header and again in the (now default-open) event-chain Actor column.
+    expect(screen.getAllByText('alex@contoso.com').length).toBeGreaterThan(0);
     expect(screen.getByText('1 Recovered')).toBeInTheDocument();
   });
 
@@ -150,11 +151,12 @@ describe('RecoveryOperationDetailPage', () => {
 
     renderPage();
 
+    // Event chain is open by default, so the reason renders both on the entry row and in the
+    // event-chain Detail column.
     expect(
-      screen.getByText('AWS SQS has no non-destructive peek; ServiceHub cannot prove a message did not return.')
-    ).toBeInTheDocument();
+      screen.getAllByText('AWS SQS has no non-destructive peek; ServiceHub cannot prove a message did not return.')
+    ).toHaveLength(2);
 
-    fireEvent.click(screen.getByText(/Event chain/));
     const detailHeader = screen.getByRole('columnheader', { name: 'Detail' });
     expect(detailHeader).toBeInTheDocument();
   });
@@ -229,5 +231,67 @@ describe('RecoveryOperationDetailPage', () => {
     fireEvent.click(screen.getByText('Rehearse'));
 
     expect(screen.getByText(/3 prior attempts on this message's lineage were matched/)).toBeInTheDocument();
+  });
+
+  // ── Event chain: open by default, paginated at 5 rows ─────────────────────
+  describe('event chain pagination', () => {
+    function eventsOfCount(n: number) {
+      return Array.from({ length: n }, (_, i) => ({
+        id: `evt-${i + 1}`, ownerId: 'o', seq: i + 1, entryId: null, operationId: 'op-1',
+        eventType: `EventType${i + 1}`, occurredAt: '2026-08-10T09:00:00Z', actorIdentity: 'alex@contoso.com',
+        actorKind: 'User', detailJson: null, prevHash: '0'.repeat(64), entryHash: `hash-${i + 1}`, schemaVersion: 1,
+      }));
+    }
+
+    function renderWithEvents(n: number) {
+      mockUseRecoveryOperation.mockReturnValue({
+        data: {
+          operation: {
+            id: 'op-1', kind: 'Replay', trigger: 'Manual', actorIdentity: 'alex@contoso.com',
+            actorKind: 'User', reason: null, namespaceId: 'ns-1',
+            namespaceNameSnapshot: 'contoso-prod', providerSnapshot: 'azure', environmentSnapshot: 'prod',
+            scopeDescription: 'entity=orders-dlq', sourceRuleId: null, sourceJobId: null,
+            serviceVersion: '3.7.0', openedAt: '2026-08-10T09:00:00Z', targetCount: 1, entryCount: 1,
+          },
+          entries: [{ ...baseEntry, state: 'Recovered' }],
+          events: eventsOfCount(n),
+        },
+        isLoading: false,
+        isError: false,
+      });
+      return renderPage();
+    }
+
+    it('is open by default, with no pagination controls when 5 or fewer events exist', () => {
+      renderWithEvents(5);
+      expect(screen.getByText('EventType1')).toBeInTheDocument();
+      expect(screen.getByText('EventType5')).toBeInTheDocument();
+      expect(screen.queryByText('Previous')).not.toBeInTheDocument();
+      expect(screen.queryByText('Next')).not.toBeInTheDocument();
+    });
+
+    it('shows only the first 5 events on page 1 and pages through the rest', () => {
+      renderWithEvents(12);
+
+      expect(screen.getByText('EventType1')).toBeInTheDocument();
+      expect(screen.getByText('EventType5')).toBeInTheDocument();
+      expect(screen.queryByText('EventType6')).not.toBeInTheDocument();
+      expect(screen.getByText('Page 1 of 3')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText('Next'));
+      expect(screen.getByText('EventType6')).toBeInTheDocument();
+      expect(screen.getByText('EventType10')).toBeInTheDocument();
+      expect(screen.queryByText('EventType1')).not.toBeInTheDocument();
+      expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByText('Next'));
+      expect(screen.getByText('EventType11')).toBeInTheDocument();
+      expect(screen.getByText('EventType12')).toBeInTheDocument();
+      expect(screen.getByText('Page 3 of 3')).toBeInTheDocument();
+      expect(screen.getByText('Next').closest('button')).toBeDisabled();
+
+      fireEvent.click(screen.getByText('Previous'));
+      expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+    });
   });
 });

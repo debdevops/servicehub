@@ -475,7 +475,7 @@ export function DlqHistoryPage() {
                 isSelected={ns.id === namespaceId}
                 onSelect={() => {
                   setPage(1);
-                  setSearchParams({ namespace: ns.id });
+                  setSearchParams({ namespace: ns.id }, { replace: true });
                 }}
               />
             ))}

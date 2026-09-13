@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import {
   CheckCircle2,
@@ -24,7 +25,9 @@ import {
   Info,
   ChevronDown,
   HelpCircle,
+  X,
 } from 'lucide-react';
+import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
 import { useAttentionQueue, type AttentionQueueItem } from '@servicehub/ui-shared/hooks/useAttentionQueue';
 import { useOutcomeMetrics } from '@servicehub/ui-shared/hooks/useRecoveryLedger';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
@@ -45,6 +48,8 @@ import type { CloudProviderType, Namespace } from '@servicehub/ui-shared/lib/api
 import type { FleetNamespaceHealth } from '@servicehub/ui-shared/lib/api/fleet';
 import { EmptyState } from '@/components/EmptyState';
 import { EnvironmentBadge } from '@/components/EnvironmentBadge';
+import { StatusBadge } from '@/components/dlq/StatusBadge';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
 
 /** "1h 24m", "3d 2h", "42s" — coarsest two units, never more precise than seconds. */
 function formatDuration(totalSeconds: number): string {
@@ -86,30 +91,35 @@ function OutcomesThisWeek({ provider }: { provider: CloudProviderType }) {
       color: 'text-emerald-600 bg-emerald-50',
       label: 'Recovered',
       value: data.messagesRecovered.toLocaleString(),
+      tooltip: tooltips.home.recovered.detail,
     },
     {
       icon: ShieldOff,
       color: 'text-gray-600 bg-gray-100',
       label: 'Written off',
       value: data.messagesAbandoned.toLocaleString(),
+      tooltip: tooltips.home.writtenOff.detail,
     },
     {
       icon: Clock,
       color: 'text-sky-600 bg-sky-50',
       label: 'Median time to recovered',
       value: data.medianSecondsToVerifiedRecovery != null ? formatDuration(data.medianSecondsToVerifiedRecovery) : '—',
+      tooltip: tooltips.home.medianTimeToRecovered.text,
     },
     {
       icon: Bot,
       color: 'text-indigo-600 bg-indigo-50',
       label: 'No human approval needed',
       value: data.autonomousRecoveries.toLocaleString(),
+      tooltip: tooltips.home.noApprovalNeeded.detail,
     },
     {
       icon: Ban,
       color: 'text-red-600 bg-red-50',
       label: 'Bad replays refused',
       value: data.gateRefusals.toLocaleString(),
+      tooltip: tooltips.home.badReplaysRefused.text,
     },
   ];
 
@@ -118,7 +128,7 @@ function OutcomesThisWeek({ provider }: { provider: CloudProviderType }) {
       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">This week</p>
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
         {tiles.map((tile) => (
-          <div key={tile.label} className="flex items-start gap-2.5">
+          <div key={tile.label} className="flex items-start gap-2.5" title={tile.tooltip}>
             <span className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${tile.color}`}>
               <tile.icon className="w-4 h-4" />
             </span>
@@ -158,7 +168,7 @@ function AttentionCard({ item, navPrefix }: { item: AttentionQueueItem; navPrefi
           {item.severity}
         </span>
         {isBlocked && (
-          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-primary-100 text-primary-700">
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-primary-100 text-primary-700" title="Playbook proposals for this incident awaiting a human decision">
             {item.pendingDecisionCount} pending {item.pendingDecisionCount === 1 ? 'decision' : 'decisions'}
           </span>
         )}
@@ -168,12 +178,12 @@ function AttentionCard({ item, navPrefix }: { item: AttentionQueueItem; navPrefi
       {item.namespaceName && <p className="text-xs text-gray-500 mb-3">{item.namespaceName}</p>}
 
       <div className="flex items-center gap-4 text-xs text-gray-500 mb-4">
-        <span className="flex items-center gap-1">
+        <span className="flex items-center gap-1" title={tooltips.home.blastRadius.text}>
           <AlertTriangle className="w-3.5 h-3.5" />
           {item.blastRadius} message{item.blastRadius === 1 ? '' : 's'}
         </span>
         {item.isRecurring && (
-          <span className="flex items-center gap-1 text-red-600 font-medium">
+          <span className="flex items-center gap-1 text-red-600 font-medium" title={tooltips.home.recurring.detail}>
             <TrendingUp className="w-3.5 h-3.5" />
             Recurring
           </span>
@@ -338,7 +348,7 @@ function NamespaceRow({
           </span>
         )}
         {supportsCounts && (stats?.totalDlq ?? 0) > 0 && (
-          <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-700">
+          <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-700" title={tooltips.home.dlqMessages.detail}>
             {statsLoading ? '…' : `${stats?.totalDlq.toLocaleString()} DLQ`}
           </span>
         )}
@@ -457,12 +467,12 @@ function CloudHome({ provider, namespaces, navPrefix, otherProviders, onSwitch, 
         <KpiTile
           label="Active messages"
           value={capabilities?.supportsMessageCounts === false ? '—' : statsLoaded ? totals.active.toLocaleString() : '…'}
-          hint={capabilities?.supportsMessageCounts === false ? capabilities.notes : undefined}
+          hint={capabilities?.supportsMessageCounts === false ? capabilities.notes : tooltips.home.activeMessages.detail}
         />
         <KpiTile
           label="DLQ messages"
           value={capabilities?.supportsMessageCounts === false ? '—' : statsLoaded ? totals.dlq.toLocaleString() : '…'}
-          hint={capabilities?.supportsMessageCounts === false ? capabilities.notes : undefined}
+          hint={capabilities?.supportsMessageCounts === false ? capabilities.notes : tooltips.home.dlqMessages.detail}
         />
         <KpiTile label="Queues monitored" value={statsLoaded ? totals.queues.toLocaleString() : '…'} />
         <KpiTile label="Topics monitored" value={statsLoaded ? totals.topics.toLocaleString() : '…'} />
@@ -590,9 +600,15 @@ const ACTIVITY_OUTCOME_STYLES: Record<AuditLogItem['outcome'], { icon: typeof Ch
   Partial: { icon: Info, color: 'text-amber-600 bg-amber-50' },
 };
 
-/** One real Audit Trail event — never a synthesized "N events" summary. */
+/** One real Audit Trail event — never a synthesized "N events" summary. A batch of sends to the
+ * same queue otherwise reads as identical rows (same action, same entity, same coarse "2h ago"
+ * bucket), so this distinguishes them with the event's own correlation ID and an exact timestamp
+ * on hover. `resourceName`/`entityName` come back as `""` rather than `null` when absent, so `||`
+ * (not `??`) is required to actually fall through. */
 function ActivityRow({ item }: { item: AuditLogItem }) {
   const { icon: Icon, color } = ACTIVITY_OUTCOME_STYLES[item.outcome] ?? ACTIVITY_OUTCOME_STYLES.Success;
+  const entity = item.resourceName || item.entityName;
+  const shortCorrelationId = item.correlationId ? item.correlationId.slice(-8) : null;
   return (
     <div className="flex items-start gap-2.5 py-2.5">
       <span className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${color}`}>
@@ -600,11 +616,21 @@ function ActivityRow({ item }: { item: AuditLogItem }) {
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-sm text-gray-900 truncate">{item.action}</p>
-        {(item.resourceName || item.entityName) && (
-          <p className="text-xs text-gray-500 truncate">{item.resourceName ?? item.entityName}</p>
+        {(entity || shortCorrelationId) && (
+          <p className="text-xs text-gray-500 flex items-baseline gap-1 min-w-0">
+            {entity && <span className="truncate">{entity}</span>}
+            {entity && shortCorrelationId && <span className="shrink-0">·</span>}
+            {shortCorrelationId && (
+              <span className="shrink-0 text-gray-400" title={`Correlation ID: ${item.correlationId}`}>
+                Correlation ID: {shortCorrelationId}
+              </span>
+            )}
+          </p>
         )}
       </div>
-      <span className="text-xs text-gray-400 shrink-0">{formatRelativeTime(new Date(item.timestamp))}</span>
+      <span className="text-xs text-gray-400 shrink-0" title={new Date(item.timestamp).toLocaleString()}>
+        {formatRelativeTime(new Date(item.timestamp))}
+      </span>
     </div>
   );
 }
@@ -633,6 +659,7 @@ interface NamespaceHomeProps {
 function NamespaceHome({ namespace, navPrefix, cloudHomeHref, siblingNamespaces, namespaceHref }: NamespaceHomeProps) {
   const navigate = useNavigate();
   const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [connectionDetailsOpen, setConnectionDetailsOpen] = useState(false);
   const { isDemoMode } = useDemoContext();
   const style = getProviderStyle(namespace.cloudProvider);
   const { data: capabilitiesMap } = useProviderCapabilities();
@@ -641,9 +668,9 @@ function NamespaceHome({ namespace, navPrefix, cloudHomeHref, siblingNamespaces,
 
   const [{ data: stats, isLoading: statsLoading }] = useNamespaceStats([namespace.id]);
   const { data: signatures, loading: signaturesLoading, available: signaturesAvailable } = useDlqSignatures(namespace.id);
-  const { data: recentDlq } = useDlqHistory({ namespaceId: namespace.id, pageSize: 5 });
+  const { data: recentDlq } = useDlqHistory({ namespaceId: namespace.id, pageSize: 8 });
   const { data: dlqSummary } = useDlqSummary(namespace.id);
-  const { data: recentActivity } = useAuditLogs({ namespaceId: namespace.id, page: 1 }, true);
+  const { data: recentActivity } = useAuditLogs({ namespaceId: namespace.id, page: 1, pageSize: 8 }, true);
   const { data: trend } = useDlqTrend(namespace.id, 7);
 
   const region = namespace.awsRegion || namespace.gcpProjectId || undefined;
@@ -653,9 +680,10 @@ function NamespaceHome({ namespace, navPrefix, cloudHomeHref, siblingNamespaces,
       ? { label: 'Connection issue', dot: 'bg-amber-500' }
       : { label: 'Connected', dot: 'bg-green-500' };
 
-  const topClusters = (signatures?.clusters ?? []).slice(0, 5);
+  const allClusters = signatures?.clusters ?? [];
+  const topClusters = allClusters.slice(0, 8);
   const dlqItems = recentDlq?.items ?? [];
-  const activityItems = recentActivity?.items?.slice(0, 5) ?? [];
+  const activityItems = recentActivity?.items?.slice(0, 8) ?? [];
   const oldestDlqAgeSeconds = dlqSummary?.oldestMessage
     ? Math.max(0, (Date.now() - new Date(dlqSummary.oldestMessage).getTime()) / 1000)
     : null;
@@ -764,22 +792,33 @@ function NamespaceHome({ namespace, navPrefix, cloudHomeHref, siblingNamespaces,
         </div>
         <button
           type="button"
-          onClick={() => navigate('/connect')}
+          onClick={() => setConnectionDetailsOpen(true)}
           className="text-xs font-medium text-primary-600 hover:text-primary-700 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors shrink-0"
         >
           View Connection Details
         </button>
       </div>
 
+      {connectionDetailsOpen && (
+        <ConnectionDetailsModal
+          namespace={namespace}
+          region={region}
+          connection={connection}
+          onClose={() => setConnectionDetailsOpen(false)}
+          onManageConnections={() => navigate('/connect')}
+        />
+      )}
+
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
         <KpiTile
           label="Active messages"
           value={!supportsCounts ? '—' : statsLoading ? '…' : (stats?.totalActive ?? 0).toLocaleString()}
-          hint={!supportsCounts ? capabilities?.notes : undefined}
+          hint={!supportsCounts ? capabilities?.notes : tooltips.home.activeMessages.detail}
         />
         <KpiTile
           label="DLQ messages"
           value={!supportsCounts ? '—' : statsLoading ? '…' : (stats?.totalDlq ?? 0).toLocaleString()}
+          hint={tooltips.home.dlqMessages.detail}
         />
         <KpiTile
           label="Oldest DLQ message"
@@ -791,7 +830,7 @@ function NamespaceHome({ namespace, navPrefix, cloudHomeHref, siblingNamespaces,
                 ? 'Not available in Demo Mode'
                 : oldestDlqAgeSeconds == null
                   ? 'No dead-letter messages on record'
-                  : undefined
+                  : tooltips.home.oldestDlq.detail
           }
         />
         <KpiTile label="Queues" value={statsLoading ? '…' : (stats?.totalQueues ?? 0).toLocaleString()} />
@@ -829,14 +868,23 @@ function NamespaceHome({ namespace, navPrefix, cloudHomeHref, siblingNamespaces,
         <div className="lg:col-span-2 space-y-4">
           <div className="bg-white border border-gray-200 rounded-lg p-4">
             <div className="flex items-center justify-between mb-2">
-              <h2 className="text-sm font-semibold text-gray-700">Top failure signatures</h2>
-              <button
-                type="button"
-                onClick={() => navigate(`${navPrefix}/dlq-history?namespace=${namespace.id}`)}
-                className="text-xs font-medium text-primary-600 hover:text-primary-700"
-              >
-                View all →
-              </button>
+              <h2 className="text-sm font-semibold text-gray-700">
+                Top failure signatures
+                {allClusters.length > 0 && <span className="ml-1.5 font-normal text-gray-400">({allClusters.length})</span>}
+              </h2>
+              {allClusters.length > topClusters.length ? (
+                <button
+                  type="button"
+                  onClick={() => navigate(`${navPrefix}/dlq-history?namespace=${namespace.id}`)}
+                  className="text-xs font-medium text-primary-600 hover:text-primary-700"
+                >
+                  View all {allClusters.length} →
+                </button>
+              ) : (
+                allClusters.length > 0 && (
+                  <span className="text-xs text-gray-400">All detected patterns shown</span>
+                )
+              )}
             </div>
             {signaturesLoading ? (
               <p className="text-sm text-gray-500 py-2">Loading…</p>
@@ -861,7 +909,7 @@ function NamespaceHome({ namespace, navPrefix, cloudHomeHref, siblingNamespaces,
                         <p className="text-sm font-medium text-gray-900 truncate">
                           {cluster.dominantEntity} · {cluster.dominantDeadletterReason}
                         </p>
-                        <span className="shrink-0 px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-700">
+                        <span className="shrink-0 px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-700" title="How many times this pattern has recurred, and its share of this namespace's dead-letter backlog">
                           {cluster.occurrenceCount}
                           {pct != null && <span className="text-red-400 font-normal"> · {pct}%</span>}
                         </span>
@@ -887,7 +935,9 @@ function NamespaceHome({ namespace, navPrefix, cloudHomeHref, siblingNamespaces,
                 onClick={() => navigate(`${navPrefix}/dlq-history?namespace=${namespace.id}`)}
                 className="text-xs font-medium text-primary-600 hover:text-primary-700"
               >
-                View all →
+                {dlqSummary && dlqSummary.totalMessages > dlqItems.length
+                  ? `View all ${dlqSummary.totalMessages.toLocaleString()} →`
+                  : 'View all →'}
               </button>
             </div>
             {dlqItems.length === 0 ? (
@@ -901,15 +951,23 @@ function NamespaceHome({ namespace, navPrefix, cloudHomeHref, siblingNamespaces,
                       <th className="font-medium px-1 py-1.5">Queue / Topic</th>
                       <th className="font-medium px-1 py-1.5">Error</th>
                       <th className="font-medium px-1 py-1.5 text-right">Receive Count</th>
+                      <th className="font-medium px-1 py-1.5">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {dlqItems.map((item) => (
                       <tr key={item.id} className="hover:bg-gray-50">
-                        <td className="px-1 py-2 text-xs text-gray-500 whitespace-nowrap">{formatRelativeTime(new Date(item.detectedAtUtc))}</td>
+                        <td className="px-1 py-2 text-xs text-gray-500 whitespace-nowrap" title={new Date(item.detectedAtUtc).toLocaleString()}>
+                          {formatRelativeTime(new Date(item.detectedAtUtc))}
+                        </td>
                         <td className="px-1 py-2 text-gray-900 truncate max-w-[160px]">{item.entityName}</td>
-                        <td className="px-1 py-2 text-gray-600 truncate max-w-[180px]">{item.deadLetterReason ?? item.failureCategory}</td>
+                        <td className="px-1 py-2 text-gray-600 truncate max-w-[220px]" title={item.deadLetterErrorDescription ?? undefined}>
+                          {item.deadLetterReason ?? item.failureCategory}
+                        </td>
                         <td className="px-1 py-2 text-right text-gray-700">{item.deliveryCount}</td>
+                        <td className="px-1 py-2">
+                          <StatusBadge status={item.status} />
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -961,6 +1019,125 @@ function NamespaceHome({ namespace, navPrefix, cloudHomeHref, siblingNamespaces,
         </div>
       </div>
     </div>
+  );
+}
+
+interface ConnectionDetailsModalProps {
+  namespace: Namespace;
+  region: string | undefined;
+  connection: { label: string; dot: string };
+  onClose: () => void;
+  onManageConnections: () => void;
+}
+
+/**
+ * Read-only "View Connection Details" popup — shown in place, so the namespace workspace behind
+ * it stays put and there's nothing to navigate back from. "Manage all connections" is the one
+ * deliberate escape hatch into the full Connections page.
+ */
+function ConnectionDetailsModal({ namespace, region, connection, onClose, onManageConnections }: ConnectionDetailsModalProps) {
+  const style = getProviderStyle(namespace.cloudProvider);
+  const dialogRef = useFocusTrap<HTMLDivElement>(true);
+
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
+  const permissions = [
+    { label: 'Listen', granted: namespace.hasListenPermission },
+    { label: 'Send', granted: namespace.hasSendPermission },
+    { label: 'Manage', granted: namespace.hasManagePermission },
+  ].filter(p => p.granted != null);
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden="true" />
+      <div
+        ref={dialogRef}
+        className="relative bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="connection-details-title"
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg border border-gray-200 bg-white flex items-center justify-center overflow-hidden shrink-0">
+              <ProviderIcon provider={namespace.cloudProvider} className="w-full h-full" />
+            </div>
+            <h2 id="connection-details-title" className="text-base font-semibold text-gray-900 truncate">
+              Connection Details
+            </h2>
+          </div>
+          <button type="button" onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg transition-colors shrink-0" aria-label="Close">
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+
+        <dl className="px-6 py-4 space-y-3 text-sm max-h-[60vh] overflow-y-auto">
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-gray-500">Namespace</dt>
+            <dd className="text-gray-900 font-medium text-right truncate" title={namespace.displayName || namespace.name}>
+              {namespace.displayName || namespace.name}
+            </dd>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-gray-500">Host / identifier</dt>
+            <dd className="text-gray-800 font-mono text-xs text-right truncate" title={namespace.name}>{namespace.name}</dd>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-gray-500">Provider</dt>
+            <dd className="text-gray-900 text-right">{style.label}</dd>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-gray-500">Environment</dt>
+            <dd className="text-right"><EnvironmentBadge env={namespace.environment} /></dd>
+          </div>
+          {region && (
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-gray-500">Region / project</dt>
+              <dd className="text-gray-900 text-right flex items-center gap-1 justify-end"><MapPin className="w-3.5 h-3.5 text-gray-400" />{region}</dd>
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-gray-500">Status</dt>
+            <dd className="text-gray-900 text-right flex items-center gap-1.5 justify-end">
+              <span className={`w-1.5 h-1.5 rounded-full ${connection.dot}`} aria-hidden="true" />
+              {connection.label}
+            </dd>
+          </div>
+          {permissions.length > 0 && (
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-gray-500">Permissions</dt>
+              <dd className="text-gray-900 text-right">
+                {permissions.map(p => `${p.label}${p.granted ? '' : ' (missing)'}`).join(' · ')}
+              </dd>
+            </div>
+          )}
+          {namespace.lastUsedAt && (
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-gray-500">Last used</dt>
+              <dd className="text-gray-900 text-right">{formatRelativeTime(new Date(namespace.lastUsedAt))}</dd>
+            </div>
+          )}
+        </dl>
+
+        <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+          <button type="button" onClick={onManageConnections} className="text-xs font-medium text-primary-600 hover:text-primary-700">
+            Manage all connections
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-white bg-primary-500 hover:bg-primary-600 rounded-lg transition-colors"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -1083,12 +1260,14 @@ export function HomePage() {
   // signature data across a cloud switch).
   const selectCloud = (provider: CloudProviderType) => {
     setThemeProvider(provider);
+    // Switching the cloud tab is in-page view state, not a new destination — replace so Back
+    // leaves Home in one click instead of stepping back through previously viewed clouds.
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.set('cloud', provider);
       next.delete('namespace');
       return next;
-    });
+    }, { replace: true });
   };
 
   if (isDemoMode && demoCloudProvider) {

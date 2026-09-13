@@ -204,4 +204,22 @@ describe('DlqTimelineDrawer', () => {
     render(<DlqTimelineDrawer messageId={1} onClose={vi.fn()} />);
     expect(screen.getByRole('button', { name: 'Reopen' })).toBeInTheDocument();
   });
+
+  // Regression: a saved note used to render twice — once as a read-only "Notes" preview and
+  // again pre-filled into the editable "Investigation Notes" textarea below it — which looked
+  // like a stale, unsaved leftover of a note the user had already saved.
+  it('does not render a duplicate read-only preview of an already-saved note', () => {
+    mockUseDlqMessageDetail.mockReturnValue({
+      data: { ...mockDetail, userNotes: 'testing notes' },
+      isLoading: false,
+    });
+    render(<DlqTimelineDrawer messageId={1} onClose={vi.fn()} />);
+
+    // The textarea itself is the one and only place the saved note appears — a second match
+    // here would mean the old read-only <p> preview is back, duplicating it.
+    const matches = screen.getAllByText('testing notes');
+    expect(matches).toHaveLength(1);
+    expect(matches[0].tagName).toBe('TEXTAREA');
+    expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument();
+  });
 });

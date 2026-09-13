@@ -87,12 +87,15 @@ export function RecentChangesPanel({ namespaceId, signatureHash, firstSeenAt }: 
             <Lightbulb className="w-4 h-4 shrink-0" />
             <span className="flex-1">{computeRecentChangesVerdict(changes)}</span>
             <Link
-              to={`/audit?namespace=${namespaceId}`}
+              to={`/audit?namespace=${namespaceId}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`}
               className="text-xs font-medium text-sky-700 hover:text-sky-800 underline shrink-0"
             >
               View full audit trail →
             </Link>
           </div>
+          <p className="text-xs text-gray-400 mt-2">
+            Covers every configuration change in this namespace during the window above — not limited to messages in this signature.
+          </p>
         </>
       )}
     </div>

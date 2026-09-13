@@ -17,6 +17,8 @@ import {
   Callout, Card, CloudBadge, DetailPanel, EmptyBlock, ErrorBlock, FilterSelect, IconTile, LoadingBlock, PageHeader,
   Pagination, Pill, SearchInput, StatCard, buttonClass, formatDateTime, formatFullDateTime, navPrefixFor, plural,
 } from '@/components/autonomy/ui';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
+import { HelpTooltip } from '@/components/help';
 import {
   PILLAR_META, PILLAR_ORDER, STATE_META, approvalMeaning, computePlaybookStats, humanizeIdentifier, parseJsonObject,
   proposalKindLabel, stateGroup, summarizeProposal, toReadableRows, type StateGroup,
@@ -87,12 +89,14 @@ export default function PlaybookLedgerPage() {
 
   const updateParam = useCallback(
     (key: string, value: string | null) => {
+      // In-page view state (filter/selection), not a new destination — replace so it doesn't
+      // pile up history entries the toolbar's Back/Forward has to click through one at a time.
       setSearchParams(prev => {
         const next = new URLSearchParams(prev);
         if (value) next.set(key, value);
         else next.delete(key);
         return next;
-      });
+      }, { replace: true });
       setPage(0);
     },
     [setSearchParams],
@@ -134,7 +138,7 @@ export default function PlaybookLedgerPage() {
       const next = new URLSearchParams(prev);
       ['pillar', 'state', 'namespace'].forEach(k => next.delete(k));
       return next;
-    });
+    }, { replace: true });
     setPage(0);
   };
 
@@ -148,6 +152,7 @@ export default function PlaybookLedgerPage() {
         tone="indigo"
         title="Playbook Ledger"
         subtitle="What ServiceHub noticed and proposed, what a person decided, and whether later evidence proved it right. Approving here never executes anything."
+        titleTooltip={tooltips.playbookLedger.overview}
         actions={
           <button type="button" onClick={() => refetch()} disabled={isFetching || isDemoMode} className={buttonClass.secondary}>
             <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
@@ -165,16 +170,17 @@ export default function PlaybookLedgerPage() {
       <div className="flex-1 overflow-auto p-4 sm:p-6">
         <div className="@container max-w-7xl mx-auto space-y-5">
           <div className="grid grid-cols-2 @4xl:grid-cols-5 gap-3">
-            <StatCard icon={ClipboardList} tone="indigo" label="Proposals" value={truncated ? '500+' : stats.total} hint={stats.aiAuthored > 0 ? `${stats.aiAuthored} from the AI companion` : 'From detection workers'} />
-            <StatCard icon={Clock} tone="amber" label="Awaiting a decision" value={stats.awaiting} hint="Proposed or under review" />
+            <StatCard icon={ClipboardList} tone="indigo" label="Proposals" value={truncated ? '500+' : stats.total} hint={stats.aiAuthored > 0 ? `${stats.aiAuthored} from the AI companion` : 'From detection workers'} tooltip={tooltips.playbookLedger.proposals} />
+            <StatCard icon={Clock} tone="amber" label="Awaiting a decision" value={stats.awaiting} hint="Proposed or under review" tooltip={tooltips.playbookLedger.awaiting} />
             <StatCard
               icon={CheckCircle2}
               tone="green"
               label="Approved"
               value={stats.approved}
               hint={stats.approvalRate != null ? `${Math.round(stats.approvalRate * 100)}% of ${decided} decided` : 'None decided yet'}
+              tooltip={tooltips.playbookLedger.approved}
             />
-            <StatCard icon={XCircle} tone="red" label="Rejected" value={stats.rejected} hint={`${stats.closed} expired or superseded`} />
+            <StatCard icon={XCircle} tone="red" label="Rejected" value={stats.rejected} hint={`${stats.closed} expired or superseded`} tooltip={tooltips.playbookLedger.rejected} />
             <StatCard
               icon={Target}
               tone="teal"
@@ -298,7 +304,7 @@ export default function PlaybookLedgerPage() {
                             >
                               <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs tabular-nums">{formatDateTime(entry.proposedAt)}</td>
                               <td className="px-4 py-3">
-                                <Pill tone={PILLAR_META[entry.pillarKind].tone}>{entry.pillarKind}</Pill>
+                                <Pill tone={PILLAR_META[entry.pillarKind].tone} title={tooltips.playbookLedger.pillarBadge.detail}>{entry.pillarKind}</Pill>
                                 <div className="text-[11px] text-gray-500 mt-1">{proposalKindLabel(entry.proposalKind)}</div>
                               </td>
                               <td className="px-4 py-3 max-w-[22rem]">
@@ -316,7 +322,7 @@ export default function PlaybookLedgerPage() {
                                     <span className="text-xs text-gray-500 truncate max-w-[9rem]">{entry.namespaceNameSnapshot}</span>
                                   </div>
                                 ) : (
-                                  <span className="text-xs text-gray-400">Fleet-wide</span>
+                                  <span className="text-xs text-gray-400" title={tooltips.playbookLedger.fleetWide.detail}>Fleet-wide</span>
                                 )}
                               </td>
                               <td className="px-4 py-3"><StateBadge entry={entry} /></td>
@@ -377,7 +383,7 @@ function LearningLoop({
     { label: 'Better decisions', value: approvalRate != null ? `${Math.round(approvalRate * 100)}%` : '—', hint: 'Proposal approval rate', icon: GraduationCap },
   ];
   return (
-    <Card title="The learning loop" icon={GraduationCap} tone="indigo" bodyClassName="p-3">
+    <Card title={<span className="inline-flex items-center gap-1">The learning loop<HelpTooltip {...tooltips.playbookLedger.learningLoop} size={12} position="bottom" /></span>} icon={GraduationCap} tone="indigo" bodyClassName="p-3">
       <ol className="grid grid-cols-2 @xl:grid-cols-4 @5xl:grid-cols-7 gap-2" aria-label="Learning loop">
         {steps.map((step, i) => (
           <li key={step.label} className="relative rounded-lg bg-gray-50/70 border border-gray-100 px-3 py-2.5">

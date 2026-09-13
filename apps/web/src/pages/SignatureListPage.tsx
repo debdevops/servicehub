@@ -10,6 +10,8 @@ import type { DlqClusterSignature } from '@servicehub/ui-shared/lib/api/dlqSigna
 import type { Namespace } from '@servicehub/ui-shared/lib/api/types';
 import type { DlqSummary } from '@servicehub/ui-shared/lib/api/dlqHistory';
 import { FailureInvestigationPanel, SignatureSummaryCard } from '@/components/dlq';
+import { HelpTooltip } from '@/components/help';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
 
 const STATUS_OPTIONS = ['Active', 'Resolved', 'Reopened', 'Suppressed', 'Archived'] as const;
 const TREND_OPTIONS = ['New', 'Recurring', 'Escalating'] as const;
@@ -112,13 +114,14 @@ export function SignatureListPage() {
       <div className="flex items-center gap-2 mb-4">
         <Sparkles className="w-5 h-5 text-primary-500" />
         <h1 className="text-xl font-semibold text-gray-900">Failure Signatures</h1>
+        <HelpTooltip {...tooltips.signatureList.overview} position="bottom" />
       </div>
 
       {/* Namespace selector */}
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         <select
           value={namespaceId ?? ''}
-          onChange={e => setSearchParams({ namespace: e.target.value })}
+          onChange={e => setSearchParams({ namespace: e.target.value }, { replace: true })}
           aria-label="Select a namespace"
           className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 bg-white"
         >
@@ -149,7 +152,7 @@ export function SignatureListPage() {
 
           {/* Filters */}
           <div className="flex items-center gap-2 mb-4 flex-wrap text-xs">
-            <span className="text-gray-500 font-medium">Status:</span>
+            <span className="text-gray-500 font-medium inline-flex items-center gap-1">Status:<HelpTooltip {...tooltips.signatureList.statusFilter} size={12} position="bottom" /></span>
             <button
               onClick={() => setStatusFilter(undefined)}
               className={`px-2.5 py-1 rounded-full font-medium border ${!statusFilter ? 'bg-primary-700 text-white border-primary-700' : 'bg-white text-gray-600 border-gray-200'}`}
@@ -165,7 +168,7 @@ export function SignatureListPage() {
                 {status}
               </button>
             ))}
-            <span className="text-gray-500 font-medium ml-3">Trend:</span>
+            <span className="text-gray-500 font-medium ml-3 inline-flex items-center gap-1">Trend:<HelpTooltip {...tooltips.signatureList.trendFilter} size={12} position="bottom" /></span>
             {TREND_OPTIONS.map(trend => (
               <button
                 key={trend}
@@ -175,7 +178,7 @@ export function SignatureListPage() {
                 {trend}
               </button>
             ))}
-            <span className="text-gray-500 font-medium ml-3">Review:</span>
+            <span className="text-gray-500 font-medium ml-3 inline-flex items-center gap-1">Review:<HelpTooltip {...tooltips.signatureList.reviewFilter} size={12} position="bottom" /></span>
             <button
               onClick={() => setReviewStatusFilter(undefined)}
               className={`px-2.5 py-1 rounded-full font-medium border ${!reviewStatusFilter ? 'bg-primary-700 text-white border-primary-700' : 'bg-white text-gray-600 border-gray-200'}`}

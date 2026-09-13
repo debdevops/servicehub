@@ -29,6 +29,8 @@ import { EnvironmentBadge } from '@/components/EnvironmentBadge';
 import type { ProviderInstallState } from '@servicehub/ui-shared/lib/providerConnectionState';
 import type { FleetHealthSeverity, FleetNamespaceHealth } from '@servicehub/ui-shared/lib/api/fleet';
 import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
+import { HelpTooltip } from '@/components/help';
+import { tooltips, type TooltipContent } from '@servicehub/ui-shared/lib/helpContent';
 
 const WINDOW_OPTIONS = [
   { label: '24h', hours: 24 },
@@ -99,12 +101,14 @@ function StatTile({
   value,
   tone,
   sub,
+  tooltip,
 }: {
   icon: ReactNode;
   label: string;
   value: number | string;
   tone: string;
   sub?: ReactNode;
+  tooltip?: TooltipContent;
 }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 flex items-center gap-3">
@@ -114,7 +118,10 @@ function StatTile({
           <span className="text-2xl font-semibold text-gray-900 leading-none">{value}</span>
           {sub}
         </div>
-        <div className="text-xs text-gray-500 mt-1 truncate">{label}</div>
+        <div className="text-xs text-gray-500 mt-1 truncate flex items-center gap-1">
+          {label}
+          {tooltip && <HelpTooltip {...tooltip} size={12} position="bottom" />}
+        </div>
       </div>
     </div>
   );
@@ -220,7 +227,11 @@ function NamespaceHealthDonut({ namespaces }: { namespaces: FleetNamespaceHealth
       </div>
       <ul className="flex-1 space-y-1.5 min-w-0">
         {order.map((sev) => (
-          <li key={sev} className="flex items-center gap-2 text-sm">
+          <li
+            key={sev}
+            className="flex items-center gap-2 text-sm"
+            title={sev === 'critical' ? tooltips.dashboard.critical.detail : sev === 'warning' ? tooltips.fleet.needsAttention.detail : sev === 'unknown' ? tooltips.dashboard.notMonitored.detail : undefined}
+          >
             <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${severityStyles[sev].dot}`} />
             <span className="text-gray-700">{severityStyles[sev].label}</span>
             <span className="ml-auto text-gray-500 font-medium">{counts[sev]}</span>
@@ -422,7 +433,10 @@ export default function FleetPage() {
             <Layers className="w-5 h-5 text-indigo-600" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-gray-900">Fleet Overview</h1>
+            <h1 className="text-xl font-bold text-gray-900 flex items-center gap-1.5">
+              Fleet Overview
+              <HelpTooltip {...tooltips.fleet.overview} position="bottom" />
+            </h1>
             <p className="text-sm text-gray-500">
               Dead-letter health across every namespace — what died overnight, at a glance.
             </p>
@@ -499,6 +513,7 @@ export default function FleetPage() {
               label={`Namespaces (${atRisk} at risk)`}
               value={data.namespaceCount}
               tone="bg-indigo-50"
+              tooltip={tooltips.fleet.atRisk}
             />
             <StatTile
               icon={<Inbox className="w-5 h-5 text-sky-600" />}
@@ -528,6 +543,7 @@ export default function FleetPage() {
               label="DLQ spikes"
               value={liveTotals.spikeCount}
               tone="bg-orange-50"
+              tooltip={tooltips.fleet.dlqSpikes}
             />
           </div>
 

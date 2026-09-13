@@ -23,6 +23,8 @@ import type {
   CorrelationFindingInfo,
   BacklogForecastInfo,
 } from '@servicehub/ui-shared/lib/api/proactiveInsights';
+import { HelpTooltip } from '@/components/help';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
 
 type InsightTab = 'narrations' | 'correlations' | 'forecasts' | 'contract-export';
 
@@ -42,7 +44,10 @@ function severityStyle(severity: number): string {
 
 function SeverityBadge({ severity }: { severity: number }) {
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${severityStyle(severity)}`}>
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${severityStyle(severity)}`}
+      title={tooltips.proactiveInsights.severity.detail}
+    >
       Severity {severity}
     </span>
   );
@@ -92,7 +97,7 @@ function NarrationCard({ narration }: { narration: NarrationInfo }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400" title={tooltips.proactiveInsights.crossNamespace.detail}>
               {narration.kind === 'CrossNamespaceCorrelation' ? 'Cross-namespace' : 'Namespace activity'}
             </span>
           </div>
@@ -152,9 +157,12 @@ function CorrelationCard({ finding }: { finding: CorrelationFindingInfo }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={`text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded border ${
-              isCrossCloud ? 'bg-violet-50 text-violet-700 border-violet-300' : 'bg-gray-100 text-gray-600 border-gray-300'
-            }`}>
+            <span
+              className={`text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded border ${
+                isCrossCloud ? 'bg-violet-50 text-violet-700 border-violet-300' : 'bg-gray-100 text-gray-600 border-gray-300'
+              }`}
+              title={tooltips.proactiveInsights.crossCloud.detail}
+            >
               {isCrossCloud ? 'Cross-cloud' : 'Same-provider'}
             </span>
             {finding.providers.map((p) => (
@@ -313,9 +321,9 @@ function ForecastsTab() {
               <tr>
                 <th scope="col" className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Entity</th>
                 <th scope="col" className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Current backlog</th>
-                <th scope="col" className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Growth rate</th>
+                <th scope="col" className="px-4 py-2 text-left text-xs font-semibold text-gray-500" title={tooltips.proactiveInsights.growthRate.detail}>Growth rate</th>
                 <th scope="col" className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Threshold</th>
-                <th scope="col" className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Projected breach</th>
+                <th scope="col" className="px-4 py-2 text-left text-xs font-semibold text-gray-500" title={tooltips.proactiveInsights.projectedBreach.detail}>Projected breach</th>
                 <th scope="col" className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Severity</th>
               </tr>
             </thead>
@@ -440,6 +448,7 @@ export default function ProactiveInsightsPage() {
         <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
           <Sparkles className="w-5 h-5 text-blue-600" />
           Proactive Insights
+          <HelpTooltip {...tooltips.proactiveInsights.overview} position="bottom" />
         </h1>
         <p className="text-sm text-gray-500 mt-0.5">
           What ServiceHub noticed without being asked — narrated, correlated, and forecast, so
