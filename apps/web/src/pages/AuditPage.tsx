@@ -260,7 +260,7 @@ function Row({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function AuditPage() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   // No namespace filter unless the URL explicitly requests one (e.g. a deep link from a
   // namespace-scoped page) — this page's own scope is "all critical operations," and
   // `isActive` on a Namespace means "not deleted," not "currently selected," so defaulting
@@ -348,14 +348,26 @@ export function AuditPage() {
 
   const activeFilters = [actionType, outcome, selectedPreset !== null || customRange ? 'date' : ''].filter(Boolean).length;
 
+  // Also strips the deep-link "from"/"to" query params — otherwise a refresh or revisit of
+  // this URL would keep re-applying the stale window instead of the default Last 7 Days.
+  const clearCustomRange = useCallback(() => {
+    setCustomRange(null);
+    setSelectedPreset(168);
+    setPage(1);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete('from');
+      next.delete('to');
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+
   const handleClearFilters = () => {
     setActionType('');
     setOutcome('');
-    setSelectedPreset(168);
-    setCustomRange(null);
     setSearch('');
     setDebouncedSearch('');
-    setPage(1);
+    clearCustomRange();
   };
 
   const handleExport = async (format: 'csv' | 'json') => {
@@ -529,7 +541,7 @@ export function AuditPage() {
                   {' – '}
                   {new Date(customRange.to).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   <button
-                    onClick={() => { setCustomRange(null); setSelectedPreset(168); setPage(1); }}
+                    onClick={clearCustomRange}
                     aria-label="Clear custom date range"
                     className="hover:opacity-75"
                   >
@@ -626,7 +638,7 @@ export function AuditPage() {
               </p>
               {customRange && (
                 <button
-                  onClick={() => { setCustomRange(null); setSelectedPreset(168); setPage(1); }}
+                  onClick={clearCustomRange}
                   className="mt-3 px-4 py-2 text-sm text-primary-600 hover:text-primary-700 border border-primary-300 rounded-lg hover:bg-primary-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
                 >
                   See all audit events
