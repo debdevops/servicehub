@@ -364,7 +364,10 @@ export function IncidentWorkspacePage() {
                   <span className="font-medium text-gray-900">{formatDate(incident.lastSeenAt)}</span>
                 </div>
                 <div>
-                  <span className="text-gray-500 block text-xs" title={tooltips.incidentWorkspace.occurrenceCount.detail}>Occurrence Count</span>
+                  <span className="flex items-center gap-1 text-gray-500 text-xs">
+                    Occurrence Count
+                    <HelpTooltip {...tooltips.incidentWorkspace.occurrenceCount} size={12} position="bottom" />
+                  </span>
                   <span className="font-medium text-gray-900">{incident.occurrenceCount}</span>
                 </div>
               </div>

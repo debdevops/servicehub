@@ -321,9 +321,13 @@ function ForecastsTab() {
               <tr>
                 <th scope="col" className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Entity</th>
                 <th scope="col" className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Current backlog</th>
-                <th scope="col" className="px-4 py-2 text-left text-xs font-semibold text-gray-500" title={tooltips.proactiveInsights.growthRate.detail}>Growth rate</th>
+                <th scope="col" className="px-4 py-2 text-left text-xs font-semibold text-gray-500">
+                  <span className="inline-flex items-center gap-1">Growth rate<HelpTooltip {...tooltips.proactiveInsights.growthRate} size={12} position="bottom" /></span>
+                </th>
                 <th scope="col" className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Threshold</th>
-                <th scope="col" className="px-4 py-2 text-left text-xs font-semibold text-gray-500" title={tooltips.proactiveInsights.projectedBreach.detail}>Projected breach</th>
+                <th scope="col" className="px-4 py-2 text-left text-xs font-semibold text-gray-500">
+                  <span className="inline-flex items-center gap-1">Projected breach<HelpTooltip {...tooltips.proactiveInsights.projectedBreach} size={12} position="bottom" /></span>
+                </th>
                 <th scope="col" className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Severity</th>
               </tr>
             </thead>

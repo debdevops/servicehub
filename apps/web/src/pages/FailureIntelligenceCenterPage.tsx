@@ -556,13 +556,15 @@ export function FailureIntelligenceCenterPage() {
 
               {moreFiltersOpen && (
                 <div className="flex flex-wrap items-center gap-4 pt-2 border-t border-gray-100 text-sm">
-                  <label className="flex items-center gap-1.5 text-gray-600" title={tooltips.failureIntelligenceCenter.escalatingOnly.detail}>
+                  <label className="flex items-center gap-1.5 text-gray-600">
                     <input type="checkbox" checked={escalatingOnly} onChange={(e) => setEscalatingOnly(e.target.checked)} />
                     Escalating only
+                    <HelpTooltip {...tooltips.failureIntelligenceCenter.escalatingOnly} size={12} position="bottom" />
                   </label>
-                  <label className="flex items-center gap-1.5 text-gray-600" title={tooltips.failureIntelligenceCenter.missingKnowledgeOnly.detail}>
+                  <label className="flex items-center gap-1.5 text-gray-600">
                     <input type="checkbox" checked={missingKnowledgeOnly} onChange={(e) => setMissingKnowledgeOnly(e.target.checked)} />
                     Missing knowledge only
+                    <HelpTooltip {...tooltips.failureIntelligenceCenter.missingKnowledgeOnly} size={12} position="bottom" />
                   </label>
                 </div>
               )}

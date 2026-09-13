@@ -838,35 +838,39 @@ export default function DlqOverviewPage() {
                     className="w-40 px-3 py-2 rounded-lg text-sm border border-gray-300 text-gray-700 placeholder-gray-400 bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
                   />
 
-                  <select
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value as DlqOverviewStatus | 'all')}
-                    aria-label="Filter by status"
-                    title={tooltips.dlqOverview.statusFilter.detail}
-                    className="px-3 py-2 rounded-lg text-sm border border-gray-300 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
-                  >
-                    <option value="all">All Statuses</option>
-                    {STATUS_OPTIONS.map((s) => (
-                      <option key={s} value={s}>
-                        {STATUS_LABELS[s]}
-                      </option>
-                    ))}
-                  </select>
+                  <span className="flex items-center gap-1">
+                    <select
+                      value={status}
+                      onChange={(e) => setStatus(e.target.value as DlqOverviewStatus | 'all')}
+                      aria-label="Filter by status"
+                      className="px-3 py-2 rounded-lg text-sm border border-gray-300 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                    >
+                      <option value="all">All Statuses</option>
+                      {STATUS_OPTIONS.map((s) => (
+                        <option key={s} value={s}>
+                          {STATUS_LABELS[s]}
+                        </option>
+                      ))}
+                    </select>
+                    <HelpTooltip {...tooltips.dlqOverview.statusFilter} size={12} position="bottom" />
+                  </span>
 
-                  <select
-                    value={replaySafety}
-                    onChange={(e) => setReplaySafety(e.target.value as DlqReplaySafety | 'all')}
-                    aria-label="Filter by replay safety"
-                    title={tooltips.dlqOverview.replaySafety.detail}
-                    className="px-3 py-2 rounded-lg text-sm border border-gray-300 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
-                  >
-                    <option value="all">All Replay Safety</option>
-                    {REPLAY_SAFETY_OPTIONS.map((s) => (
-                      <option key={s} value={s}>
-                        {REPLAY_SAFETY_LABELS[s]}
-                      </option>
-                    ))}
-                  </select>
+                  <span className="flex items-center gap-1">
+                    <select
+                      value={replaySafety}
+                      onChange={(e) => setReplaySafety(e.target.value as DlqReplaySafety | 'all')}
+                      aria-label="Filter by replay safety"
+                      className="px-3 py-2 rounded-lg text-sm border border-gray-300 text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                    >
+                      <option value="all">All Replay Safety</option>
+                      {REPLAY_SAFETY_OPTIONS.map((s) => (
+                        <option key={s} value={s}>
+                          {REPLAY_SAFETY_LABELS[s]}
+                        </option>
+                      ))}
+                    </select>
+                    <HelpTooltip {...tooltips.dlqOverview.replaySafety} size={12} position="bottom" />
+                  </span>
                 </div>
               )}
             </div>

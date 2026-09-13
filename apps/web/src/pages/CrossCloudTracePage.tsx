@@ -328,14 +328,15 @@ export function CrossCloudTracePage() {
               <span className="text-sm font-semibold text-gray-800 font-mono truncate max-w-xs">{submitted}</span>
             </div>
             <div className="flex gap-4 text-sm text-gray-600 ml-auto">
-              <span title={tooltips.crossCloudTrace.hops.text}><strong className="text-gray-900">{result.totalHops}</strong> hops</span>
+              <span className="inline-flex items-center gap-1"><strong className="text-gray-900">{result.totalHops}</strong> hops<HelpTooltip {...tooltips.crossCloudTrace.hops} size={12} position="bottom" /></span>
               <span><strong className="text-gray-900">{result.cloudsInvolved}</strong> cloud{result.cloudsInvolved !== 1 ? 's' : ''}</span>
               <span><strong className="text-gray-900">{result.namespacesSearched}</strong> namespaces searched</span>
               <span><strong className="text-gray-900">{result.searchDurationMs}</strong> ms</span>
             </div>
             {result.isPartialResult && (
-              <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full font-medium border border-amber-200" title={tooltips.crossCloudTrace.partialTimeout.detail}>
+              <span className="inline-flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full font-medium border border-amber-200">
                 Partial — timed out
+                <HelpTooltip {...tooltips.crossCloudTrace.partialTimeout} size={12} position="bottom" />
               </span>
             )}
           </div>

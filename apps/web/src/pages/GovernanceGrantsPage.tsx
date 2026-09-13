@@ -14,6 +14,7 @@ import {
   GOVERNANCE_ROLE_EXPLANATIONS, type GovernanceGrant, type GovernanceRole, type GranteeKind, type PillarKind,
 } from '@servicehub/ui-shared/lib/api/governance';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { HelpTooltip } from '@/components/help';
 import {
   Callout, Card, DetailPanel, EmptyBlock, ErrorBlock, FilterSelect, LoadingBlock, PageHeader, Pill, SearchInput,
   StatCard, Tabs, buttonClass, formatDateTime, plural,
@@ -117,7 +118,10 @@ function NewGrantDialog({
                 </select>
               </div>
               <div>
-                <label htmlFor="grant-pillar" className="block text-xs font-semibold text-gray-600 mb-1" title={tooltips.governance.pillar.detail}>Pillar</label>
+                <label htmlFor="grant-pillar" className="flex items-center gap-1 text-xs font-semibold text-gray-600 mb-1">
+                  Pillar
+                  <HelpTooltip {...tooltips.governance.pillar} size={12} position="right" />
+                </label>
                 <select id="grant-pillar" value={pillarKind} onChange={e => setPillarKind(e.target.value as '' | PillarKind)} className={field}>
                   <option value="">All pillars</option>
                   {PILLARS.map(p => <option key={p} value={p}>{p}</option>)}
