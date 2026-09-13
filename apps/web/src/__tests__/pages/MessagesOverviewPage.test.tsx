@@ -271,7 +271,44 @@ describe('MessagesOverviewPage', () => {
     const namespacesTile = screen.getByText('Namespaces with Messages').closest('div.flex') as HTMLElement;
     expect(within(totalTile).queryByText('0')).not.toBeInTheDocument();
     expect(within(namespacesTile).queryByText(/0 \/ /)).not.toBeInTheDocument();
-    expect(screen.getAllByLabelText('Loading')).toHaveLength(2); // Total Dead-Letter Messages + Namespaces with Messages
+    // All four tiles: the two ledger-backed ones (Total, Namespaces with Messages) plus the two
+    // live-derived ones (Queues, Topics), whose fan-out is also still in flight here.
+    expect(screen.getAllByLabelText('Loading')).toHaveLength(4);
+  });
+
+  // Session 3 (2026-09-13): the two live-derived tiles were still bare — under real fleet load
+  // they read "0 Queues / 0 Topics" for ~8 seconds before resolving to 3 and 5. Same
+  // misleading-zero family as the two tiles above, on the two that were left live-derived.
+  it('shows loading placeholders for the live-derived Queues/Topics tiles while the fan-out is in flight', () => {
+    mockUseAllNamespacesQueues.mockReturnValue([
+      { namespaceId: 'ns-azure', totalActive: 0, totalDlq: 0, totalScheduled: 0, totalQueues: 0, totalTopics: 0, totalSubscriptions: 0, isLoading: true, isError: false },
+      { namespaceId: 'ns-aws', totalActive: 0, totalDlq: 0, totalScheduled: 0, totalQueues: 0, totalTopics: 0, totalSubscriptions: 0, isLoading: true, isError: false },
+    ]);
+    mockUseDlqOverview.mockReturnValue({ data: { totals: { totalDeadLettered: 1203, namespacesWithDlq: 3, namespacesTotal: 3 } }, isLoading: false });
+
+    renderPage('/messages-overview?tab=deadletter');
+
+    const queuesTile = screen.getByText('Queues').closest('div.bg-white') as HTMLElement;
+    const topicsTile = screen.getByText('Topics').closest('div.bg-white') as HTMLElement;
+    expect(within(queuesTile).queryByText('0')).not.toBeInTheDocument();
+    expect(within(topicsTile).queryByText('0')).not.toBeInTheDocument();
+    expect(within(queuesTile).getByLabelText('Loading')).toBeInTheDocument();
+    expect(within(topicsTile).getByLabelText('Loading')).toBeInTheDocument();
+    // The ledger-backed total is unaffected — it has real data and must still render it.
+    expect(screen.getByText('1,203')).toBeInTheDocument();
+  });
+
+  it('shows a loading placeholder for the Active tab total while its live fan-out is in flight', () => {
+    mockUseAllNamespacesQueues.mockReturnValue([
+      { namespaceId: 'ns-azure', totalActive: 0, totalDlq: 0, totalScheduled: 0, totalQueues: 0, totalTopics: 0, totalSubscriptions: 0, isLoading: true, isError: false },
+    ]);
+    mockUseDlqOverview.mockReturnValue({ data: undefined, isLoading: false });
+
+    renderPage('/messages-overview?tab=active');
+
+    const totalTile = screen.getByText('Total Active Messages').closest('div.bg-white') as HTMLElement;
+    expect(within(totalTile).queryByText('0')).not.toBeInTheDocument();
+    expect(within(totalTile).getByLabelText('Loading')).toBeInTheDocument();
   });
 
   it('falls back to the live aggregate for the dead-letter KPIs while the DB-backed overview has not loaded yet', () => {

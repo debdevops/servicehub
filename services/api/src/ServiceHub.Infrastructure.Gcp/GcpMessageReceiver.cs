@@ -747,6 +747,10 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
                 MessageId = msg.MessageId,
                 SequenceNumber = seqNum,
                 Body = body,
+                // Same reason as the AWS receiver: unset, every Pub/Sub message persisted a
+                // MessageSize of 0 and the DLQ history drawer showed a measured "0 B" beside a
+                // body it was displaying. Data carries the full payload, so measure it.
+                SizeInBytes = msg.Data?.IsEmpty == false ? msg.Data.Length : 0,
                 DeliveryCount = received.DeliveryAttempt,
                 EnqueuedTime = msg.PublishTime?.ToDateTimeOffset() ?? DateTimeOffset.UtcNow,
                 ApplicationProperties = appProps is { Count: > 0 }

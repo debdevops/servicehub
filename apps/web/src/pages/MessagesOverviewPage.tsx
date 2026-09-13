@@ -676,6 +676,13 @@ export function MessagesOverviewPage() {
   // zero" this DB-backed source was introduced to prevent — just narrowed to the loading window.
   const dlqOverviewLoading = isDeadLetter && isDlqOverviewLoading;
 
+  // The Queues/Topics tiles, and the Active tab's own message total, have no ledger equivalent
+  // and are summed straight from the live per-namespace fan-out. That sum is 0 until the fan-out
+  // resolves (seconds, at fleet scale), so without this they render a settled "0 Queues / 0
+  // Topics" for a fleet that has several — the same misleading zero the two ledger-backed tiles
+  // above were already fixed for, just on the tiles that were left live-derived.
+  const liveStatsLoading = liveStats.length === 0 || liveStats.some((s) => s.isLoading);
+
   const aggregate = useMemo(() => {
     let totalQueues = 0;
     let totalTopics = 0;
@@ -832,7 +839,7 @@ export function MessagesOverviewPage() {
                 label={isDeadLetter ? 'Total Dead-Letter Messages' : 'Total Active Messages'}
                 value={aggregate.totalMessages.toLocaleString()}
                 tone={isDeadLetter ? 'bg-red-50' : 'bg-sky-50'}
-                loading={dlqOverviewLoading}
+                loading={isDeadLetter ? dlqOverviewLoading : liveStatsLoading}
                 tooltip={tooltips.messagesOverview.totalMessages}
               />
               <StatTile
@@ -840,12 +847,14 @@ export function MessagesOverviewPage() {
                 label="Queues"
                 value={aggregate.totalQueues}
                 tone="bg-indigo-50"
+                loading={liveStatsLoading}
               />
               <StatTile
                 icon={<Radio className="w-5 h-5 text-purple-600" />}
                 label="Topics"
                 value={aggregate.totalTopics}
                 tone="bg-purple-50"
+                loading={liveStatsLoading}
               />
               <StatTile
                 icon={<Layers className="w-5 h-5 text-emerald-600" />}

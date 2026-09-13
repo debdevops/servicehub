@@ -161,6 +161,54 @@ describe('RecoveryOperationDetailPage', () => {
     expect(detailHeader).toBeInTheDocument();
   });
 
+  // Gate refusals — by far the most common event this page shows in a real ledger — record their
+  // reason as {"reasonCode": ...}, and ProviderRejected records the provider's raw error text.
+  // Both used to render as "—" because only the {"reason": ...} shape was understood.
+  it('renders a declined entry\'s reasonCode and a provider rejection\'s raw error, not "—"', () => {
+    mockUseRecoveryOperation.mockReturnValue({
+      data: {
+        operation: {
+          id: 'op-1', kind: 'Replay', trigger: 'AutoRule', actorIdentity: 'Rule:10@max-delivery',
+          actorKind: 'Automation', reason: null, namespaceId: 'ns-1',
+          namespaceNameSnapshot: 'Azure DEV', providerSnapshot: 'azure', environmentSnapshot: 'dev',
+          scopeDescription: 'auto-replay rule 10', sourceRuleId: 10, sourceJobId: null,
+          serviceVersion: '4.0.0', openedAt: '2026-08-10T09:00:00Z', targetCount: 2, entryCount: 2,
+        },
+        entries: [
+          { ...baseEntry, id: 'entry-declined', state: 'Declined', disposition: 'Declined' },
+          { ...baseEntry, id: 'entry-rejected', state: 'ExecutionFailed' },
+        ],
+        events: [
+          {
+            id: 'evt-1', ownerId: 'o', seq: 1, entryId: 'entry-declined', operationId: 'op-1',
+            eventType: 'EligibilityDeclined', occurredAt: '2026-08-10T10:00:00Z',
+            actorIdentity: 'Rule:10@max-delivery', actorKind: 'Automation',
+            detailJson: '{"reasonCode":"AUTONOMY_GRANT_INSUFFICIENT","matchedCount":0}',
+            prevHash: '0'.repeat(64), entryHash: 'h1', schemaVersion: 1,
+          },
+          {
+            id: 'evt-2', ownerId: 'o', seq: 2, entryId: 'entry-rejected', operationId: 'op-1',
+            eventType: 'ProviderRejected', occurredAt: '2026-08-10T10:00:01Z',
+            actorIdentity: 'Rule:10@max-delivery', actorKind: 'Automation',
+            detailJson: 'An unexpected error occurred while purging the message.',
+            prevHash: 'h1', entryHash: 'h2', schemaVersion: 1,
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    });
+
+    renderPage();
+
+    expect(
+      screen.getAllByText('This failure signature has not yet earned unattended (Standing/Unattended) trust.').length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText('An unexpected error occurred while purging the message.').length,
+    ).toBeGreaterThan(0);
+  });
+
   // ── Rehearsal mode (roadmap W1.2 / exit statement 5) ──────────────────────
   //
   // The endpoint shipped with W1.2 and nothing in the SPA called it, so "an operator can rehearse

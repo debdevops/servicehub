@@ -23,6 +23,8 @@ import { useFleetOverview } from '@servicehub/ui-shared/hooks/useFleet';
 import { useHealthReport } from '@servicehub/ui-shared/hooks/useHealth';
 import { useAllNamespacesQueues, type NamespaceQueueStats } from '@servicehub/ui-shared/hooks/useQueues';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
+import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
+import { getProviderCapabilities } from '@servicehub/ui-shared/lib/api/cloudBridge';
 import { ProviderIcon } from '@servicehub/ui-shared/components/ProviderIcon';
 import { ProviderBadge, PROVIDER_STYLES, PROVIDER_STATE_STYLES } from '@servicehub/ui-shared/lib/providerStyles';
 import { EnvironmentBadge } from '@/components/EnvironmentBadge';
@@ -42,6 +44,10 @@ const WINDOW_OPTIONS = [
 // spike, since an operator bouncing between Namespace Overview and Fleet Overview would
 // otherwise see a different namespace count flagged for the same underlying data.
 const DLQ_SPIKE_THRESHOLD = 10;
+
+/** Shown on the dashed Active/Scheduled cells of a provider with no message-count API. */
+const COUNTS_UNSUPPORTED_TITLE =
+  "This namespace's provider has no message-count API, so its active and scheduled counts are unknown — not zero.";
 
 const severityStyles: Record<FleetHealthSeverity, { dot: string; text: string; label: string; badge: string; hex: string }> = {
   critical: { dot: 'bg-red-500', text: 'text-red-700', label: 'Critical', badge: 'bg-red-50 text-red-700 border-red-200', hex: '#ef4444' },
@@ -355,17 +361,46 @@ export default function FleetPage() {
     [data]
   );
 
+  // Active/Scheduled/DLQ-spike totals come from the live per-namespace fan-out, which takes
+  // several seconds against a real fleet. Summing it while it is still in flight yields 0, and a
+  // bare "0 Active messages" reads as a confirmed-empty fleet rather than "not counted yet" —
+  // the same misleading-zero the Dead-Letter tab and Namespace Overview were already fixed for.
+  // The per-namespace table below has always used this exact `isLoading` signal to render "—";
+  // the headline tiles now honour it too.
+  const liveStatsLoading = liveStats.length === 0 || liveStats.some((s) => s.isLoading);
+
+  // GCP Pub/Sub has no message-count API (ProviderCapabilities.Gcp.SupportsMessageCounts=false),
+  // so its live active/scheduled totals are structurally 0, not measured. Those namespaces are
+  // excluded from the fleet total (and dashed in the table) instead of contributing a fake 0 —
+  // matching NamespacesPanel, HomePage and Namespace Overview.
+  const { data: capabilitiesMap } = useProviderCapabilities();
+  const countsUnsupportedNamespaceIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const n of data?.namespaces ?? []) {
+      const caps = getProviderCapabilities(capabilitiesMap, n.provider.toLowerCase() as CloudProviderType);
+      if (caps?.supportsMessageCounts === false) ids.add(n.namespaceId);
+    }
+    return ids;
+  }, [data, capabilitiesMap]);
+
   const liveTotals = useMemo(() => {
     let totalActive = 0;
     let totalScheduled = 0;
     let spikeCount = 0;
+    let uncountedNamespaces = 0;
     for (const s of liveStats) {
-      totalActive += s.totalActive;
-      totalScheduled += s.totalScheduled;
+      if (countsUnsupportedNamespaceIds.has(s.namespaceId)) {
+        uncountedNamespaces++;
+      } else {
+        totalActive += s.totalActive;
+        totalScheduled += s.totalScheduled;
+      }
+      // DLQ counts come from the persisted ledger for every provider, so spikes stay countable
+      // even where live message counts are not.
       if (s.totalDlq > DLQ_SPIKE_THRESHOLD) spikeCount++;
     }
-    return { totalActive, totalScheduled, spikeCount };
-  }, [liveStats]);
+    return { totalActive, totalScheduled, spikeCount, uncountedNamespaces };
+  }, [liveStats, countsUnsupportedNamespaceIds]);
 
   const goToNamespace = (n: FleetNamespaceHealth) =>
     navigate(`/dlq-history?namespace=${n.namespaceId}`);
@@ -443,8 +478,10 @@ export default function FleetPage() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {/* gray-500, not gray-400: at 12px on the gray-50 page background, gray-400 gives a
+              2.48:1 contrast ratio — below WCAG AA's 4.5:1 for body text (axe `color-contrast`). */}
           {data && (
-            <span className="text-xs text-gray-400 hidden sm:inline">
+            <span className="text-xs text-gray-500 hidden sm:inline">
               Last updated: {new Date(data.generatedAt).toLocaleString(undefined, {
                 day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
               })}
@@ -518,8 +555,18 @@ export default function FleetPage() {
             <StatTile
               icon={<Inbox className="w-5 h-5 text-sky-600" />}
               label="Active messages"
-              value={liveTotals.totalActive.toLocaleString()}
+              value={liveStatsLoading ? '…' : liveTotals.totalActive.toLocaleString()}
               tone="bg-sky-50"
+              sub={
+                !liveStatsLoading && liveTotals.uncountedNamespaces > 0 ? (
+                  <span
+                    className="text-xs font-medium text-gray-500"
+                    title="These namespaces' providers have no message-count API, so their active messages are unknown rather than zero."
+                  >
+                    excl. {liveTotals.uncountedNamespaces}
+                  </span>
+                ) : undefined
+              }
             />
             <StatTile
               icon={<AlertTriangle className="w-5 h-5 text-red-600" />}
@@ -535,13 +582,13 @@ export default function FleetPage() {
             <StatTile
               icon={<Clock className="w-5 h-5 text-purple-600" />}
               label="Scheduled"
-              value={liveTotals.totalScheduled.toLocaleString()}
+              value={liveStatsLoading ? '…' : liveTotals.totalScheduled.toLocaleString()}
               tone="bg-purple-50"
             />
             <StatTile
               icon={<Flame className="w-5 h-5 text-orange-600" />}
               label="DLQ spikes"
-              value={liveTotals.spikeCount}
+              value={liveStatsLoading ? '…' : liveTotals.spikeCount}
               tone="bg-orange-50"
               tooltip={tooltips.fleet.dlqSpikes}
             />
@@ -764,6 +811,7 @@ export default function FleetPage() {
                     {filteredNamespaces.map((n) => {
                       const sev = severityStyles[n.severity];
                       const live = liveStatsByNamespace.get(n.namespaceId);
+                      const countsUnsupported = countsUnsupportedNamespaceIds.has(n.namespaceId);
                       const isProd = n.environment.toLowerCase() === 'prod';
                       const isExpanded = expandedId === n.namespaceId;
                       return (
@@ -808,12 +856,18 @@ export default function FleetPage() {
                             <td className="px-4 py-2.5 text-right text-gray-600">
                               {live && !live.isLoading ? live.totalSubscriptions : '—'}
                             </td>
-                            <td className="px-4 py-2.5 text-right text-gray-600">
-                              {live && !live.isLoading ? live.totalActive : '—'}
+                            <td
+                              className="px-4 py-2.5 text-right text-gray-600"
+                              title={countsUnsupported ? COUNTS_UNSUPPORTED_TITLE : undefined}
+                            >
+                              {countsUnsupported ? '—' : live && !live.isLoading ? live.totalActive : '—'}
                             </td>
                             <td className="px-4 py-2.5 text-right font-medium text-gray-800">{n.activeCount}</td>
-                            <td className="px-4 py-2.5 text-right text-gray-600">
-                              {live && !live.isLoading ? live.totalScheduled : '—'}
+                            <td
+                              className="px-4 py-2.5 text-right text-gray-600"
+                              title={countsUnsupported ? COUNTS_UNSUPPORTED_TITLE : undefined}
+                            >
+                              {countsUnsupported ? '—' : live && !live.isLoading ? live.totalScheduled : '—'}
                             </td>
                             <td className="px-4 py-2.5">
                               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium border ${sev.badge}`}>

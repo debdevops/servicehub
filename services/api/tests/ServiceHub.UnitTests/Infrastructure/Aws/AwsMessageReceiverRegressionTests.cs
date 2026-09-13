@@ -168,6 +168,26 @@ public sealed class AwsMessageReceiverRegressionTests
     }
 
     [Fact]
+    public async Task PeekMessagesAsync_RecordsTheMessageBodySize_NotAHardcodedZero()
+    {
+        // Every SQS message was persisted with MessageSize = 0 because this mapper never set
+        // SizeInBytes, and the DLQ history drawer renders that as a measured "0 B" right beside
+        // the body it is displaying. SQS returns the whole body, so the size is knowable —
+        // measured here exactly as ServiceBusClientWrapper measures Azure's.
+        const string body = "{\"orderId\":\"ORD-1\",\"note\":\"café\"}";
+        var (sut, _, _) = BuildSut(new ReceiveMessageResponse
+        {
+            Messages = [BuildSqsMessage("m-size", "rh-size", body: body)],
+        });
+
+        var result = await sut.PeekMessagesAsync(new GetMessagesRequest(TestNamespaceId, QueueName, null, false, 50));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value[0].SizeInBytes.Should().Be(System.Text.Encoding.UTF8.GetByteCount(body));
+        result.Value[0].SizeInBytes.Should().BeGreaterThan(body.Length - 1, "multi-byte characters must count as their UTF-8 length");
+    }
+
+    [Fact]
     public async Task PeekMessagesAsync_DeduplicatesRedeliveriesAndReleasesLatestHandle()
     {
         var (sut, _, releases) = BuildSut(

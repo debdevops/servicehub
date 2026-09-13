@@ -273,6 +273,43 @@ export function describeRecoveryDetailReason(detailJson: string | null | undefin
 }
 
 /**
+ * Human sentence for ANY RecoveryEvent.detailJson, whatever shape its writer used — for surfaces
+ * that render the whole event chain rather than only a verification-coverage event.
+ *
+ * {@link describeRecoveryDetailReason} understands exactly one shape, `{"reason": "..."}`, which
+ * only RecoveryVerificationWorker's closing events use. The ledger's other writers record
+ * `{"reasonCode": "...", ...}` (every gate refusal — EligibilityDeclined, RecurrenceCapObserved)
+ * or, for ProviderRejected, the provider's own error text as a bare non-JSON string. Reading all
+ * of them through the `reason`-only parser silently rendered a recorded reason as "—", which is
+ * the one thing an operator most needs from a declined or rejected recovery.
+ *
+ * Reason codes resolve through {@link APPROVAL_QUEUE_REASON_LABELS} — the same sentences the
+ * Approval Queue already shows for the same codes — and an unrecognized code (or a plain-text
+ * detail) is returned verbatim rather than dropped, per the same "say so honestly" rule.
+ * Returns null only when there genuinely is no reason recorded.
+ */
+export function describeRecoveryEventDetail(detailJson: string | null | undefined): string | null {
+  if (!detailJson) return null;
+
+  const verificationReason = describeRecoveryDetailReason(detailJson);
+  if (verificationReason) return verificationReason;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(detailJson);
+  } catch {
+    // Not JSON — the provider's raw error message. Verbatim beats blank.
+    return detailJson.trim() || null;
+  }
+
+  if (typeof parsed === 'string') return parsed.trim() || null;
+  if (parsed === null || typeof parsed !== 'object') return null;
+
+  const reasonCode = (parsed as { reasonCode?: unknown }).reasonCode;
+  return typeof reasonCode === 'string' && reasonCode ? describeApprovalQueueReason(reasonCode) : null;
+}
+
+/**
  * Operator-facing explanation for every RecoveryEntryState (roadmap §13.4 / Recovery Evidence
  * UX): what happened, why ServiceHub knows it, what it still cannot prove, and what to do next.
  * Grounded in the lifecycle documented in docs/RECOVERY-EVIDENCE.md §2 — no state invented here.

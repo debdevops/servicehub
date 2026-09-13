@@ -869,6 +869,11 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                 MessageId = msg.MessageId,
                 SequenceNumber = seqNum,
                 Body = msg.Body,
+                // Left unset, every SQS message persisted a MessageSize of 0, which the DLQ
+                // history drawer renders as a measured "0 B" next to a body it is displaying.
+                // SQS returns the full body, so the size is known — measured the same way the
+                // Azure wrapper measures its own (ServiceBusClientWrapper: body length in bytes).
+                SizeInBytes = msg.Body is null ? 0 : System.Text.Encoding.UTF8.GetByteCount(msg.Body),
                 DeliveryCount = deliveryCount,
                 EnqueuedTime = enqueuedTime,
                 ApplicationProperties = appProps is { Count: > 0 }

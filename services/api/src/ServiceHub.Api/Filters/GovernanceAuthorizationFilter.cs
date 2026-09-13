@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.DependencyInjection;
 using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Security;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.RecoveryLedger;
@@ -21,6 +22,12 @@ namespace ServiceHub.Api.Filters;
 public sealed class GovernanceAuthorizationFilter : IAsyncAuthorizationFilter
 {
     private const string NamespaceIdKey = "namespaceId";
+
+    /// <summary>
+    /// Audit action recorded when a caller's Governance role is insufficient. Namespaced like the
+    /// intent-gate actions ("messages:replay", …) so it filters alongside them on the Audit page.
+    /// </summary>
+    internal const string GovernanceDeniedAction = "governance:role-denied";
 
     private readonly ILogger<GovernanceAuthorizationFilter> _logger;
     private readonly bool _authenticationEnabled;
@@ -76,6 +83,21 @@ public sealed class GovernanceAuthorizationFilter : IAsyncAuthorizationFilter
                 LogRedactor.SanitiseForLog(httpContext.Request.Method),
                 LogRedactor.SanitiseForLog(httpContext.Request.Path),
                 result.Error.Message);
+
+            // Also record it in the persistent Audit Trail, not only the application log: a
+            // credential refused a privileged action is exactly the "access event" the Audit
+            // Trail is documented to be the complete record of, and the weaker intent-header
+            // gate already writes its refusals there with the same "Denied" outcome. Without
+            // this, a rejected privilege escalation is invisible to the product's own forensics
+            // surface (Audit page, CSV export, Outcome=Denied filter).
+            httpContext.RequestServices.GetService<IAuditLogger>()?.LogCriticalAction(
+                httpContext,
+                ownerId,
+                action: GovernanceDeniedAction,
+                outcome: "Denied",
+                namespaceId: namespaceId,
+                resourceName: httpContext.Request.Path.Value,
+                detail: result.Error.Message);
 
             context.Result = BuildForbidden(httpContext, result.Error.Message);
         }

@@ -114,6 +114,23 @@ public sealed class GcpMessageReceiverRegressionTests
     }
 
     [Fact]
+    public async Task PeekMessagesAsync_RecordsTheMessageBodySize_NotAHardcodedZero()
+    {
+        // Every Pub/Sub message was persisted with MessageSize = 0 because this mapper never set
+        // SizeInBytes, and the DLQ history drawer renders that as a measured "0 B" right beside
+        // the body it is displaying. Data carries the whole payload, so the size is knowable.
+        const string body = "{\"orderId\":\"ORD-1\",\"note\":\"caf\u00e9\"}";
+        var ns = BuildNamespace();
+        var pull = new PullResponse { ReceivedMessages = { BuildReceived("ack-size", "m-size", body) } };
+        var (sut, _) = BuildSut(ns, SubId, pull);
+
+        var result = await sut.PeekMessagesAsync(new GetMessagesRequest(TestNamespaceId, SubId, null, false, 10));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value[0].SizeInBytes.Should().Be(System.Text.Encoding.UTF8.GetByteCount(body));
+    }
+
+    [Fact]
     public async Task PeekMessagesAsync_ShortReadBatch_SkipsConfirmatoryPullAndSpendsOnlyOneDeliveryAttempt()
     {
         // Regresses a live-verified bug: a batch shorter than requested is Pub/Sub's normal

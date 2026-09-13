@@ -6,7 +6,7 @@ import { useDownloadRecoveryExport, useWriteOffRecoveryEntry, useRehearseRecover
 import { useVerifyChain } from '@servicehub/ui-shared/hooks/useChainVerification';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import {
-  describeRecoveryDetailReason,
+  describeRecoveryEventDetail,
   describeApprovalQueueReason,
   type RecoveryLedgerEntry,
   type RecoveryRehearsal,
@@ -149,13 +149,13 @@ export default function RecoveryOperationDetailPage() {
     return acc;
   }, {});
 
-  // The reason an entry closed as Unverified (etc.) is recorded on the event that closed it, not
-  // on the entry itself — find it once per entry so it renders immediately, not only inside the
-  // event-chain table below (which is collapsed by default).
+  // The reason an entry closed as Unverified/Declined/Rejected (etc.) is recorded on the event
+  // that closed it, not on the entry itself — find it once per entry so it renders immediately,
+  // not only inside the event-chain table below (which is collapsed by default).
   const reasonByEntryId = new Map<string, string>();
   for (const evt of events) {
     if (!evt.entryId) continue;
-    const reason = describeRecoveryDetailReason(evt.detailJson);
+    const reason = describeRecoveryEventDetail(evt.detailJson);
     if (reason) reasonByEntryId.set(evt.entryId, reason);
   }
 
@@ -333,7 +333,7 @@ export default function RecoveryOperationDetailPage() {
                         <td className="px-3 py-2 font-medium text-gray-800">{evt.eventType}</td>
                         <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{new Date(evt.occurredAt).toLocaleString()}</td>
                         <td className="px-3 py-2 text-gray-600">{evt.actorIdentity}</td>
-                        <td className="px-3 py-2 text-gray-600 max-w-[220px]">{describeRecoveryDetailReason(evt.detailJson) ?? '—'}</td>
+                        <td className="px-3 py-2 text-gray-600 max-w-[220px]">{describeRecoveryEventDetail(evt.detailJson) ?? '—'}</td>
                         <td className="px-3 py-2 font-mono text-gray-400 truncate max-w-[140px]" title={evt.entryHash}>{evt.entryHash}</td>
                       </tr>
                     ))}

@@ -37,15 +37,21 @@ public sealed class AuditLog
 
     /// <summary>
     /// Friendly namespace display name — snapshotted at write time so deleted namespaces
-    /// still appear correctly in audit history.
+    /// still appear correctly in audit history. Settable (unlike the rest of this otherwise
+    /// immutable entry) because the snapshot is taken by the audit writer at persist time from
+    /// <see cref="NamespaceId"/>, not by the caller: request threads must never block on the
+    /// database to log, so the enqueued entry carries the id and the writer resolves the name.
     /// </summary>
-    public string? NamespaceName { get; init; }
+    public string? NamespaceName { get; set; }
 
     /// <summary>Queue or topic path that was targeted, if applicable.</summary>
     public string? EntityName { get; init; }
 
-    /// <summary>Cloud provider identifier: "azure", "aws", or "gcp".</summary>
-    public string? CloudProvider { get; init; }
+    /// <summary>
+    /// Cloud provider identifier: "azure", "aws", or "gcp". Snapshotted alongside
+    /// <see cref="NamespaceName"/> by the audit writer — see the note there.
+    /// </summary>
+    public string? CloudProvider { get; set; }
 
     /// <summary>Deployment environment: "Dev", "Uat", or "Prod".</summary>
     public string? Environment { get; init; }

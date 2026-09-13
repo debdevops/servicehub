@@ -113,10 +113,57 @@ public sealed class AuditService : BackgroundService, IAuditService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<DlqDbContext>();
 
+        await SnapshotNamespaceContextAsync(db, batch, cancellationToken);
+
         db.AuditLogs.AddRange(batch);
         await db.SaveChangesAsync(cancellationToken);
 
         _logger.LogDebug("Audit batch committed: {Count} entries", batch.Count);
+    }
+
+    /// <summary>
+    /// Fills in <see cref="AuditLog.NamespaceName"/>/<see cref="AuditLog.CloudProvider"/> for
+    /// entries that carry a <see cref="AuditLog.NamespaceId"/> but no snapshot of their own.
+    /// Callers deliberately don't resolve these — logging must never make a request thread wait
+    /// on the database — so the snapshot documented on those properties has to be taken here, at
+    /// the write boundary, or it is never taken at all and the Audit Trail's Namespace column
+    /// (and its CSV export) stays permanently blank. One query per batch over the batch's own
+    /// distinct namespace ids; a namespace already deleted by flush time simply stays null,
+    /// which is the honest answer rather than a fabricated name.
+    /// </summary>
+    private static async Task SnapshotNamespaceContextAsync(
+        DlqDbContext db,
+        List<AuditLog> batch,
+        CancellationToken cancellationToken)
+    {
+        var pending = batch
+            .Where(e => e.NamespaceId is not null && (e.NamespaceName is null || e.CloudProvider is null))
+            .ToList();
+
+        if (pending.Count == 0)
+            return;
+
+        var namespaceIds = pending.Select(e => e.NamespaceId!.Value).Distinct().ToList();
+
+        var snapshots = await db.Namespaces
+            .AsNoTracking()
+            .Where(n => namespaceIds.Contains(n.Id))
+            .Select(n => new { n.Id, n.DisplayName, n.Name, n.Provider })
+            .ToListAsync(cancellationToken);
+
+        if (snapshots.Count == 0)
+            return;
+
+        var byId = snapshots.ToDictionary(n => n.Id);
+
+        foreach (var entry in pending)
+        {
+            if (!byId.TryGetValue(entry.NamespaceId!.Value, out var ns))
+                continue;
+
+            entry.NamespaceName ??= string.IsNullOrWhiteSpace(ns.DisplayName) ? ns.Name : ns.DisplayName;
+            entry.CloudProvider ??= ns.Provider.ToString().ToLowerInvariant();
+        }
     }
 
     private async Task DrainRemainingAsync()

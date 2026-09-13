@@ -161,6 +161,43 @@ public sealed class GovernanceRbacTests : IDisposable
                      "seeded owner-level Admin grant instead would silently escalate, not merely fail open");
     }
 
+    [Fact]
+    public async Task ViewerDenial_IsRecordedInTheAuditTrail_NotOnlyTheApplicationLog()
+    {
+        // The Audit Trail is documented as the complete record of "every critical operation and
+        // access event", and the weaker intent-header gate already writes its refusals there with
+        // outcome "Denied". A Governance refusal — a real credential turned away from a privileged
+        // action, i.e. the single event a security reviewer most wants — was only ever written to
+        // the application log, leaving the product's own forensics surface (Audit page, CSV
+        // export, Outcome=Denied filter) blind to it.
+        using var adminClient = _factory.CreateAdminClient();
+        using var viewerClient = _factory.CreateViewerClient();
+
+        var namespaceId = await CreateNamespaceAsync(adminClient);
+        await GrantAsync(adminClient, GovernanceRbacWebApplicationFactory.AdminGranteeIdentity, GranteeKind.ApiKey, GovernanceRole.Admin, namespaceId: null, pillarKind: null);
+        await GrantAsync(adminClient, GovernanceRbacWebApplicationFactory.ViewerGranteeIdentity, GranteeKind.ApiKey, GovernanceRole.Viewer, namespaceId, PillarKind.Recover);
+
+        var viewerResponse = await SendReplayRequestAsync(viewerClient, namespaceId);
+        viewerResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        // Audit writes are deliberately asynchronous (channel + background flush), so poll rather
+        // than assume the row has landed by the time the 403 came back.
+        AuditLogResponse? denial = null;
+        for (var attempt = 0; attempt < 30 && denial is null; attempt++)
+        {
+            await Task.Delay(100);
+            var page = await adminClient.GetFromJsonAsync<AuditPageResponse>(
+                "/api/v1/audit?page=1&pageSize=50&outcome=Denied", JsonOptions);
+            denial = page?.Items.FirstOrDefault(i => i.Action == "governance:role-denied");
+        }
+
+        denial.Should().NotBeNull("a Governance refusal must reach the persistent Audit Trail");
+        denial!.Outcome.Should().Be("Denied");
+        denial.DetailsJson.Should().NotBeNullOrWhiteSpace("the recorded detail is what explains which role was required");
+        denial.DetailsJson.Should().ContainAll("Viewer", "Operator");
+        denial.NamespaceId.Should().Be(namespaceId, "the refusal must be attributable to the namespace it targeted");
+    }
+
     private static async Task<HttpResponseMessage> SendReplayRequestAsync(HttpClient client, Guid namespaceId)
     {
         var request = new HttpRequestMessage(

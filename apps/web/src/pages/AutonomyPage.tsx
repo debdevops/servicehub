@@ -404,7 +404,15 @@ export default function AutonomyPage() {
                   </Link>
                 </div>
 
-                <ol className="mt-5 flex items-start gap-1 overflow-x-auto pb-1" aria-label="Autonomy levels">
+                {/* tabIndex=0: this strip scrolls horizontally on a narrow viewport, and a
+                    scrollable region whose own children are not focusable is unreachable by
+                    keyboard (axe `scrollable-region-focusable`, WCAG 2.1.1) — the ladder steps
+                    are plain text, so the region itself has to take focus. */}
+                <ol
+                  className="mt-5 flex items-start gap-1 overflow-x-auto pb-1"
+                  aria-label="Autonomy levels"
+                  tabIndex={0}
+                >
                   {LADDER.map(step => (
                     <LadderStep
                       key={step.level}
