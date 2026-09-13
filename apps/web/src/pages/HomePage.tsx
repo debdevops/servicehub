@@ -23,6 +23,7 @@ import {
   BarChart3,
   Info,
   ChevronDown,
+  HelpCircle,
 } from 'lucide-react';
 import { useAttentionQueue, type AttentionQueueItem } from '@servicehub/ui-shared/hooks/useAttentionQueue';
 import { useOutcomeMetrics } from '@servicehub/ui-shared/hooks/useRecoveryLedger';
@@ -490,14 +491,27 @@ function CloudHome({ provider, namespaces, navPrefix, otherProviders, onSwitch, 
       <div className="mb-2">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-gray-700">Needs your attention</h2>
-          <button
-            onClick={() => attentionQueue.refetch()}
-            disabled={attentionQueue.isFetching}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-gray-600 hover:text-gray-900 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3 h-3 ${attentionQueue.isFetching ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
+          <div className="flex items-center gap-3">
+            {/* Only the top 3 signatures are ever returned (server-ranked by severity, blast
+                radius, recurrence, pending decisions) — no count of what's beyond them, so this
+                links to Incident Center's full, paginated, filterable list instead of implying a
+                number we don't have. */}
+            <button
+              type="button"
+              onClick={() => navigate(`${navPrefix}/incidents?provider=${provider}`)}
+              className="text-xs font-medium text-primary-600 hover:text-primary-700"
+            >
+              View all in Incident Center →
+            </button>
+            <button
+              onClick={() => attentionQueue.refetch()}
+              disabled={attentionQueue.isFetching}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-gray-600 hover:text-gray-900 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3 h-3 ${attentionQueue.isFetching ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          </div>
         </div>
 
         {attentionQueue.isLoading && (
@@ -538,7 +552,18 @@ function CloudHome({ provider, namespaces, navPrefix, otherProviders, onSwitch, 
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 bg-white border border-gray-200 rounded-lg p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-1">Recent DLQ activity</h2>
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-sm font-semibold text-gray-700">Recent DLQ activity</h2>
+            {providerHealth.length > recentDlq.length && (
+              <button
+                type="button"
+                onClick={() => navigate(`${navPrefix}/fleet?provider=${provider}`)}
+                className="text-xs font-medium text-primary-600 hover:text-primary-700"
+              >
+                View all {providerHealth.length} →
+              </button>
+            )}
+          </div>
           {recentDlq.length === 0 ? (
             <p className="text-sm text-gray-500 py-4">No dead-letter activity recorded for this cloud in the last 24 hours.</p>
           ) : (
@@ -1010,6 +1035,27 @@ function CloudPicker({
             </button>
           );
         })}
+      </div>
+
+      <div className="mt-6 max-w-3xl rounded-xl bg-blue-50 border border-blue-200 p-4">
+        <div className="flex items-start gap-2.5">
+          <HelpCircle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+          <div>
+            <h2 className="text-sm font-semibold text-blue-900">New here? Here's what this page shows</h2>
+            <p className="mt-1 text-xs text-blue-800 leading-relaxed">
+              Each card is one cloud your team uses to send messages between apps. Sometimes a
+              message gets stuck instead of delivered — that's called a{' '}
+              <span className="font-medium">dead letter</span>.
+            </p>
+            <ul className="mt-2 text-xs text-blue-800 leading-relaxed list-disc list-inside space-y-0.5">
+              <li><span className="font-medium">Namespaces</span> — how many connections you've set up for that cloud.</li>
+              <li><span className="font-medium">Active dead-letter messages</span> — stuck messages waiting right now. Red means it needs a look.</li>
+            </ul>
+            <p className="mt-2 text-xs text-blue-800 leading-relaxed">
+              Click a card to open that cloud and see its actual queues and stuck messages.
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );

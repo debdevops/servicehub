@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import {
   Layers,
   AlertTriangle,
@@ -281,10 +281,18 @@ function RowMenu({ actions, onClose, anchorRect }: { actions: RowMenuAction[]; o
   );
 }
 
+const isCloudProviderType = (value: string | null): value is CloudProviderType =>
+  value === 'aws' || value === 'gcp' || value === 'azure';
+
 export default function FleetPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [windowHours, setWindowHours] = useState(24);
-  const [providerFilter, setProviderFilter] = useState<CloudProviderType | 'all'>('all');
+  // Lets Home's "View all" link land here pre-filtered to the cloud the teaser was already
+  // scoped to, instead of dumping the user back into an unfiltered fleet-wide list.
+  const [providerFilter, setProviderFilter] = useState<CloudProviderType | 'all'>(
+    () => (isCloudProviderType(searchParams.get('provider')) ? (searchParams.get('provider') as CloudProviderType) : 'all'),
+  );
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [expandedId, setExpandedId] = useState<string | null>(null);

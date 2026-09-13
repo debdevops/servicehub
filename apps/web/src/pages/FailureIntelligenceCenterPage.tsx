@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -283,18 +283,26 @@ function IncidentRow({
   );
 }
 
+const isCloudProviderType = (value: string | null): value is CloudProviderType =>
+  value === 'aws' || value === 'gcp' || value === 'azure';
+
 export function FailureIntelligenceCenterPage() {
   const navigate = useNavigate();
   const { isDemoMode, cloudProvider } = useDemoContext();
   const navPrefix = isDemoMode && cloudProvider ? `/demo/${cloudProvider}` : '';
   const { data: namespaces } = useNamespaces();
+  const [searchParams] = useSearchParams();
 
   const [days, setDays] = useState(7);
   const { data, isLoading, isFetching, isError, refetch } = useIncidentsList(days);
 
   const [statusTab, setStatusTab] = useState<StatusTab>('active');
   const [search, setSearch] = useState('');
-  const [provider, setProvider] = useState<CloudProviderType | 'all'>('all');
+  // Lets Home's "View all in Incident Center" link land here pre-filtered to the cloud the
+  // teaser was already scoped to, instead of dumping the user back into an unfiltered list.
+  const [provider, setProvider] = useState<CloudProviderType | 'all'>(
+    () => (isCloudProviderType(searchParams.get('provider')) ? (searchParams.get('provider') as CloudProviderType) : 'all'),
+  );
   const [namespaceId, setNamespaceId] = useState('');
   const [status, setStatus] = useState<string>('all');
   const [category, setCategory] = useState<string>('all');
