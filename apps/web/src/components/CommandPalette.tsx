@@ -214,10 +214,20 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     } else if (e.key === 'Enter') {
       e.preventDefault();
       flatItems[activeIdx]?.action();
-    } else if (e.key === 'Escape') {
-      onClose();
     }
-  }, [flatItems, activeIdx, onClose]);
+    // Escape is handled by the window-level listener below, not here — it must close the palette
+    // even when focus isn't on this input, so it can't live only in this handler.
+  }, [flatItems, activeIdx]);
+
+  // Escape must close the palette even when focus has left the search input — clicking a
+  // non-interactive area inside the panel (a group header, an item's description text) blurs
+  // the input to <body>, and an input-scoped keydown handler would never see the keystroke.
+  useEffect(() => {
+    if (!open) return;
+    const handleEscape = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [open, onClose]);
 
   // Declared before the early return — hooks must run on every render.
   const dialogRef = useFocusTrap<HTMLDivElement>(open);

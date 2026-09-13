@@ -344,15 +344,18 @@ function NamespaceRow({
       <div className="flex items-center gap-3 shrink-0">
         {supportsCounts && (
           <span className="text-xs text-gray-500">
-            {statsLoading ? '…' : `${(stats?.totalActive ?? 0).toLocaleString()} active`}
+            {statsLoading ? '…' : `${(stats?.totalActive ?? 0).toLocaleString()} active messages`}
           </span>
         )}
         {supportsCounts && (stats?.totalDlq ?? 0) > 0 && (
           <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-700" title={tooltips.home.dlqMessages.detail}>
-            {statsLoading ? '…' : `${stats?.totalDlq.toLocaleString()} DLQ`}
+            {statsLoading ? '…' : `${stats?.totalDlq.toLocaleString()} DLQ messages`}
           </span>
         )}
-        <ChevronRight className="w-5 h-5 text-gray-400 transition-all group-hover:text-primary-600 group-hover:translate-x-0.5" />
+        <span className="flex items-center gap-0.5 text-xs font-medium text-primary-600 group-hover:text-primary-700">
+          View Details
+          <ChevronRight className="w-4 h-4 transition-all group-hover:translate-x-0.5" />
+        </span>
       </div>
     </button>
   );
@@ -902,12 +905,13 @@ function NamespaceHome({ namespace, navPrefix, cloudHomeHref, siblingNamespaces,
                     <button
                       type="button"
                       key={cluster.signatureHash}
-                      onClick={() => navigate(`${navPrefix}/incidents/${cluster.signatureHash}?namespace=${namespace.id}`)}
-                      className="w-full py-2.5 text-left hover:bg-gray-50 -mx-1 px-1 rounded transition-colors"
+                      onClick={() => navigate(`${navPrefix}/signatures/${cluster.signatureHash}?namespace=${namespace.id}`)}
+                      className="group w-full py-2.5 text-left hover:bg-gray-50 -mx-1 px-1 rounded transition-colors"
                     >
                       <div className="flex items-center justify-between gap-3 mb-1">
-                        <p className="text-sm font-medium text-gray-900 truncate">
+                        <p className="text-sm font-medium text-gray-900 truncate flex items-center gap-1">
                           {cluster.dominantEntity} · {cluster.dominantDeadletterReason}
+                          <ChevronRight className="w-3.5 h-3.5 text-gray-300 shrink-0 transition-all group-hover:text-primary-600 group-hover:translate-x-0.5" />
                         </p>
                         <span className="shrink-0 px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-700" title="How many times this pattern has recurred, and its share of this namespace's dead-letter backlog">
                           {cluster.occurrenceCount}

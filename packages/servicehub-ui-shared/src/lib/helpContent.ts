@@ -499,6 +499,10 @@ export const tooltips = {
       text: 'This failure pattern has reappeared before',
       detail: 'Not a one-off — the same signature has been detected more than once over time.',
     } as TooltipContent,
+    dlqTrend: {
+      text: 'New vs. resolved dead-letters, one point per day',
+      detail: 'Red tracks messages newly dead-lettered each day; green tracks how many were resolved (replayed, purged, or written off). Needs at least two days of history to draw a line.',
+    } as TooltipContent,
   },
 
   // ── Incident Workspace Page ─────────────────────

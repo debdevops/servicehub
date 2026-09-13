@@ -422,26 +422,6 @@ export const NAV_ENTRIES: NavEntry[] = [
   },
 ];
 
-/**
- * The Icon Rail's always-visible set (roadmap next-chapter M4.2) — the product decision W2.4
- * deliberately deferred: "how many destinations to show", not "which pages exist". Five, chosen
- * to cover the loop the roadmap itself names — something broke (`home`'s ranked attention queue),
- * look (`incidents`, `dashboard` for a fleet-wide view), approve (`approval-queue`, the one
- * time-sensitive human decision point), and what ServiceHub may do on its own (`autonomy`, the
- * Autonomy Control Center — the front door of Autonomous ServiceHub, which links straight to the
- * Recovery Evidence proof, the Playbook Ledger and Governance). Every other destination is
- * unchanged and still one click away — QuickAccessPanel keeps its full grouped list, and the
- * command palette (`Cmd/Ctrl+K`) already reaches everything. Nothing here removes a capability;
- * it only decides what earns a permanent pixel in a 56px-wide rail.
- */
-export const ICON_RAIL_PRIMARY_IDS: readonly string[] = [
-  'home',
-  'incidents',
-  'dashboard',
-  'approval-queue',
-  'autonomy',
-];
-
 /** First path segment after an optional `/demo/{provider}` prefix, plus that provider itself
  * (null outside Demo Mode) — the provider segment is what lets Home's toolbar label say
  * "AWS Home" under `/demo/aws/home`, where there's no `?cloud=` query param to read since the

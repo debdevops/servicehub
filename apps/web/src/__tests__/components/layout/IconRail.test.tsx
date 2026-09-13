@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { IconRail } from '@/components/layout/IconRail';
+import { vi } from 'vitest';
 
 vi.mock('@servicehub/ui-shared/lib/demo/DemoContext', () => ({
   useDemoContext: vi.fn(() => ({ isDemoMode: false, cloudProvider: null })),
@@ -20,32 +21,24 @@ function renderAt(initialPath = '/dashboard') {
 }
 
 describe('IconRail', () => {
-  it('renders exactly the five primary destinations plus More (roadmap next-chapter M4.2)', () => {
+  it('renders every Quick Access destination when there is room for all of them', () => {
+    // jsdom never lays elements out (clientHeight is always 0), which IconRail treats as "not
+    // yet measured" rather than "no room" — so in this test environment nothing ever collapses,
+    // exercising the same code path a tall real window does.
     renderAt();
     expect(screen.getByLabelText('Home')).toBeInTheDocument();
     expect(screen.getByLabelText('Incident Center')).toBeInTheDocument();
     expect(screen.getByLabelText('Namespace Overview')).toBeInTheDocument();
     expect(screen.getByLabelText('Approval Queue')).toBeInTheDocument();
     expect(screen.getByLabelText('Autonomy Control Center')).toBeInTheDocument();
-    expect(screen.getByLabelText('More destinations')).toBeInTheDocument();
+    expect(screen.getByLabelText('Live Tail')).toBeInTheDocument();
+    expect(screen.getByLabelText('Fleet Overview')).toBeInTheDocument();
+    expect(screen.getByLabelText('Auto-Replay Rules')).toBeInTheDocument();
   });
 
-  it('relocates every other destination rather than removing it — not rendered directly in the rail', () => {
+  it('shows no "More" button when every destination already fits', () => {
     renderAt();
-    // F5's old regression target, Live Tail, and a handful of others: still reachable via Quick
-    // Access and the command palette, just no longer a permanent icon in this 56px rail.
-    expect(screen.queryByLabelText('Live Tail')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Fleet Overview')).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Auto-Replay Rules')).not.toBeInTheDocument();
-  });
-
-  it('the More button opens the command palette via the shared open-palette event', () => {
-    const listener = vi.fn();
-    window.addEventListener('servicehub:open-palette', listener);
-    renderAt();
-    screen.getByLabelText('More destinations').click();
-    expect(listener).toHaveBeenCalledTimes(1);
-    window.removeEventListener('servicehub:open-palette', listener);
+    expect(screen.queryByLabelText('More destinations')).not.toBeInTheDocument();
   });
 
   it('highlights only the entry matching the current route', () => {

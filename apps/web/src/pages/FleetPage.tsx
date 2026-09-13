@@ -118,8 +118,8 @@ function StatTile({
           <span className="text-2xl font-semibold text-gray-900 leading-none">{value}</span>
           {sub}
         </div>
-        <div className="text-xs text-gray-500 mt-1 truncate flex items-center gap-1">
-          {label}
+        <div className="text-xs text-gray-500 mt-1 flex items-center gap-1 min-w-0">
+          <span className="truncate">{label}</span>
           {tooltip && <HelpTooltip {...tooltip} size={12} position="bottom" />}
         </div>
       </div>
