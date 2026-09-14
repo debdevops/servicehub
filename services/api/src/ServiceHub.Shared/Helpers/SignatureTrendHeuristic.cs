@@ -13,10 +13,22 @@ public static class SignatureTrendHeuristic
     /// lifetime (still actively firing), or "Recurring" otherwise.
     /// </summary>
     public static string Compute(
-        bool isNew, int occurrenceCount, DateTimeOffset firstSeenAt, DateTimeOffset lastSeenAt, DateTimeOffset now)
+        bool isNew,
+        int occurrenceCount,
+        DateTimeOffset firstSeenAt,
+        DateTimeOffset lastSeenAt,
+        DateTimeOffset now,
+        bool isCurrentlyClustered)
     {
         if (isNew || occurrenceCount <= 1)
             return "New";
+
+        // "Escalating" means still actively firing right now. A signature absent from the current
+        // DLQ clustering pass cannot be escalating, no matter how recently a stale re-detection
+        // timestamp last ticked — saying otherwise contradicts the "historical record only" status
+        // shown alongside it (e.g. immediately after a fully successful replay).
+        if (!isCurrentlyClustered)
+            return "Recurring";
 
         var age = now - firstSeenAt;
         var sinceLastSeen = now - lastSeenAt;

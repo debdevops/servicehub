@@ -512,7 +512,7 @@ public sealed class DlqHistoryController : ApiControllerBase
                     ? snapshot.Status
                     : SignatureLifecycleStatus.Active;
                 var trend = Shared.Helpers.SignatureTrendHeuristic.Compute(
-                    c.IsNew, c.OccurrenceCount, c.FirstSeenAt, c.WindowEnd, now);
+                    c.IsNew, c.OccurrenceCount, c.FirstSeenAt, c.WindowEnd, now, isCurrentlyClustered: true);
 
                 return new DlqClusterSignatureResponse(
                     Size: c.Size,
@@ -653,7 +653,8 @@ public sealed class DlqHistoryController : ApiControllerBase
 
         var topTerms = JsonSerializer.Deserialize<List<string>>(persisted.TopTermsJson) ?? [];
         var trend = Shared.Helpers.SignatureTrendHeuristic.Compute(
-            isNew: false, persisted.OccurrenceCount, persisted.FirstSeenAt, persisted.LastSeenAt, DateTimeOffset.UtcNow);
+            isNew: false, persisted.OccurrenceCount, persisted.FirstSeenAt, persisted.LastSeenAt,
+            DateTimeOffset.UtcNow, isCurrentlyClustered: false);
 
         return Ok(new DlqSignatureDetailResponse(
             SignatureHash: signatureHash,

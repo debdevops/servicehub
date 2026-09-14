@@ -22,6 +22,7 @@ public sealed class SignatureReplayExecutorTests : IDisposable
     private readonly Mock<INamespaceRepository> _namespaceRepositoryMock = new();
     private readonly IFailureFeatureExtractor _featureExtractor = new FailureFeatureExtractor();
     private readonly IFailureFingerprintBuilder _fingerprintBuilder = new FailureFingerprintBuilder();
+    private readonly Mock<IAuditService> _auditServiceMock = new();
     private readonly Guid _namespaceId = Guid.NewGuid();
     private const string OwnerId = "entra:test-owner-123";
 
@@ -49,7 +50,7 @@ public sealed class SignatureReplayExecutorTests : IDisposable
         return new SignatureReplayExecutor(
             _dbContext, _namespaceRepositoryMock.Object, _messageOperationsMock.Object,
             ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance),
-            _featureExtractor, _fingerprintBuilder,
+            _featureExtractor, _fingerprintBuilder, _auditServiceMock.Object,
             NullLogger<SignatureReplayExecutor>.Instance);
     }
 
@@ -451,7 +452,7 @@ public sealed class SignatureReplayExecutorTests : IDisposable
             .ReturnsAsync(Result<bool>.Success(true));
 
         var ledger = new RecoveryLedgerService(dbContext);
-        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance), _featureExtractor, _fingerprintBuilder, NullLogger<SignatureReplayExecutor>.Instance);
+        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance), _featureExtractor, _fingerprintBuilder, _auditServiceMock.Object, NullLogger<SignatureReplayExecutor>.Instance);
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
 
@@ -554,7 +555,7 @@ public sealed class SignatureReplayExecutorTests : IDisposable
             });
 
         var ledger = new RecoveryLedgerService(dbContext);
-        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance), _featureExtractor, _fingerprintBuilder, NullLogger<SignatureReplayExecutor>.Instance);
+        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance), _featureExtractor, _fingerprintBuilder, _auditServiceMock.Object, NullLogger<SignatureReplayExecutor>.Instance);
 
         var act = async () => await sut.ExecuteAsync(job.Id, CancellationToken.None);
         await act.Should().NotThrowAsync();
@@ -653,7 +654,7 @@ public sealed class SignatureReplayExecutorTests : IDisposable
             });
 
         var ledger = new RecoveryLedgerService(dbContext);
-        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance), _featureExtractor, _fingerprintBuilder, NullLogger<SignatureReplayExecutor>.Instance);
+        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance), _featureExtractor, _fingerprintBuilder, _auditServiceMock.Object, NullLogger<SignatureReplayExecutor>.Instance);
 
         var act = async () => await sut.ExecuteAsync(job.Id, CancellationToken.None);
         await act.Should().NotThrowAsync();
@@ -740,7 +741,7 @@ public sealed class SignatureReplayExecutorTests : IDisposable
             });
 
         var ledger = new RecoveryLedgerService(dbContext);
-        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance), _featureExtractor, _fingerprintBuilder, NullLogger<SignatureReplayExecutor>.Instance);
+        var sut = new SignatureReplayExecutor(dbContext, _namespaceRepositoryMock.Object, messageOperationsMock.Object, ledger, new RecoveryEligibilityGate(ledger, NullLogger<RecoveryEligibilityGate>.Instance), _featureExtractor, _fingerprintBuilder, _auditServiceMock.Object, NullLogger<SignatureReplayExecutor>.Instance);
 
         await sut.ExecuteAsync(job.Id, CancellationToken.None);
 

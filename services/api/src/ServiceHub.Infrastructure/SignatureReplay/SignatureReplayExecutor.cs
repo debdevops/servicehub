@@ -38,6 +38,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
     private readonly IRecoveryEligibilityGate _eligibilityGate;
     private readonly IFailureFeatureExtractor _featureExtractor;
     private readonly IFailureFingerprintBuilder _fingerprintBuilder;
+    private readonly IAuditService _auditService;
     private readonly ILogger<SignatureReplayExecutor> _logger;
 
     /// <summary>Initialises a new instance of <see cref="SignatureReplayExecutor"/>.</summary>
@@ -49,6 +50,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         IRecoveryEligibilityGate eligibilityGate,
         IFailureFeatureExtractor featureExtractor,
         IFailureFingerprintBuilder fingerprintBuilder,
+        IAuditService auditService,
         ILogger<SignatureReplayExecutor> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
@@ -58,6 +60,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         _eligibilityGate = eligibilityGate ?? throw new ArgumentNullException(nameof(eligibilityGate));
         _featureExtractor = featureExtractor ?? throw new ArgumentNullException(nameof(featureExtractor));
         _fingerprintBuilder = fingerprintBuilder ?? throw new ArgumentNullException(nameof(fingerprintBuilder));
+        _auditService = auditService ?? throw new ArgumentNullException(nameof(auditService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -151,7 +154,48 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
             }
 
             await SaveChangesTolerantOfStaleMessagesAsync();
+            RecordCompletionAudit(job);
         }
+    }
+
+    /// <summary>
+    /// Writes the terminal-status audit entry for this job. Without this, the Audit Trail's only
+    /// record of a signature replay is the "Attempt" SignatureReplayController.Start logs when the
+    /// job is accepted — a compliance-facing log that never says whether a replay touching real
+    /// messages actually succeeded. Mirrors <see cref="BulkOperations.BulkOperationExecutor"/>'s
+    /// identically-named method.
+    /// </summary>
+    private void RecordCompletionAudit(SignatureReplayJob job)
+    {
+        // Runs on the background worker, outside the HTTP request pipeline — no HttpContext
+        // exists here, so IAuditLogger (which requires one) can't be used. IAuditService.Enqueue
+        // takes a plain AuditLog entity for exactly this kind of context-free background write.
+        _auditService.Enqueue(new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            Timestamp = DateTimeOffset.UtcNow,
+            OwnerId = job.OwnerId,
+            UserIdentity = "system:signature-replay",
+            // Matches the literal SignatureReplayController.Start logs for its "Attempt"/"Denied"
+            // entries (IntentHeaders.IntentSignatureReplay) — Api isn't referenceable from here.
+            Action = "signature:replay",
+            Outcome = job.Status.ToString(),
+            NamespaceId = job.NamespaceId,
+            NamespaceName = job.NamespaceDisplayName,
+            ResourceName = job.SignatureHash,
+            DetailsJson = JsonSerializer.Serialize(new
+            {
+                jobId = job.Id,
+                signatureHash = job.SignatureHash,
+                totalMatched = job.TotalMatched,
+                processed = job.ProcessedCount,
+                succeeded = job.SuccessCount,
+                failed = job.FailureCount,
+                skipped = job.SkippedCount,
+            }),
+            ErrorDetails = job.ErrorSummary,
+            CorrelationId = job.CorrelationId,
+        });
     }
 
     /// <summary>
