@@ -760,13 +760,31 @@ recover unattended?" verdict shown on each one differs by provider (see the call
     a provider genuinely can't support unattended replay for this signature yet (see
     [The Autonomy Model](#the-autonomy-model-in-plain-language)).
   - **Mark Resolved / Suppress / Archive** — the human lifecycle actions on a signature.
-  - **Replay Signature** — replay every currently-matching message for this one signature in one
-    action, gated the same way bulk operations are.
+  - **Replay Signature** (top of the page) and **Start Replay** (inside the Replay Safety &
+    History panel) open the same proposal dialog — see the screenshot below. This is a *manual*,
+    Approve (L3) action: the human click on **Replay N messages** inside the dialog is itself the
+    approval, so it executes immediately and does **not** create a separate Approval Queue entry
+    (that queue is only for Auto-Replay Rule matches the Eligibility Gate escalated on its own —
+    see [Approval Queue](#approval-queue)).
   - **Root Cause & Knowledge** — a place to record what you learned, so the next person (or the
     next occurrence) benefits from it.
   - **Replay Safety & History** — explains, in the specific language of the connected provider,
-    exactly what does and doesn't apply here (in the screenshot above: AWS SQS's lack of
+    exactly what does and doesn't apply here (in the first screenshot above: AWS SQS's lack of
     scheduled-message support and non-destructive peek).
+
+![Replay Safety & History on a real, recurring Azure signature — 2 successful / 0 failed replay history, and an honest recurrence warning: "This signature recurred 58m ago after the last replay attempt. Replay can be attempted after verifying current namespace state."](screenshots/complete-guide/signatures/signature-detail-replay-safety-azure.jpg)
+
+![The Replay Signature proposal dialog opened from a signature's detail page — Scope (All messages / date range / only unresolved / only failed attempts), 5 matched messages with a sample list, and Policy & Stop Condition text, before the explicit "Replay 5 messages" confirm](screenshots/complete-guide/signatures/replay-signature-proposal.jpg)
+
+> [!IMPORTANT]
+> **Don't replay immediately just because "Safe to replay" is shown.** If a signature recurred
+> shortly after its last replay, that usually means the underlying outage hadn't actually cleared
+> yet when the replay ran — the message went right back to the DLQ. The panel's own hint,
+> *"Replay can be attempted after verifying current namespace state,"* is telling you to check the
+> namespace's current DLQ/active-message counts (Namespace Overview or Active Messages) before
+> replaying again. Replaying into a still-broken dependency doesn't just fail once — it also
+> poisons this signature's own replay-history track record, which is exactly what standing (L4)
+> trust is computed from.
 
 ---
 

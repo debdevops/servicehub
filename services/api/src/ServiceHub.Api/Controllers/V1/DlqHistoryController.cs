@@ -599,7 +599,9 @@ public sealed class DlqHistoryController : ApiControllerBase
             OwnerId, namespaceId, signatureHash, cancellationToken);
         if (cluster is null && persistedSignature is not null)
         {
-            cluster = ResolveEquivalentLiveCluster(signaturesResult.Value.Clusters, persistedSignature);
+            var siblingSignatures = await _signatureLookupService.GetAllForNamespaceAsync(
+                OwnerId, namespaceId, persistedSignature.HashKind, cancellationToken);
+            cluster = ResolveEquivalentLiveCluster(signaturesResult.Value.Clusters, persistedSignature, siblingSignatures);
         }
 
         if (cluster is not null)
@@ -695,13 +697,31 @@ public sealed class DlqHistoryController : ApiControllerBase
     /// Deliberately requires a single unambiguous match — resolving to the wrong cluster would
     /// attach one failure's messages to another's investigation and arm replay against them, which
     /// is far worse than falling through to the honest historical view.
+    ///
+    /// That single-live-cluster check alone isn't enough: it only guards against two live
+    /// clusters sharing entity + reason, not against two or more *persisted* signatures (e.g.
+    /// several manual Test DLQ batches, all tagged the same generic reason) sharing entity +
+    /// reason while only one live cluster currently matches. In that case every one of those
+    /// persisted signatures would silently resolve onto the same single live cluster, attaching
+    /// the wrong signature's investigation (and replay target) to whichever one a caller
+    /// requested. <paramref name="siblingSignatures"/> — every persisted signature in this
+    /// namespace sharing <paramref name="persisted"/>'s hash kind — lets this method refuse to
+    /// resolve unless <paramref name="persisted"/> is itself the unique persisted signature for
+    /// its entity + reason.
     /// </remarks>
     private static DlqClusterSignatureResponse? ResolveEquivalentLiveCluster(
         IReadOnlyList<DlqClusterSignatureResponse> clusters,
-        Core.Entities.NamespaceSignature persisted)
+        Core.Entities.NamespaceSignature persisted,
+        IReadOnlyList<Core.Entities.NamespaceSignature> siblingSignatures)
     {
         var persistedEntity = ExtractTermValue(persisted.TopTermsJson, "entity:");
         if (string.IsNullOrWhiteSpace(persistedEntity))
+            return null;
+
+        var siblingCount = (siblingSignatures ?? []).Count(s =>
+            string.Equals(ExtractTermValue(s.TopTermsJson, "entity:"), persistedEntity, StringComparison.Ordinal)
+            && string.Equals(s.DominantDeadletterReason, persisted.DominantDeadletterReason, StringComparison.Ordinal));
+        if (siblingCount > 1)
             return null;
 
         var matches = clusters

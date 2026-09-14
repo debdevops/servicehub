@@ -264,4 +264,59 @@ public sealed class NamespaceSignatureLookupServiceTests : IDisposable
         matches.Should().HaveCount(2);
         matches.Select(m => m.NamespaceId).Should().BeEquivalentTo(new[] { namespaceB, namespaceC });
     }
+
+    // ── GetAllForNamespaceAsync ─────────────────────────────
+
+    [Fact]
+    public async Task GetAllForNamespaceAsync_MultipleSignatures_ReturnsAll()
+    {
+        var namespaceId = Guid.NewGuid();
+        await _service.LookupAndRecordAsync(
+            TestConstants.TestOwnerId, namespaceId, new[] { MakeObservation("hash-1"), MakeObservation("hash-2") },
+            SignatureHashKind.Fingerprint);
+
+        var results = await _service.GetAllForNamespaceAsync(
+            TestConstants.TestOwnerId, namespaceId, SignatureHashKind.Fingerprint);
+
+        results.Select(s => s.SignatureHash).Should().BeEquivalentTo(new[] { "hash-1", "hash-2" });
+    }
+
+    [Fact]
+    public async Task GetAllForNamespaceAsync_DifferentHashKind_Excluded()
+    {
+        var namespaceId = Guid.NewGuid();
+        await _service.LookupAndRecordAsync(
+            TestConstants.TestOwnerId, namespaceId, new[] { MakeObservation("cluster-hash") }, SignatureHashKind.Cluster);
+
+        var results = await _service.GetAllForNamespaceAsync(
+            TestConstants.TestOwnerId, namespaceId, SignatureHashKind.Fingerprint);
+
+        results.Should().BeEmpty("a cluster-space hash must never be returned for a fingerprint-space query");
+    }
+
+    [Fact]
+    public async Task GetAllForNamespaceAsync_OtherNamespace_Excluded()
+    {
+        var namespaceId = Guid.NewGuid();
+        await _service.LookupAndRecordAsync(
+            TestConstants.TestOwnerId, Guid.NewGuid(), new[] { MakeObservation() }, SignatureHashKind.Fingerprint);
+
+        var results = await _service.GetAllForNamespaceAsync(
+            TestConstants.TestOwnerId, namespaceId, SignatureHashKind.Fingerprint);
+
+        results.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetAllForNamespaceAsync_OtherOwner_Excluded()
+    {
+        var namespaceId = Guid.NewGuid();
+        await _service.LookupAndRecordAsync(
+            TestConstants.AltOwnerId, namespaceId, new[] { MakeObservation() }, SignatureHashKind.Fingerprint);
+
+        var results = await _service.GetAllForNamespaceAsync(
+            TestConstants.TestOwnerId, namespaceId, SignatureHashKind.Fingerprint);
+
+        results.Should().BeEmpty();
+    }
 }

@@ -57,6 +57,18 @@ public interface INamespaceSignatureLookupService
         string signatureHash,
         Guid excludeNamespaceId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Finds every persisted record for this namespace in one identity vocabulary — used to
+    /// detect when resolving a persisted signature onto a live cluster by entity + dominant
+    /// reason alone (<c>DlqHistoryController.ResolveEquivalentLiveCluster</c>) would be
+    /// ambiguous because more than one persisted signature shares that same entity + reason.
+    /// </summary>
+    Task<IReadOnlyList<NamespaceSignature>> GetAllForNamespaceAsync(
+        string ownerId,
+        Guid namespaceId,
+        SignatureHashKind hashKind,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
