@@ -1,8 +1,12 @@
+import { useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useDlqSignatures } from '@servicehub/ui-shared/hooks/useDlqSignatures';
 import type { DlqClusterSignature } from '@servicehub/ui-shared/lib/api/dlqSignatures';
+import { Pagination } from '@/components/autonomy/ui';
 import { FailureInvestigationPanel } from './FailureInvestigationPanel';
+
+const CLUSTERS_PAGE_SIZE = 5;
 
 interface DlqSignaturesPanelProps {
   namespaceId?: string;
@@ -83,10 +87,15 @@ function ClusterCard({
 
 export function DlqSignaturesPanel({ namespaceId, onFilterEntity }: DlqSignaturesPanelProps) {
   const { data, loading, available } = useDlqSignatures(namespaceId);
+  const [page, setPage] = useState(0);
 
   if (loading || !available || !data || data.clusters.length === 0) {
     return null;
   }
+
+  const pageCount = Math.max(1, Math.ceil(data.clusters.length / CLUSTERS_PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pagedClusters = data.clusters.slice(safePage * CLUSTERS_PAGE_SIZE, (safePage + 1) * CLUSTERS_PAGE_SIZE);
 
   return (
     <div className="bg-primary-50 border border-primary-200 rounded-xl p-4 mb-3">
@@ -99,7 +108,7 @@ export function DlqSignaturesPanel({ namespaceId, onFilterEntity }: DlqSignature
       </div>
 
       <div className="space-y-3">
-        {data.clusters.map((cluster) => (
+        {pagedClusters.map((cluster) => (
           <ClusterCard
             key={`${cluster.dominantEntity}-${cluster.windowStart}`}
             cluster={cluster}
@@ -108,6 +117,19 @@ export function DlqSignaturesPanel({ namespaceId, onFilterEntity }: DlqSignature
           />
         ))}
       </div>
+
+      {pageCount > 1 && (
+        <div className="-mx-4 -mb-4 mt-3">
+          <Pagination
+            page={safePage}
+            pageCount={pageCount}
+            total={data.clusters.length}
+            pageSize={CLUSTERS_PAGE_SIZE}
+            onPage={setPage}
+            noun="clusters"
+          />
+        </div>
+      )}
 
       {data.singletons.length > 0 && (
         <p className="text-xs text-primary-700 mt-3">

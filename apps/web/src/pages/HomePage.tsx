@@ -49,7 +49,10 @@ import type { FleetNamespaceHealth } from '@servicehub/ui-shared/lib/api/fleet';
 import { EmptyState } from '@/components/EmptyState';
 import { EnvironmentBadge } from '@/components/EnvironmentBadge';
 import { StatusBadge } from '@/components/dlq/StatusBadge';
+import { Pagination } from '@/components/autonomy/ui';
 import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
+
+const SIGNATURE_PAGE_SIZE = 5;
 
 /** "1h 24m", "3d 2h", "42s" — coarsest two units, never more precise than seconds. */
 function formatDuration(totalSeconds: number): string {
@@ -663,6 +666,7 @@ function NamespaceHome({ namespace, navPrefix, cloudHomeHref, siblingNamespaces,
   const navigate = useNavigate();
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [connectionDetailsOpen, setConnectionDetailsOpen] = useState(false);
+  const [signaturePage, setSignaturePage] = useState(0);
   const { isDemoMode } = useDemoContext();
   const style = getProviderStyle(namespace.cloudProvider);
   const { data: capabilitiesMap } = useProviderCapabilities();
@@ -684,13 +688,21 @@ function NamespaceHome({ namespace, navPrefix, cloudHomeHref, siblingNamespaces,
       : { label: 'Connected', dot: 'bg-green-500' };
 
   const allClusters = signatures?.clusters ?? [];
-  const topClusters = allClusters.slice(0, 8);
+  const signaturePageCount = Math.max(1, Math.ceil(allClusters.length / SIGNATURE_PAGE_SIZE));
+  const pagedClusters = allClusters.slice(
+    signaturePage * SIGNATURE_PAGE_SIZE,
+    (signaturePage + 1) * SIGNATURE_PAGE_SIZE,
+  );
   const dlqItems = recentDlq?.items ?? [];
   const activityItems = recentActivity?.items?.slice(0, 8) ?? [];
   const oldestDlqAgeSeconds = dlqSummary?.oldestMessage
     ? Math.max(0, (Date.now() - new Date(dlqSummary.oldestMessage).getTime()) / 1000)
     : null;
   const otherNamespaces = siblingNamespaces.filter((ns) => ns.id !== namespace.id);
+
+  useEffect(() => {
+    setSignaturePage(0);
+  }, [namespace.id]);
 
   // Only surfaced when this provider actually falls short of something — Azure, with no gaps
   // in the capabilities below, shows nothing here rather than an empty reassurance panel.
@@ -875,7 +887,7 @@ function NamespaceHome({ namespace, navPrefix, cloudHomeHref, siblingNamespaces,
                 Top failure signatures
                 {allClusters.length > 0 && <span className="ml-1.5 font-normal text-gray-400">({allClusters.length})</span>}
               </h2>
-              {allClusters.length > topClusters.length ? (
+              {allClusters.length > SIGNATURE_PAGE_SIZE ? (
                 <button
                   type="button"
                   onClick={() => navigate(`${navPrefix}/dlq-history?namespace=${namespace.id}`)}
@@ -893,41 +905,60 @@ function NamespaceHome({ namespace, navPrefix, cloudHomeHref, siblingNamespaces,
               <p className="text-sm text-gray-500 py-2">Loading…</p>
             ) : !signaturesAvailable ? (
               <p className="text-sm text-gray-500 py-2">Signature clustering isn't available for this namespace right now.</p>
-            ) : topClusters.length === 0 ? (
+            ) : allClusters.length === 0 ? (
               <p className="text-sm text-gray-500 py-2">No recurring failure patterns detected.</p>
             ) : (
-              <div className="divide-y divide-gray-100">
-                {topClusters.map((cluster) => {
-                  const pct = signatures && signatures.batchSize > 0
-                    ? Math.round((cluster.occurrenceCount / signatures.batchSize) * 100)
-                    : null;
-                  return (
-                    <button
-                      type="button"
-                      key={cluster.signatureHash}
-                      onClick={() => navigate(`${navPrefix}/signatures/${cluster.signatureHash}?namespace=${namespace.id}`)}
-                      className="group w-full py-2.5 text-left hover:bg-gray-50 -mx-1 px-1 rounded transition-colors"
-                    >
-                      <div className="flex items-center justify-between gap-3 mb-1">
-                        <p className="text-sm font-medium text-gray-900 truncate flex items-center gap-1">
-                          {cluster.dominantEntity} · {cluster.dominantDeadletterReason}
-                          <ChevronRight className="w-3.5 h-3.5 text-gray-300 shrink-0 transition-all group-hover:text-primary-600 group-hover:translate-x-0.5" />
-                        </p>
-                        <span className="shrink-0 px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-700" title="How many times this pattern has recurred, and its share of this namespace's dead-letter backlog">
-                          {cluster.occurrenceCount}
-                          {pct != null && <span className="text-red-400 font-normal"> · {pct}%</span>}
-                        </span>
-                      </div>
-                      {pct != null && (
-                        <div className="h-1 bg-gray-100 rounded-full overflow-hidden mb-1">
-                          <div className="h-full bg-red-400 rounded-full" style={{ width: `${Math.min(100, pct)}%` }} />
+              <>
+                <div className="divide-y divide-gray-100">
+                  {pagedClusters.map((cluster) => {
+                    const pct = signatures && signatures.batchSize > 0
+                      ? Math.round((cluster.occurrenceCount / signatures.batchSize) * 100)
+                      : null;
+                    const detailsHref = `${navPrefix}/signatures/${cluster.signatureHash}?namespace=${namespace.id}`;
+                    return (
+                      <div key={cluster.signatureHash} className="py-2.5">
+                        <div className="flex items-center justify-between gap-3 mb-1">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {cluster.dominantEntity} · {cluster.dominantDeadletterReason}
+                          </p>
+                          <span className="shrink-0 px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-700" title="How many times this pattern has recurred, and its share of this namespace's dead-letter backlog">
+                            {cluster.occurrenceCount}
+                            {pct != null && <span className="text-red-400 font-normal"> · {pct}%</span>}
+                          </span>
                         </div>
-                      )}
-                      <p className="text-xs text-gray-500 truncate">{cluster.explanation}</p>
-                    </button>
-                  );
-                })}
-              </div>
+                        {pct != null && (
+                          <div className="h-1 bg-gray-100 rounded-full overflow-hidden mb-1">
+                            <div className="h-full bg-red-400 rounded-full" style={{ width: `${Math.min(100, pct)}%` }} />
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-xs text-gray-500 truncate">{cluster.explanation}</p>
+                          <button
+                            type="button"
+                            onClick={() => navigate(detailsHref)}
+                            className="shrink-0 flex items-center gap-0.5 text-xs font-medium text-primary-600 hover:text-primary-700"
+                          >
+                            Details
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {signaturePageCount > 1 && (
+                  <div className="-mx-4 -mb-4 mt-2">
+                    <Pagination
+                      page={signaturePage}
+                      pageCount={signaturePageCount}
+                      total={allClusters.length}
+                      pageSize={SIGNATURE_PAGE_SIZE}
+                      onPage={setSignaturePage}
+                      noun="signatures"
+                    />
+                  </div>
+                )}
+              </>
             )}
           </div>
 
