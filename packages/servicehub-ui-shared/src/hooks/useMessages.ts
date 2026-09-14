@@ -13,8 +13,78 @@ function sanitizeQueueName(name: string): string {
   return name.replace(/\/?\$deadletterqueue$/i, '');
 }
 
+/**
+ * Peek-based list APIs (Azure/AWS/GCP all lack a "list newest first" primitive) return
+ * messages starting from the head of the queue, capped at `take`. A message just sent to
+ * a queue that already has more than `take` active messages ahead of it is never included
+ * in the fetched page at all, so no amount of client-side sorting can surface it. To give
+ * immediate, provider-agnostic feedback we track "just sent" messages ourselves and merge
+ * them into the displayed list until the real message is confirmed present in a fetch (or
+ * the entry goes stale).
+ */
+const OPTIMISTIC_TTL_MS = 10 * 60 * 1000;
+const OPTIMISTIC_CAP = 50;
+
+interface OptimisticSentMessage {
+  message: Message;
+  sentAt: number;
+}
+
+// Sending targets a queue or a plain topic name; the messages *list* for a topic is
+// scoped to one subscription (`topicName/subscriptions/subName`). Key optimistic entries
+// by the send target so every subscription of a topic can show the same "just sent" entry.
+function toSendTargetName(entityType: 'queue' | 'topic' | undefined, queueOrTopicName: string): string {
+  if (entityType !== 'topic') return queueOrTopicName;
+  const idx = queueOrTopicName.indexOf('/subscriptions/');
+  return idx === -1 ? queueOrTopicName : queueOrTopicName.slice(0, idx);
+}
+
+function optimisticMessagesKey(namespaceId: string, entityType: 'queue' | 'topic' | undefined, queueOrTopicName: string) {
+  return ['messages-optimistic', namespaceId, entityType || 'queue', toSendTargetName(entityType, queueOrTopicName)] as const;
+}
+
+// Best-effort match between a locally-tracked "just sent" message and a real message
+// that came back from a peek — used to drop the optimistic entry once the real one is
+// actually visible, so a shallow queue never shows the same message twice.
+function isSameSentMessage(optimistic: Message, real: Message): boolean {
+  if (optimistic.body !== real.body) return false;
+  if ((optimistic.correlationId || null) !== (real.correlationId || null)) return false;
+  if ((optimistic.sessionId || null) !== (real.sessionId || null)) return false;
+  const optimisticProps = JSON.stringify(optimistic.applicationProperties || {});
+  const realProps = JSON.stringify(real.applicationProperties || {});
+  if (optimisticProps !== realProps) return false;
+  // The real message can't have been enqueued before we sent it (allow a few seconds of
+  // clock skew between the browser and the broker).
+  return new Date(real.enqueuedTime).getTime() >= new Date(optimistic.enqueuedTime).getTime() - 5_000;
+}
+
+/**
+ * Messages sent from this browser for the given queue/topic that haven't yet been
+ * confirmed present in a real fetch — merge these into a message list so a freshly sent
+ * message shows up immediately regardless of where the peek window happens to land.
+ */
+export function useOptimisticSentMessages(
+  namespaceId: string,
+  queueOrTopicName: string,
+  entityType: 'queue' | 'topic' = 'queue'
+): Message[] {
+  const { data } = useQuery<OptimisticSentMessage[]>({
+    queryKey: optimisticMessagesKey(namespaceId, entityType, queueOrTopicName),
+    queryFn: () => [],
+    enabled: false,
+    initialData: [],
+    staleTime: Infinity,
+  });
+
+  const now = Date.now();
+  return (data ?? [])
+    .filter(entry => now - entry.sentAt < OPTIMISTIC_TTL_MS)
+    .map(entry => entry.message);
+}
+
 export function useMessages(params: GetMessagesParams & { autoRefresh?: boolean }) {
   const { isDemoMode, cloudProvider } = useDemoContext();
+  const queryClient = useQueryClient();
 
   const sanitizedName = sanitizeQueueName(params.queueOrTopicName);
 
@@ -40,7 +110,18 @@ export function useMessages(params: GetMessagesParams & { autoRefresh?: boolean 
         queryKey: ['messages', { ...params, queueOrTopicName: sanitizedName }],
         queryFn: async (): Promise<PaginatedResponse<Message>> => {
           try {
-            return await messagesApi.list({ ...params, queueOrTopicName: sanitizedName });
+            const result = await messagesApi.list({ ...params, queueOrTopicName: sanitizedName });
+
+            // Reconcile: drop any optimistic "just sent" entry that this fetch just proved
+            // is now really present, so it doesn't render twice.
+            if ((params.skip ?? 0) === 0 && params.queueType !== 'deadletter' && result.items.length > 0) {
+              const optimisticKey = optimisticMessagesKey(params.namespaceId, params.entityType, sanitizedName);
+              queryClient.setQueryData<OptimisticSentMessage[]>(optimisticKey, (old = []) =>
+                old.filter(entry => !result.items.some(real => isSameSentMessage(entry.message, real)))
+              );
+            }
+
+            return result;
           } catch (error: unknown) {
             const status = (error as ApiError)?.response?.status;
             // Only 404 ("this queue/topic doesn't exist") is a legitimate empty state.
@@ -118,6 +199,30 @@ export function useSendMessage() {
         ? rejectDemoModeMutation()
         : messagesApi.send(namespaceId, queueOrTopicName, message, entityType),
     onSuccess: async (_, variables) => {
+      // Scheduled sends don't become active until their scheduled time, so there's
+      // nothing to show at the top of the (active) list yet.
+      if (!variables.message.scheduledEnqueueTime) {
+        const now = new Date();
+        const optimisticMessage: Message = {
+          messageId: `optimistic-${now.getTime()}-${Math.random().toString(36).slice(2)}`,
+          sequenceNumber: 0,
+          enqueuedTime: now.toISOString(),
+          deliveryCount: 0,
+          state: 'Active',
+          contentType: variables.message.contentType || 'application/json',
+          body: variables.message.body,
+          correlationId: variables.message.correlationId ?? null,
+          sessionId: variables.message.sessionId ?? null,
+          timeToLive: variables.message.timeToLive != null ? String(variables.message.timeToLive) : null,
+          applicationProperties: variables.message.properties ?? null,
+          isFromDeadLetter: false,
+        };
+        const optimisticKey = optimisticMessagesKey(variables.namespaceId, variables.entityType, variables.queueOrTopicName);
+        queryClient.setQueryData<OptimisticSentMessage[]>(optimisticKey, (old = []) =>
+          [{ message: optimisticMessage, sentAt: now.getTime() }, ...old].slice(0, OPTIMISTIC_CAP)
+        );
+      }
+
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: ['messages', { namespaceId: variables.namespaceId, queueOrTopicName: variables.queueOrTopicName }],

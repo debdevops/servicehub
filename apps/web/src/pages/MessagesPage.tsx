@@ -9,7 +9,7 @@ import { AIFindingsDropdown } from '@/components/ai';
 import { MessageListSkeleton } from '@/components/messages/MessageListSkeleton';
 import { HelpTooltip } from '@/components/help';
 import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
-import { useMessages } from '@servicehub/ui-shared/hooks/useMessages';
+import { useMessages, useOptimisticSentMessages } from '@servicehub/ui-shared/hooks/useMessages';
 import { useClientSideInsights, useInsightsSummary } from '@servicehub/ui-shared/hooks/useInsights';
 import { useQueues } from '@servicehub/ui-shared/hooks/useQueues';
 import { useSubscriptions } from '@servicehub/ui-shared/hooks/useSubscriptions';
@@ -384,13 +384,23 @@ export function MessagesPage() {
     return Array.from(ids);
   }, [displayInsights]);
 
-  // Get messages from API - sort by enqueued time descending (newest first)
-  const messages: Message[] = useMemo(
-    () => paginationState.allMessages
-      .map(msg => transformMessage(msg, insightMessageIds, queueTab))
-      .sort((a, b) => b.enqueuedTime.getTime() - a.enqueuedTime.getTime()),
-    [paginationState.allMessages, insightMessageIds, queueTab]
+  // Peek-based list APIs return messages starting from the head of the queue, so a
+  // message just sent to a non-empty queue may not be in the fetched page at all —
+  // merge in "just sent" entries tracked client-side so it still shows up immediately.
+  const optimisticSentMessages = useOptimisticSentMessages(
+    namespaceId || '',
+    entityType === 'topic' ? (topicName || '') : (queueName || ''),
+    entityType
   );
+
+  // Get messages from API - sort by enqueued time descending (newest first)
+  const messages: Message[] = useMemo(() => {
+    const fetched = paginationState.allMessages.map(msg => transformMessage(msg, insightMessageIds, queueTab));
+    const optimistic = queueTab === 'active'
+      ? optimisticSentMessages.map(msg => transformMessage(msg, insightMessageIds, queueTab))
+      : [];
+    return [...optimistic, ...fetched].sort((a, b) => b.enqueuedTime.getTime() - a.enqueuedTime.getTime());
+  }, [paginationState.allMessages, optimisticSentMessages, insightMessageIds, queueTab]);
 
   // Find selected message
   const selectedMessage = useMemo(
