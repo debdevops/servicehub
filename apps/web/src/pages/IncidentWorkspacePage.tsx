@@ -46,7 +46,11 @@ const PLAYBOOK_STATE_COLORS: Record<PlaybookEntryState, string> = {
 
 const TABS = [
   { id: 'summary', label: 'Summary' },
-  { id: 'evidence', label: 'Evidence' },
+  // Label is "Findings" (not "Evidence") to avoid colliding with the unrelated "Recovery
+  // Evidence" page (`/recovery`, reached via "View Recovery Ledger" below) — this tab shows
+  // Playbook findings (PlaybookEntry), that page shows recovery executions (RecoveryLedgerEntry).
+  // The `id` stays 'evidence' so existing `?tab=evidence` links keep working.
+  { id: 'evidence', label: 'Findings' },
   { id: 'recovery', label: 'Recommended Recovery' },
   { id: 'activity', label: 'Activity' },
 ] as const;
@@ -213,20 +217,16 @@ function PlaybookEntryCard({ entry }: { entry: PlaybookEntry }) {
       </div>
       <p className="text-xs text-gray-400 mb-2">{formatDate(entry.proposedAt)}</p>
 
-      {reasoningObservation && (
+      {/* The Summary is already shown above via describePlaybookEntry (the card's subtitle
+          line) — only Considerations belong here, or this would repeat the same sentence twice. */}
+      {reasoningObservation && reasoningObservation.Considerations.length > 0 && (
         <div className="mb-2 text-xs text-gray-700">
-          <p className="font-semibold text-gray-500 uppercase tracking-wide mb-1">Observation</p>
-          <p className="mb-2">{reasoningObservation.Summary}</p>
-          {reasoningObservation.Considerations.length > 0 && (
-            <>
-              <p className="font-semibold text-gray-500 uppercase tracking-wide mb-1">Considerations</p>
-              <ul className="list-disc list-inside space-y-0.5">
-                {reasoningObservation.Considerations.map((c, i) => (
-                  <li key={i}>{c}</li>
-                ))}
-              </ul>
-            </>
-          )}
+          <p className="font-semibold text-gray-500 uppercase tracking-wide mb-1">Considerations</p>
+          <ul className="list-disc list-inside space-y-0.5">
+            {reasoningObservation.Considerations.map((c, i) => (
+              <li key={i}>{c}</li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -340,6 +340,22 @@ export function IncidentWorkspacePage() {
     () => groupRecoveryEntriesByOperation(incident?.recoveryEntries ?? []),
     [incident],
   );
+  const declinedRecoveryCount = useMemo(
+    () => incident?.recoveryEntries.filter((e) => e.state === 'Declined').length ?? 0,
+    [incident],
+  );
+  const pendingPlaybookCount = useMemo(
+    () => incident?.playbookEntries.filter((e) => e.state === 'Proposed' || e.state === 'UnderReview' || e.state === 'Edited').length ?? 0,
+    [incident],
+  );
+  const aiObservationCount = useMemo(
+    () => incident?.playbookEntries.filter((e) => e.proposalKind === 'ReasoningCompanionObservation').length ?? 0,
+    [incident],
+  );
+  // The URL's :signatureHash may be a Cluster-space hash that the backend silently resolved to a
+  // different, Fingerprint-space signature (see IncidentReadModelService.ResolveEquivalentFingerprintHashAsync).
+  // Surface that instead of letting the URL and the on-page "Fingerprint" silently disagree.
+  const resolvedToDifferentHash = !!(incident && signatureHash && incident.signatureHash !== signatureHash);
   const [recoveryOpsPage, setRecoveryOpsPage] = useState(0);
   const recoveryOpsPageCount = Math.max(1, Math.ceil(recoveryOperations.length / RECOVERY_OPERATIONS_PAGE_SIZE));
   const recoveryOpsSafePage = Math.min(recoveryOpsPage, recoveryOpsPageCount - 1);
@@ -426,6 +442,13 @@ export function IncidentWorkspacePage() {
                     <HelpTooltip {...tooltips.incidentWorkspace.overview} position="bottom" />
                   </h1>
                   <p className="text-xs text-gray-400 font-mono mt-0.5 break-all">Fingerprint: {incident.signatureHash}</p>
+                  {resolvedToDifferentHash && (
+                    <p className="flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-md px-2 py-1 mt-1.5">
+                      Resolved from a related identifier ({signatureHash.slice(0, 8)}…) to this
+                      record.
+                      <HelpTooltip {...tooltips.incidentWorkspace.resolvedFingerprint} size={12} position="bottom" />
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <StatusBadge status={incident.lifecycleStatus} size="md" />
@@ -514,19 +537,36 @@ export function IncidentWorkspacePage() {
                     <span className="font-medium text-gray-900">{incident.summary.openRecoveryEntryCount}</span>
                   </div>
                   <div>
-                    <span className="text-gray-500 block text-xs">Pending Decisions</span>
+                    <span className="flex items-center gap-1 text-gray-500 text-xs">
+                      Pending Decisions
+                      <HelpTooltip
+                        text={tooltips.incidentWorkspace.pendingDecisions.text}
+                        detail={`${declinedRecoveryCount} declined recovery ${declinedRecoveryCount === 1 ? 'attempt' : 'attempts'} + ${pendingPlaybookCount} pending playbook ${pendingPlaybookCount === 1 ? 'proposal' : 'proposals'} = ${incident.summary.pendingDecisionCount}.`}
+                        size={12}
+                        position="bottom"
+                      />
+                    </span>
                     <span className="font-medium text-gray-900">{incident.summary.pendingDecisionCount}</span>
                   </div>
                   <div>
-                    <span className="text-gray-500 block text-xs">Anomaly Flags</span>
+                    <span className="flex items-center gap-1 text-gray-500 text-xs">
+                      Anomaly Flags
+                      <HelpTooltip {...tooltips.incidentWorkspace.entityScopedFinding} size={12} position="bottom" />
+                    </span>
                     <span className="font-medium text-gray-900">{incident.summary.anomalyFlagCount}</span>
                   </div>
                   <div>
-                    <span className="text-gray-500 block text-xs">Drift Findings</span>
+                    <span className="flex items-center gap-1 text-gray-500 text-xs">
+                      Drift Findings
+                      <HelpTooltip {...tooltips.incidentWorkspace.entityScopedFinding} size={12} position="bottom" />
+                    </span>
                     <span className="font-medium text-gray-900">{incident.summary.driftFindingCount}</span>
                   </div>
                   <div>
-                    <span className="text-gray-500 block text-xs">Correlation Hypotheses</span>
+                    <span className="flex items-center gap-1 text-gray-500 text-xs">
+                      Correlation Hypotheses
+                      <HelpTooltip {...tooltips.incidentWorkspace.entityScopedFinding} size={12} position="bottom" />
+                    </span>
                     <span className="font-medium text-gray-900">{incident.summary.correlationHypothesisCount}</span>
                   </div>
                   <div>
@@ -537,12 +577,19 @@ export function IncidentWorkspacePage() {
                     <span className="text-gray-500 block text-xs">Replay Plans</span>
                     <span className="font-medium text-gray-900">{incident.summary.replayPlanCount}</span>
                   </div>
+                  <div>
+                    <span className="flex items-center gap-1 text-gray-500 text-xs">
+                      AI Observations
+                      <HelpTooltip {...tooltips.incidentWorkspace.aiObservationCount} size={12} position="bottom" />
+                    </span>
+                    <span className="font-medium text-gray-900">{aiObservationCount}</span>
+                  </div>
                 </div>
                 <div className="flex flex-wrap gap-3 mt-5 pt-4 border-t border-gray-100 text-sm">
-                  <Link to={`${basePath}/recovery`} className="text-primary-600 hover:text-primary-700 font-medium">
-                    View Recovery Ledger
+                  <Link to={`${basePath}/recovery?namespace=${incident.namespaceId}`} className="text-primary-600 hover:text-primary-700 font-medium">
+                    View Recovery Evidence
                   </Link>
-                  <Link to={`${basePath}/playbook`} className="text-primary-600 hover:text-primary-700 font-medium">
+                  <Link to={`${basePath}/playbook?namespace=${incident.namespaceId}`} className="text-primary-600 hover:text-primary-700 font-medium">
                     View Playbook Ledger
                   </Link>
                 </div>

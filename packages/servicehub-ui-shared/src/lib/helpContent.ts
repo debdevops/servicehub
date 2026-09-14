@@ -519,6 +519,22 @@ export const tooltips = {
       text: 'Playbook activity tied to this signature',
       detail: 'Each count is a different kind of proposal the Playbook has raised for this signature: recovery entries, pending decisions, anomaly flags, drift findings, correlation hypotheses, prevention triggers, and replay plans.',
     } as TooltipContent,
+    pendingDecisions: {
+      text: 'Two different queues, added together',
+      detail: 'Declined recovery attempts that need a human decision, plus playbook proposals still awaiting one — summed into one number with no breakdown shown elsewhere.',
+    } as TooltipContent,
+    entityScopedFinding: {
+      text: 'Shared across every signature on this entity',
+      detail: 'Anomaly flags, drift findings, and correlation hypotheses are detected per entity, not per signature — the same finding can show this exact count on every other signature that shares this one\'s entity.',
+    } as TooltipContent,
+    aiObservationCount: {
+      text: 'Not counted in the numbers above',
+      detail: 'AI-suggested observations appear on the Findings tab alongside anomaly flags, drift findings, and correlation hypotheses, but aren\'t included in any of those three counts.',
+    } as TooltipContent,
+    resolvedFingerprint: {
+      text: 'Resolved to a related record',
+      detail: 'The link you followed pointed at a related identifier for this failure. ServiceHub found the specific signature record that identifier maps to and is showing that one\'s history here.',
+    } as TooltipContent,
   },
 
   // ── Live Tail Page ───────────────────────────────

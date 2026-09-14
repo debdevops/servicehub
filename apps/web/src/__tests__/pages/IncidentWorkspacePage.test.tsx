@@ -172,11 +172,61 @@ describe('IncidentWorkspacePage', () => {
     expect(screen.getByText('Replay Plans')).toBeInTheDocument();
   });
 
-  it('switches to the Evidence tab and shows anomaly/drift/correlation proposals only', () => {
+  it('does not show a hash-resolution note when the URL identifier matches the incident', () => {
+    const Wrapper = createWrapper();
+    render(<Wrapper><IncidentWorkspacePage /></Wrapper>);
+    expect(screen.queryByText(/Resolved from a related identifier/)).not.toBeInTheDocument();
+  });
+
+  it('shows a hash-resolution note when the URL identifier resolves to a different signature record', () => {
+    const Wrapper = createWrapper('/incidents/cluster-hash-1?namespace=ns1');
+    render(<Wrapper><IncidentWorkspacePage /></Wrapper>);
+    expect(screen.getByText(/Resolved from a related identifier \(cluster-…\)/)).toBeInTheDocument();
+  });
+
+  it('counts AI-suggested observations separately, outside the anomaly/drift/correlation tiles', () => {
+    mockUseIncident.mockReturnValue({
+      data: {
+        ...mockIncident,
+        playbookEntries: [
+          ...mockIncident.playbookEntries,
+          {
+            id: 'pb-3',
+            pillarKind: 'Investigate',
+            proposalKind: 'ReasoningCompanionObservation',
+            evidenceRefJson: '{}',
+            proposalJson: JSON.stringify({ Summary: 'Failures cluster around a timeout.', Considerations: [] }),
+            proposedAt: '2026-01-01T14:00:00Z',
+            proposerIdentity: 'ReasoningAgent:services/agent',
+            proposerKind: 'ReasoningAgent',
+            signatureHashSnapshot: 'hash-1',
+            namespaceId: 'ns1',
+            namespaceNameSnapshot: 'contoso-prod',
+            providerSnapshot: 'azure',
+            environmentSnapshot: 'prod',
+            relatedRecoveryOperationId: null,
+            expiresAt: '2026-01-08T14:00:00Z',
+            state: 'Proposed',
+            disposition: null,
+            closedAt: null,
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+    });
+    const Wrapper = createWrapper();
+    render(<Wrapper><IncidentWorkspacePage /></Wrapper>);
+    expect(screen.getByText('AI Observations').nextElementSibling).toHaveTextContent('1');
+    // Anomaly Flags count (1, from the base mock) is unaffected by the observation being present.
+    expect(screen.getByText('Anomaly Flags').nextElementSibling).toHaveTextContent('1');
+  });
+
+  it('switches to the Findings tab and shows anomaly/drift/correlation proposals only', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><IncidentWorkspacePage /></Wrapper>);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Evidence' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Findings' }));
     expect(screen.getByText('AnomalyFlag')).toBeInTheDocument();
     expect(screen.queryByText('ReplayPlan')).not.toBeInTheDocument();
   });
@@ -188,7 +238,8 @@ describe('IncidentWorkspacePage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Recommended Recovery' }));
     expect(screen.getByText('ReplayPlan')).toBeInTheDocument();
     expect(screen.getByText('orders-queue')).toBeInTheDocument();
-    expect(screen.getByText('1 entry')).toBeInTheDocument();
+    // One-liner rollup: reason · count · outcome — see describeRecoveryOperation.
+    expect(screen.getByText(/1 message/)).toBeInTheDocument();
   });
 
   it('links a grouped recovery operation to its own detail page', () => {
@@ -204,12 +255,15 @@ describe('IncidentWorkspacePage', () => {
     render(<Wrapper><IncidentWorkspacePage /></Wrapper>);
 
     fireEvent.click(screen.getByRole('button', { name: 'Activity' }));
-    const rows = screen.getAllByText(/Recovery entry begun|proposed/);
+    // Rows render a one-liner per entry — describeRecoveryActivity for recovery rows,
+    // describePlaybookEntry for playbook rows (see IncidentWorkspacePage.tsx).
+    const recoveryRow = screen.getByText('orders-queue — MaxDeliveryCountExceeded');
+    const playbookRow = screen.getByText('Replay proposal');
     // Most recent first: recovery entry (Jan 2) before either playbook proposal (Jan 1).
-    expect(rows[0]).toHaveTextContent('Recovery entry begun');
+    expect(recoveryRow.compareDocumentPosition(playbookRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('shows an empty state on the Evidence tab when there is no evidence', () => {
+  it('shows an empty state on the Findings tab when there is no evidence', () => {
     mockUseIncident.mockReturnValue({
       data: { ...mockIncident, playbookEntries: [] },
       isLoading: false,
@@ -218,11 +272,11 @@ describe('IncidentWorkspacePage', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><IncidentWorkspacePage /></Wrapper>);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Evidence' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Findings' }));
     expect(screen.getByText('No evidence recorded')).toBeInTheDocument();
   });
 
-  it('shows a reasoning-companion observation on the Evidence tab with an AI-suggestion badge and readable text', () => {
+  it('shows a reasoning-companion observation on the Findings tab with an AI-suggestion badge and readable text', () => {
     mockUseIncident.mockReturnValue({
       data: {
         ...mockIncident,
@@ -259,7 +313,7 @@ describe('IncidentWorkspacePage', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><IncidentWorkspacePage /></Wrapper>);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Evidence' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Findings' }));
     expect(screen.getByText('AI suggestion')).toBeInTheDocument();
     expect(screen.getByText('Failures cluster around a single downstream dependency timeout.')).toBeInTheDocument();
     expect(screen.getByText('Recurred 3 times in the last 24h')).toBeInTheDocument();
