@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, useSearchParams, useNavigate, Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -25,9 +25,13 @@ import { StatusBadge } from '@/components/dlq';
 import { RecoveryStateBadge } from '@/components/recovery/RecoveryStateBadge';
 import { HelpTooltip } from '@/components/help';
 import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
+import { Pagination } from '@/components/autonomy/ui';
 
 const EVIDENCE_PROPOSAL_KINDS = new Set(['AnomalyFlag', 'DriftFinding', 'CorrelationHypothesis', 'ReasoningCompanionObservation']);
 const RECOVERY_PROPOSAL_KINDS = new Set(['ReplayPlan', 'PreventionTrigger']);
+const RECOVERY_OPERATIONS_PAGE_SIZE = 10;
+const ACTIVITY_PAGE_SIZE = 10;
+const EVIDENCE_PAGE_SIZE = 10;
 
 const PLAYBOOK_STATE_COLORS: Record<PlaybookEntryState, string> = {
   Proposed: 'bg-amber-100 text-amber-700',
@@ -124,6 +128,62 @@ function parseReplayPlanProposal(json: string): ReplayPlanProposal | null {
   }
 }
 
+/** Mirrors `PreventionRuleEvaluationService`'s serialization of `PreventionTriggerProposal`
+ * (services/api/src/ServiceHub.Core/Models/PreventionTriggerProposal.cs) — PascalCase, same
+ * raw-serialized-record convention as the other proposal kinds above. */
+interface PreventionTriggerProposalJson {
+  Name: string;
+  EntityName: string;
+  OccurrencesInWindow: number;
+  MinOccurrences: number;
+}
+
+/**
+ * A short, meaningful one-liner for a playbook entry — what ServiceHub actually noticed, not
+ * just its category label. `ReplayPlan` and `ReasoningCompanionObservation` reuse the parsers
+ * above; `AnomalyFlag`, `DriftFinding`, and `CorrelationHypothesis` all carry a plain-language
+ * `Description` field their proposing worker already wrote (see e.g.
+ * `AnomalyDetectionWorker.ProposePlaybookEntryAsync`) — read that directly rather than
+ * re-deriving a summary from the raw evidence.
+ */
+function describePlaybookEntry(entry: PlaybookEntry): string {
+  if (entry.proposalKind === 'ReplayPlan') {
+    const plan = parseReplayPlanProposal(entry.proposalJson);
+    return plan ? `Replay ${plan.EntityName} — rule "${plan.RuleName}"` : 'Replay proposal';
+  }
+  if (entry.proposalKind === 'ReasoningCompanionObservation') {
+    return parseReasoningCompanionObservation(entry.proposalJson)?.Summary ?? 'AI observation';
+  }
+  if (entry.proposalKind === 'PreventionTrigger') {
+    try {
+      const parsed = JSON.parse(entry.proposalJson) as Partial<PreventionTriggerProposalJson>;
+      if (parsed.Name && parsed.EntityName) {
+        return `"${parsed.Name}" matched on ${parsed.EntityName} (${parsed.OccurrencesInWindow ?? '?'}/${parsed.MinOccurrences ?? '?'} occurrences)`;
+      }
+    } catch {
+      // fall through to the generic label below
+    }
+    return 'Prevention rule matched';
+  }
+  try {
+    const parsed = JSON.parse(entry.proposalJson) as { Description?: string; EntityName?: string };
+    if (typeof parsed.Description === 'string' && parsed.Description.length > 0) {
+      return parsed.EntityName ? `${parsed.EntityName} — ${parsed.Description}` : parsed.Description;
+    }
+  } catch {
+    // fall through to the generic label below
+  }
+  return `${entry.proposalKind} proposal`;
+}
+
+/** A short, meaningful one-liner for a recovery ledger entry — which entity and which
+ * dead-letter reason, not just a generic "entry begun" line. */
+function describeRecoveryActivity(entry: RecoveryLedgerEntry): string {
+  const entity = entry.entityNameSnapshot ?? entry.targetEntity ?? 'unknown entity';
+  const reason = entry.deadLetterReasonSnapshot ?? entry.failureCategorySnapshot ?? 'reason unknown';
+  return `${entity} — ${reason}`;
+}
+
 /**
  * Roadmap W2.5 ("recovery proposal, then verification"): a `ReplayPlan` proposal states its scope
  * in plain language — which message, on which rule, doing what — instead of a raw JSON dump.
@@ -141,9 +201,10 @@ function PlaybookEntryCard({ entry }: { entry: PlaybookEntry }) {
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4">
       <div className="flex items-start justify-between gap-3 mb-2">
-        <div>
+        <div className="min-w-0">
           <p className="text-sm font-semibold text-gray-900">{entry.proposalKind}</p>
-          <p className="text-xs text-gray-500">{entry.pillarKind} &middot; proposed by {entry.proposerIdentity}</p>
+          <p className="text-xs text-gray-700 mt-0.5">{describePlaybookEntry(entry)}</p>
+          <p className="text-xs text-gray-500 mt-0.5">{entry.pillarKind} &middot; proposed by {entry.proposerIdentity}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {entry.proposerKind === 'ReasoningAgent' && <AiSuggestionBadge />}
@@ -219,6 +280,18 @@ function groupRecoveryEntriesByOperation(entries: RecoveryLedgerEntry[]) {
   return Array.from(byOperation.entries());
 }
 
+/** A short, meaningful one-liner for a Recovery Operations row — what actually happened, not
+ * just an entry count — from fields already on the entries (no extra fetch). */
+function describeRecoveryOperation(entries: RecoveryLedgerEntry[]): string {
+  const reason = entries[0]?.deadLetterReasonSnapshot ?? entries[0]?.failureCategorySnapshot ?? 'Unknown reason';
+  const count = entries.length;
+  const messageWord = count === 1 ? 'message' : 'messages';
+  const states = new Set(entries.map((e) => e.state));
+  const stateWord =
+    states.size > 1 ? 'mixed outcomes' : entries[0].state === 'Declined' ? 'declined' : entries[0].state.toLowerCase();
+  return `${reason} · ${count} ${messageWord} · ${stateWord}`;
+}
+
 /**
  * The Incident workspace (roadmap W2.3) — Summary, Evidence, Recommended Recovery, and Activity
  * for one failure signature at a single durable URL, downstream of the W2.1 read-model. Every
@@ -252,6 +325,13 @@ export function IncidentWorkspacePage() {
     () => incident?.playbookEntries.filter((e) => EVIDENCE_PROPOSAL_KINDS.has(e.proposalKind)) ?? [],
     [incident],
   );
+  const [evidencePage, setEvidencePage] = useState(0);
+  const evidencePageCount = Math.max(1, Math.ceil(evidenceEntries.length / EVIDENCE_PAGE_SIZE));
+  const evidenceSafePage = Math.min(evidencePage, evidencePageCount - 1);
+  const visibleEvidenceEntries = evidenceEntries.slice(
+    evidenceSafePage * EVIDENCE_PAGE_SIZE,
+    (evidenceSafePage + 1) * EVIDENCE_PAGE_SIZE,
+  );
   const recoveryProposals = useMemo(
     () => incident?.playbookEntries.filter((e) => RECOVERY_PROPOSAL_KINDS.has(e.proposalKind)) ?? [],
     [incident],
@@ -259,6 +339,13 @@ export function IncidentWorkspacePage() {
   const recoveryOperations = useMemo(
     () => groupRecoveryEntriesByOperation(incident?.recoveryEntries ?? []),
     [incident],
+  );
+  const [recoveryOpsPage, setRecoveryOpsPage] = useState(0);
+  const recoveryOpsPageCount = Math.max(1, Math.ceil(recoveryOperations.length / RECOVERY_OPERATIONS_PAGE_SIZE));
+  const recoveryOpsSafePage = Math.min(recoveryOpsPage, recoveryOpsPageCount - 1);
+  const visibleRecoveryOperations = recoveryOperations.slice(
+    recoveryOpsSafePage * RECOVERY_OPERATIONS_PAGE_SIZE,
+    (recoveryOpsSafePage + 1) * RECOVERY_OPERATIONS_PAGE_SIZE,
   );
   const activity = useMemo(() => {
     if (!incident) return [];
@@ -271,6 +358,13 @@ export function IncidentWorkspacePage() {
     ];
     return rows.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
   }, [incident]);
+  const [activityPage, setActivityPage] = useState(0);
+  const activityPageCount = Math.max(1, Math.ceil(activity.length / ACTIVITY_PAGE_SIZE));
+  const activitySafePage = Math.min(activityPage, activityPageCount - 1);
+  const visibleActivity = activity.slice(
+    activitySafePage * ACTIVITY_PAGE_SIZE,
+    (activitySafePage + 1) * ACTIVITY_PAGE_SIZE,
+  );
 
   const setTab = (tab: TabId) => {
     const next = new URLSearchParams(searchParams);
@@ -465,7 +559,19 @@ export function IncidentWorkspacePage() {
                     fillHeight={false}
                   />
                 ) : (
-                  evidenceEntries.map((entry) => <PlaybookEntryCard key={entry.id} entry={entry} />)
+                  <>
+                    {visibleEvidenceEntries.map((entry) => <PlaybookEntryCard key={entry.id} entry={entry} />)}
+                    <div className="bg-white border border-gray-200 rounded-lg">
+                      <Pagination
+                        page={evidenceSafePage}
+                        pageCount={evidencePageCount}
+                        total={evidenceEntries.length}
+                        pageSize={EVIDENCE_PAGE_SIZE}
+                        onPage={setEvidencePage}
+                        noun="evidence items"
+                      />
+                    </div>
+                  </>
                 )}
               </div>
             )}
@@ -500,7 +606,7 @@ export function IncidentWorkspacePage() {
                     />
                   ) : (
                     <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100">
-                      {recoveryOperations.map(([operationId, entries]) => (
+                      {visibleRecoveryOperations.map(([operationId, entries]) => (
                         <Link
                           key={operationId}
                           to={`${basePath}/recovery/${operationId}`}
@@ -508,7 +614,7 @@ export function IncidentWorkspacePage() {
                         >
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-gray-900 truncate">{entries[0].entityNameSnapshot ?? operationId}</p>
-                            <p className="text-xs text-gray-500">{entries.length} entr{entries.length === 1 ? 'y' : 'ies'}</p>
+                            <p className="text-xs text-gray-500 truncate">{describeRecoveryOperation(entries)}</p>
                           </div>
                           <div className="flex flex-wrap gap-1 justify-end">
                             {Array.from(new Set(entries.map((e) => e.state))).map((state) => (
@@ -517,6 +623,14 @@ export function IncidentWorkspacePage() {
                           </div>
                         </Link>
                       ))}
+                      <Pagination
+                        page={recoveryOpsSafePage}
+                        pageCount={recoveryOpsPageCount}
+                        total={recoveryOperations.length}
+                        pageSize={RECOVERY_OPERATIONS_PAGE_SIZE}
+                        onPage={setRecoveryOpsPage}
+                        noun="operations"
+                      />
                     </div>
                   )}
                 </div>
@@ -535,7 +649,7 @@ export function IncidentWorkspacePage() {
                   />
                 ) : (
                   <div className="divide-y divide-gray-100">
-                    {activity.map((row) =>
+                    {visibleActivity.map((row) =>
                       row.kind === 'recovery' ? (
                         <Link
                           key={`recovery-${row.entry.id}`}
@@ -543,7 +657,7 @@ export function IncidentWorkspacePage() {
                           className="flex items-center justify-between gap-3 py-2.5 hover:bg-gray-50 rounded-lg px-2 -mx-2"
                         >
                           <div className="min-w-0">
-                            <p className="text-sm text-gray-900">Recovery entry begun</p>
+                            <p className="text-sm text-gray-900 truncate">{describeRecoveryActivity(row.entry)}</p>
                             <p className="text-xs text-gray-500">{formatDate(row.at)}</p>
                           </div>
                           <RecoveryStateBadge state={row.entry.state} />
@@ -551,7 +665,7 @@ export function IncidentWorkspacePage() {
                       ) : (
                         <div key={`playbook-${row.entry.id}`} className="flex items-center justify-between gap-3 py-2.5 px-2 -mx-2">
                           <div className="min-w-0">
-                            <p className="text-sm text-gray-900">{row.entry.proposalKind} proposed</p>
+                            <p className="text-sm text-gray-900 truncate">{describePlaybookEntry(row.entry)}</p>
                             <p className="text-xs text-gray-500">{formatDate(row.at)}</p>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
@@ -561,6 +675,18 @@ export function IncidentWorkspacePage() {
                         </div>
                       ),
                     )}
+                  </div>
+                )}
+                {activity.length > 0 && (
+                  <div className="-mx-5 -mb-5 mt-2">
+                    <Pagination
+                      page={activitySafePage}
+                      pageCount={activityPageCount}
+                      total={activity.length}
+                      pageSize={ACTIVITY_PAGE_SIZE}
+                      onPage={setActivityPage}
+                      noun="events"
+                    />
                   </div>
                 )}
               </div>

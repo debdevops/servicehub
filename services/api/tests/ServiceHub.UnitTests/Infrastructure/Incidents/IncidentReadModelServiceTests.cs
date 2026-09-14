@@ -22,6 +22,7 @@ public sealed class IncidentReadModelServiceTests : IDisposable
     private readonly Mock<IRecoveryLedger> _recoveryLedgerMock = new();
     private readonly Mock<IPlaybookLedger> _playbookLedgerMock = new();
     private readonly Mock<INamespaceRepository> _namespaceRepositoryMock = new();
+    private readonly Mock<INamespaceSignatureLookupService> _signatureLookupServiceMock = new();
     private readonly IncidentReadModelService _service;
 
     public IncidentReadModelServiceTests()
@@ -36,12 +37,13 @@ public sealed class IncidentReadModelServiceTests : IDisposable
 
         _service = new IncidentReadModelService(
             _dbContext, _lifecycleMock.Object, _recoveryLedgerMock.Object, _playbookLedgerMock.Object,
-            _namespaceRepositoryMock.Object);
+            _namespaceRepositoryMock.Object, _signatureLookupServiceMock.Object);
 
         SetupNoRecoveryEntries();
         SetupNoPlaybookEntries();
         SetupDefaultLifecycle();
         SetupNamespaceLookupFails();
+        SetupSignatureLookupFindsNothing();
     }
 
     public void Dispose()
@@ -81,6 +83,11 @@ public sealed class IncidentReadModelServiceTests : IDisposable
             .Setup(r => r.GetByIdAsync(NamespaceId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Failure<Namespace>(Error.NotFound("Namespace.NotFound", "not found")));
 
+    private void SetupSignatureLookupFindsNothing() =>
+        _signatureLookupServiceMock
+            .Setup(s => s.GetByHashAsync(OwnerId, NamespaceId, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((NamespaceSignature?)null);
+
     private async Task SeedNamespaceSignatureAsync()
     {
         _dbContext.NamespaceSignatures.Add(new NamespaceSignature
@@ -94,6 +101,26 @@ public sealed class IncidentReadModelServiceTests : IDisposable
             OccurrenceCount = 4,
             DominantDeadletterReason = "MaxDeliveryCountExceeded",
             TopTermsJson = """["timeout","sql"]""",
+        });
+        await _dbContext.SaveChangesAsync();
+    }
+
+    /// <summary>Seeds a Fingerprint <see cref="NamespaceSignature"/> at <see cref="SignatureHash"/>
+    /// whose top terms carry a real <c>entity:</c> term — needed for the entity-matching tests
+    /// below, unlike <see cref="SeedNamespaceSignatureAsync"/>'s generic terms.</summary>
+    private async Task SeedNamespaceSignatureWithEntityAsync(string entity)
+    {
+        _dbContext.NamespaceSignatures.Add(new NamespaceSignature
+        {
+            NamespaceId = NamespaceId,
+            OwnerId = OwnerId,
+            SignatureHash = SignatureHash,
+            HashKind = SignatureHashKind.Fingerprint,
+            FirstSeenAt = DateTimeOffset.UtcNow,
+            LastSeenAt = DateTimeOffset.UtcNow,
+            OccurrenceCount = 4,
+            DominantDeadletterReason = "TestingDLQ",
+            TopTermsJson = $"""["entity:{entity}","reason:TestingDLQ"]""",
         });
         await _dbContext.SaveChangesAsync();
     }
@@ -131,7 +158,7 @@ public sealed class IncidentReadModelServiceTests : IDisposable
     {
         var act = () => new IncidentReadModelService(
             null!, _lifecycleMock.Object, _recoveryLedgerMock.Object, _playbookLedgerMock.Object,
-            _namespaceRepositoryMock.Object);
+            _namespaceRepositoryMock.Object, _signatureLookupServiceMock.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("dbContext");
     }
 
@@ -140,8 +167,17 @@ public sealed class IncidentReadModelServiceTests : IDisposable
     {
         var act = () => new IncidentReadModelService(
             _dbContext, null!, _recoveryLedgerMock.Object, _playbookLedgerMock.Object,
-            _namespaceRepositoryMock.Object);
+            _namespaceRepositoryMock.Object, _signatureLookupServiceMock.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("lifecycle");
+    }
+
+    [Fact]
+    public void Constructor_NullSignatureLookupService_Throws()
+    {
+        var act = () => new IncidentReadModelService(
+            _dbContext, _lifecycleMock.Object, _recoveryLedgerMock.Object, _playbookLedgerMock.Object,
+            _namespaceRepositoryMock.Object, null!);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("signatureLookupService");
     }
 
     [Fact]
@@ -285,6 +321,370 @@ public sealed class IncidentReadModelServiceTests : IDisposable
         var result = await _service.GetIncidentAsync(OwnerId, NamespaceId, SignatureHash);
 
         result.Value.NamespaceName.Should().Be("prod-orders");
+    }
+
+    [Fact]
+    public async Task GetIncidentAsync_ClusterHashWithUniqueFingerprintSibling_ResolvesToSiblingIncident()
+    {
+        // Mirrors the real bug: a replay launched from a Failure Signature Detail page's Cluster
+        // hash writes its RecoveryLedgerEntries under a sibling Fingerprint hash (by design, see
+        // SignatureReplayExecutor.ResolveTrustSignatureHashAsync); the "check verification status"
+        // link still points at the Cluster hash, so a naive exact-match lookup 404s despite real
+        // recovery activity existing under the sibling Fingerprint hash.
+        const string clusterHash = "cluster-hash-xyz";
+        const string fingerprintHash = "fingerprint-hash-xyz";
+
+        var clusterSignature = new NamespaceSignature
+        {
+            NamespaceId = NamespaceId,
+            OwnerId = OwnerId,
+            SignatureHash = clusterHash,
+            HashKind = SignatureHashKind.Cluster,
+            FirstSeenAt = DateTimeOffset.UtcNow,
+            LastSeenAt = DateTimeOffset.UtcNow,
+            OccurrenceCount = 44,
+            DominantDeadletterReason = "TestingDLQ",
+            TopTermsJson = """["entity:orders","reason:TestingDLQ"]""",
+        };
+        var fingerprintSibling = new NamespaceSignature
+        {
+            NamespaceId = NamespaceId,
+            OwnerId = OwnerId,
+            SignatureHash = fingerprintHash,
+            HashKind = SignatureHashKind.Fingerprint,
+            FirstSeenAt = DateTimeOffset.UtcNow,
+            LastSeenAt = DateTimeOffset.UtcNow,
+            OccurrenceCount = 38,
+            DominantDeadletterReason = "TestingDLQ",
+            TopTermsJson = """["entity:orders","reason:TestingDLQ"]""",
+        };
+
+        _dbContext.NamespaceSignatures.Add(fingerprintSibling);
+        await _dbContext.SaveChangesAsync();
+
+        _signatureLookupServiceMock
+            .Setup(s => s.GetByHashAsync(OwnerId, NamespaceId, clusterHash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(clusterSignature);
+        _signatureLookupServiceMock
+            .Setup(s => s.GetAllForNamespaceAsync(
+                OwnerId, NamespaceId, SignatureHashKind.Fingerprint, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { fingerprintSibling });
+
+        var recoveryEntry = new RecoveryLedgerEntry
+        {
+            OperationId = Guid.NewGuid(),
+            OwnerId = OwnerId,
+            BodyHash = "body-hash",
+            TargetEntity = "orders",
+            BegunAt = DateTimeOffset.UtcNow,
+            SignatureHashSnapshot = fingerprintHash,
+            State = RecoveryEntryState.Observing,
+        };
+        _recoveryLedgerMock
+            .Setup(r => r.FindEntriesForSignatureSinceAsync(
+                OwnerId, clusterHash, It.IsAny<DateTimeOffset>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<RecoveryLedgerEntry>());
+        _recoveryLedgerMock
+            .Setup(r => r.FindEntriesForSignatureSinceAsync(
+                OwnerId, fingerprintHash, It.IsAny<DateTimeOffset>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { recoveryEntry });
+        _lifecycleMock
+            .Setup(l => l.GetStatusAsync(OwnerId, NamespaceId, fingerprintHash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new SignatureLifecycleSnapshot(
+                SignatureLifecycleStatus.Active, null, null, null)));
+
+        var result = await _service.GetIncidentAsync(OwnerId, NamespaceId, clusterHash);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.SignatureHash.Should().Be(fingerprintHash);
+        result.Value.RecoveryEntries.Should().ContainSingle();
+        result.Value.OccurrenceCount.Should().Be(38);
+    }
+
+    [Fact]
+    public async Task GetIncidentAsync_ClusterHashWithAmbiguousSiblings_ButOwnReplayJobExists_ResolvesPrecisely()
+    {
+        // The real production case (found 2026-09-14): a namespace accumulates several
+        // Fingerprint signatures that all collide on entity+reason (repeated manual Test DLQ
+        // batches against the same queue), so the entity+reason heuristic alone can't tell them
+        // apart. But when the Cluster hash itself has a completed SignatureReplayJob, we know
+        // exactly which DlqMessage rows it replayed — tracing those to their RecoveryLedgerEntries
+        // resolves the correct sibling without guessing, even with 3 ambiguous candidates present.
+        const string clusterHash = "cluster-hash-precise";
+        const string correctSibling = "fp-correct";
+        const long replayedMessageId1 = 101;
+        const long replayedMessageId2 = 102;
+
+        var sibling1 = new NamespaceSignature
+        {
+            NamespaceId = NamespaceId,
+            OwnerId = OwnerId,
+            SignatureHash = "fp-other-1",
+            HashKind = SignatureHashKind.Fingerprint,
+            FirstSeenAt = DateTimeOffset.UtcNow,
+            LastSeenAt = DateTimeOffset.UtcNow,
+            DominantDeadletterReason = "TestingDLQ",
+            TopTermsJson = """["entity:orders","reason:TestingDLQ"]""",
+        };
+        var sibling2 = new NamespaceSignature
+        {
+            NamespaceId = NamespaceId,
+            OwnerId = OwnerId,
+            SignatureHash = "fp-other-2",
+            HashKind = SignatureHashKind.Fingerprint,
+            FirstSeenAt = DateTimeOffset.UtcNow,
+            LastSeenAt = DateTimeOffset.UtcNow,
+            DominantDeadletterReason = "TestingDLQ",
+            TopTermsJson = """["entity:orders","reason:TestingDLQ"]""",
+        };
+        var sibling3Correct = new NamespaceSignature
+        {
+            NamespaceId = NamespaceId,
+            OwnerId = OwnerId,
+            SignatureHash = correctSibling,
+            HashKind = SignatureHashKind.Fingerprint,
+            FirstSeenAt = DateTimeOffset.UtcNow,
+            LastSeenAt = DateTimeOffset.UtcNow,
+            OccurrenceCount = 22,
+            DominantDeadletterReason = "TestingDLQ",
+            TopTermsJson = """["entity:orders","reason:TestingDLQ"]""",
+        };
+        _dbContext.NamespaceSignatures.AddRange(sibling3Correct);
+        _dbContext.SignatureReplayJobs.Add(new SignatureReplayJob
+        {
+            OwnerId = OwnerId,
+            RequestedByIdentity = "user@example.com",
+            RequestedByActorKind = RecoveryActorKind.User,
+            NamespaceId = NamespaceId,
+            NamespaceDisplayName = "Azure DEV",
+            SignatureHash = clusterHash,
+            MessageIdsJson = $"[{replayedMessageId1},{replayedMessageId2}]",
+            TotalMatched = 2,
+            ProcessedCount = 2,
+            SuccessCount = 2,
+            Status = BulkOperationStatus.Completed,
+            CreatedAt = DateTimeOffset.UtcNow,
+            CompletedAt = DateTimeOffset.UtcNow,
+        });
+        _dbContext.RecoveryLedgerEntries.AddRange(
+            new RecoveryLedgerEntry
+            {
+                OperationId = Guid.NewGuid(),
+                OwnerId = OwnerId,
+                BodyHash = "body-hash-1",
+                TargetEntity = "orders",
+                DlqMessageId = replayedMessageId1,
+                BegunAt = DateTimeOffset.UtcNow,
+                SignatureHashSnapshot = correctSibling,
+                State = RecoveryEntryState.Observing,
+            },
+            new RecoveryLedgerEntry
+            {
+                OperationId = Guid.NewGuid(),
+                OwnerId = OwnerId,
+                BodyHash = "body-hash-2",
+                TargetEntity = "orders",
+                DlqMessageId = replayedMessageId2,
+                BegunAt = DateTimeOffset.UtcNow,
+                SignatureHashSnapshot = correctSibling,
+                State = RecoveryEntryState.Observing,
+            });
+        await _dbContext.SaveChangesAsync();
+
+        _signatureLookupServiceMock
+            .Setup(s => s.GetAllForNamespaceAsync(
+                OwnerId, NamespaceId, SignatureHashKind.Fingerprint, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { sibling1, sibling2, sibling3Correct });
+        _recoveryLedgerMock
+            .Setup(r => r.FindEntriesForSignatureSinceAsync(
+                OwnerId, clusterHash, It.IsAny<DateTimeOffset>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<RecoveryLedgerEntry>());
+        _recoveryLedgerMock
+            .Setup(r => r.FindEntriesForSignatureSinceAsync(
+                OwnerId, correctSibling, It.IsAny<DateTimeOffset>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[]
+            {
+                new RecoveryLedgerEntry
+                {
+                    OperationId = Guid.NewGuid(), OwnerId = OwnerId, BodyHash = "body-hash-1",
+                    TargetEntity = "orders", SignatureHashSnapshot = correctSibling,
+                    BegunAt = DateTimeOffset.UtcNow, State = RecoveryEntryState.Observing,
+                },
+            });
+        _lifecycleMock
+            .Setup(l => l.GetStatusAsync(OwnerId, NamespaceId, correctSibling, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(new SignatureLifecycleSnapshot(
+                SignatureLifecycleStatus.Active, null, null, null)));
+
+        var result = await _service.GetIncidentAsync(OwnerId, NamespaceId, clusterHash);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.SignatureHash.Should().Be(correctSibling);
+        result.Value.OccurrenceCount.Should().Be(22);
+        // The entity+reason heuristic was never even consulted — resolution came from the
+        // precise message-id trace, so GetByHashAsync (its entry point) was never called.
+        _signatureLookupServiceMock.Verify(
+            s => s.GetByHashAsync(OwnerId, NamespaceId, clusterHash, It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task GetIncidentAsync_ClusterHashWithAmbiguousFingerprintSiblings_StaysNotFound()
+    {
+        const string clusterHash = "cluster-hash-ambiguous";
+
+        var clusterSignature = new NamespaceSignature
+        {
+            NamespaceId = NamespaceId,
+            OwnerId = OwnerId,
+            SignatureHash = clusterHash,
+            HashKind = SignatureHashKind.Cluster,
+            FirstSeenAt = DateTimeOffset.UtcNow,
+            LastSeenAt = DateTimeOffset.UtcNow,
+            OccurrenceCount = 44,
+            DominantDeadletterReason = "TestingDLQ",
+            TopTermsJson = """["entity:orders","reason:TestingDLQ"]""",
+        };
+        var sibling1 = new NamespaceSignature
+        {
+            NamespaceId = NamespaceId,
+            OwnerId = OwnerId,
+            SignatureHash = "fp-1",
+            HashKind = SignatureHashKind.Fingerprint,
+            FirstSeenAt = DateTimeOffset.UtcNow,
+            LastSeenAt = DateTimeOffset.UtcNow,
+            DominantDeadletterReason = "TestingDLQ",
+            TopTermsJson = """["entity:orders","reason:TestingDLQ"]""",
+        };
+        var sibling2 = new NamespaceSignature
+        {
+            NamespaceId = NamespaceId,
+            OwnerId = OwnerId,
+            SignatureHash = "fp-2",
+            HashKind = SignatureHashKind.Fingerprint,
+            FirstSeenAt = DateTimeOffset.UtcNow,
+            LastSeenAt = DateTimeOffset.UtcNow,
+            DominantDeadletterReason = "TestingDLQ",
+            TopTermsJson = """["entity:orders","reason:TestingDLQ"]""",
+        };
+
+        _signatureLookupServiceMock
+            .Setup(s => s.GetByHashAsync(OwnerId, NamespaceId, clusterHash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(clusterSignature);
+        _signatureLookupServiceMock
+            .Setup(s => s.GetAllForNamespaceAsync(
+                OwnerId, NamespaceId, SignatureHashKind.Fingerprint, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { sibling1, sibling2 });
+        _recoveryLedgerMock
+            .Setup(r => r.FindEntriesForSignatureSinceAsync(
+                OwnerId, clusterHash, It.IsAny<DateTimeOffset>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<RecoveryLedgerEntry>());
+
+        var result = await _service.GetIncidentAsync(OwnerId, NamespaceId, clusterHash);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Type.Should().Be(ErrorType.NotFound);
+    }
+
+    [Fact]
+    public async Task GetIncidentAsync_AnomalyFlagWithMatchingEntity_LinkedDespiteNullSignatureHash()
+    {
+        // AnomalyDetectionWorker.ProposePlaybookEntryAsync never sets SignatureHashSnapshot (it's
+        // namespace+entity scoped by design) — the Evidence tab must still surface it against the
+        // signature sharing its entity, resolved from the persisted NamespaceSignature's own
+        // "entity:" top term.
+        await SeedNamespaceSignatureWithEntityAsync("timeout");
+        var anomaly = new PlaybookEntry
+        {
+            OwnerId = OwnerId,
+            PillarKind = PillarKind.Investigate,
+            ProposalKind = "AnomalyFlag",
+            EvidenceRefJson = "{}",
+            ProposalJson = """{"EntityName":"timeout","Type":"VolumeSpike","Severity":3,"Description":"DLQ growth spike on timeout"}""",
+            ProposedAt = DateTimeOffset.UtcNow,
+            ProposerIdentity = "System:AnomalyDetectionWorker",
+            ProposerKind = PlaybookActorKind.System,
+            SignatureHashSnapshot = null,
+            NamespaceId = NamespaceId,
+            ExpiresAt = DateTimeOffset.UtcNow.AddDays(7),
+            State = PlaybookEntryState.Proposed,
+        };
+        SetupPlaybookEntries(anomaly);
+
+        var result = await _service.GetIncidentAsync(OwnerId, NamespaceId, SignatureHash);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.PlaybookEntries.Should().ContainSingle().Which.ProposalKind.Should().Be("AnomalyFlag");
+        result.Value.Summary.AnomalyFlagCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetIncidentAsync_AnomalyFlagWithDifferentEntity_NotLinked()
+    {
+        await SeedNamespaceSignatureWithEntityAsync("timeout");
+        var unrelatedAnomaly = new PlaybookEntry
+        {
+            OwnerId = OwnerId,
+            PillarKind = PillarKind.Investigate,
+            ProposalKind = "AnomalyFlag",
+            EvidenceRefJson = "{}",
+            ProposalJson = """{"EntityName":"orders","Type":"VolumeSpike","Severity":3,"Description":"unrelated"}""",
+            ProposedAt = DateTimeOffset.UtcNow,
+            ProposerIdentity = "System:AnomalyDetectionWorker",
+            ProposerKind = PlaybookActorKind.System,
+            SignatureHashSnapshot = null,
+            NamespaceId = NamespaceId,
+            ExpiresAt = DateTimeOffset.UtcNow.AddDays(7),
+            State = PlaybookEntryState.Proposed,
+        };
+        SetupPlaybookEntries(unrelatedAnomaly);
+
+        var result = await _service.GetIncidentAsync(OwnerId, NamespaceId, SignatureHash);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.PlaybookEntries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetIncidentAsync_CorrelationHypothesisWithMatchingMember_LinkedByMembersArray()
+    {
+        await SeedNamespaceSignatureWithEntityAsync("timeout");
+        var correlation = new PlaybookEntry
+        {
+            OwnerId = OwnerId,
+            PillarKind = PillarKind.Correlate,
+            ProposalKind = "CorrelationHypothesis",
+            EvidenceRefJson = "{}",
+            ProposalJson = """{"Providers":["Azure","Aws"],"Members":[{"NamespaceId":"n1","EntityName":"orders","AnomalyType":"VolumeSpike"},{"NamespaceId":"n2","EntityName":"timeout","AnomalyType":"VolumeSpike"}],"Severity":2,"Description":"2 related failures across Azure and Aws"}""",
+            ProposedAt = DateTimeOffset.UtcNow,
+            ProposerIdentity = "System:CorrelationDetectionWorker",
+            ProposerKind = PlaybookActorKind.System,
+            SignatureHashSnapshot = null,
+            NamespaceId = NamespaceId,
+            ExpiresAt = DateTimeOffset.UtcNow.AddDays(7),
+            State = PlaybookEntryState.Proposed,
+        };
+        SetupPlaybookEntries(correlation);
+
+        var result = await _service.GetIncidentAsync(OwnerId, NamespaceId, SignatureHash);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.PlaybookEntries.Should().ContainSingle().Which.ProposalKind.Should().Be("CorrelationHypothesis");
+        result.Value.Summary.CorrelationHypothesisCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetIncidentAsync_PlaybookEntryAlreadyLinkedBySignatureHash_NotDuplicatedByEntityMatch()
+    {
+        await SeedNamespaceSignatureAsync();
+        // A ReplayPlan already carries SignatureHashSnapshot == SignatureHash directly — it must not
+        // also get picked up (and duplicated) by the entity-matching pass, which only considers
+        // entries with a null SignatureHashSnapshot.
+        SetupPlaybookEntries(BuildPlaybookEntry("ReplayPlan", PlaybookEntryState.Proposed));
+
+        var result = await _service.GetIncidentAsync(OwnerId, NamespaceId, SignatureHash);
+
+        result.Value.PlaybookEntries.Should().ContainSingle();
     }
 
     [Fact]
