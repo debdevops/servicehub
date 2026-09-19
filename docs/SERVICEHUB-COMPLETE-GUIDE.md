@@ -63,7 +63,7 @@ history; and a troubleshooting FAQ.
       - [Home](#home)
       - [Namespace Overview](#namespace-overview)
       - [Incident Center](#incident-center)
-      - [Fleet Health](#fleet-health)
+      - [Fleet Overview](#fleet-overview)
     - [Observe](#observe)
       - [Active Messages / Dead-Letter](#active-messages--dead-letter)
       - [Live Tail](#live-tail)
@@ -71,7 +71,7 @@ history; and a troubleshooting FAQ.
       - [Cloud Bridge](#cloud-bridge)
       - [Connect](#connect)
       - [Messages (drill-down)](#messages-drill-down)
-      - [DLQ Intelligence](#dlq-intelligence)
+      - [DLQ Message History](#dlq-message-history)
       - [Proactive Insights](#proactive-insights)
       - [Multi-Cloud Trace](#multi-cloud-trace)
       - [Failure Signatures](#failure-signatures)
@@ -287,7 +287,7 @@ A command palette (**⌘K** / **Ctrl+K**, or the Icon Rail's **More** button) is
 anywhere and can jump to any destination in the product by typing a few letters of what you're
 looking for — it lists every page, not just the Icon Rail's five.
 
-![The command palette opened from the Icon Rail's More button, listing every destination in the product — Home, Namespace Overview, Incident Center, Fleet Health, Live Tail, Scheduled Messages, Cloud Bridge and more, with a search box and keyboard navigation hints](screenshots/complete-guide/nav/command-palette-more.jpg)
+![The command palette opened from the Icon Rail's More button, listing every destination in the product — Home, Namespace Overview, Incident Center, Fleet Overview, Live Tail, Scheduled Messages, Cloud Bridge and more, with a search box and keyboard navigation hints](screenshots/complete-guide/nav/command-palette-more.jpg)
 
 ---
 
@@ -343,7 +343,7 @@ one namespace — reached by clicking a namespace on its Cloud Home.
 
 - **What is it?** Everything about this one namespace: connection status and region/project,
   five KPI tiles (Active, DLQ, Queues, Topics, Subscriptions), a real 7-day DLQ trend chart (new
-  vs. resolved — the same `/dlq/trend` data [DLQ Intelligence](#dlq-intelligence) charts, not a
+  vs. resolved — the same `/dlq/trend` data [DLQ Message History](#dlq-message-history) charts, not a
   fabricated series), this namespace's top failure signatures with AI-clustered explanations,
   recent dead-letter messages, recent activity pulled from the [Audit Trail](#audit-trail), and
   a **Provider limitations** panel that only appears when this provider genuinely falls short of
@@ -384,7 +384,7 @@ honestly rather than as zero — see the multi-cloud note below)
   every card without clicking into any of them.
 - **The buttons:**
   - **Quick Actions row** — Browse All DLQs, All Scheduled, Cross-Cloud Trace, Auto-Replay Rules,
-    Fleet Health: one-click jumps to the corresponding destination, scoped fleet-wide rather than
+    Fleet Overview: one-click jumps to the corresponding destination, scoped fleet-wide rather than
     to one namespace.
   - **DLQ Hot Spots** — a ranked list of the worst-affected namespaces with a **View** button per
     row, jumping straight into that namespace's dead-letter view.
@@ -396,31 +396,35 @@ honestly rather than as zero — see the multi-cloud note below)
 
 #### Incident Center
 
-![Incident Center showing real total-signature counts, Active/Resolved/Suppressed/Archived/Requires-Action tallies, and a Fleet Health list ranking three real namespaces by severity with an Open Namespace link per row](screenshots/complete-guide/incidents/incident-center-fleet-health.jpg)
+![Incident Center showing real total-signature counts, Active/Resolved/Suppressed/Archived/Requires-Action tallies, an Incident Trend chart, Top Incident Categories breakdown, and the unified filterable incident table](screenshots/complete-guide/incidents/incident-center-fleet-health.jpg)
 
 - **What is it?** The operational command center for failure investigation. Where
   [Home](#home) shows you three cards, Incident Center shows the *entire* picture: every failure
-  signature across every namespace, bucketed by lifecycle state.
+  signature across every namespace, bucketed by lifecycle state, in one full-width table.
 - **Why does it exist?** It's the "war room" view — the place you go when something is actually
   on fire and you need the full picture, not a triaged summary.
-- **The buttons:**
-  - **Refresh** — re-pulls the fleet-wide rollup.
+- **The controls:**
+  - **Refresh / Export / Scan Now** — re-pull the rollup, export the current view, or trigger an
+    on-demand scan.
   - The six stat tiles (**Total Signatures / Active / Resolved / Suppressed / Archived / Requires
     Action**) are live counts, not estimates.
-  - **Fleet Health** section — one row per namespace, each showing its top failure category and
-    a real-time active-message-affected count, with an **Open Namespace** link.
-  - **View all fleet health →** jumps to the dedicated [Fleet Health](#fleet-health) page for the
-    deeper trend view.
+  - **Incident Trend** (24h/7d/30d) and **Top Incident Categories** — the same shape of rollup
+    [Fleet Overview](#fleet-overview) shows fleet-wide, scoped here to failure signatures rather
+    than raw dead-letter counts.
+  - A search bar plus **Provider / Namespace / Status / Category / Severity** filters sit above a
+    unified table (tabbed **Active / Needs Action / Resolved / Suppressed / Archived**) — one row
+    per signature, not per namespace. For a namespace-ranked view instead, see
+    [Fleet Overview](#fleet-overview).
 
 Clicking into any specific failure opens its **Incident Workspace** — a durable, bookmarkable URL
 per signature with four tabs:
 
-![Incident Workspace detail page for one real AWS failure signature — Summary/Evidence/Recommended Recovery/Activity tabs, a "212 decisions waiting on a human" banner, and links to view the full signature investigation, Recovery Ledger, and Playbook Ledger](screenshots/complete-guide/incidents/incident-workspace-detail.jpg)
+![Incident Workspace detail page for one real GCP failure signature — Summary/Findings/Recommended Recovery/Activity tabs, a "219 decisions waiting on a human" banner, and a link to open the full signature investigation](screenshots/complete-guide/incidents/incident-workspace-detail.jpg)
 
 - **Summary** (shown above) — recovery-entry counts, open/pending decisions, anomaly flags, and
   drift findings for this one signature, all sourced live from the underlying ledgers — nothing
   here is a separate copy of the data that could drift out of sync.
-- **Evidence, Recommended Recovery, Activity** — deeper tabs covering the technical evidence
+- **Findings, Recommended Recovery, Activity** — deeper tabs covering the technical evidence
   behind the classification, what ServiceHub suggests doing about it, and the full timeline.
 - **Open full signature investigation →** jumps to the full [Failure Signatures](#failure-signatures)
   detail page for this exact signature, which has additional controls (Mark Resolved, Suppress,
@@ -428,7 +432,7 @@ per signature with four tabs:
 - **View Recovery Ledger / View Playbook Ledger** — direct links into the underlying evidence,
   so nothing on this page asks you to simply trust a summary number.
 
-#### Fleet Health
+#### Fleet Overview
 
 **Applies to:** Azure ✅ · AWS ✅ · GCP ⚠️ (connected and filterable, but see the "Not monitored"
 note below)
@@ -447,7 +451,7 @@ its own real, live screenshot, not a mockup of what the filter "would" show:
 - **What is it?** "What died overnight, across everything" — the fleet-wide DLQ health rollup,
   built for a daily or post-incident review rather than moment-to-moment monitoring.
 - **Why does it exist?** Individually, a namespace's DLQ count doesn't tell you if today was
-  worse than yesterday. Fleet Health adds the missing dimension: trend, over a selectable window
+  worse than yesterday. Fleet Overview adds the missing dimension: trend, over a selectable window
   (24h / 3d / 7d), across every namespace and every provider at once.
 - **The buttons:**
   - **Per-namespace details ↗** — opens the full drill-down for whichever namespace you're
@@ -644,16 +648,16 @@ which is exactly why it's worth three separate screenshots.
     confirmed facts, and should be verified in the provider's own console before acting on them
     at scale.
 
-#### DLQ Intelligence
+#### DLQ Message History
 
 **Applies to:** Azure ✅ · AWS ✅ · GCP ✅ — history and trend tracking work the same way on all
 three; only the underlying message counts each provider can supply differ (see
 [Multi-Cloud Support At A Glance](#multi-cloud-support-at-a-glance)).
 
-![DLQ Intelligence: Bulk Replay/Bulk Purge/Scan Now/Refresh controls, a per-provider namespace strip (AWS 323 active, GCP 30 active, Azure 585 active selected), a 30-day trend chart, By Failure Category breakdown, and a real "Recurring Failure Signatures" cluster with a Filter-table-to-orders shortcut](screenshots/complete-guide/dlq-history/dlq-intelligence.jpg)
+![DLQ Message History: Bulk Replay/Bulk Purge/Scan Now/Refresh controls, a per-provider namespace strip (AWS 323 active, GCP 30 active, Azure 585 active selected), a 30-day trend chart, By Failure Category breakdown, and a real "Recurring Failure Signatures" cluster with a Filter-table-to-orders shortcut](screenshots/complete-guide/dlq-history/dlq-intelligence.jpg)
 
 - **What is it?** Persistent dead-letter history and trend monitoring for one namespace — where
-  [Fleet Health](#fleet-health) looks across every namespace, this page goes deep on one.
+  [Fleet Overview](#fleet-overview) looks across every namespace, this page goes deep on one.
 - **Why does it exist?** A single point-in-time DLQ count doesn't tell you whether a problem is
   new, recurring, or resolved. This page keeps that history, and surfaces recurring patterns
   automatically.
@@ -747,7 +751,7 @@ recover unattended?" verdict shown on each one differs by provider (see the call
 > entry" as "assume AWS."
 
 - **What is it?** Not a page reachable from Quick Access directly, but the drill-down destination
-  from almost everywhere else (Incident Center, DLQ Intelligence, Home) — the record of one
+  from almost everywhere else (Incident Center, DLQ Message History, Home) — the record of one
   *repeated pattern* of failure, not one message.
 - **Why does it exist?** "324 messages failed" is not actionable; "one root cause affecting 324
   messages, here's what to do about it" is. Signatures are how ServiceHub turns volume into a
@@ -819,7 +823,7 @@ recover unattended?" verdict shown on each one differs by provider (see the call
 
 ![Approval Queue: a real proposal screen — "Proposal — replay 1 message" with Scope & Sample, Stop Condition, and "Why the gate escalated this" sections, plus Cancel and Confirm & Replay buttons — shown before the message is actually replayed](screenshots/complete-guide/approval-queue/approval-queue-proposal.jpg)
 
-![Approval Queue after confirming: a "Just approved" panel showing the real, honest outcome — both replays Failed (message not found in dead-letter queue, since the background monitor had already reconciled them) — with a link to the Recovery Ledger for the eventual verified outcome](screenshots/complete-guide/approval-queue/approval-queue-just-approved.jpg)
+![Approval Queue after confirming: a "Just approved" panel showing the real, honest outcome — "Accepted for replay," explicitly not a confirmation the message was sent, with a note that the verified Recovered/Returned/Unverified outcome appears in the Recovery Ledger once the observation window closes](screenshots/complete-guide/approval-queue/approval-queue-just-approved.jpg)
 
 - **What is it?** Auto-replay rule matches that the Eligibility Gate escalated for manual
   review — messages a rule *would* have replayed automatically, except a safety condition said
@@ -1139,7 +1143,7 @@ Help, and the plain-language explanation of the autonomy model.
   can drift out of sync with live data, because it never shows any; every specific number lives
   on the pages this one links to.
 - **Why does it exist?** Most of ServiceHub is where you *use* the product day to day (Messages,
-  DLQ Intelligence, Auto-Replay Rules). This section is different: it's where ServiceHub explains
+  DLQ Message History, Auto-Replay Rules). This section is different: it's where ServiceHub explains
   and governs *itself*. That distinction is worth a dedicated explanation, written for an
   operator who already uses ServiceHub and wants to understand how much of it runs unattended,
   why, and where the human floor still is.
@@ -1494,7 +1498,7 @@ separate ledgers, which is the honest consequence.
 
 **A queue shows 0 dead-lettered but I know there are messages.**
 Check which entity you are looking at. On Azure a topic *subscription* has its own dead-letter
-queue separate from any queue's, and the two are counted separately — Fleet Health adds them up,
+queue separate from any queue's, and the two are counted separately — Fleet Overview adds them up,
 a single queue view does not. On GCP there is no queue concept at all and no count API, so a
 namespace can legitimately show no live count; see [Multi-Cloud Support](#multi-cloud-support-at-a-glance).
 

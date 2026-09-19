@@ -17,7 +17,7 @@ namespaces — not a mockup.
 | If you're... | Go to |
 |---|---|
 | New to ServiceHub | [Namespace Overview](#namespace-overview) |
-| Investigating failures | [Dead-Letter](#dead-letter) / [DLQ Intelligence](#dlq-intelligence) |
+| Investigating failures | [Dead-Letter](#dead-letter) / [DLQ Message History](#dlq-message-history) |
 | Watching messages | [Live Tail](#live-tail) |
 | Understanding repeated failures | [Failure Signatures](#failure-signatures) |
 | Recovering messages | [Recovery Evidence](#recovery-evidence) |
@@ -73,7 +73,7 @@ right is the resulting screen (blue marker 2).
 - **When should you use it?** First thing when you open ServiceHub, or any time you want a
   quick multi-cloud health check.
 - **What screen opens?** A purple hero banner with live counts, a row of **Quick Actions**
-  (Browse All DLQs, All Scheduled, Cross-Cloud Trace, Auto-Replay Rules, Fleet Health), and a
+  (Browse All DLQs, All Scheduled, Cross-Cloud Trace, Auto-Replay Rules, Fleet Overview), and a
   **DLQ Hot Spots** list ranking namespaces by dead-letter volume.
 - **What should you expect?** Counts refresh automatically ("Live · just now") and a manual
   **Refresh** button if you want to force an update immediately.
@@ -91,25 +91,27 @@ on the right is the resulting screen (blue marker 2).
 
 - **What is it?** An operational command center that rolls up every **Failure Signature**
   (a recurring, AI-clustered pattern of similar dead-letter failures) across all connected
-  namespaces, plus a live Fleet Health snapshot.
+  namespaces into one full-width, filterable table.
 - **Why would you use it?** It answers "which recurring problems need a human to look at them
   right now?" — one screen instead of checking every namespace's Failure Signatures page one
   by one.
 - **When should you use it?** During an incident, or as a daily/weekly triage habit.
 - **What screen opens?** Six stat tiles (Total Signatures, Active, Resolved, Suppressed,
-  Archived, Requires Action) and a Fleet Health list showing each namespace's status
-  (Critical/Warning/Healthy) with an **Open Namespace** shortcut.
+  Archived, Requires Action), an Incident Trend chart, a Top Incident Categories breakdown, and
+  a search/filter bar above a tabbed table (Active/Needs Action/Resolved/Suppressed/Archived) —
+  one row per signature. For a namespace-ranked health view instead, see
+  [Fleet Overview](#fleet-overview).
 - **What should you expect?** "Requires Action" counts only signatures that are genuinely
   unresolved — resolving or suppressing a signature (from its detail page) removes it from
   this count.
 - **Limitations:** this is a read-only rollup — you still act on individual signatures from
   their own detail pages (see [Failure Signatures](#failure-signatures) below).
 
-### Fleet Health
+### Fleet Overview
 
 ![Fleet Operations rollup with trend chart, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/03-fleet-health-annotated.png)
 
-Select **Fleet Health** in Quick Access (green marker 1). The Fleet Health dashboard shown on
+Select **Fleet Overview** in Quick Access (green marker 1). The Fleet Overview dashboard shown on
 the right is the resulting screen (blue marker 2).
 
 - **What is it?** A dead-letter health rollup across every namespace, with a 7-day trend chart
@@ -239,11 +241,11 @@ the right is the resulting screen (blue marker 2).
 - **Limitations:** this is a status and browsing view, not an investigation tool — click into
   a namespace to actually read messages.
 
-### DLQ Intelligence
+### DLQ Message History
 
-![DLQ Intelligence page with Bulk Replay/Purge and 30-day trend, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/09-dlq-intelligence-annotated.png)
+![DLQ Message History page with Bulk Replay/Purge and 30-day trend, Quick Access marked 1, resulting screen marked 2](../screenshots/guides/quick-access/09-dlq-intelligence-annotated.png)
 
-Select **DLQ Intelligence** in Quick Access (green marker 1). The namespace's DLQ history and
+Select **DLQ Message History** in Quick Access (green marker 1). The namespace's DLQ history and
 monitoring hub shown on the right is the resulting screen (blue marker 2).
 
 - **What is it?** The dead-letter history and monitoring hub for a specific namespace: per-tab
@@ -562,16 +564,16 @@ flowchart TB
         HM["Home<br/>/home"]
         NSO["Namespace Overview<br/>/dashboard"]
         IC["Incident Center<br/>/incidents"]
-        FH["Fleet Health<br/>/fleet"]
+        FH["Fleet Overview<br/>/fleet"]
     end
 
     subgraph IV["Observe"]
         AM["Active Messages<br/>/messages-overview"]
         LT["Live Tail<br/>/live-tail"]
-        DL["Dead-Letter<br/>/messages-overview"]
+        DL["Dead-Letter<br/>/dlq-overview"]
         SM["Scheduled Messages<br/>/scheduled"]
         CB["Cloud Bridge<br/>/cloud-bridge"]
-        DI["DLQ Intelligence<br/>/dlq-history"]
+        DI["DLQ Message History<br/>/dlq-history"]
         PI["Proactive Insights<br/>/insights"]
         MCT["Multi-Cloud Trace<br/>/cross-cloud-trace"]
     end

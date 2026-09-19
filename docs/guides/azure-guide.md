@@ -62,11 +62,12 @@ Click any message to open it. Four tabs show everything about it — **Propertie
 metadata like delivery count and sequence number), **Body** (the actual content, pretty-printed
 if it's JSON), **AI Insights** (see below), and **Headers**.
 
-![Message detail with Properties, Body, AI Insights, and Headers tabs](../screenshots/guides/azure/03-message-detail.png)
+![Message detail on a real dead-lettered order, with Properties, Body, AI Insights, and Headers tabs, and a real Azure DeadLetterReason of MaxDeliveryCountExceeded](../screenshots/guides/azure/03-message-detail.png)
 
 **What to expect:** an active message's **Replay** button is disabled with the label "Active
 messages cannot be replayed" — this is intentional. ServiceHub only reads messages by default;
-replay only makes sense for a message that's already failed and landed in the DLQ.
+replay only makes sense for a message that's already failed and landed in the DLQ, as this one
+has.
 
 **Tip:** the namespace panel on the far left can be collapsed with the **«** icon in its
 header — this gives the message detail panel significantly more room, which helps once you're
@@ -128,7 +129,7 @@ carries a `Replayed=true` marker so you can always tell them apart.
 Every replay (manual or automatic) is permanently recorded in the **Recovery Evidence Ledger**
 (`/recovery`), so you never have to just take ServiceHub's word for it:
 
-![Recovery Evidence ledger showing the replay you just did](../screenshots/guides/azure/07-recovery-evidence.png)
+![Recovery Evidence ledger entry for a real automated Azure replay — DETECT/DIAGNOSE/PROPOSE/APPROVE/EXECUTE/VERIFY stages, this one blocked by the Eligibility Gate before any provider call](../screenshots/guides/azure/07-recovery-evidence.png)
 
 **What to expect:** a row appears within seconds showing who acted (you, or an automated
 rule), what was asked of Azure, and how many messages were actually targeted. This ledger is
