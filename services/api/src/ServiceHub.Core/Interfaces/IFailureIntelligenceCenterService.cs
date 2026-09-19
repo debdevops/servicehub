@@ -16,10 +16,15 @@ public interface IFailureIntelligenceCenterService
     /// </summary>
     /// <param name="ownerId">Owner for multi-tenant isolation.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="allowedNamespaceIds">
+    /// Optional namespace allow-list from the caller's credential. When non-null, every section
+    /// is restricted to namespaces in this set — null means unrestricted (today's behaviour).
+    /// </param>
     /// <returns>InvestigationCenterResponse with all sections.</returns>
     Task<Result<InvestigationCenterResponse>> GetInvestigationCenterAsync(
         string ownerId,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null);
 
     /// <summary>
     /// Gets the Incident Center's fleet-wide incident list: every failure signature the owner
@@ -31,8 +36,10 @@ public interface IFailureIntelligenceCenterService
     /// <param name="ownerId">Owner for multi-tenant isolation.</param>
     /// <param name="trendDays">Trend window: 1 (hourly buckets), 7, or 30 (daily buckets).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="allowedNamespaceIds">See <see cref="GetInvestigationCenterAsync"/>.</param>
     Task<Result<IncidentListResponse>> GetIncidentsListAsync(
         string ownerId,
         int trendDays,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null);
 }

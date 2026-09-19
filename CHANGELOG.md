@@ -1,8 +1,14 @@
 # ServiceHub Changelog
 
-## [Unreleased]
+## [4.0.0] — 2026-09-20
 
-### Added
+Everything in this file's "Unreleased" section (through the 2026-09-11 Home/Quick Access/
+Autonomous ServiceHub redesign) plus a governance privilege-escalation fix, two incident-workspace
+correctness fixes, and a namespace-allow-list tenant-isolation fix (all four found and fixed
+during pre-release audits after the 2026-09-06 entry below was first written) ship together as
+this one 4.0.0 release — nothing here is separately "unreleased."
+
+### Added — navigation and Home redesign (2026-09-11)
 
 - **Home redesign: a three-level operational front door, one cloud at a time.** Home no longer
   blends Azure/AWS/GCP into one cross-cloud dashboard. A cloud picker (Level 0, skipped when only
@@ -48,7 +54,43 @@
     revoke now asks for confirmation; the first grant warns it will switch Governance on; a
     non-Admin sees their role and the matrix instead of an error.
 
-## [4.0.0] — 2026-09-06
+### Fixed — pre-release audit findings (2026-09-19/20)
+
+- **Governance: a revoked grant could silently restore fleet-wide Admin access.** Revoking an
+  identity's only Governance grant reset its "own grants" count to zero, which made the access
+  evaluator treat it as never-differentiated and fall back to the coarse owner-level grandfather
+  grant again — turning "access revoked" into "access restored, and now unrestricted." Live-
+  reproduced: a Viewer-scoped key, after its grant was revoked, successfully created a new
+  fleet-wide Admin grant for an arbitrary identity. Fixed by tracking grant history (active or
+  revoked), not just current active count, so an identity that was ever individually
+  differentiated never falls back to the owner-level grant again.
+- **Governance: an owner could still lock itself out of Governance after the 2026-09-19 seeder
+  fix.** That fix seeded a grandfather Admin grant per distinct owner rather than only the first
+  owner ever — but its idempotency check still keyed on "does this owner have *any* Governance
+  grant row," not specifically a grant naming the owner itself. An owner who granted someone else
+  access while still in the bootstrap-bypass window (before ever receiving a grant of its own)
+  was treated as already-seeded and skipped forever, permanently locking itself out the moment
+  Governance activated for its partition. Fixed to check specifically for a self-grant.
+- **Security: namespace-restricted API keys could read data outside their allow-list.** An API
+  key configured with a namespace allow-list (a subset of its owner's namespaces) was correctly
+  enforced on per-namespace detail endpoints, but nine fleet-wide/aggregate read endpoints (DLQ
+  History, Audit Trail, Fleet Overview, Attention Queue, DLQ Overview, Bulk Operations job list,
+  Failure Intelligence Center, and single-record lookups on Anomalies/Backlog Forecasts) only
+  filtered by owner, never by the allow-list — letting a namespace-restricted credential read
+  every namespace its owner has, defeating the restriction. Fixed by threading the allow-list into
+  every affected query.
+- **Dashboard: the fleet-wide DLQ spike count and hot-spot list disagreed with individual
+  namespace cards.** The 2026-09-19 fix that made a namespace card's "Healthy" banner agree with
+  its D/F health-grade badge (ratio-based, not just an absolute DLQ count) was applied only to the
+  per-card computation — the fleet-wide spike count and hot-spot list kept using the old
+  absolute-count-only rule, so a card could show "needs attention" while the fleet summary and
+  hot-spot list omitted it. Fixed by extracting one shared `isDlqSpike` rule used everywhere a
+  namespace is judged to be spiking.
+- **Docs: a broken self-referencing link in the Complete Guide, and a stale test fixture** missing
+  a required field, both found during this audit's mechanical link/typecheck sweep — neither
+  affected production code.
+
+### The initial 4.0.0 baseline (originally written 2026-09-06)
 
 Everything since v3.7.0: the four-pillar autonomy loop (Observe → Investigate → Correlate →
 Recover → Prove → Learn → Prevent), the persistence and security work that made its evidence

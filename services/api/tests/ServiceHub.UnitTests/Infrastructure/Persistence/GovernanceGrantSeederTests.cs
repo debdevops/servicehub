@@ -133,6 +133,38 @@ public sealed class GovernanceGrantSeederTests : IDisposable
     }
 
     [Fact]
+    public async Task SeedIfEmptyAsync_OwnerOnlyHasAGrantForSomeoneElse_StillGetsItsOwnGrandfatherGrant()
+    {
+        // Regression: the per-owner gate used to key on "any GovernanceGrant row naming this
+        // OwnerId", not specifically a self-grant. An owner who granted a colleague Viewer while
+        // still in the bootstrap-bypass window (zero grants of their own) would then be treated
+        // as "already seeded" forever, because that colleague's row already carries this owner's
+        // OwnerId — even though the owner itself never received the self-grant that actually
+        // satisfies GovernanceAccessEvaluator's bootstrap check. That silently and permanently
+        // locked the owner out the moment Governance activated for its partition, with no
+        // self-service way back in (granting requires Admin).
+        _dbContext.GovernanceGrants.Add(new GovernanceGrant
+        {
+            OwnerId = "owner-1",
+            GranteeIdentity = "someone-else",
+            GranteeKind = GranteeKind.User,
+            Role = GovernanceRole.Viewer,
+            GrantedAt = DateTimeOffset.UtcNow,
+            GrantedByIdentity = "test",
+        });
+        await _dbContext.SaveChangesAsync();
+
+        _dbContext.Namespaces.Add(BuildNamespace("owner-1", "ns-1"));
+        await _dbContext.SaveChangesAsync();
+
+        await GovernanceGrantSeeder.SeedIfEmptyAsync(_dbContext, NullLogger.Instance);
+
+        var grants = await _dbContext.GovernanceGrants.ToListAsync();
+        grants.Should().HaveCount(2, "the pre-existing grant for someone else stays, and owner-1 must still get its own grandfather grant");
+        grants.Should().ContainSingle(g => g.OwnerId == "owner-1" && g.GranteeIdentity == "owner-1" && g.Role == GovernanceRole.Admin);
+    }
+
+    [Fact]
     public async Task SeedIfEmptyAsync_NoNamespacesOrRules_SeedsNothing()
     {
         await GovernanceGrantSeeder.SeedIfEmptyAsync(_dbContext, NullLogger.Instance);

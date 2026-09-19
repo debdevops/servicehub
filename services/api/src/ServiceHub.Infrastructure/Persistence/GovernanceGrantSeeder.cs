@@ -52,7 +52,16 @@ public static class GovernanceGrantSeeder
             return;
         }
 
+        // A self-grant (GranteeIdentity == OwnerId) is what actually satisfies
+        // GovernanceAccessEvaluator's "own grant" check — not just any row naming this OwnerId.
+        // An owner can accumulate a row for someone else (e.g. granting a colleague Viewer while
+        // still in the bootstrap-bypass window) before ever receiving one for themselves; keying
+        // this gate on "any row at all" would treat that owner as already grandfathered and skip
+        // them forever, permanently locking them out the moment Governance activated for their
+        // partition — the same lockout class this seeder exists to prevent, just via a narrower
+        // door than the seeder's original targeted scenario.
         var ownersWithExistingGrants = (await dbContext.GovernanceGrants
+                .Where(g => g.GranteeIdentity == g.OwnerId)
                 .Select(g => g.OwnerId)
                 .Distinct()
                 .ToListAsync())

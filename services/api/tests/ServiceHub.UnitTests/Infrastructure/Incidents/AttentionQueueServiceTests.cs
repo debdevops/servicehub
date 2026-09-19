@@ -352,4 +352,42 @@ public sealed class AttentionQueueServiceTests : IDisposable
 
         result.Value.Items.Should().ContainSingle(i => i.SignatureHash == live.SignatureHash);
     }
+
+    // ── Regression: namespace allow-list isolation (security fix) ──────────
+    //
+    // Before this fix, GetAttentionQueueAsync always called GetByOwnerAsync (and
+    // IFleetOverviewService.GetOverviewAsync) with allowedNamespaceIds: null — a
+    // namespace-restricted API key still saw attention-queue candidates from namespaces outside
+    // its allow-list.
+
+    [Fact]
+    public async Task GetAttentionQueueAsync_AllowedNamespaceIds_ExcludesSignatureOutsideAllowList()
+    {
+        var allowedNamespaceId = Guid.NewGuid();
+        var otherNamespaceId = Guid.NewGuid();
+        var allowedSig = await SeedSignatureAsync(allowedNamespaceId, "sig-allowed");
+        await SeedSignatureAsync(otherNamespaceId, "sig-outside-allowlist");
+
+        var allowedNamespaceIds = new HashSet<Guid> { allowedNamespaceId };
+
+        // Mirrors the real INamespaceRepository.GetByOwnerAsync contract: when given an
+        // allow-list, only namespaces in it are returned.
+        _namespaceRepositoryMock
+            .Setup(r => r.GetByOwnerAsync(OwnerId, allowedNamespaceIds, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(
+                new List<Namespace> { MakeNamespace(allowedNamespaceId) }));
+
+        // SetupNoFleetOverview (constructor) only matches a null 4th (allowedNamespaceIds) arg —
+        // this call passes a non-null one, so it needs its own matching setup.
+        _fleetOverviewMock
+            .Setup(f => f.GetOverviewAsync(OwnerId, It.IsAny<int>(), It.IsAny<CancellationToken>(), allowedNamespaceIds))
+            .ReturnsAsync(Result<FleetOverview>.Success(
+                new FleetOverview(DateTimeOffset.UtcNow, 24, 0, 0, 0, 0, [], new Dictionary<string, int>(), [])));
+
+        var result = await _service.GetAttentionQueueAsync(
+            OwnerId, provider: null, cancellationToken: default, allowedNamespaceIds: allowedNamespaceIds);
+
+        result.Value.Items.Should().ContainSingle(i => i.SignatureHash == allowedSig.SignatureHash);
+        result.Value.Items.Should().NotContain(i => i.NamespaceId == otherNamespaceId);
+    }
 }

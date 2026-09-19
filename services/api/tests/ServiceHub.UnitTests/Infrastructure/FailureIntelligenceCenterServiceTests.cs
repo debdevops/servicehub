@@ -131,6 +131,70 @@ public sealed class FailureIntelligenceCenterServiceTests : IDisposable
         result.Value.InvestigationQueue.Should().Contain(i => i.NamespaceId == liveNamespaceId);
     }
 
+    // ── Regression: namespace allow-list isolation (security fix) ──────────
+    //
+    // Before this fix, GetInvestigationCenterAsync/GetIncidentsListAsync always called
+    // GetByOwnerAsync (and IFleetOverviewService.GetOverviewAsync) with allowedNamespaceIds:
+    // null — a namespace-restricted API key still saw investigation-queue/incident-list entries
+    // for namespaces outside its allow-list.
+
+    [Fact]
+    public async Task GetInvestigationCenterAsync_AllowedNamespaceIds_ExcludesSignatureOutsideAllowList()
+    {
+        var allowedNamespaceId = Guid.NewGuid();
+        var otherNamespaceId = Guid.NewGuid();
+        _dbContext.NamespaceSignatures.Add(MakeSignature(allowedNamespaceId, "hash-allowed"));
+        _dbContext.NamespaceSignatures.Add(MakeSignature(otherNamespaceId, "hash-outside-allowlist"));
+        await _dbContext.SaveChangesAsync();
+
+        var allowedNamespaceIds = new HashSet<Guid> { allowedNamespaceId };
+
+        // Mirrors the real INamespaceRepository.GetByOwnerAsync contract: when given an
+        // allow-list, only namespaces in it are returned.
+        _namespaceRepositoryMock
+            .Setup(r => r.GetByOwnerAsync(OwnerId, allowedNamespaceIds, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(
+                new List<Namespace> { MakeNamespace(allowedNamespaceId) }));
+
+        // The constructor's default fleet-overview setup only matches a null 4th
+        // (allowedNamespaceIds) arg — this call passes a non-null one, so it needs its own.
+        _fleetOverviewMock
+            .Setup(f => f.GetOverviewAsync(OwnerId, It.IsAny<int>(), It.IsAny<CancellationToken>(), allowedNamespaceIds))
+            .ReturnsAsync(Result<FleetOverview>.Success(
+                new FleetOverview(DateTimeOffset.UtcNow, 24, 0, 0, 0, 0, [], new Dictionary<string, int>(), [])));
+
+        var result = await _sut.GetInvestigationCenterAsync(
+            OwnerId, cancellationToken: default, allowedNamespaceIds: allowedNamespaceIds);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.InvestigationQueue.Should().NotContain(i => i.NamespaceId == otherNamespaceId);
+        result.Value.InvestigationQueue.Should().Contain(i => i.NamespaceId == allowedNamespaceId);
+    }
+
+    [Fact]
+    public async Task GetIncidentsListAsync_AllowedNamespaceIds_ExcludesSignatureOutsideAllowList()
+    {
+        var allowedNamespaceId = Guid.NewGuid();
+        var otherNamespaceId = Guid.NewGuid();
+        _dbContext.NamespaceSignatures.Add(MakeSignature(allowedNamespaceId, "hash-allowed"));
+        _dbContext.NamespaceSignatures.Add(MakeSignature(otherNamespaceId, "hash-outside-allowlist"));
+        await _dbContext.SaveChangesAsync();
+
+        var allowedNamespaceIds = new HashSet<Guid> { allowedNamespaceId };
+
+        _namespaceRepositoryMock
+            .Setup(r => r.GetByOwnerAsync(OwnerId, allowedNamespaceIds, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(
+                new List<Namespace> { MakeNamespace(allowedNamespaceId) }));
+
+        var result = await _sut.GetIncidentsListAsync(
+            OwnerId, trendDays: 7, cancellationToken: default, allowedNamespaceIds: allowedNamespaceIds);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Items.Should().NotContain(i => i.NamespaceId == otherNamespaceId);
+        result.Value.Items.Should().Contain(i => i.NamespaceId == allowedNamespaceId);
+    }
+
     // Full E2E pass, 2026-09-12: reproduced live with a real flood-seeded signature — Incident
     // Center's "Investigate" link opened IncidentReadModelService.GetIncidentAsync, which (per its
     // own ADR-0009 comment, mirrored by AttentionQueueService) only ever resolves a Fingerprint-

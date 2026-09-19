@@ -160,6 +160,42 @@ public class DlqOverviewServiceTests : IDisposable
         result.Value.Providers.Last().Provider.Should().Be(CloudProviderType.Azure);
     }
 
+    // ── Regression: namespace allow-list isolation (security fix) ──────────
+    //
+    // Before this fix, GetOverviewAsync always called GetByOwnerAsync with
+    // allowedNamespaceIds: null — a namespace-restricted API key still saw the cross-cloud DLQ
+    // overview for its full owner pool, not just its allow-listed namespace(s).
+
+    [Fact]
+    public async Task GetOverviewAsync_AllowedNamespaceIds_ExcludesNamespaceOutsideAllowList()
+    {
+        var allowed = CreateNamespace("allowed-ns", CloudProviderType.Azure);
+        var other = CreateNamespace("other-ns", CloudProviderType.Aws);
+
+        // Mirrors the real INamespaceRepository.GetByOwnerAsync contract: when given an
+        // allow-list, only namespaces in it are returned.
+        _namespaces.Setup(r => r.GetByOwnerAsync(
+                TestConstants.TestOwnerId,
+                It.Is<IReadOnlySet<Guid>>(s => s != null && s.SetEquals(new[] { allowed.Id })),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success<IReadOnlyList<Namespace>>([allowed]));
+
+        _dbContext.DlqMessages.Add(Msg(allowed.Id, 1, CloudProviderType.Azure));
+        for (var i = 0; i < 5; i++)
+            _dbContext.DlqMessages.Add(Msg(other.Id, 100 + i, CloudProviderType.Aws));
+        await _dbContext.SaveChangesAsync();
+
+        var allowedNamespaceIds = new HashSet<Guid> { allowed.Id };
+
+        var result = await _service.GetOverviewAsync(
+            TestConstants.TestOwnerId, new DlqOverviewFilter(), allowedNamespaceIds: allowedNamespaceIds);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Providers.Should().ContainSingle(p => p.Provider == CloudProviderType.Azure);
+        result.Value.Providers.Should().NotContain(p => p.Provider == CloudProviderType.Aws);
+        result.Value.Totals.TotalDeadLettered.Should().Be(1);
+    }
+
     [Fact]
     public async Task GetOverviewAsync_ReasonFilter_NarrowsToMatchingCategory()
     {

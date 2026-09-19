@@ -164,7 +164,7 @@ public sealed class BulkOperationsController : ApiControllerBase
         [FromQuery] int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
-        var result = await _bulkOperationService.ListJobsAsync(OwnerId, namespaceId, page, pageSize, cancellationToken);
+        var result = await _bulkOperationService.ListJobsAsync(OwnerId, namespaceId, page, pageSize, cancellationToken, AllowedNamespaceIds);
         return ToActionResult(result);
     }
 

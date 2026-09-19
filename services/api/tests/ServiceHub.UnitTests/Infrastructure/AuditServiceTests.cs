@@ -131,6 +131,56 @@ public class AuditServiceTests : IDisposable
         result.Value.Items.Should().OnlyContain(l => l.NamespaceId == targetNs);
     }
 
+    // ── Regression: namespace allow-list isolation (security fix) ──────────
+    //
+    // Before this fix, GetLogsAsync/GetSummaryAsync/ExportAsync ignored a caller's
+    // AllowedNamespaceIds allow-list entirely, so a namespace-restricted API key could read
+    // audit logs for every namespace its owner has, not just the allow-listed subset.
+
+    [Fact]
+    public async Task GetLogsAsync_AllowedNamespaceIds_ExcludesLogsOutsideAllowList()
+    {
+        await SeedAuditLogsAsync();
+        var allowedNs = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var allowedNamespaceIds = new HashSet<Guid> { allowedNs };
+
+        var result = await _auditService.GetLogsAsync("__spa__", allowedNamespaceIds: allowedNamespaceIds);
+
+        result.IsSuccess.Should().BeTrue();
+        // ns1 (2 entries) plus the one entry with no NamespaceId (instance-level action) remain;
+        // ns2's entry must be excluded.
+        result.Value.Items.Should().NotContain(l => l.NamespaceId == Guid.Parse("00000000-0000-0000-0000-000000000002"));
+        result.Value.Items.Should().OnlyContain(l => l.NamespaceId == null || l.NamespaceId == allowedNs);
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_AllowedNamespaceIds_ExcludesStatsOutsideAllowList()
+    {
+        await SeedAuditLogsAsync();
+        var allowedNs = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var allowedNamespaceIds = new HashSet<Guid> { allowedNs };
+
+        var result = await _auditService.GetSummaryAsync("__spa__", allowedNamespaceIds: allowedNamespaceIds);
+
+        result.IsSuccess.Should().BeTrue();
+        // Without the ns2 entry (a Failure), total events for __spa__ drops from 3 to 2.
+        result.Value.TotalEvents.Should().Be(2);
+        result.Value.FailureCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ExportAsync_AllowedNamespaceIds_ExcludesEntriesOutsideAllowList()
+    {
+        await SeedAuditLogsAsync();
+        var allowedNs = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var allowedNamespaceIds = new HashSet<Guid> { allowedNs };
+
+        var result = await _auditService.ExportAsync("__spa__", allowedNamespaceIds: allowedNamespaceIds);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().NotContain(l => l.NamespaceId == Guid.Parse("00000000-0000-0000-0000-000000000002"));
+    }
+
     [Fact]
     public async Task GetLogsAsync_FiltersByActionType()
     {

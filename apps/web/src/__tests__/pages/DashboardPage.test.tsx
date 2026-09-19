@@ -67,7 +67,10 @@ const mockNamespace = {
 const mockQueues = [
   {
     name: 'queue-1',
-    activeMessageCount: 5,
+    // 50 active / 2 DLQ is a 3.8% ratio (B health grade) — deliberately "clearly healthy" so
+    // tests unrelated to DLQ-spike behavior don't incidentally trip the D/F-grade spike rule
+    // (see healthGrade.ts's isDlqSpike) and render an extra, unrelated hotspot/attention entry.
+    activeMessageCount: 50,
     deadLetterMessageCount: 2,
     scheduledMessageCount: 1,
     maxSizeInMegabytes: 1024,
@@ -109,7 +112,7 @@ describe('DashboardPage', () => {
       {
         namespaceId: 'ns1',
         queues: mockQueues,
-        totalActive: 5,
+        totalActive: 50,
         totalDlq: 2,
         totalScheduled: 1,
         totalQueues: 1,
@@ -194,7 +197,7 @@ describe('DashboardPage', () => {
       refetch: vi.fn(),
     });
     mockUseAllNamespacesQueues.mockReturnValue([
-      { namespaceId: 'ns1', queues: mockQueues, totalActive: 5, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
+      { namespaceId: 'ns1', queues: mockQueues, totalActive: 50, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
       { namespaceId: 'ns2', queues: mockQueues, totalActive: 3, totalDlq: 0, totalScheduled: 0, totalQueues: 1, isLoading: false, isError: false },
     ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
@@ -288,7 +291,7 @@ describe('DashboardPage', () => {
       refetch: vi.fn(),
     });
     mockUseAllNamespacesQueues.mockReturnValue([
-      { namespaceId: 'ns1', queues: mockQueues, totalActive: 5, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
+      { namespaceId: 'ns1', queues: mockQueues, totalActive: 50, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
     ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
     expect(await screen.findByText('PROD')).toBeInTheDocument();
@@ -302,7 +305,7 @@ describe('DashboardPage', () => {
       refetch: vi.fn(),
     });
     mockUseAllNamespacesQueues.mockReturnValue([
-      { namespaceId: 'ns1', queues: mockQueues, totalActive: 5, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
+      { namespaceId: 'ns1', queues: mockQueues, totalActive: 50, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
     ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
     expect(await screen.findByText('UAT')).toBeInTheDocument();
@@ -337,7 +340,7 @@ describe('DashboardPage', () => {
       refetch: vi.fn(),
     });
     mockUseAllNamespacesQueues.mockReturnValue([
-      { namespaceId: 'ns1', queues: mockQueues, totalActive: 5, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
+      { namespaceId: 'ns1', queues: mockQueues, totalActive: 50, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
     ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
     expect(await screen.findByText('—')).toBeInTheDocument();

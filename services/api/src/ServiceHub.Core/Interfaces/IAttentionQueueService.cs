@@ -20,8 +20,13 @@ public interface IAttentionQueueService
     /// filter of the global top-3 that could silently go empty if another cloud's issues
     /// dominated the unfiltered ranking. Null preserves the original cross-cloud behaviour.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="allowedNamespaceIds">
+    /// Optional namespace allow-list from the caller's credential. When non-null, candidates are
+    /// restricted to namespaces in this set — null means unrestricted (today's behaviour).
+    /// </param>
     Task<Result<AttentionQueueResponse>> GetAttentionQueueAsync(
         string ownerId,
         CloudProviderType? provider = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null);
 }

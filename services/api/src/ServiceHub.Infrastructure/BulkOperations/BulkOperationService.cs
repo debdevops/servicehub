@@ -158,12 +158,19 @@ public sealed class BulkOperationService : IBulkOperationService
 
     /// <inheritdoc />
     public async Task<Result<PaginatedResponse<BulkOperationJobResponse>>> ListJobsAsync(
-        string ownerId, Guid? namespaceId, int page, int pageSize, CancellationToken cancellationToken = default)
+        string ownerId, Guid? namespaceId, int page, int pageSize, CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
         var query = _dbContext.BulkOperationJobs.AsNoTracking().Where(j => j.OwnerId == ownerId);
+
+        // NAMESPACE ALLOW-LIST: further narrow to the caller's credential's namespace allow-list,
+        // when one is present — null means unrestricted (today's behaviour).
+        if (allowedNamespaceIds is not null)
+            query = query.Where(j => allowedNamespaceIds.Contains(j.NamespaceId));
+
         if (namespaceId.HasValue)
             query = query.Where(j => j.NamespaceId == namespaceId.Value);
 

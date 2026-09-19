@@ -35,7 +35,7 @@ public sealed class FailureIntelligenceCenterController : ApiControllerBase
     public async Task<ActionResult<InvestigationCenterResponse>> GetInvestigationCenterAsync(
         CancellationToken cancellationToken = default)
     {
-        var result = await _centerService.GetInvestigationCenterAsync(OwnerId, cancellationToken);
+        var result = await _centerService.GetInvestigationCenterAsync(OwnerId, cancellationToken, AllowedNamespaceIds);
         return ToActionResult(result);
     }
 
@@ -52,7 +52,7 @@ public sealed class FailureIntelligenceCenterController : ApiControllerBase
         [FromQuery] int days = 7,
         CancellationToken cancellationToken = default)
     {
-        var result = await _centerService.GetIncidentsListAsync(OwnerId, days, cancellationToken);
+        var result = await _centerService.GetIncidentsListAsync(OwnerId, days, cancellationToken, AllowedNamespaceIds);
         return ToActionResult(result);
     }
 }

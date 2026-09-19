@@ -62,6 +62,10 @@ public sealed class DlqSignatureAnalysisService : IDlqSignatureAnalysisService
     {
         ArgumentException.ThrowIfNullOrEmpty(ownerId);
 
+        // allowedNamespaceIds intentionally omitted (null): the caller (DlqHistoryController)
+        // already resolved and ownership/allow-list-checked this exact namespaceId via
+        // GetOwnedNamespaceAsync before calling AnalyzeAsync, so re-narrowing here would be
+        // redundant — the query is already scoped to this single, already-authorized namespace.
         var exportResult = await _historyService.ExportAsync(
             ownerId,
             namespaceId,

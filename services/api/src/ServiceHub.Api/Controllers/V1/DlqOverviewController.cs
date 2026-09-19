@@ -50,7 +50,7 @@ public sealed class DlqOverviewController : ApiControllerBase
         CancellationToken cancellationToken = default)
     {
         var filter = new DlqOverviewFilter(days, cloud, environment, namespaceId, reason, entityName, status, replaySafety);
-        var result = await _overviewService.GetOverviewAsync(OwnerId, filter, cancellationToken);
+        var result = await _overviewService.GetOverviewAsync(OwnerId, filter, cancellationToken, AllowedNamespaceIds);
         return ToActionResult(result);
     }
 }

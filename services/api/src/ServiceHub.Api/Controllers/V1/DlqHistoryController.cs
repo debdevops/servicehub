@@ -92,7 +92,7 @@ public sealed class DlqHistoryController : ApiControllerBase
 
         var result = await _historyService.GetHistoryAsync(
             OwnerId, namespaceId, entityName, from, to, status, category,
-            page, pageSize, cancellationToken);
+            page, pageSize, cancellationToken, AllowedNamespaceIds);
 
         if (result.IsFailure)
             return ToActionResult<PaginatedResponse<DlqHistoryResponse>>(result.Error);
@@ -125,7 +125,7 @@ public sealed class DlqHistoryController : ApiControllerBase
         long id,
         CancellationToken cancellationToken = default)
     {
-        var result = await _historyService.GetByIdAsync(OwnerId, id, cancellationToken);
+        var result = await _historyService.GetByIdAsync(OwnerId, id, cancellationToken, AllowedNamespaceIds);
         if (result.IsFailure)
             return ToActionResult<DlqMessageDetailResponse>(result.Error);
 
@@ -315,7 +315,7 @@ public sealed class DlqHistoryController : ApiControllerBase
         CancellationToken cancellationToken = default)
     {
         var result = await _historyService.ExportAsync(
-            OwnerId, namespaceId, entityName, from, to, status, cancellationToken);
+            OwnerId, namespaceId, entityName, from, to, status, cancellationToken, AllowedNamespaceIds);
 
         if (result.IsFailure)
             return ToActionResult(ServiceHub.Shared.Results.Result.Failure(result.Error));
@@ -354,7 +354,7 @@ public sealed class DlqHistoryController : ApiControllerBase
         [FromQuery] int days = 30,
         CancellationToken cancellationToken = default)
     {
-        var result = await _historyService.GetSummaryAsync(OwnerId, namespaceId, days, cancellationToken);
+        var result = await _historyService.GetSummaryAsync(OwnerId, namespaceId, days, cancellationToken, AllowedNamespaceIds);
         if (result.IsFailure)
             return ToActionResult<DlqSummaryResponse>(result.Error);
 
@@ -394,7 +394,7 @@ public sealed class DlqHistoryController : ApiControllerBase
         CancellationToken cancellationToken = default)
     {
         days = Math.Clamp(days, 1, 30);
-        var result = await _historyService.GetSummaryAsync(OwnerId, namespaceId, days, cancellationToken);
+        var result = await _historyService.GetSummaryAsync(OwnerId, namespaceId, days, cancellationToken, AllowedNamespaceIds);
         if (result.IsFailure)
             return ToActionResult<IReadOnlyList<DlqTrendPointResponse>>(result.Error);
 

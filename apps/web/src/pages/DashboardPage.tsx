@@ -38,7 +38,7 @@ import { setThemeProvider } from '@servicehub/ui-shared/lib/providerTheme';
 import { Namespace, CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 import { apiClient } from '@servicehub/ui-shared/lib/api/client';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
-import { getHealthGrade } from '@servicehub/ui-shared/lib/healthGrade';
+import { getHealthGrade, isDlqSpike as computeIsDlqSpike } from '@servicehub/ui-shared/lib/healthGrade';
 import { useFleetOverview } from '@servicehub/ui-shared/hooks/useFleet';
 import { useAuditLogs } from '@servicehub/ui-shared/hooks/useAudit';
 import type { FleetHealthSeverity, FleetNamespaceHealth } from '@servicehub/ui-shared/lib/api/fleet';
@@ -179,6 +179,7 @@ function AggregateSummaryBar({ stats }: { stats: AggregateStats }) {
 interface HotSpot {
   namespace: Namespace;
   totalDlq: number;
+  totalActive: number;
   isError: boolean;
 }
 
@@ -469,8 +470,7 @@ export function NamespaceCard({
   // keeps the "Healthy" banner from ever contradicting a D/F health grade shown on the same card
   // (e.g. 0 active / 9 DLQ is a 100% DLQ ratio — an F grade — even though 9 is under a threshold
   // of 10).
-  const dlqGrade = getHealthGrade(totalActive, totalDlq).grade;
-  const isDlqSpike = totalDlq > dlqThreshold || dlqGrade === 'D' || dlqGrade === 'F';
+  const isDlqSpike = computeIsDlqSpike(totalActive, totalDlq, dlqThreshold);
 
   // Track previous DLQ count to detect sudden increases
   const prevDlqRef = useRef<number | null>(null);
@@ -928,7 +928,7 @@ export function DashboardPage() {
       totalActive: allStats.reduce((sum, s) => sum + s.totalActive, 0),
       totalDlq: dlqOverview ? dlqOverview.totals.totalDeadLettered : allStats.reduce((sum, s) => sum + s.totalDlq, 0),
       totalScheduled: allStats.reduce((sum, s) => sum + s.totalScheduled, 0),
-      spikeCount: allStats.filter((s) => s.totalDlq > DLQ_SPIKE_THRESHOLD).length,
+      spikeCount: allStats.filter((s) => computeIsDlqSpike(s.totalActive, s.totalDlq, DLQ_SPIKE_THRESHOLD)).length,
       isLoading: allStats.some((s) => s.isLoading),
       dlqLoading: isDlqOverviewLoading,
     };
@@ -937,9 +937,14 @@ export function DashboardPage() {
     const hotspots: HotSpot[] = (namespaces ?? [])
       .map((ns) => {
         const s = statsById.get(ns.id);
-        return { namespace: ns, totalDlq: s?.totalDlq ?? 0, isError: s?.isError ?? false };
+        return {
+          namespace: ns,
+          totalDlq: s?.totalDlq ?? 0,
+          totalActive: s?.totalActive ?? 0,
+          isError: s?.isError ?? false,
+        };
       })
-      .filter((h) => h.totalDlq > DLQ_SPIKE_THRESHOLD)
+      .filter((h) => computeIsDlqSpike(h.totalActive, h.totalDlq, DLQ_SPIKE_THRESHOLD))
       .sort((a, b) => b.totalDlq - a.totalDlq);
 
     const maxDlq = hotspots[0]?.totalDlq ?? 1;

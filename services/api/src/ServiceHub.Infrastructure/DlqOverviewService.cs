@@ -58,7 +58,8 @@ public sealed class DlqOverviewService : IDlqOverviewService
     public async Task<Result<DlqOverview>> GetOverviewAsync(
         string ownerId,
         DlqOverviewFilter filter,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
         if (string.IsNullOrWhiteSpace(ownerId))
         {
@@ -74,7 +75,7 @@ public sealed class DlqOverviewService : IDlqOverviewService
             var startDate = today.AddDays(-(days - 1));
             var startCutoff = new DateTimeOffset(startDate, TimeSpan.Zero);
 
-            var namespacesResult = await _namespaceRepository.GetByOwnerAsync(ownerId, allowedNamespaceIds: null, cancellationToken);
+            var namespacesResult = await _namespaceRepository.GetByOwnerAsync(ownerId, allowedNamespaceIds, cancellationToken);
             var namespaces = (namespacesResult.IsSuccess ? namespacesResult.Value : [])
                 .Where(n => filter.NamespaceId is null || n.Id == filter.NamespaceId)
                 .Where(n => filter.Environment is null || n.Environment == filter.Environment)

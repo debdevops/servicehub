@@ -16,10 +16,15 @@ public interface IDlqOverviewService
     /// <param name="ownerId">Tenant/owner identifier for isolation.</param>
     /// <param name="filter">Scope and time-window filters. See <see cref="DlqOverviewFilter"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="allowedNamespaceIds">
+    /// Optional namespace allow-list from the caller's credential. When non-null, the overview is
+    /// built only from namespaces in this set — null means unrestricted (today's behaviour).
+    /// </param>
     Task<Result<DlqOverview>> GetOverviewAsync(
         string ownerId,
         DlqOverviewFilter filter,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null);
 }
 
 /// <summary>Filters narrowing a <see cref="DlqOverview"/> query. All optional/additive.</summary>

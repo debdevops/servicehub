@@ -269,6 +269,46 @@ public class FleetOverviewServiceTests : IDisposable
         ns1Health.TopEntityCount.Should().Be(2);
     }
 
+    // ── Regression: namespace allow-list isolation (security fix) ──────────
+    //
+    // Before this fix, GetOverviewAsync always called GetByOwnerAsync with
+    // allowedNamespaceIds: null AND queried DlqMessages without any allow-list filter at all — so
+    // a namespace-restricted API key still saw cross-namespace TotalActive/TopCategories/
+    // DailyTrend aggregates for its full owner pool, not just its allow-listed namespace(s).
+
+    [Fact]
+    public async Task GetOverviewAsync_AllowedNamespaceIds_ExcludesNamespaceOutsideAllowList()
+    {
+        var allowed = CreateNamespace("allowed-ns");
+        var other = CreateNamespace("other-ns");
+
+        // Mirrors the real INamespaceRepository.GetByOwnerAsync contract: when given an
+        // allow-list, only namespaces in it are returned.
+        _namespaces.Setup(r => r.GetByOwnerAsync(
+                TestConstants.TestOwnerId,
+                It.Is<IReadOnlySet<Guid>>(s => s != null && s.SetEquals(new[] { allowed.Id })),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success<IReadOnlyList<Namespace>>([allowed]));
+
+        _dbContext.DlqMessages.AddRange(
+            Msg(allowed.Id, 1, entity: "orders"),
+            Msg(other.Id, 2, entity: "payments"));
+        await _dbContext.SaveChangesAsync();
+
+        var allowedNamespaceIds = new HashSet<Guid> { allowed.Id };
+
+        var result = await _service.GetOverviewAsync(
+            TestConstants.TestOwnerId, cancellationToken: default, allowedNamespaceIds: allowedNamespaceIds);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.NamespaceCount.Should().Be(1);
+        result.Value.Namespaces.Should().ContainSingle(n => n.NamespaceId == allowed.Id);
+        // The critical assertion: TotalActive/TopCategories must not leak the other namespace's
+        // message even though it exists in the same owner's data.
+        result.Value.TotalActive.Should().Be(1);
+        result.Value.TopCategories.Values.Sum().Should().Be(1);
+    }
+
     [Fact]
     public async Task GetOverviewAsync_LargeBacklog_IsCriticalAndSortedFirst()
     {

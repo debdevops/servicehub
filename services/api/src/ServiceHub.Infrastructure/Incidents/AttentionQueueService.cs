@@ -70,7 +70,8 @@ public sealed class AttentionQueueService : IAttentionQueueService
     public async Task<Result<AttentionQueueResponse>> GetAttentionQueueAsync(
         string ownerId,
         CloudProviderType? provider = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(ownerId);
 
@@ -85,9 +86,13 @@ public sealed class AttentionQueueService : IAttentionQueueService
             .ConfigureAwait(false);
 
         // Deleting a namespace does not cascade-delete its signature rows — mirrors
-        // FailureIntelligenceCenterService's own filtering for the same reason.
+        // FailureIntelligenceCenterService's own filtering for the same reason. Passing
+        // allowedNamespaceIds here also narrows namespacesById to the caller's allow-list, which
+        // in turn narrows `signatures` (below) and the fleet severity map (via
+        // _fleetOverview.GetOverviewAsync) to the same allow-list — a namespace-restricted key
+        // must not see candidates or severity data from namespaces outside its allow-list.
         var registeredNamespacesResult = await _namespaceRepository.GetByOwnerAsync(
-            ownerId, allowedNamespaceIds: null, cancellationToken).ConfigureAwait(false);
+            ownerId, allowedNamespaceIds, cancellationToken).ConfigureAwait(false);
         var namespacesById = registeredNamespacesResult.IsSuccess
             ? registeredNamespacesResult.Value.ToDictionary(n => n.Id)
             : new Dictionary<Guid, Namespace>();
@@ -127,7 +132,8 @@ public sealed class AttentionQueueService : IAttentionQueueService
                 .ToDictionary(g => g.Key, g => g.Count())
             : new Dictionary<string, int>();
 
-        var overviewResult = await _fleetOverview.GetOverviewAsync(ownerId, cancellationToken: cancellationToken)
+        var overviewResult = await _fleetOverview.GetOverviewAsync(
+                ownerId, cancellationToken: cancellationToken, allowedNamespaceIds: allowedNamespaceIds)
             .ConfigureAwait(false);
         var severityByNamespace = overviewResult.IsSuccess
             ? overviewResult.Value.Namespaces.ToDictionary(n => n.NamespaceId, n => n.Severity)

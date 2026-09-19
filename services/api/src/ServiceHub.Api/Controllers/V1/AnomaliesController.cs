@@ -143,7 +143,7 @@ public sealed class AnomaliesController : ApiControllerBase
         }
 
         if (namespaceResult.IsFailure
-            || !string.Equals(namespaceResult.Value.OwnerId, OwnerId, StringComparison.Ordinal))
+            || !namespaceResult.Value.IsAccessibleBy(OwnerId, AllowedNamespaceIds))
         {
             return ToActionResult<AnomalyInfo>(ServiceHub.Shared.Results.Error.NotFound(
                 "Anomaly.NotFound",

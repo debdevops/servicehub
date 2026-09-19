@@ -234,6 +234,7 @@ describe('useRootCauseMatches', () => {
           lastSeenAt: '2026-01-02T00:00:00Z',
           lifecycleStatus: 'Resolved',
           knowledge: null,
+          lastReplayOutcome: null,
         },
       ],
     };

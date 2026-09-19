@@ -364,7 +364,7 @@ one namespace — reached by clicking a namespace on its Cloud Home.
 **Back/Forward and refresh** all work across every level — the whole three-level journey (cloud
 picker → Cloud Home → Namespace Home → an incident, and back) is encoded in the URL
 (`?cloud=` and `?namespace=`), so ServiceHub's own Back/Forward strip (see
-[Back / Forward navigation](quick-access-guide.md#back--forward-navigation)) and a browser
+[Back / Forward navigation](guides/quick-access-guide.md#back--forward-navigation)) and a browser
 refresh both land you exactly where you were — and a namespace id that doesn't belong to the
 active cloud silently falls back to that cloud's Home rather than ever rendering under the wrong
 heading.

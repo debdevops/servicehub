@@ -34,7 +34,7 @@ public sealed class AttentionQueueController : ApiControllerBase
         [FromQuery] CloudProviderType? provider = null,
         CancellationToken cancellationToken = default)
     {
-        var result = await _attentionQueueService.GetAttentionQueueAsync(OwnerId, provider, cancellationToken);
+        var result = await _attentionQueueService.GetAttentionQueueAsync(OwnerId, provider, cancellationToken, AllowedNamespaceIds);
         return ToActionResult(result);
     }
 }

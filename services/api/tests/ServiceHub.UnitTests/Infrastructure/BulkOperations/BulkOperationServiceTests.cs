@@ -437,6 +437,53 @@ public sealed class BulkOperationServiceTests : IDisposable
         result.Value.Items[1].Id.Should().Be(first.Value.Id);
     }
 
+    // ── Regression: namespace allow-list isolation (security fix) ──────────
+    //
+    // Before this fix, ListJobsAsync ignored a caller's AllowedNamespaceIds allow-list entirely
+    // — contrast with PreviewAsync/CreateJobAsync on this same service/controller, which already
+    // thread it through correctly. A namespace-restricted API key could list every bulk operation
+    // job the owner has, not just the allow-listed subset.
+
+    [Fact]
+    public async Task ListJobsAsync_AllowedNamespaceIds_ExcludesJobsOutsideAllowList()
+    {
+        var sut = CreateSut();
+        var allowedNamespaceId = Guid.NewGuid();
+        var otherNamespaceId = Guid.NewGuid();
+
+        _dbContext.BulkOperationJobs.Add(new BulkOperationJob
+        {
+            OwnerId = OwnerId,
+            RequestedByIdentity = OwnerId,
+            RequestedByActorKind = RecoveryActorKind.User,
+            OperationType = BulkOperationType.Replay,
+            NamespaceId = allowedNamespaceId,
+            NamespaceDisplayName = "allowed-ns",
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+        _dbContext.BulkOperationJobs.Add(new BulkOperationJob
+        {
+            OwnerId = OwnerId,
+            RequestedByIdentity = OwnerId,
+            RequestedByActorKind = RecoveryActorKind.User,
+            OperationType = BulkOperationType.Replay,
+            NamespaceId = otherNamespaceId,
+            NamespaceDisplayName = "other-ns",
+            CreatedAt = DateTimeOffset.UtcNow,
+        });
+        await _dbContext.SaveChangesAsync();
+
+        var allowedNamespaceIds = new HashSet<Guid> { allowedNamespaceId };
+
+        var result = await sut.ListJobsAsync(
+            OwnerId, namespaceId: null, page: 1, pageSize: 20,
+            allowedNamespaceIds: allowedNamespaceIds);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.TotalCount.Should().Be(1);
+        result.Value.Items.Should().ContainSingle(j => j.NamespaceId == allowedNamespaceId);
+    }
+
     // ── CancelJobAsync ───────────────────────────────────────────────────────
 
     [Fact]

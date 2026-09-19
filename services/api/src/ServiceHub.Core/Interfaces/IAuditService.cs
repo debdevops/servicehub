@@ -21,7 +21,11 @@ public interface IAuditService
     // ─── Read ────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Gets a paginated, filtered list of audit log entries for the given owner.
+    /// Gets a paginated, filtered list of audit log entries for the given owner. When
+    /// <paramref name="allowedNamespaceIds"/> is non-null (a namespace-restricted API key),
+    /// entries whose <see cref="AuditLog.NamespaceId"/> is set are further restricted to
+    /// namespaces in this set; entries with no namespace (instance-level actions) are
+    /// unaffected. Null means unrestricted (today's behaviour).
     /// </summary>
     Task<Result<AuditPageResult>> GetLogsAsync(
         string ownerId,
@@ -33,18 +37,22 @@ public interface IAuditService
         DateTimeOffset? to = null,
         int page = 1,
         int pageSize = 50,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null);
 
     /// <summary>
-    /// Gets a summary of audit trail activity for the given owner and optional namespace.
+    /// Gets a summary of audit trail activity for the given owner and optional namespace. See
+    /// <see cref="GetLogsAsync"/> for <paramref name="allowedNamespaceIds"/>'s semantics.
     /// </summary>
     Task<Result<AuditSummary>> GetSummaryAsync(
         string ownerId,
         Guid? namespaceId = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null);
 
     /// <summary>
-    /// Exports all audit log entries matching the given filters as a list.
+    /// Exports all audit log entries matching the given filters as a list. See
+    /// <see cref="GetLogsAsync"/> for <paramref name="allowedNamespaceIds"/>'s semantics.
     /// </summary>
     Task<Result<IReadOnlyList<AuditLog>>> ExportAsync(
         string ownerId,
@@ -53,7 +61,8 @@ public interface IAuditService
         string? outcome = null,
         DateTimeOffset? from = null,
         DateTimeOffset? to = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null);
 
     // ─── Retention ───────────────────────────────────────────────────────────
 

@@ -204,6 +204,52 @@ public class AnomaliesControllerTests
         result.Result.Should().BeOfType<NotFoundObjectResult>();
     }
 
+    // ── Regression: namespace allow-list isolation (security fix) ──────────
+    //
+    // Before this fix, GetById did a manual `OwnerId == namespace.OwnerId` string comparison
+    // instead of Namespace.IsAccessibleBy(OwnerId, AllowedNamespaceIds) — so a namespace-restricted
+    // API key could read an anomaly from ANOTHER namespace under the SAME owner, as long as it
+    // guessed/was-told the anomaly's ID, even though that namespace was outside its allow-list.
+
+    [Fact]
+    public async Task GetById_NamespaceOutsideAllowedNamespaceIds_ShouldReturnNotFound()
+    {
+        var ns = CreateTestNamespace(); // OwnerId defaults to Namespace.SpaOwnerId, matching the caller.
+        var anomaly = Anomaly.Create(
+            ns.Id, "test-queue", AnomalyType.HighMessageVolume, 50, "Message volume anomaly");
+
+        _resultCache.Setup(c => c.TryGetAsync(anomaly.Id, It.IsAny<CancellationToken>())).ReturnsAsync(anomaly);
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        // Namespace-restricted API key allow-list that deliberately excludes this namespace.
+        _controller.ControllerContext.HttpContext.Items["AllowedNamespaceIds"] =
+            (IReadOnlySet<Guid>)new HashSet<Guid> { Guid.NewGuid() };
+
+        var result = await _controller.GetById(anomaly.Id);
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
+    public async Task GetById_NamespaceInsideAllowedNamespaceIds_ShouldReturnOk()
+    {
+        var ns = CreateTestNamespace();
+        var anomaly = Anomaly.Create(
+            ns.Id, "test-queue", AnomalyType.HighMessageVolume, 50, "Message volume anomaly");
+
+        _resultCache.Setup(c => c.TryGetAsync(anomaly.Id, It.IsAny<CancellationToken>())).ReturnsAsync(anomaly);
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        _controller.ControllerContext.HttpContext.Items["AllowedNamespaceIds"] =
+            (IReadOnlySet<Guid>)new HashSet<Guid> { ns.Id };
+
+        var result = await _controller.GetById(anomaly.Id);
+
+        result.Result.Should().BeOfType<OkObjectResult>();
+    }
+
     [Fact]
     public async Task GetById_NamespaceNotFound_ShouldReturnNotFound()
     {

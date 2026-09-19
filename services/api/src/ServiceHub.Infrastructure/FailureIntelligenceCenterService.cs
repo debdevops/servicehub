@@ -43,7 +43,8 @@ public sealed class FailureIntelligenceCenterService : IFailureIntelligenceCente
 
     public async Task<Result<InvestigationCenterResponse>> GetInvestigationCenterAsync(
         string ownerId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(ownerId);
 
@@ -63,9 +64,10 @@ public sealed class FailureIntelligenceCenterService : IFailureIntelligenceCente
         // Deleting a namespace does not cascade-delete its signature rows, so without this
         // filter a deleted namespace's stale signatures would keep surfacing here (and in the
         // "Investigate" deep link) indefinitely. Mirrors FleetOverviewService.GetOverviewAsync's
-        // namespace-registry filtering.
+        // namespace-registry filtering. Passing allowedNamespaceIds also narrows this set to the
+        // caller's credential's namespace allow-list, when one is present.
         var registeredNamespacesResult = await _namespaceRepository.GetByOwnerAsync(
-            ownerId, allowedNamespaceIds: null, cancellationToken).ConfigureAwait(false);
+            ownerId, allowedNamespaceIds, cancellationToken).ConfigureAwait(false);
         if (registeredNamespacesResult.IsSuccess)
         {
             var registeredNamespaceIds = registeredNamespacesResult.Value.Select(n => n.Id).ToHashSet();
@@ -102,7 +104,7 @@ public sealed class FailureIntelligenceCenterService : IFailureIntelligenceCente
         var investigationQueue = BuildInvestigationQueue(signatures, lifecycleByHash, allKnowledge);
 
         // Build failed replays section (from job store, last 7 days)
-        var failedReplays = await BuildFailedReplaysAsync(signatures, ownerId, cancellationToken);
+        var failedReplays = await BuildFailedReplaysAsync(signatures, ownerId, cancellationToken, allowedNamespaceIds);
 
         // Build knowledge review section (overdue or missing)
         var knowledgeReview = BuildKnowledgeReview(signatures, lifecycleByHash, allKnowledge);
@@ -114,7 +116,7 @@ public sealed class FailureIntelligenceCenterService : IFailureIntelligenceCente
         var recentlyChanged = await BuildRecentlyChangedAsync(ownerId, cancellationToken);
 
         // Build fleet health summary (composes IFleetOverviewService; null if the query fails)
-        var fleetHealth = await BuildFleetHealthAsync(ownerId, cancellationToken);
+        var fleetHealth = await BuildFleetHealthAsync(ownerId, cancellationToken, allowedNamespaceIds);
 
         return Result.Success(new InvestigationCenterResponse(
             metrics,
@@ -128,9 +130,11 @@ public sealed class FailureIntelligenceCenterService : IFailureIntelligenceCente
 
     private async Task<FleetHealthSummary?> BuildFleetHealthAsync(
         string ownerId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
-        var overviewResult = await _fleetOverview.GetOverviewAsync(ownerId, cancellationToken: cancellationToken)
+        var overviewResult = await _fleetOverview.GetOverviewAsync(
+                ownerId, cancellationToken: cancellationToken, allowedNamespaceIds: allowedNamespaceIds)
             .ConfigureAwait(false);
 
         if (!overviewResult.IsSuccess)
@@ -256,13 +260,21 @@ public sealed class FailureIntelligenceCenterService : IFailureIntelligenceCente
     private async Task<List<FailedReplayItem>> BuildFailedReplaysAsync(
         IReadOnlyList<NamespaceSignature> signatures,
         string ownerId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
         var windowStart = DateTimeOffset.UtcNow.AddDays(-7);
 
-        var recentJobs = await _dbContext.SignatureReplayJobs
+        var recentJobsQuery = _dbContext.SignatureReplayJobs
             .AsNoTracking()
-            .Where(j => j.OwnerId == ownerId && j.CreatedAt >= windowStart)
+            .Where(j => j.OwnerId == ownerId && j.CreatedAt >= windowStart);
+
+        // NAMESPACE ALLOW-LIST: a namespace-restricted key must not see failed-replay jobs from
+        // namespaces outside its allow-list — null means unrestricted (today's behaviour).
+        if (allowedNamespaceIds is not null)
+            recentJobsQuery = recentJobsQuery.Where(j => allowedNamespaceIds.Contains(j.NamespaceId));
+
+        var recentJobs = await recentJobsQuery
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
@@ -423,12 +435,13 @@ public sealed class FailureIntelligenceCenterService : IFailureIntelligenceCente
     public async Task<Result<IncidentListResponse>> GetIncidentsListAsync(
         string ownerId,
         int trendDays,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(ownerId);
 
         var registeredNamespacesResult = await _namespaceRepository.GetByOwnerAsync(
-            ownerId, allowedNamespaceIds: null, cancellationToken).ConfigureAwait(false);
+            ownerId, allowedNamespaceIds, cancellationToken).ConfigureAwait(false);
         var namespacesById = registeredNamespacesResult.IsSuccess
             ? registeredNamespacesResult.Value.ToDictionary(n => n.Id)
             : new Dictionary<Guid, Namespace>();
