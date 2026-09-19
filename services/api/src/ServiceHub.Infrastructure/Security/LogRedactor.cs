@@ -120,6 +120,16 @@ public static partial class LogRedactor
     public static string SanitiseForLog(long value) => value.ToString();
 
     /// <summary>
+    /// Sanitises a nullable <see cref="Guid"/> value for safe inclusion in log messages.
+    /// Guids cannot contain injection characters — this overload exists to be explicit
+    /// about that safety and keep CodeQL's log-forging check satisfied at call sites that
+    /// log a request-derived namespace/entity id.
+    /// </summary>
+    /// <param name="value">The value to sanitise.</param>
+    /// <returns>The string representation of the value, or an empty string when null.</returns>
+    public static string SanitiseForLog(Guid? value) => value?.ToString() ?? string.Empty;
+
+    /// <summary>
     /// Redacts sensitive information from an object for logging.
     /// Handles common types including strings, exceptions, and dictionaries.
     /// </summary>

@@ -19,13 +19,12 @@ internal static class ProductionElevationQueries
         DlqDbContext dbContext, string ownerId, Guid namespaceId, CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
-        var candidates = await dbContext.ProductionElevations
+        return await dbContext.ProductionElevations
             .AsNoTracking()
             .Where(e => e.OwnerId == ownerId && e.NamespaceId == namespaceId
-                && e.ApprovedAt != null && e.RevokedAt == null)
+                && e.ApprovedAt != null && e.RevokedAt == null
+                && e.ExpiresAt != null && e.ExpiresAt > now)
             .OrderByDescending(e => e.ApprovedAt)
-            .ToListAsync(cancellationToken);
-
-        return candidates.FirstOrDefault(e => e.IsLiveAt(now));
+            .FirstOrDefaultAsync(cancellationToken);
     }
 }

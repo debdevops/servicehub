@@ -97,7 +97,7 @@ public sealed class GovernanceGrantService : IGovernanceGrantService
 
         _logger.LogInformation(
             "Granted {Role} to {Grantee} (namespace={NamespaceId}, pillar={PillarKind})",
-            grant.Role, LogRedactor.SanitiseForLog(grant.GranteeIdentity), grant.NamespaceId, grant.PillarKind);
+            grant.Role, LogRedactor.SanitiseForLog(grant.GranteeIdentity), LogRedactor.SanitiseForLog(grant.NamespaceId), grant.PillarKind);
 
         return Result.Success(grant);
     }

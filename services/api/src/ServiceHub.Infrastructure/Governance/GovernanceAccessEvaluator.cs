@@ -56,7 +56,7 @@ public sealed class GovernanceAccessEvaluator : IGovernanceAccessEvaluator
             "Governance access denied: {Grantee} has role {ActualRole} (namespace={NamespaceId}, pillar={PillarKind}), required {RequiredRole}",
             LogRedactor.SanitiseForLog(granteeIdentity),
             resolution.MaxApplicableRole?.ToString() ?? "none",
-            namespaceId,
+            LogRedactor.SanitiseForLog(namespaceId),
             pillarKind,
             requiredRole);
 

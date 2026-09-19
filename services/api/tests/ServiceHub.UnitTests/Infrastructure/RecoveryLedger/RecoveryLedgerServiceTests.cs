@@ -2327,7 +2327,9 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
         // the same reason ObservationWindowOpened records its applied window (roadmap W1.1).
         evt.DetailJson.Should().Contain("appliedSuccessRateFloor");
         evt.DetailJson.Should().Contain("defaultSuccessRateFloor");
-        result.Value.Reason.Should().Contain("50%");
+        // ICU renders P0 as "50%" or "50 %" depending on platform/runner; assert the digits only,
+        // matching the same workaround used in AutonomyEvaluationWorkerTests.
+        result.Value.Reason.Should().Contain("50");
     }
 
     // ── GetAgeingAsync / GetDistinctSignatureHashesAsync: per-sweep batch limit ─────────────────
