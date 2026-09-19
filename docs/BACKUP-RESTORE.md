@@ -1,10 +1,27 @@
 # Backup & Restore
 
-ServiceHub's persistent state lives in a single SQLite database — DLQ intelligence, audit trail,
-recovery evidence ledger, namespace/connection registry, and everything else EF Core owns. This
-document describes how ServiceHub backs it up, what a backup bundle contains, and how an operator
-restores from one. Restore is a **manual, operator-driven procedure** — there is no automated
-restore endpoint, by design (see §5).
+> **In this article:** what a ServiceHub backup contains, how to trigger one, how to verify it's
+> trustworthy before you rely on it, and the step-by-step procedure to restore from one.
+>
+> **Who this is for:** whoever is responsible for keeping a self-hosted ServiceHub instance's data
+> safe — this could be a platform engineer, an IT administrator, or a solo operator. You don't need
+> to know SQLite internals to follow this guide; every command is copy-pasteable, and each one
+> explains what it does and why before you run it.
+
+ServiceHub's persistent state — DLQ intelligence, audit trail, recovery evidence ledger, namespace
+connections, and everything else the product remembers — lives in a single file: a SQLite
+database. Backing it up is therefore simple in principle (copy one file), but doing it *safely*
+while ServiceHub is running, and restoring it *correctly*, has a few rules worth understanding
+first. This document covers both.
+
+Restore is a **manual, operator-driven procedure** — there is no "click restore" button or
+automated restore endpoint, by design. That's deliberate: a restore replaces your live data, so it
+should never be one accidental click or API call away. See §4.
+
+> [!TIP]
+> **New here? Skip straight to §5** to trigger your first backup and confirm it works — it takes
+> under a minute and does not touch your live data. Come back to §1–§4 when you actually need to
+> restore.
 
 > **Namespaces moved into SQLite.** Namespaces were originally stored in a separate
 > `servicehub-namespaces.json` file, backed up and restored independently from the SQLite database
@@ -134,7 +151,34 @@ curl -X POST https://your-servicehub-host/api/v1/admin/backup \
   -H "X-API-Key: <an API key with the admin scope>"
 ```
 
-Returns the manifest for the bundle just created (`200 OK`).
+Returns the manifest for the bundle just created (`200 OK`). Here's a real response, captured
+against a live ServiceHub instance during the 2026-09-19 verification pass, with a database that
+had grown to 150 MB under heavy real traffic — so you know exactly what to expect:
+
+```json
+{
+  "backupId": "20260919-102150Z",
+  "createdAtUtc": "2026-09-19T10:21:52.533647+00:00",
+  "serviceHubVersion": "1.0.0+7a519324a756d1f935f9ead44267cc11e42256d5",
+  "sqlite": {
+    "fileName": "servicehub-dlq.db",
+    "sizeBytes": 152104960,
+    "sha256": "1b46df613117ab1f6916670d005afbeb4ca03227f8149088a7f04fcb049946f0"
+  },
+  "integrityCheck": "ok",
+  "encryptionKeyFingerprint": "sha256:8bd65469c5c04d5b",
+  "consistencyNote": "The SQLite snapshot and the namespace JSON store were captured independently, not as a single atomic transaction across both stores. The SQLite snapshot is internally consistent as of its VACUUM INTO completion time; the namespace JSON file is copied as a single atomic file operation at a separate, nearby instant."
+}
+```
+
+The two fields worth actually reading before you close this terminal window:
+
+- **`"integrityCheck": "ok"`** — this is the one field that tells you the backup is trustworthy.
+  If this ever reads anything other than `"ok"`, ServiceHub has already discarded that bundle
+  automatically (see §2) — you'll see a failure response, not a broken file sitting on disk.
+- **`"encryptionKeyFingerprint"`** — write this down (or keep the manifest) if you're backing up
+  before a planned migration or key rotation. You'll need to compare it in §4 step 2 before you
+  ever restore this bundle somewhere else.
 
 **Scheduled**, via `Backup:ScheduledBackupIntervalHours` in configuration (or the
 `Backup__ScheduledBackupIntervalHours` environment variable). **On by default in Production**

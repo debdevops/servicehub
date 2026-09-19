@@ -1,5 +1,16 @@
 # ServiceHub Architecture
 
+> **In this article:** how ServiceHub's pieces fit together under the hood — the frontend/backend
+> split, how it talks to Azure/AWS/GCP, how it proves what it did (the evidence ledger), and its
+> safety/autonomy model.
+>
+> **Who this is for:** engineers about to make a change to ServiceHub itself, or anyone evaluating
+> it who wants to understand the system design rather than just the product features. If you're
+> looking for how to *use* ServiceHub day to day, see the
+> [Complete Guide](SERVICEHUB-COMPLETE-GUIDE.md) instead — that one is written for every audience
+> and is full of real screenshots of the product; this one is source-code-level and has none,
+> because architecture is described faithfully in diagrams and text, not screenshots of a UI.
+
 This document describes the system as it exists today, grounded in the source tree — not a
 long-range roadmap (see [Roadmap in README.md](../README.md#roadmap) for that) and not a decision
 log (see [`docs/adr/`](adr/) for that). Read this to understand how the pieces fit together before

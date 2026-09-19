@@ -1,10 +1,24 @@
 # Encryption Key Rotation
 
+> **In this article:** why ServiceHub encrypts your cloud connection strings, how to safely change
+> ("rotate") the encryption key without losing access to anything, and what to do if you suspect
+> that key has been exposed.
+>
+> **In plain language:** every Azure/AWS/GCP connection string you paste into ServiceHub's Connect
+> page — which is effectively a password to your cloud messaging account — is encrypted before
+> it's ever written to disk. This document is about the encryption *key* itself: how to change it
+> periodically as good security hygiene, the same way you'd rotate any other credential, without
+> locking yourself out of namespaces you already connected.
+
 ServiceHub encrypts every stored connection string (Azure Service Bus SAS, AWS access keys, GCP
 service-account JSON) with AES-GCM under a key derived from `Security:EncryptionKey`. Until this
 document, that key could never be changed after the first namespace was added — rotating it made
 every stored credential permanently undecryptable, and the product's own error message admitted it:
 *"The encryption key may have changed — please re-add this namespace."*
+
+> [!NOTE]
+> If you've never touched `Security:EncryptionKeyRegistry`, none of this affects you yet — skip to
+> the callout at the end of §1. Rotation is opt-in.
 
 This document describes the multi-key registry that fixes that, and the operator procedures for
 normal rotation and for responding to a suspected key compromise. It corresponds to Phases 1–2 of

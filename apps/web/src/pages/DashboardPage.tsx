@@ -464,7 +464,13 @@ export function NamespaceCard({
   const totalActive = stats?.totalActive ?? queues?.reduce((s, q) => s + q.activeMessageCount, 0) ?? 0;
   const totalDlq = stats?.totalDlq ?? queues?.reduce((s, q) => s + q.deadLetterMessageCount, 0) ?? 0;
   const totalScheduled = stats?.totalScheduled ?? queues?.reduce((s, q) => s + q.scheduledMessageCount, 0) ?? 0;
-  const isDlqSpike = totalDlq > dlqThreshold;
+  // A namespace counts as "spiking" either on an absolute DLQ count above the threshold, or on
+  // a bad DLQ-to-active ratio (the same computation the health-grade badge above uses) — this
+  // keeps the "Healthy" banner from ever contradicting a D/F health grade shown on the same card
+  // (e.g. 0 active / 9 DLQ is a 100% DLQ ratio — an F grade — even though 9 is under a threshold
+  // of 10).
+  const dlqGrade = getHealthGrade(totalActive, totalDlq).grade;
+  const isDlqSpike = totalDlq > dlqThreshold || dlqGrade === 'D' || dlqGrade === 'F';
 
   // Track previous DLQ count to detect sudden increases
   const prevDlqRef = useRef<number | null>(null);

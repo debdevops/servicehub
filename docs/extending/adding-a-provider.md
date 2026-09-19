@@ -1,5 +1,15 @@
 # Adding a Messaging Provider
 
+> **In this article:** the exact steps and code seams to implement support for a new message
+> broker (Kafka, RabbitMQ, IBM MQ, a fourth cloud provider, anything) in ServiceHub.
+>
+> **Who this is for:** a software engineer extending ServiceHub's codebase. This is a
+> code-level, hands-on-keyboard guide — there's no UI screenshot that explains how to write a C#
+> class, so unlike most of ServiceHub's documentation, this one is code and configuration
+> examples throughout, not annotated screenshots. If you're looking to *use* one of the providers
+> ServiceHub already supports, see the [AWS](../guides/aws-guide.md), [Azure](../guides/azure-guide.md),
+> or [GCP](../guides/gcp-guide.md) guide instead.
+
 A guide for whoever adds the next `ICloudMessagingProvider` — Kafka, RabbitMQ, IBM MQ, ActiveMQ,
 Pulsar, NATS, or a fourth cloud provider. It starts from the real extension seam rather than asking
 you to re-derive it from the codebase, and names the friction the Azure/AWS/GCP providers actually

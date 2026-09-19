@@ -214,7 +214,14 @@ describe('DashboardPage', () => {
     expect(container.querySelector('.animate-pulse')).toBeTruthy();
   });
 
-  it('shows Healthy status when DLQ count is within threshold', async () => {
+  it('shows Healthy status when DLQ count is within threshold and the DLQ ratio is good', async () => {
+    // 2 DLQ is under the absolute spike threshold (10) AND, with 50 active messages, a 3.8%
+    // DLQ ratio — a B health grade, not D/F — so both signals agree this namespace is healthy.
+    mockUseQueues.mockReturnValue({
+      data: [{ ...mockQueues[0], activeMessageCount: 50, deadLetterMessageCount: 2 }],
+      isLoading: false,
+      isError: false,
+    });
     render(<DashboardPage />, { wrapper: createWrapper() });
     expect(await screen.findByText('Healthy')).toBeInTheDocument();
   });
@@ -239,6 +246,21 @@ describe('DashboardPage', () => {
     ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
     expect(await screen.findByText(/DLQ: 15 messages need attention/i)).toBeInTheDocument();
+  });
+
+  it('never shows the Healthy banner alongside a D or F health grade, even under the absolute DLQ spike threshold', async () => {
+    // Regression for a real bug found during the 2026-09-19 E2E pass: 0 active / 9 DLQ is a
+    // 100% DLQ ratio (an F health grade), but 9 is under the DLQ_SPIKE_THRESHOLD of 10 — the
+    // "Healthy" banner and the "F" grade badge rendered on the same card at the same time.
+    mockUseQueues.mockReturnValue({
+      data: [{ ...mockQueues[0], activeMessageCount: 0, deadLetterMessageCount: 9 }],
+      isLoading: false,
+      isError: false,
+    });
+    render(<DashboardPage />, { wrapper: createWrapper() });
+    expect(await screen.findByText('F')).toBeInTheDocument();
+    expect(screen.queryByText('Healthy')).not.toBeInTheDocument();
+    expect(await screen.findByText(/DLQ: 9 messages need attention/i)).toBeInTheDocument();
   });
 
   it('Browse Queues button navigates straight to the first queue', async () => {

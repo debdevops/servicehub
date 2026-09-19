@@ -79,7 +79,7 @@ public sealed class GovernanceGrantSeederTests : IDisposable
     }
 
     [Fact]
-    public async Task SeedIfEmptyAsync_AlreadyPopulated_SkipsEntirely()
+    public async Task SeedIfEmptyAsync_OwnerAlreadyHasAGrant_IsNeverReseeded()
     {
         _dbContext.GovernanceGrants.Add(new GovernanceGrant
         {
@@ -92,12 +92,44 @@ public sealed class GovernanceGrantSeederTests : IDisposable
         });
         await _dbContext.SaveChangesAsync();
 
+        _dbContext.Namespaces.Add(BuildNamespace("owner-1", "ns-1"));
+        await _dbContext.SaveChangesAsync();
+
+        await GovernanceGrantSeeder.SeedIfEmptyAsync(_dbContext, NullLogger.Instance);
+
+        (await _dbContext.GovernanceGrants.CountAsync()).Should().Be(1, "an owner with an existing grant of its own must never be re-seeded");
+    }
+
+    [Fact]
+    public async Task SeedIfEmptyAsync_NewOwnerArrivesAfterAnotherOwnerWasAlreadySeeded_StillGetsGrandfathered()
+    {
+        // Regression for a real, live self-lockout bug found during the 2026-09-19 E2E pass: the
+        // seed used to be gated on "GovernanceGrants is empty" for the whole table, so an owner
+        // that first appears (e.g. registers its own namespace) only after some earlier owner
+        // already has grants never got its own grandfather Admin grant at all. That owner's
+        // GovernanceAccessEvaluator bootstrap bypass then closed forever the instant its own
+        // first grant was created, locking out every credential in that owner partition with no
+        // way back in through the API.
+        _dbContext.GovernanceGrants.Add(new GovernanceGrant
+        {
+            OwnerId = "owner-1",
+            GranteeIdentity = "owner-1",
+            GranteeKind = GranteeKind.User,
+            Role = GovernanceRole.Admin,
+            GrantedAt = DateTimeOffset.UtcNow,
+            GrantedByIdentity = "test",
+        });
+        await _dbContext.SaveChangesAsync();
+
+        _dbContext.Namespaces.Add(BuildNamespace("owner-1", "ns-1"));
         _dbContext.Namespaces.Add(BuildNamespace("owner-2", "ns-2"));
         await _dbContext.SaveChangesAsync();
 
         await GovernanceGrantSeeder.SeedIfEmptyAsync(_dbContext, NullLogger.Instance);
 
-        (await _dbContext.GovernanceGrants.CountAsync()).Should().Be(1, "must never re-seed once any grant exists");
+        var grants = await _dbContext.GovernanceGrants.ToListAsync();
+        grants.Should().HaveCount(2, "owner-1 keeps its one existing grant, and owner-2 — new, with none of its own — gets grandfathered");
+        grants.Should().ContainSingle(g => g.OwnerId == "owner-2" && g.GranteeIdentity == "owner-2" && g.Role == GovernanceRole.Admin);
     }
 
     [Fact]

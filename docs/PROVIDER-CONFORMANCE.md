@@ -1,8 +1,22 @@
 # Provider Conformance Evidence
 
+> **In this article:** the proof behind the "Supported" badge you see next to AWS and GCP
+> throughout the ServiceHub UI — where that badge comes from, what it actually checked, and how
+> you can re-run the same checks yourself against your own AWS/GCP account.
+>
+> **In plain language:** every cloud messaging service works a little differently — some support
+> scheduling a message for later, some don't; some let you permanently delete a stuck message,
+> some don't. ServiceHub is honest about these differences everywhere in the product (you'll see
+> a message like "not supported on this provider" instead of a button that silently does nothing).
+> This document is the *evidence* that those honesty claims are actually true, not just asserted —
+> every row in the table below is a real API call against a real AWS or GCP account, not a
+> simulation.
+
 This page is the evidence behind the **Supported** label on AWS SQS/SNS and GCP Pub/Sub
 (previously **Preview** — see [What changed](#what-changed) below). It exists so the label is a
-claim anyone can reproduce, not a claim you have to take on trust.
+claim anyone can reproduce, not a claim you have to take on trust. You'll see this same
+capability information live in the product on the **Cloud Bridge** page and anywhere a
+provider-specific action (Purge, Schedule, Live Tail) is offered or correctly grayed out.
 
 ## What's being proven
 
@@ -41,6 +55,14 @@ through the suite: Azure purge → `400 Message.Operation.PurgeUnsupported`, AWS
 `400 Message.Operation.DeadLetterUnsupported`, AWS Live Tail → `409`, Azure Live Tail → `200`
 with a real SSE session opening. `GET /api/v1/cloud-bridge/capabilities` also matched
 `ProviderCapabilities` field-for-field for all three providers.
+
+**Spot re-confirmed again 2026-09-19**, during a full multi-cloud E2E verification pass, live
+against `GET /api/v1/cloud-bridge/capabilities` and cross-checked in the Cloud Bridge and
+Scheduled Messages pages in the browser — same result, unchanged: Azure `supportsPurge: false`,
+AWS `supportsScheduledMessages: false` / `supportsRepeatablePeek: false`, GCP
+`supportsMessageCounts: false` / `supportsRepeatablePeek: false`. The Scheduled Messages page
+correctly showed "not supported" for both AWS and GCP live, and only Azure listed real scheduled
+messages (15, from that session's test traffic).
 
 ## The `CanProveDlqAbsence` trust root (M3.3)
 

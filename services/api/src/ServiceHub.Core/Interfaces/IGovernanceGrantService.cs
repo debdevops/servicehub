@@ -47,4 +47,15 @@ public interface IGovernanceGrantService
     /// <summary>Every currently-active (non-revoked) grant for one grantee within an owner.</summary>
     Task<Result<IReadOnlyList<GovernanceGrant>>> GetGrantsForGranteeAsync(
         string ownerId, string granteeIdentity, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Whether this grantee has ever had a grant of its own recorded for this owner — active
+    /// <em>or</em> revoked. Used to decide whether a caller has been individually differentiated
+    /// at all, as distinct from currently having an active grant: an identity whose only grant
+    /// was later revoked must never fall back to the coarse owner-level grant again (that would
+    /// turn "access revoked" into "access restored, and now unrestricted"), so this check must
+    /// not filter out revoked rows the way <see cref="GetGrantsForGranteeAsync"/> does.
+    /// </summary>
+    Task<Result<bool>> HasEverHadOwnGrantAsync(
+        string ownerId, string granteeIdentity, CancellationToken cancellationToken = default);
 }

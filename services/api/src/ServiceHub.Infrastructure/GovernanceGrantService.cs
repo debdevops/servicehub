@@ -165,4 +165,18 @@ public sealed class GovernanceGrantService : IGovernanceGrantService
 
         return Result.Success<IReadOnlyList<GovernanceGrant>>(grants);
     }
+
+    /// <inheritdoc/>
+    public async Task<Result<bool>> HasEverHadOwnGrantAsync(
+        string ownerId, string granteeIdentity, CancellationToken cancellationToken = default)
+    {
+        // Deliberately no RevokedAt filter — a revoked grant still proves this identity was once
+        // individually differentiated, which is exactly what must keep it off the owner-level
+        // grandfather fallback going forward.
+        var everGranted = await _dbContext.GovernanceGrants
+            .AsNoTracking()
+            .AnyAsync(g => g.OwnerId == ownerId && g.GranteeIdentity == granteeIdentity, cancellationToken);
+
+        return Result.Success(everGranted);
+    }
 }

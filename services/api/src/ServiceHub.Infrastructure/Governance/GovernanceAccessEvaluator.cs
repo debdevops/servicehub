@@ -124,9 +124,35 @@ public sealed class GovernanceAccessEvaluator : IGovernanceAccessEvaluator
             .Where(g => IsSameIdentity(g.GranteeIdentity, granteeIdentity))
             .ToList();
 
-        var candidates = ownGrants.Count > 0
-            ? ownGrants
-            : activeGrants.Where(g => IsSameIdentity(g.GranteeIdentity, ownerId)).ToList();
+        List<GovernanceGrant> candidates;
+        if (ownGrants.Count > 0)
+        {
+            candidates = ownGrants;
+        }
+        else
+        {
+            // No *active* grant of this identity's own — but "was this identity ever
+            // individually differentiated" must be judged on the full history, not just what is
+            // active right now. Falling back here whenever ownGrants is merely empty (as an
+            // earlier version of this method did) reopened exactly the 2026-09-04 bug one step
+            // later: revoking a Viewer's only grant left ownGrants empty again, so the caller
+            // fell straight back to the coarse owner-level Admin grant — "access revoked" became
+            // "access restored, and now unrestricted." (Live-verified 2026-09-19: an API key
+            // scoped to Viewer, after its grant was revoked, successfully created a brand-new
+            // fleet-wide Admin grant for an arbitrary identity via this exact path.) An identity
+            // that was ever granted anything of its own — even since revoked — must be treated as
+            // permanently differentiated: it gets its own active grants only, never the fallback.
+            var everHadOwnGrantResult = await _governanceGrantService.HasEverHadOwnGrantAsync(
+                ownerId, granteeIdentity, cancellationToken);
+            if (everHadOwnGrantResult.IsFailure)
+            {
+                return Resolution.Failed(everHadOwnGrantResult.Error!);
+            }
+
+            candidates = everHadOwnGrantResult.Value
+                ? []
+                : activeGrants.Where(g => IsSameIdentity(g.GranteeIdentity, ownerId)).ToList();
+        }
 
         var applicable = candidates
             .Where(g => g.NamespaceId is null || g.NamespaceId == namespaceId)

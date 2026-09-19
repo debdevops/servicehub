@@ -1,9 +1,30 @@
 # Recovery Evidence Ledger
 
+> **In this article:** the technical design of ServiceHub's evidence ledger — the durable record
+> that answers "what did ServiceHub actually do, and can we prove it?" for every message it ever
+> replayed or purged.
+>
+> **In plain language, before the technical detail starts:** every time ServiceHub replays or
+> deletes a stuck ("dead-lettered") message, it writes down what it did, who or what decided to do
+> it, and what happened afterward — in a way that can't be quietly edited later. Think of it like
+> an aircraft's flight recorder for your message queues. You can see this ledger yourself, in
+> plain English with no reading required, on the **Recovery Evidence** page in the ServiceHub UI —
+> this document is the underlying technical design, written for someone who needs to independently
+> verify that record (an auditor, a compliance reviewer, or an engineer debugging a discrepancy),
+> not the everyday way to use it.
+
 ServiceHub's Recovery Evidence Ledger is a durable, append-only, hash-chained record of every
 recovery decision ServiceHub makes on a dead-lettered message — replay or purge — and, where
 provable, its eventual outcome. This document is the standalone reference for an auditor working
 from an exported evidence bundle alone, with no access to the ServiceHub source or database.
+
+> [!TIP]
+> **Verified live, 2026-09-19:** ran the chain-verification check (the UI's own "Verify chain"
+> button, described in §3.3) against a real, actively-growing ledger — an instance under heavy
+> multi-cloud test traffic. Result: **83,212 events, chain intact.** A prior verification pass
+> (2026-09-13) additionally confirmed the negative case with a deliberately tampered copy — one
+> field of one event changed — which was correctly rejected, naming the exact event where the
+> chain broke.
 
 It is honest about a hard limit up front: the chain is **tamper-evident, not tamper-proof**.
 Anyone with write access to the underlying SQLite file can recompute the entire chain and produce

@@ -20,6 +20,13 @@ public sealed class GovernanceAccessEvaluatorTests
     {
         _evaluator = new GovernanceAccessEvaluator(
             _governanceGrantService.Object, Mock.Of<Microsoft.Extensions.Logging.ILogger<GovernanceAccessEvaluator>>());
+
+        // Default: this identity has never been individually granted anything of its own (active
+        // or revoked). Tests proving the "was differentiated, now has zero active grants" case
+        // override this for the specific (OwnerId, GranteeIdentity) pair under test.
+        _governanceGrantService
+            .Setup(s => s.HasEverHadOwnGrantAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(false));
     }
 
     private void SeedActiveGrants(params GovernanceGrant[] grants)
@@ -213,5 +220,40 @@ public sealed class GovernanceAccessEvaluatorTests
         var result = await _evaluator.EvaluateAsync(OwnerId, GranteeIdentity, GovernanceRole.Admin, null, null);
 
         result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_IdentityWasDifferentiatedThenItsGrantWasRevoked_NeverFallsBackToOwnerLevelGrant()
+    {
+        // Regression for a real, live privilege-escalation bug found during the 2026-09-19 E2E
+        // pass: once an identity has had ANY grant of its own (even since revoked), it must never
+        // again inherit the coarse owner-level grandfather grant — otherwise "revoke this
+        // Viewer's access" silently becomes "this identity is unrestricted Admin again" the
+        // moment its own active-grant list goes back to empty. Live-found: an API key scoped to
+        // Viewer, after its one grant was revoked, successfully created a brand-new fleet-wide
+        // Admin grant for an arbitrary identity through this exact path.
+        SeedActiveGrants(MakeGrant(OwnerId, GovernanceRole.Admin)); // only the grandfather grant is still active
+        _governanceGrantService
+            .Setup(s => s.HasEverHadOwnGrantAsync(OwnerId, GranteeIdentity, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(true)); // this identity had a grant of its own, since revoked
+
+        var result = await _evaluator.EvaluateAsync(OwnerId, GranteeIdentity, GovernanceRole.Admin, null, null);
+
+        result.IsFailure.Should().BeTrue(
+            "an identity that was ever individually differentiated must never fall back to the owner-level grant again, even after its own grant is revoked");
+        result.Error.Code.Should().Be("Governance.InsufficientRole");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_GrantHistoryReadFails_FailsClosed()
+    {
+        SeedActiveGrants(MakeGrant("someone-else", GovernanceRole.Admin));
+        _governanceGrantService
+            .Setup(s => s.HasEverHadOwnGrantAsync(OwnerId, GranteeIdentity, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<bool>(Error.Internal("Boom", "db down")));
+
+        var result = await _evaluator.EvaluateAsync(OwnerId, GranteeIdentity, GovernanceRole.Viewer, null, null);
+
+        result.IsFailure.Should().BeTrue();
     }
 }
