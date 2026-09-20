@@ -565,6 +565,15 @@ public static class DependencyInjection
             // at connect time — see WebhookConnectCallback for why that second lookup is the
             // rebinding gap. TLS SNI/Host still come from the request URI, unaffected.
             ConnectCallback = WebhookConnectCallback.ConnectAsync,
+
+            // The SSRF guard only ever validates WebhookOptions.Url — never a 3xx response's
+            // Location header. Auto-following redirects would let a compromised or malicious
+            // webhook endpoint redirect to an internal address and reach it with none of the
+            // above validation applied. Webhook destinations (Slack/Teams/generic incoming
+            // webhooks) have no legitimate reason to redirect, so redirects are simply not
+            // followed: a 3xx response comes back to PostAsync like any other non-success status
+            // and is reported as a failed notification, exactly as a 4xx/5xx already is.
+            AllowAutoRedirect = false,
         });
 
         return services;
