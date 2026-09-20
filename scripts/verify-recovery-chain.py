@@ -211,7 +211,10 @@ def load_archive(path: str):
     own events list. Raises VerificationError if the file isn't shaped like one."""
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    for key in ("epochNumber", "startSeq", "startPrevHash", "endSeq", "terminalHash", "events"):
+    for key in (
+        "epochNumber", "startSeq", "startPrevHash", "endSeq", "terminalHash",
+        "sealEventSeq", "sealEventHash", "events",
+    ):
         if key not in data:
             raise VerificationError(f"{path}: missing required archive field {key!r}.")
     return data
@@ -221,9 +224,13 @@ def verify_archive_chain(archive_dir: str):
     """Verifies every epoch-*.json archive under archive_dir, in epoch order: each file's own
     internal hash chain (via verify()), plus the cross-file continuity a single archive alone
     cannot prove — that each archive's declared startSeq/startPrevHash matches its own first
-    event and that consecutive archives chain terminalHash-to-startPrevHash with no seq gap.
-    Returns (findings, last_archive_or_None) — the last archive lets the caller check the live
-    export's own first event links to where the archived history left off."""
+    event, and that consecutive archives chain correctly. That chain runs through each epoch's
+    own EpochSealed marker (sealEventSeq/sealEventHash), not terminalHash/endSeq directly: the
+    marker deliberately stays live rather than being archived (RecoveryEpochArchiveService's own
+    remarks), so there is always a one-Seq gap between one archive's endSeq and the next
+    archive's startSeq. Returns (findings, last_archive_or_None) — the last archive lets the
+    caller check the live export's own first event links to where the archived history left off.
+    """
     findings = []
     paths = sorted(glob.glob(os.path.join(archive_dir, "epoch-*.json")))
     if not paths:
@@ -257,15 +264,15 @@ def verify_archive_chain(archive_dir: str):
 
         if previous is not None:
             prev_path, prev_archive = previous
-            if archive["startPrevHash"] != prev_archive["terminalHash"]:
+            if archive["startPrevHash"] != prev_archive["sealEventHash"]:
                 findings.append(
-                    f"{path}: startPrevHash does not match {prev_path}'s terminalHash — these two "
-                    "epochs do not chain to each other."
+                    f"{path}: startPrevHash does not match {prev_path}'s sealEventHash — these two "
+                    "epochs do not chain to each other through the live seal marker between them."
                 )
-            if archive["startSeq"] != prev_archive["endSeq"] + 1:
+            if archive["startSeq"] != prev_archive["sealEventSeq"] + 1:
                 findings.append(
                     f"{path}: startSeq={archive['startSeq']} does not immediately follow "
-                    f"{prev_path}'s endSeq={prev_archive['endSeq']}."
+                    f"{prev_path}'s sealEventSeq={prev_archive['sealEventSeq']}."
                 )
         previous = (path, archive)
 
@@ -298,16 +305,16 @@ def main() -> int:
 
         if last_archive is not None and events:
             live_first = min(events, key=lambda e: e["seq"])
-            if live_first["prevHash"] != last_archive["terminalHash"]:
+            if live_first["prevHash"] != last_archive["sealEventHash"]:
                 findings.append(
                     f"{args.path}: first event (Seq {live_first['seq']})'s PrevHash does not match "
-                    "the archived history's terminalHash — the live table does not continue from "
-                    "where sealing left off."
+                    "the archived history's sealEventHash — the live table does not continue from "
+                    "the live seal marker sealing left behind."
                 )
-            if live_first["seq"] != last_archive["endSeq"] + 1:
+            if live_first["seq"] != last_archive["sealEventSeq"] + 1:
                 findings.append(
                     f"{args.path}: first event's Seq ({live_first['seq']}) does not immediately "
-                    f"follow the archived history's endSeq ({last_archive['endSeq']})."
+                    f"follow the archived history's sealEventSeq ({last_archive['sealEventSeq']})."
                 )
 
     if not findings:

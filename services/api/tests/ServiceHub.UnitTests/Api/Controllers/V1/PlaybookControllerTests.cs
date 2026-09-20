@@ -63,17 +63,22 @@ public sealed class PlaybookControllerTests : IDisposable
         _controller = CreateController(OwnerA);
     }
 
-    private PlaybookController CreateController(string ownerId) =>
-        new(_playbookLedger, _correlationAccountability, _backtestService, _governanceAccessEvaluator, _evidenceExporter)
+    private PlaybookController CreateController(string ownerId, IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
-        ControllerContext = new ControllerContext
+        var items = new Dictionary<object, object?> { { "OwnerId", ownerId } };
+        if (allowedNamespaceIds is not null)
         {
-            HttpContext = new DefaultHttpContext
-            {
-                Items = { { "OwnerId", ownerId } }
-            }
+            items["AllowedNamespaceIds"] = allowedNamespaceIds;
         }
-    };
+
+        return new(_playbookLedger, _correlationAccountability, _backtestService, _governanceAccessEvaluator, _evidenceExporter)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext { Items = items }
+            }
+        };
+    }
 
     public void Dispose()
     {
@@ -210,6 +215,44 @@ public sealed class PlaybookControllerTests : IDisposable
         var result = await _controller.GetEntryById(Guid.NewGuid());
 
         result.Result.Should().BeOfType<NotFoundResult>();
+    }
+
+    [Fact]
+    public async Task GetEntryById_NamespaceRestrictedKey_EntryOutsideAllowList_ReturnsNotFound()
+    {
+        var allowedNamespaceId = Guid.NewGuid();
+        var entryId = await ProposeEntryAsync(OwnerA, namespaceId: Guid.NewGuid());
+        var scopedController = CreateController(OwnerA, new HashSet<Guid> { allowedNamespaceId });
+
+        var result = await scopedController.GetEntryById(entryId);
+
+        result.Result.Should().BeOfType<NotFoundResult>();
+    }
+
+    [Fact]
+    public async Task GetEntryById_NamespaceRestrictedKey_FleetWideEntryWithNoNamespace_ReturnsNotFound()
+    {
+        var allowedNamespaceId = Guid.NewGuid();
+        var entryId = await ProposeEntryAsync(OwnerA, namespaceId: null);
+        var scopedController = CreateController(OwnerA, new HashSet<Guid> { allowedNamespaceId });
+
+        var result = await scopedController.GetEntryById(entryId);
+
+        result.Result.Should().BeOfType<NotFoundResult>();
+    }
+
+    [Fact]
+    public async Task GetEntryById_NamespaceRestrictedKey_EntryWithinAllowList_ReturnsEntry()
+    {
+        var allowedNamespaceId = Guid.NewGuid();
+        var entryId = await ProposeEntryAsync(OwnerA, namespaceId: allowedNamespaceId);
+        var scopedController = CreateController(OwnerA, new HashSet<Guid> { allowedNamespaceId });
+
+        var result = await scopedController.GetEntryById(entryId);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var detail = ok.Value.Should().BeOfType<PlaybookEntryDetailResponse>().Subject;
+        detail.Entry.Id.Should().Be(entryId);
     }
 
     // ── MarkUnderReview ─────────────────────────────────────────────
@@ -480,5 +523,29 @@ public sealed class PlaybookControllerTests : IDisposable
         var report = ok.Value.Should().BeOfType<BacktestReport>().Subject;
         report.TotalBacktested.Should().Be(1);
         report.Entries.Should().ContainSingle().Which.PillarKind.Should().Be(PillarKind.Prevent);
+    }
+
+    [Fact]
+    public async Task GetBacktestReport_NamespaceRestrictedKey_ExcludesEntriesOutsideAllowList()
+    {
+        var allowedNamespaceId = Guid.NewGuid();
+        var outOfScopeNamespaceId = Guid.NewGuid();
+        var allowedEntryId = await ProposeEntryAsync(
+            OwnerA, pillarKind: PillarKind.Investigate, proposalKind: "AnomalyFlag",
+            namespaceId: allowedNamespaceId, entityName: "orders-dlq");
+        var outOfScopeEntryId = await ProposeEntryAsync(
+            OwnerA, pillarKind: PillarKind.Investigate, proposalKind: "AnomalyFlag",
+            namespaceId: outOfScopeNamespaceId, entityName: "payments-dlq");
+        await _controller.Disposition(allowedEntryId, new DispositionPlaybookEntryRequest(PlaybookDisposition.Approved, null));
+        await _controller.Disposition(outOfScopeEntryId, new DispositionPlaybookEntryRequest(PlaybookDisposition.Approved, null));
+
+        var scopedController = CreateController(OwnerA, new HashSet<Guid> { allowedNamespaceId });
+
+        var result = await scopedController.GetBacktestReport();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var report = ok.Value.Should().BeOfType<BacktestReport>().Subject;
+        report.TotalBacktested.Should().Be(1);
+        report.Entries.Should().ContainSingle().Which.NamespaceId.Should().Be(allowedNamespaceId);
     }
 }

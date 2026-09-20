@@ -28,11 +28,16 @@ public interface IBacktestService
     /// <param name="limit">Maximum number of dispositioned proposals to backtest, most recently
     /// proposed first (1-200, default 50).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="allowedNamespaceIds">The caller's credential's namespace allow-list, when one
+    /// is present — null means unrestricted. Threaded straight through to
+    /// <see cref="IPlaybookLedger.QueryEntriesAsync"/>, whose own doc comment explains the
+    /// exclude-rather-than-assume-visible policy for entries with no namespace.</param>
     Task<BacktestReport> GetReportAsync(
         string ownerId,
         PillarKind? pillarKind = null,
         int limit = 50,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null);
 }
 
 /// <summary>

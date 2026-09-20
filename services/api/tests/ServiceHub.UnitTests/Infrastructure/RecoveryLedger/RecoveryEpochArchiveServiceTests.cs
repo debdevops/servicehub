@@ -247,4 +247,83 @@ public sealed class RecoveryEpochArchiveServiceTests : IDisposable
         result.IsValid.Should().BeTrue();
         liveEvents[0].PrevHash.Should().Be(seal.Value.TerminalHash);
     }
+
+    [Fact]
+    public async Task SealAndArchiveEpochAsync_ArchiveRecordsItsOwnSealMarkersSeqAndHash()
+    {
+        await SeedEntryAsync(OwnerA);
+        var seal = await _sut.SealAndArchiveEpochAsync(OwnerA, Actor());
+
+        var marker = await _dbContext.RecoveryEvents.AsNoTracking()
+            .SingleAsync(e => e.OwnerId == OwnerA && e.EventType == RecoveryEventType.EpochSealed);
+
+        var json = await File.ReadAllTextAsync(seal.Value.ArchiveFilePath);
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
+
+        // Regression (Copilot finding): the archive must record the live seal marker's own
+        // Seq/EntryHash, not just endSeq/terminalHash — an offline verifier chaining archives (or
+        // an archive into the live export) needs this to bridge the one-Seq gap the marker
+        // occupies without ever being archived itself.
+        root.GetProperty("sealEventSeq").GetInt64().Should().Be(marker.Seq);
+        root.GetProperty("sealEventHash").GetString().Should().Be(marker.EntryHash);
+    }
+
+    [Fact]
+    public async Task VerifyChainAsync_StillValidAfterTwoSealedEpochs()
+    {
+        await SeedEntryAsync(OwnerA);
+        await _sut.SealAndArchiveEpochAsync(OwnerA, Actor());
+
+        await SeedEntryAsync(OwnerA);
+        await _sut.SealAndArchiveEpochAsync(OwnerA, Actor());
+
+        await SeedEntryAsync(OwnerA); // trailing, not-yet-sealed activity
+
+        // Regression (Copilot finding): the live table now holds two surviving seal markers with
+        // a Seq gap before each (everything between them was archived and pruned). The public
+        // /verify endpoint must not treat that gap as tampering.
+        var result = await _ledger.VerifyChainAsync(OwnerA);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SealAndArchiveEpochAsync_TamperedFirstEventPrevHash_ReHashedToMatchItself_IsStillDetected()
+    {
+        await SeedEntryAsync(OwnerA);
+
+        // Simulate a tampered first event whose PrevHash was forged to an arbitrary value and
+        // then re-hashed so its own EntryHash is internally self-consistent with the forgery —
+        // and every later event in the range re-chained from it, so the *entire* forged range is
+        // internally consistent. This isolates the exact attack the pre-fix tautological
+        // verification (seeding the verifier with the range's own first PrevHash instead of the
+        // trusted previous anchor) could not catch: without re-chaining every later event too, a
+        // downstream PrevHash mismatch would catch the tamper for an unrelated reason.
+        var events = await _dbContext.RecoveryEvents.AsNoTracking()
+            .Where(e => e.OwnerId == OwnerA).OrderBy(e => e.Seq).ToListAsync();
+
+        var forgedPrevHash = new string('a', 64);
+        foreach (var evt in events)
+        {
+            var forgedEntryHash = RecoveryHashChain.ComputeEntryHash(
+                evt.Id, evt.OwnerId, evt.Seq, evt.EntryId, evt.OperationId,
+                evt.EventType, evt.OccurredAt, evt.ActorIdentity, evt.ActorKind,
+                evt.DetailJson, evt.SchemaVersion, forgedPrevHash);
+
+            await _dbContext.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE RecoveryEvents SET PrevHash = {forgedPrevHash}, EntryHash = {forgedEntryHash} WHERE Id = {evt.Id}");
+
+            forgedPrevHash = forgedEntryHash;
+        }
+
+        var result = await _sut.SealAndArchiveEpochAsync(OwnerA, Actor());
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("RecoveryEpochArchive.RangeDoesNotVerify");
+
+        var liveEvents = await _dbContext.RecoveryEvents
+            .AsNoTracking().Where(e => e.OwnerId == OwnerA).ToListAsync();
+        liveEvents.Should().NotContain(e => e.EventType == RecoveryEventType.EpochSealed);
+    }
 }

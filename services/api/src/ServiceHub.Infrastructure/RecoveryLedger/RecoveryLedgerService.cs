@@ -489,13 +489,27 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     /// <inheritdoc />
     public async Task<ChainVerificationResult> VerifyChainAsync(string ownerId, CancellationToken cancellationToken = default)
     {
+        // Every past epoch's own EpochSealed marker stays live forever as that epoch's anchor
+        // (see RecoveryEpochArchiveService's remarks) — the live table is therefore only
+        // Seq-contiguous from the *most recent* marker onward, not from Seq 1. Anchoring
+        // verification there, instead of assuming genesis, is what makes this endpoint still
+        // pass for an owner who has archived one or more epochs.
+        var latestMarker = await _dbContext.RecoveryEvents
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && e.EventType == RecoveryEventType.EpochSealed)
+            .OrderByDescending(e => e.Seq)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var startingSeq = (latestMarker?.Seq ?? 0) + 1;
+        var startingPrevHash = latestMarker?.EntryHash;
+
         var events = await _dbContext.RecoveryEvents
             .AsNoTracking()
-            .Where(e => e.OwnerId == ownerId)
+            .Where(e => e.OwnerId == ownerId && e.Seq >= startingSeq)
             .OrderBy(e => e.Seq)
             .ToListAsync(cancellationToken);
 
-        return RecoveryChainVerifier.Verify(ownerId, events);
+        return RecoveryChainVerifier.Verify(ownerId, events, startingSeq, startingPrevHash);
     }
 
     /// <inheritdoc />
