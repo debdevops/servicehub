@@ -90,6 +90,67 @@ this one 4.0.0 release — nothing here is separately "unreleased."
   a required field, both found during this audit's mechanical link/typecheck sweep — neither
   affected production code.
 
+### Fixed — Copilot PR review hardening (2026-09-20 afternoon/evening)
+
+Three further rounds of fixes, all landed same-day after the pre-release audit above and each
+live-verified against real infrastructure (see `docs-private/SERVICEHUB-FULL-E2E-VERIFICATION-
+2026-09-20-B.md` and this run's own report for the exact method):
+
+- **Security: a namespace-restricted API key could still reach fleet-wide data on nine read
+  paths** it wasn't scoped to — approval queue, correlation accountability, external signals,
+  Playbook query/export, and the `InsightDetected` SSE stream all skipped the caller's namespace
+  allow-list whenever no explicit `namespaceId` was supplied. Fixed by threading the allow-list
+  through every one of them. The same change also pinned the reasoning agent's `OLLAMA_HOST` to
+  approved local/private endpoints and fixed two Recovery epoch archive bugs: the previous epoch's
+  seal marker was being archived and pruned instead of kept live as the chain anchor, and a seal
+  marker could be persisted before its archive range was verified, violating the archive's
+  "fails, changes nothing" contract.
+- **Security: the reasoning agent's SSRF guard had a DNS-rebinding gap, and two more Playbook
+  reads leaked past the namespace allow-list.** `OLLAMA_HOST` was validated once at startup by
+  hostname, then reconnected by hostname on every call — a hostname that resolved to a private/
+  loopback/cloud-metadata address between the check and the call would bypass the guard entirely
+  (TOCTOU). Fixed by pinning the connection to the literal resolved IP and explicitly blocking
+  cloud instance-metadata addresses that sit inside the otherwise-approved link-local range.
+  `PlaybookController.GetEntryById` and the backtest report also gained the same allow-list
+  scoping the list endpoint already had. The Recovery epoch archive fix from the previous round
+  was hardened further: pre-seal/range hashes now verify against the trusted previous seal marker
+  rather than a value read off the range itself, the rollback path's two deletes are wrapped in a
+  transaction, and each epoch records its own seal-marker `Seq`/hash so archives (and the offline
+  verifier) can bridge the still-live marker gap — `/verify` no longer false-fails once an owner
+  has sealed an epoch at all.
+- **Governance: revoking every grant for an owner — including the fleet-wide seed grant — could
+  silently restore unrestricted Admin access.** Zero active grants was previously treated as
+  "Governance was never activated for this owner," the same as a genuinely fresh tenant. Live-
+  reproduced: revoking an owner's last remaining grant (the seed grant itself) reopened
+  unrestricted fleet-wide access via that exact path. Fixed by checking the owner's full grant
+  history (active or revoked), not just the current active count, so a tenant that activated
+  Governance and then revoked everything fails closed instead of falling back to unrestricted.
+  The webhook SSRF guard was also validating only IP-literal hosts — a hostname resolving to a
+  loopback or link-local/metadata address (e.g. a DNS name pointed at `169.254.169.254`) bypassed
+  it entirely. Fixed by resolving hostname webhook URLs via DNS and checking every returned
+  address, failing closed on a resolution failure.
+- **Security: webhook redirects and unspecified-address DNS results could still bypass the SSRF
+  guard, and pinning to a single validated address had silently dropped failover.** Three more
+  Copilot-flagged gaps in the same webhook notifier hardening: the webhook `HttpClient` still
+  followed HTTP redirects automatically, so a webhook response could redirect straight past the
+  guard to a `Location` that was never itself validated against `WebhookOptions.Url`'s checks; the
+  address-classification guard recognized loopback and RFC-1918/link-local ranges but not the
+  unspecified addresses `0.0.0.0`/`::`, which most platforms treat as connecting to the local host
+  exactly as `localhost` would; and pinning the TCP connection to only the first DNS-resolved
+  address (closing the earlier rebinding gap) meant a hostname with more than one valid address had
+  no failover left if that one address happened to be unreachable. Fixed by disabling automatic
+  redirects on the webhook `HttpClient`, folding unspecified addresses into the one classification
+  guard already shared by the IP-literal and DNS-resolved paths, and pinning every validated
+  address (not just the first) so `WebhookConnectCallback` can fail over between them in order.
+- **Security follow-up: the failover connect callback still couldn't actually reach a pinned IPv6
+  address.** The previous round's failover fix created every socket with the two-argument `Socket`
+  constructor, which defaults to `AddressFamily.InterNetwork` — so a validated IPv6 `IPEndPoint`
+  (or a hostname whose only safe DNS results were AAAA records) failed to connect with an
+  address-family error, and the new failover loop had no working address left to try. Fixed by
+  deriving the socket's address family from the actual connect target (the pinned `IPEndPoint`'s
+  own family, or a parsed IP-literal `DnsEndPoint.Host`) instead of always defaulting to IPv4;
+  proven with a real-socket regression test connecting to an IPv6 loopback listener.
+
 ### The initial 4.0.0 baseline (originally written 2026-09-06)
 
 Everything since v3.7.0: the four-pillar autonomy loop (Observe → Investigate → Correlate →

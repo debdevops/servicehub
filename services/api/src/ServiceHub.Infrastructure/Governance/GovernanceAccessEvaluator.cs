@@ -100,10 +100,23 @@ public sealed class GovernanceAccessEvaluator : IGovernanceAccessEvaluator
         var activeGrants = activeGrantsResult.Value;
         if (activeGrants.Count == 0)
         {
-            // Bootstrap safety: this owner has never had a Governance grant created — no seed has
-            // run yet, or this is a genuinely fresh owner. Governance is not activated for this
-            // tenant, so behave exactly as before M3 shipped: unrestricted.
-            return Resolution.Inactive();
+            // Zero *active* grants is ambiguous by itself: it means either "no seed has ever run
+            // for this owner" (genuinely fresh tenant — behave exactly as before M3 shipped:
+            // unrestricted) or "every grant, including the owner-level seed grant, has since been
+            // revoked" (Governance WAS activated and must fail closed, not reopen unrestricted
+            // access). Distinguishing these requires looking at the owner's full grant history,
+            // not just what is currently active. (Live-verified 2026-09-20: revoking every
+            // remaining grant for an owner — including the fleet-wide seed grant — restored full
+            // unrestricted access fleet-wide via this exact path.)
+            var hasAnyGrantEverResult = await _governanceGrantService.HasAnyGrantEverAsync(ownerId, cancellationToken);
+            if (hasAnyGrantEverResult.IsFailure)
+            {
+                return Resolution.Failed(hasAnyGrantEverResult.Error!);
+            }
+
+            return hasAnyGrantEverResult.Value
+                ? Resolution.NoMatch()
+                : Resolution.Inactive();
         }
 
         // A grant's GranteeIdentity may name this exact resolved actor, or may equal OwnerId

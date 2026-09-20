@@ -58,4 +58,13 @@ public interface IGovernanceGrantService
     /// </summary>
     Task<Result<bool>> HasEverHadOwnGrantAsync(
         string ownerId, string granteeIdentity, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Whether this owner has ever had any grant recorded at all — active <em>or</em> revoked, for
+    /// any grantee. Distinguishes "Governance was never activated for this owner" (no seed has run,
+    /// a genuinely fresh tenant — safe to fall back to unrestricted) from "Governance was activated
+    /// and every grant, including the owner-level seed grant, has since been revoked" (must fail
+    /// closed to <c>NoMatch</c>, not reopen unrestricted access).
+    /// </summary>
+    Task<Result<bool>> HasAnyGrantEverAsync(string ownerId, CancellationToken cancellationToken = default);
 }

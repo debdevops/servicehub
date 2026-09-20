@@ -27,6 +27,13 @@ public sealed class GovernanceAccessEvaluatorTests
         _governanceGrantService
             .Setup(s => s.HasEverHadOwnGrantAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success(false));
+
+        // Default: this owner has never had any grant recorded at all — a genuinely fresh tenant.
+        // Tests proving the "Governance was activated, then every grant was revoked" case override
+        // this for the specific OwnerId under test.
+        _governanceGrantService
+            .Setup(s => s.HasAnyGrantEverAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(false));
     }
 
     private void SeedActiveGrants(params GovernanceGrant[] grants)
@@ -250,6 +257,40 @@ public sealed class GovernanceAccessEvaluatorTests
         SeedActiveGrants(MakeGrant("someone-else", GovernanceRole.Admin));
         _governanceGrantService
             .Setup(s => s.HasEverHadOwnGrantAsync(OwnerId, GranteeIdentity, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<bool>(Error.Internal("Boom", "db down")));
+
+        var result = await _evaluator.EvaluateAsync(OwnerId, GranteeIdentity, GovernanceRole.Viewer, null, null);
+
+        result.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_AllGrantsIncludingOwnerLevelSeedRevoked_DoesNotFallBackToUnrestricted()
+    {
+        // Regression: live-verified 2026-09-20 that revoking every remaining grant for an owner —
+        // including the fleet-wide owner-level seed grant — was indistinguishable from a fresh
+        // tenant that never had Governance activated, so ResolveAsync returned Inactive() and
+        // EvaluateAsync granted unrestricted (Admin-equivalent) access to any grantee/role. Once
+        // Governance has ever been activated for an owner, revoking down to zero active grants
+        // must deny, not reopen unrestricted access.
+        SeedActiveGrants();
+        _governanceGrantService
+            .Setup(s => s.HasAnyGrantEverAsync(OwnerId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(true));
+
+        var result = await _evaluator.EvaluateAsync(OwnerId, GranteeIdentity, GovernanceRole.Admin, null, null);
+
+        result.IsFailure.Should().BeTrue(
+            "an owner whose Governance was activated and then fully revoked must fail closed, not fall back to bootstrap-unrestricted");
+        result.Error.Code.Should().Be("Governance.InsufficientRole");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_OwnerGrantHistoryReadFails_FailsClosed()
+    {
+        SeedActiveGrants();
+        _governanceGrantService
+            .Setup(s => s.HasAnyGrantEverAsync(OwnerId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Failure<bool>(Error.Internal("Boom", "db down")));
 
         var result = await _evaluator.EvaluateAsync(OwnerId, GranteeIdentity, GovernanceRole.Viewer, null, null);

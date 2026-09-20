@@ -549,9 +549,31 @@ public static class DependencyInjection
         services.AddSingleton<Core.Interfaces.IWebhookMessageFormatter, Webhooks.SlackWebhookFormatter>();
         services.AddSingleton<Core.Interfaces.IWebhookMessageFormatter, Webhooks.TeamsWebhookFormatter>();
 
+        // Resolves a configured webhook hostname before WebhookNotifier's SSRF guard validates
+        // it — a hostname that resolves to a loopback/private/link-local address must be rejected
+        // just as an IP-literal one already is.
+        services.AddSingleton<Security.IDnsResolver, Security.DnsResolver>();
+
         services.AddHttpClient<IWebhookNotifier, WebhookNotifier>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(30);
+        })
+        .ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.SocketsHttpHandler
+        {
+            // Pins each connection to the exact address WebhookNotifier's SSRF guard already
+            // validated, instead of letting the framework DNS-resolve the hostname a second time
+            // at connect time — see WebhookConnectCallback for why that second lookup is the
+            // rebinding gap. TLS SNI/Host still come from the request URI, unaffected.
+            ConnectCallback = WebhookConnectCallback.ConnectAsync,
+
+            // The SSRF guard only ever validates WebhookOptions.Url — never a 3xx response's
+            // Location header. Auto-following redirects would let a compromised or malicious
+            // webhook endpoint redirect to an internal address and reach it with none of the
+            // above validation applied. Webhook destinations (Slack/Teams/generic incoming
+            // webhooks) have no legitimate reason to redirect, so redirects are simply not
+            // followed: a 3xx response comes back to PostAsync like any other non-success status
+            // and is reported as a failed notification, exactly as a 4xx/5xx already is.
+            AllowAutoRedirect = false,
         });
 
         return services;

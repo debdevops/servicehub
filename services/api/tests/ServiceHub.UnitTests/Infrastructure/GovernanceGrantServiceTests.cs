@@ -222,4 +222,26 @@ public sealed class GovernanceGrantServiceTests : IDisposable
 
         result.Value.Should().ContainSingle(g => g.GranteeIdentity == "alex@contoso.com");
     }
+
+    [Fact]
+    public async Task HasAnyGrantEverAsync_OwnerNeverGranted_ReturnsFalse()
+    {
+        await _service.GrantAsync(BuildRequest(ownerId: "owner-other"));
+
+        var result = await _service.HasAnyGrantEverAsync("owner-1");
+
+        result.Value.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task HasAnyGrantEverAsync_OwnerHasOnlyRevokedGrants_StillReturnsTrue()
+    {
+        var grant = (await _service.GrantAsync(BuildRequest(ownerId: "owner-1"))).Value;
+        await _service.RevokeAsync(grant.Id, "owner-1", "admin@contoso.com");
+
+        var result = await _service.HasAnyGrantEverAsync("owner-1");
+
+        result.Value.Should().BeTrue(
+            "a fully revoked history still proves Governance was activated for this owner, distinct from never having been granted anything");
+    }
 }
