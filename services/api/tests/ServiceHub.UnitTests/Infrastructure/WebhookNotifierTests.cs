@@ -1047,6 +1047,26 @@ public sealed class WebhookNotifierTests
         await act.Should().ThrowAsync<System.Net.Sockets.SocketException>();
     }
 
+    [Fact]
+    public async Task ConnectToFirstAvailableAsync_IPv6Target_ConnectsSuccessfully()
+    {
+        // Regression: the socket was created with the two-argument Socket constructor, which
+        // defaults to AddressFamily.InterNetwork. Connecting to an IPv6 IPEndPoint with an
+        // IPv4-only socket fails with an address-family mismatch, so a pinned IPv6 address (or an
+        // IPv6-only DNS result) could never actually be reached even though the guard validated it.
+        using var liveListener = new System.Net.Sockets.TcpListener(IPAddress.IPv6Loopback, 0);
+        liveListener.Start();
+        var livePort = ((IPEndPoint)liveListener.LocalEndpoint).Port;
+        var acceptTask = liveListener.AcceptSocketAsync();
+
+        var targets = new EndPoint[] { new IPEndPoint(IPAddress.IPv6Loopback, livePort) };
+
+        await using var stream = await WebhookConnectCallback.ConnectToFirstAvailableAsync(targets, CancellationToken.None);
+
+        using var acceptedSocket = await acceptTask;
+        acceptedSocket.Should().NotBeNull("the socket must be created with the IPv6 address family to connect to an IPv6 target");
+    }
+
     // ── DependencyInjection wiring ────────────────────────────
 
     [Fact]

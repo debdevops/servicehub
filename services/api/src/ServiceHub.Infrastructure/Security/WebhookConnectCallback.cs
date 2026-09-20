@@ -69,7 +69,7 @@ public static class WebhookConnectCallback
 
         foreach (var target in targets)
         {
-            var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+            var socket = new Socket(ResolveAddressFamily(target), SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
             try
             {
                 await socket.ConnectAsync(target, cancellationToken).ConfigureAwait(false);
@@ -89,4 +89,19 @@ public static class WebhookConnectCallback
 
         throw lastFailure ?? new SocketException((int)SocketError.HostUnreachable);
     }
+
+    /// <summary>
+    /// Picks the socket's <see cref="AddressFamily"/> from the actual connect target rather than
+    /// defaulting to IPv4: an <see cref="IPEndPoint"/> (the pinned-address case) already carries the
+    /// real family, and a <see cref="DnsEndPoint"/> (the IP-literal fallback case) carries it in its
+    /// <see cref="DnsEndPoint.Host"/> string. Falls back to <see cref="AddressFamily.InterNetwork"/>
+    /// only for a genuine unresolved hostname, which the two-argument <see cref="Socket"/>
+    /// constructor this replaces would also have defaulted to.
+    /// </summary>
+    private static AddressFamily ResolveAddressFamily(EndPoint target) => target switch
+    {
+        IPEndPoint ip => ip.AddressFamily,
+        DnsEndPoint { Host: var host } when IPAddress.TryParse(host, out var address) => address.AddressFamily,
+        _ => AddressFamily.InterNetwork
+    };
 }

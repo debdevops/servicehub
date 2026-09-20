@@ -142,6 +142,14 @@ live-verified against real infrastructure (see `docs-private/SERVICEHUB-FULL-E2E
   redirects on the webhook `HttpClient`, folding unspecified addresses into the one classification
   guard already shared by the IP-literal and DNS-resolved paths, and pinning every validated
   address (not just the first) so `WebhookConnectCallback` can fail over between them in order.
+- **Security follow-up: the failover connect callback still couldn't actually reach a pinned IPv6
+  address.** The previous round's failover fix created every socket with the two-argument `Socket`
+  constructor, which defaults to `AddressFamily.InterNetwork` — so a validated IPv6 `IPEndPoint`
+  (or a hostname whose only safe DNS results were AAAA records) failed to connect with an
+  address-family error, and the new failover loop had no working address left to try. Fixed by
+  deriving the socket's address family from the actual connect target (the pinned `IPEndPoint`'s
+  own family, or a parsed IP-literal `DnsEndPoint.Host`) instead of always defaulting to IPv4;
+  proven with a real-socket regression test connecting to an IPv6 loopback listener.
 
 ### The initial 4.0.0 baseline (originally written 2026-09-06)
 
