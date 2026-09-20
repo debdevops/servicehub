@@ -6,16 +6,69 @@ companion", not a silently-degraded one. See app/reasoning.py for the
 non-negotiable invariants this service never violates.
 """
 
+import ipaddress
+import logging
 import os
+import socket
+from urllib.parse import urlparse
 
 from fastapi import FastAPI
 
 from app.models import HealthResponse, ProposeRequest, ProposeResponse
 from app.reasoning import generate_proposals
 
+logger = logging.getLogger("servicehub.agent.main")
+
 VERSION = "0.1.0"
 
-OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "").strip() or None
+
+def _is_approved_local_endpoint(raw_host: str) -> bool:
+    """True only if every address `raw_host` resolves to is loopback, private,
+    or link-local — the self-hosted-only boundary reasoning.py promises (see
+    its module docstring). Any public address in the resolution, or a DNS
+    failure, rejects the whole host: an operator override of OLLAMA_HOST must
+    not be able to silently redirect evidence to a remote/cloud endpoint.
+    """
+    parsed = urlparse(raw_host if "://" in raw_host else f"//{raw_host}")
+    hostname = parsed.hostname
+    if not hostname:
+        return False
+
+    try:
+        addrinfo = socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        return False
+
+    if not addrinfo:
+        return False
+
+    for *_rest, sockaddr in addrinfo:
+        try:
+            ip = ipaddress.ip_address(sockaddr[0])
+        except ValueError:
+            return False
+        if not (ip.is_loopback or ip.is_private or ip.is_link_local):
+            return False
+
+    return True
+
+
+def _resolve_ollama_host() -> str | None:
+    raw = os.environ.get("OLLAMA_HOST", "").strip()
+    if not raw:
+        return None
+    if not _is_approved_local_endpoint(raw):
+        logger.warning(
+            "OLLAMA_HOST=%r does not resolve to an approved local/private "
+            "endpoint; disabling the reasoning companion instead of "
+            "contacting it.",
+            raw,
+        )
+        return None
+    return raw
+
+
+OLLAMA_HOST = _resolve_ollama_host()
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "").strip() or "llama3.1"
 
 app = FastAPI(title="ServiceHub Reasoning Companion", version=VERSION)

@@ -19,6 +19,16 @@ public interface IApprovalQueueService
     /// <param name="namespaceId">Optional namespace filter.</param>
     /// <param name="limit">Maximum number of entries to return.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="allowedNamespaceIds">
+    /// The caller's credential's namespace allow-list, when one is present — null means
+    /// unrestricted. Narrows the result to entries in this set even when
+    /// <paramref name="namespaceId"/> is omitted, mirroring <c>IDlqHistoryService</c>'s own
+    /// allow-list convention.
+    /// </param>
     Task<IReadOnlyList<ApprovalQueueEntryResponse>> GetPendingApprovalsAsync(
-        string ownerId, Guid? namespaceId, int limit, CancellationToken cancellationToken = default);
+        string ownerId,
+        Guid? namespaceId,
+        int limit,
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null);
 }

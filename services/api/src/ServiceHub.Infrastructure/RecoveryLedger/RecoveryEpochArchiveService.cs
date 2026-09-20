@@ -66,6 +66,42 @@ public sealed class RecoveryEpochArchiveService : IRecoveryEpochArchiveService
             throw new ArgumentException("Owner identifier is required.", nameof(ownerId));
         }
 
+        // The previous epoch's own seal marker (if any) is the chain anchor for the range about
+        // to be archived, and must stay live — never itself archived or pruned (see this
+        // interface's own docs). Resolved up front, before SealEpochAsync runs: that call only
+        // ever appends one new event and never touches an existing row, so "everything currently
+        // live since the last seal" is exactly the range the freshly-sealed epoch will archive.
+        var previousSealSeq = await _dbContext.RecoveryEvents
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && e.EventType == RecoveryEventType.EpochSealed)
+            .OrderByDescending(e => e.Seq)
+            .Select(e => (long?)e.Seq)
+            .FirstOrDefaultAsync(cancellationToken) ?? 0;
+
+        // Verify the range BEFORE persisting the seal marker, so a tampered/corrupt range is
+        // caught before the seal ever happens — not after, which would leave an unarchivable seal
+        // marker behind and break the "fails, and changes nothing" promise.
+        var pendingEvents = await _dbContext.RecoveryEvents
+            .AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && e.Seq > previousSealSeq)
+            .OrderBy(e => e.Seq)
+            .ToListAsync(cancellationToken);
+
+        if (pendingEvents.Count > 0)
+        {
+            var preSealVerification = RecoveryChainVerifier.Verify(
+                ownerId, pendingEvents, pendingEvents[0].Seq, pendingEvents[0].PrevHash);
+            if (!preSealVerification.IsValid)
+            {
+                _logger.LogError(
+                    "Refusing to seal a new epoch for owner {OwnerId}: the range since the last seal does not verify ({Reason})",
+                    ownerId, preSealVerification.Reason);
+                return Result<RecoveryEpochSealSummary>.Failure(Error.Internal(
+                    "RecoveryEpochArchive.RangeDoesNotVerify",
+                    $"Refusing to seal: {preSealVerification.Reason}. Nothing was written or deleted."));
+            }
+        }
+
         var sealResult = await _recoveryLedger.SealEpochAsync(ownerId, actor, cancellationToken);
         if (!sealResult.IsSuccess)
         {
@@ -75,13 +111,11 @@ public sealed class RecoveryEpochArchiveService : IRecoveryEpochArchiveService
         var sealEvent = sealResult.Value;
         var epochNumber = ParseEpochNumber(sealEvent.DetailJson);
 
-        // Everything currently live for this owner, strictly before the new seal marker. This
-        // naturally includes any earlier seal marker too (superseded now that a newer one
-        // exists), so archives chain recursively without any separately-tracked anchor state —
-        // each archive simply contains "whatever was live before this sealing".
+        // Strictly between the previous seal marker (exclusive) and the new one (exclusive) —
+        // neither marker is ever archived; each stays live as its own epoch's chain anchor.
         var toArchive = await _dbContext.RecoveryEvents
             .AsNoTracking()
-            .Where(e => e.OwnerId == ownerId && e.Seq < sealEvent.Seq)
+            .Where(e => e.OwnerId == ownerId && e.Seq > previousSealSeq && e.Seq < sealEvent.Seq)
             .OrderBy(e => e.Seq)
             .ToListAsync(cancellationToken);
 
@@ -96,12 +130,25 @@ public sealed class RecoveryEpochArchiveService : IRecoveryEpochArchiveService
             ownerId, toArchive, toArchive[0].Seq, toArchive[0].PrevHash);
         if (!rangeVerification.IsValid)
         {
+            // Unreachable barring a write racing this method between the pre-seal verification
+            // above and SealEpochAsync's own append (single-instance SQLite, no known caller
+            // triggers this concurrently today) — but if it ever is reached, the seal marker
+            // SealEpochAsync just persisted must be rolled back too, or "changes nothing" would
+            // be broken by the very race this guards against.
             _logger.LogError(
                 "Refusing to archive epoch {EpochNumber} for owner {OwnerId}: the range to be archived does not verify ({Reason})",
                 epochNumber, ownerId, rangeVerification.Reason);
+
+            await _dbContext.Database.ExecuteSqlInterpolatedAsync(
+                $"DELETE FROM RecoveryEvents WHERE OwnerId = {ownerId} AND Seq = {sealEvent.Seq}",
+                cancellationToken);
+            await _dbContext.Database.ExecuteSqlInterpolatedAsync(
+                $"DELETE FROM RecoveryOperations WHERE OwnerId = {ownerId} AND Id = {sealEvent.OperationId}",
+                cancellationToken);
+
             return Result<RecoveryEpochSealSummary>.Failure(Error.Internal(
                 "RecoveryEpochArchive.RangeDoesNotVerify",
-                $"Refusing to archive: {rangeVerification.Reason}. Nothing was written or deleted."));
+                $"Refusing to archive: {rangeVerification.Reason}. The seal was rolled back; nothing was written or deleted."));
         }
 
         var archive = new RecoveryEpochArchive
@@ -147,7 +194,7 @@ public sealed class RecoveryEpochArchiveService : IRecoveryEpochArchiveService
         File.Move(tempPath, finalPath, overwrite: true);
 
         var deletedCount = await _dbContext.Database.ExecuteSqlInterpolatedAsync(
-            $"DELETE FROM RecoveryEvents WHERE OwnerId = {ownerId} AND Seq < {sealEvent.Seq}",
+            $"DELETE FROM RecoveryEvents WHERE OwnerId = {ownerId} AND Seq > {previousSealSeq} AND Seq < {sealEvent.Seq}",
             cancellationToken);
 
         _logger.LogInformation(

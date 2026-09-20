@@ -23,11 +23,25 @@ public interface IExternalSignalRepository
     /// wanting both must query separately or omit the filter, mirroring
     /// <c>IRecoveryLedger.QueryEntriesAsync</c>'s own namespace-filter convention.
     /// </summary>
+    /// <param name="ownerId">Tenant-isolation filter — only this owner's signals are returned.</param>
+    /// <param name="namespaceId">Optional namespace filter.</param>
+    /// <param name="start">Start of the query window.</param>
+    /// <param name="end">End of the query window.</param>
+    /// <param name="limit">Maximum number of signals to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="allowedNamespaceIds">
+    /// The caller's credential's namespace allow-list, when one is present — null means
+    /// unrestricted. Applies even when <paramref name="namespaceId"/> is omitted, so a restricted
+    /// caller can't read every namespace's signals by simply not filtering; a fleet-wide
+    /// (<c>NamespaceId == null</c>) signal is excluded when restricted, same reasoning as
+    /// <c>IPlaybookLedger.QueryEntriesAsync</c>'s own allow-list.
+    /// </param>
     Task<IReadOnlyList<ExternalSignalEvent>> QueryAsync(
         string ownerId,
         Guid? namespaceId,
         DateTimeOffset start,
         DateTimeOffset end,
         int limit,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null);
 }

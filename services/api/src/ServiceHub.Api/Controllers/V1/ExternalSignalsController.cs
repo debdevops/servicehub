@@ -133,7 +133,7 @@ public sealed class ExternalSignalsController : ApiControllerBase
         var end = endTime ?? DateTimeOffset.UtcNow;
 
         var signals = await _externalSignalRepository.QueryAsync(
-            OwnerId, namespaceId, start, end, ClampLimit(limit), cancellationToken);
+            OwnerId, namespaceId, start, end, ClampLimit(limit), cancellationToken, AllowedNamespaceIds);
 
         return Ok(signals.Select(MapToResponse).ToList());
     }
@@ -202,7 +202,7 @@ public sealed class ExternalSignalsController : ApiControllerBase
         // of an anomaly detected at the very start of it, so the signal lookback starts one
         // window earlier than the anomaly-analysis window itself.
         var signals = await _externalSignalRepository.QueryAsync(
-            OwnerId, namespaceId: null, start - window, end, MaxLimit, cancellationToken);
+            OwnerId, namespaceId: null, start - window, end, MaxLimit, cancellationToken, AllowedNamespaceIds);
 
         var correlations = _correlationService.DetectCorrelations(observations, signals, window);
 

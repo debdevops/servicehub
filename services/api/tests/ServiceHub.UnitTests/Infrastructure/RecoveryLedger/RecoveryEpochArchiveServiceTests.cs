@@ -140,11 +140,14 @@ public sealed class RecoveryEpochArchiveServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SealAndArchiveEpochAsync_SecondSeal_ArchivesFirstMarkerTooAndChainsTerminalHashes()
+    public async Task SealAndArchiveEpochAsync_SecondSeal_KeepsFirstMarkerLiveAndChainsFromItsEntryHash()
     {
         await SeedEntryAsync(OwnerA);
         var firstSeal = await _sut.SealAndArchiveEpochAsync(OwnerA, Actor());
         firstSeal.IsSuccess.Should().BeTrue();
+
+        var firstMarker = await _dbContext.RecoveryEvents.AsNoTracking()
+            .SingleAsync(e => e.OwnerId == OwnerA && e.EventType == RecoveryEventType.EpochSealed);
 
         await SeedEntryAsync(OwnerA); // new activity in the second epoch
         var secondSeal = await _sut.SealAndArchiveEpochAsync(OwnerA, Actor());
@@ -152,16 +155,22 @@ public sealed class RecoveryEpochArchiveServiceTests : IDisposable
         secondSeal.IsSuccess.Should().BeTrue();
         secondSeal.Value.EpochNumber.Should().Be(2);
 
-        // Epoch 2's archive starts exactly where epoch 1's terminal hash left off — the first
-        // seal marker itself is now archived (superseded), included in epoch 2's file.
+        // Epoch 2's archive starts right after the first seal marker (chained from the marker's
+        // own EntryHash, since the marker is the immediately preceding live event) — the marker
+        // itself is excluded, not archived.
         var epoch2Json = await File.ReadAllTextAsync(secondSeal.Value.ArchiveFilePath);
         using var epoch2Document = JsonDocument.Parse(epoch2Json);
-        epoch2Document.RootElement.GetProperty("startPrevHash").GetString().Should().Be(firstSeal.Value.TerminalHash);
+        epoch2Document.RootElement.GetProperty("startPrevHash").GetString().Should().Be(firstMarker.EntryHash);
 
+        // Both seal markers survive live — every historical epoch boundary stays queryable from
+        // the live table without opening an archive file, and only the bulk business events
+        // between consecutive markers are ever archived and pruned.
         var liveEvents = await _dbContext.RecoveryEvents
-            .AsNoTracking().Where(e => e.OwnerId == OwnerA).ToListAsync();
-        liveEvents.Should().ContainSingle(); // only the second seal marker survives live
-        liveEvents[0].PrevHash.Should().Be(secondSeal.Value.TerminalHash);
+            .AsNoTracking().Where(e => e.OwnerId == OwnerA).OrderBy(e => e.Seq).ToListAsync();
+        liveEvents.Should().HaveCount(2);
+        liveEvents[0].Id.Should().Be(firstMarker.Id);
+        liveEvents[1].EventType.Should().Be(RecoveryEventType.EpochSealed);
+        liveEvents[1].PrevHash.Should().Be(secondSeal.Value.TerminalHash);
     }
 
     [Fact]
@@ -191,6 +200,34 @@ public sealed class RecoveryEpochArchiveServiceTests : IDisposable
         var ownerBRaw = await _ledger.VerifyChainAsync(OwnerB);
         ownerBRaw.IsValid.Should().BeTrue();
         ownerBRaw.EventsChecked.Should().Be(ownerBEventCount);
+    }
+
+    [Fact]
+    public async Task SealAndArchiveEpochAsync_TamperedRangeBeforeSeal_FailsWithoutPersistingSealMarker()
+    {
+        await SeedEntryAsync(OwnerA);
+
+        // RecoveryEvent is entirely init-only in EF Core (append-only guard, by design), so
+        // simulating tampering means going around EF entirely — a raw UPDATE against the live
+        // table, the same technique BackupRestoreVerificationTests' own tamper test uses.
+        await _dbContext.Database.ExecuteSqlInterpolatedAsync(
+            $"UPDATE RecoveryEvents SET EventType = {nameof(RecoveryEventType.ProviderRejected)} WHERE Id = (SELECT Id FROM RecoveryEvents WHERE OwnerId = {OwnerA} ORDER BY Seq LIMIT 1)");
+
+        var eventsBefore = await _dbContext.RecoveryEvents
+            .AsNoTracking().Where(e => e.OwnerId == OwnerA).ToListAsync();
+
+        var result = await _sut.SealAndArchiveEpochAsync(OwnerA, Actor());
+
+        // Regression (Copilot finding): sealing used to persist the EpochSealed marker before
+        // verifying the range, so a tampered/corrupt range left an unarchivable marker behind
+        // even though this contract promises "fails, and changes nothing."
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("RecoveryEpochArchive.RangeDoesNotVerify");
+
+        var liveEvents = await _dbContext.RecoveryEvents
+            .AsNoTracking().Where(e => e.OwnerId == OwnerA).ToListAsync();
+        liveEvents.Should().BeEquivalentTo(eventsBefore);
+        liveEvents.Should().NotContain(e => e.EventType == RecoveryEventType.EpochSealed);
     }
 
     [Fact]

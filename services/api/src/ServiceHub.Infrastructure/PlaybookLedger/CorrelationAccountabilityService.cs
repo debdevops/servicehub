@@ -27,7 +27,7 @@ public sealed class CorrelationAccountabilityService : ICorrelationAccountabilit
 
     /// <inheritdoc/>
     public async Task<CorrelationAccountabilityReport> GetReportAsync(
-        string ownerId, CancellationToken cancellationToken = default)
+        string ownerId, CancellationToken cancellationToken = default, IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
         if (string.IsNullOrWhiteSpace(ownerId))
         {
@@ -35,7 +35,7 @@ public sealed class CorrelationAccountabilityService : ICorrelationAccountabilit
         }
 
         var result = await _playbookLedger.QueryEntriesAsync(
-            ownerId, PillarKind.Correlate, cancellationToken: cancellationToken);
+            ownerId, PillarKind.Correlate, cancellationToken: cancellationToken, allowedNamespaceIds: allowedNamespaceIds);
 
         // A query failure reports zero rather than throwing — this is a dashboard, not a
         // correctness-critical read; an empty report is honest degraded behavior, not a lie.

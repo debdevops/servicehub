@@ -210,7 +210,7 @@ public sealed class NarrationWorker : BackgroundService
 
         foreach (var narration in narrations.Where(n => n.Severity >= _pushSeverityThreshold))
         {
-            var (ownerId, namespaceId, namespaceName) = ResolvePushContext(narration, namespacesById, correlationFindingsById);
+            var (ownerId, namespaceId, namespaceName, namespaceIds) = ResolvePushContext(narration, namespacesById, correlationFindingsById);
             if (ownerId is null)
             {
                 continue;
@@ -225,6 +225,7 @@ public sealed class NarrationWorker : BackgroundService
                 Actor = ownerId,
                 NamespaceId = namespaceId,
                 NamespaceName = namespaceName,
+                NamespaceIds = namespaceIds,
                 Payload = new InsightDetectedPayload
                 {
                     Kind = InsightKind.Narration,
@@ -239,7 +240,7 @@ public sealed class NarrationWorker : BackgroundService
         }
     }
 
-    private static (string? OwnerId, Guid? NamespaceId, string? NamespaceName) ResolvePushContext(
+    private static (string? OwnerId, Guid? NamespaceId, string? NamespaceName, IReadOnlySet<Guid>? NamespaceIds) ResolvePushContext(
         Narration narration,
         IReadOnlyDictionary<Guid, Namespace> namespacesById,
         IReadOnlyDictionary<Guid, CorrelationFinding> correlationFindingsById)
@@ -248,19 +249,22 @@ public sealed class NarrationWorker : BackgroundService
             && narration.NamespaceId is Guid namespaceId
             && namespacesById.TryGetValue(namespaceId, out var ns))
         {
-            return (ns.OwnerId, ns.Id, ns.Name);
+            return (ns.OwnerId, ns.Id, ns.Name, null);
         }
 
         if (narration.Kind == NarrationKind.CrossNamespaceCorrelation
             && narration.ContributingCorrelationFindingIds.Count > 0
             && correlationFindingsById.TryGetValue(narration.ContributingCorrelationFindingIds[0], out var correlation))
         {
-            // Owner-scoped, no NamespaceId (a correlation spans multiple namespaces) — Actor must
-            // be the raw OwnerId for PlatformEventStreamBroker's visibility check to resolve it to
-            // the right SSE connections, same as AutonomyEvaluationWorker's circuit-breaker event.
-            return (correlation.OwnerId, null, null);
+            // Owner-scoped, no single NamespaceId (a correlation spans multiple namespaces) —
+            // Actor must be the raw OwnerId for PlatformEventStreamBroker's visibility check to
+            // resolve it to the right SSE connections, same as AutonomyEvaluationWorker's
+            // circuit-breaker event. NamespaceIds carries every member namespace so a
+            // namespace-restricted connection whose allow-list doesn't cover all of them is
+            // excluded — the narration's summary can name any member.
+            return (correlation.OwnerId, null, null, correlation.Members.Select(m => m.NamespaceId).ToHashSet());
         }
 
-        return (null, null, null);
+        return (null, null, null, null);
     }
 }

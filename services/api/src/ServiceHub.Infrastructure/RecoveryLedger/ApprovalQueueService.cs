@@ -43,7 +43,11 @@ public sealed class ApprovalQueueService : IApprovalQueueService
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<ApprovalQueueEntryResponse>> GetPendingApprovalsAsync(
-        string ownerId, Guid? namespaceId, int limit, CancellationToken cancellationToken = default)
+        string ownerId,
+        Guid? namespaceId,
+        int limit,
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
         var declinedQuery =
             from entry in _dbContext.RecoveryLedgerEntries.AsNoTracking()
@@ -61,6 +65,15 @@ public sealed class ApprovalQueueService : IApprovalQueueService
         if (namespaceId is { } ns)
         {
             declinedQuery = declinedQuery.Where(x => x.entry.NamespaceId == ns);
+        }
+
+        // NAMESPACE ALLOW-LIST: further narrow to the caller's credential's namespace
+        // allow-list, when one is present — null means unrestricted (today's behaviour).
+        // Applies even when namespaceId is omitted, so a restricted key can't read every
+        // namespace's approval queue by simply not filtering.
+        if (allowedNamespaceIds is not null)
+        {
+            declinedQuery = declinedQuery.Where(x => allowedNamespaceIds.Contains(x.entry.NamespaceId!.Value));
         }
 
         var declined = await declinedQuery

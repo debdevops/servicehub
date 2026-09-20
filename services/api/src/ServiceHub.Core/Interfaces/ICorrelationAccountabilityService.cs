@@ -13,9 +13,17 @@ public interface ICorrelationAccountabilityService
     /// <summary>Builds a correlation accountability report for the given owner.</summary>
     /// <param name="ownerId">Tenant/owner identifier for isolation.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="allowedNamespaceIds">
+    /// The caller's credential's namespace allow-list, when one is present — null means
+    /// unrestricted. Every correlation hypothesis today spans multiple namespaces (see the
+    /// remarks above), so a restricted credential has no single namespace it can be proven to
+    /// belong to — passing an allow-list here reports zero hypotheses rather than fleet-wide
+    /// counts a namespace-scoped key must not see.
+    /// </param>
     Task<CorrelationAccountabilityReport> GetReportAsync(
         string ownerId,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null);
 }
 
 /// <summary>

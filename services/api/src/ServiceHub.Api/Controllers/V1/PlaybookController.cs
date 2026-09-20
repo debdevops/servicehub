@@ -70,7 +70,7 @@ public sealed class PlaybookController : ApiControllerBase
         CancellationToken cancellationToken = default)
     {
         var result = await _playbookLedger.QueryEntriesAsync(
-            OwnerId, pillarKind, namespaceId, state, cancellationToken);
+            OwnerId, pillarKind, namespaceId, state, cancellationToken, AllowedNamespaceIds);
 
         if (result.IsFailure)
         {
@@ -224,7 +224,7 @@ public sealed class PlaybookController : ApiControllerBase
     public async Task<IActionResult> Export(CancellationToken cancellationToken = default)
     {
         var actor = ResolvePlaybookActor();
-        var export = await _evidenceExporter.ExportAsync(OwnerId, actor.Identity, cancellationToken);
+        var export = await _evidenceExporter.ExportAsync(OwnerId, actor.Identity, cancellationToken, AllowedNamespaceIds);
 
         var timestamp = DateTimeOffset.UtcNow.ToString("yyyyMMddTHHmmssZ");
         return File(
@@ -246,7 +246,7 @@ public sealed class PlaybookController : ApiControllerBase
     public async Task<ActionResult<CorrelationAccountabilityReport>> GetCorrelationAccountability(
         CancellationToken cancellationToken = default)
     {
-        var report = await _correlationAccountability.GetReportAsync(OwnerId, cancellationToken);
+        var report = await _correlationAccountability.GetReportAsync(OwnerId, cancellationToken, AllowedNamespaceIds);
         return Ok(report);
     }
 

@@ -78,6 +78,28 @@ def test_propose_rejects_duplicate_refs():
     assert response.status_code == 422
 
 
+def test_resolve_ollama_host_rejects_public_endpoint():
+    assert main_module._is_approved_local_endpoint("example.com") is False
+
+
+def test_resolve_ollama_host_accepts_loopback():
+    assert main_module._is_approved_local_endpoint("http://127.0.0.1:11434") is True
+
+
+def test_resolve_ollama_host_accepts_private_ip():
+    assert main_module._is_approved_local_endpoint("http://192.168.1.50:11434") is True
+
+
+def test_resolve_ollama_host_rejects_public_ip():
+    assert main_module._is_approved_local_endpoint("http://8.8.8.8:11434") is False
+
+
+def test_resolve_ollama_host_disables_on_unapproved_override(monkeypatch):
+    monkeypatch.setenv("OLLAMA_HOST", "http://8.8.8.8:11434")
+
+    assert main_module._resolve_ollama_host() is None
+
+
 def test_evidence_record_has_no_body_field():
     from app.models import EvidenceRecord
 
