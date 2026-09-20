@@ -50,9 +50,16 @@ function isSameSentMessage(optimistic: Message, real: Message): boolean {
   if (optimistic.body !== real.body) return false;
   if ((optimistic.correlationId || null) !== (real.correlationId || null)) return false;
   if ((optimistic.sessionId || null) !== (real.sessionId || null)) return false;
-  const optimisticProps = JSON.stringify(optimistic.applicationProperties || {});
-  const realProps = JSON.stringify(real.applicationProperties || {});
-  if (optimisticProps !== realProps) return false;
+  // The broker/provider SDK adds its own properties on send (e.g. Azure Service Bus stamps
+  // a W3C "Diagnostic-Id" trace-context property), so the real message's applicationProperties
+  // is a superset of what the client sent, not an exact match. Require every property the
+  // client actually sent to be present with the same value; extra broker-added keys are fine.
+  const optimisticProps = optimistic.applicationProperties || {};
+  const realProps = real.applicationProperties || {};
+  const propsMatch = Object.entries(optimisticProps).every(
+    ([key, value]) => realProps[key] === value
+  );
+  if (!propsMatch) return false;
   // The real message can't have been enqueued before we sent it (allow a few seconds of
   // clock skew between the browser and the broker).
   return new Date(real.enqueuedTime).getTime() >= new Date(optimistic.enqueuedTime).getTime() - 5_000;
