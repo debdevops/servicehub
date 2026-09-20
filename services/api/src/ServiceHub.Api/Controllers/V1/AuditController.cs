@@ -71,7 +71,7 @@ public sealed class AuditController : ApiControllerBase
 
         var result = await _auditService.GetLogsAsync(
             OwnerId, namespaceId, search, actionType, outcome, from, to,
-            page, pageSize, cancellationToken);
+            page, pageSize, cancellationToken, AllowedNamespaceIds);
 
         if (result.IsFailure)
             return ToActionResult<AuditPageResponse>(result.Error);
@@ -103,7 +103,7 @@ public sealed class AuditController : ApiControllerBase
         [FromQuery] Guid? namespaceId = null,
         CancellationToken cancellationToken = default)
     {
-        var result = await _auditService.GetSummaryAsync(OwnerId, namespaceId, cancellationToken);
+        var result = await _auditService.GetSummaryAsync(OwnerId, namespaceId, cancellationToken, AllowedNamespaceIds);
         if (result.IsFailure)
             return ToActionResult<AuditSummaryResponse>(result.Error);
 
@@ -144,7 +144,7 @@ public sealed class AuditController : ApiControllerBase
         CancellationToken cancellationToken = default)
     {
         var result = await _auditService.ExportAsync(
-            OwnerId, namespaceId, actionType, outcome, from, to, cancellationToken);
+            OwnerId, namespaceId, actionType, outcome, from, to, cancellationToken, AllowedNamespaceIds);
 
         if (result.IsFailure)
             return ToActionResult(ServiceHub.Shared.Results.Result.Failure(result.Error));

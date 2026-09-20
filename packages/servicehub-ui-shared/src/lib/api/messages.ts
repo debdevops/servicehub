@@ -17,15 +17,23 @@ export const messagesApi = {
   // OR /api/v1/namespaces/{namespaceId}/topics/{topicName}/messages
   list: async (params: GetMessagesParams): Promise<PaginatedResponse<Message>> => {
     const { namespaceId, entityType = 'queue', ...queryParams } = params;
-    
+
     // Sanitize entity name to remove any $deadletterqueue suffix
     const queueOrTopicName = sanitizeEntityName(params.queueOrTopicName);
-    
+
+    // Peeking a queue/subscription has no native "list without consuming" API on every
+    // provider — AWS SQS in particular emulates it by receiving and releasing messages
+    // across several long-poll rounds, which the backend allows up to 45s for. The
+    // client's default 30s timeout is shorter than that, so it was aborting the request
+    // (and showing "Request timed out (30s)") while the backend was still legitimately
+    // working. Give this call the same margin as the slowest provider.
+    const listTimeoutMs = 50_000;
+
     if (entityType === 'topic' && queueOrTopicName.includes('/subscriptions/')) {
       const [topicName, subscriptionName] = queueOrTopicName.split('/subscriptions/');
       const response = await apiClient.get<PaginatedResponse<Message>>(
         `/namespaces/${namespaceId}/topics/${topicName}/subscriptions/${subscriptionName}/messages`,
-        { params: queryParams }
+        { params: queryParams, timeout: listTimeoutMs }
       );
       return response.data;
     }
@@ -33,9 +41,9 @@ export const messagesApi = {
     const entityPath = entityType === 'topic' ? 'topics' : 'queues';
     const response = await apiClient.get<PaginatedResponse<Message>>(
       `/namespaces/${namespaceId}/${entityPath}/${queueOrTopicName}/messages`,
-      { params: queryParams }
+      { params: queryParams, timeout: listTimeoutMs }
     );
-    
+
     return response.data;
   },
 
@@ -64,7 +72,7 @@ export const messagesApi = {
     entityType: 'queue' | 'topic' = 'queue'
   ): Promise<void> => {
     const entityPath = entityType === 'topic' ? 'topics' : 'queues';
-    
+
     // Map 'properties' to 'applicationProperties' to match API contract
     const payload = {
       body: message.body,
@@ -75,7 +83,7 @@ export const messagesApi = {
       timeToLiveSeconds: message.timeToLive,
       scheduledEnqueueTimeUtc: message.scheduledEnqueueTime,
     };
-    
+
     await apiClient.post(
       `/namespaces/${namespaceId}/${entityPath}/${queueOrTopicName}/messages`,
       payload,
@@ -89,7 +97,7 @@ export const messagesApi = {
 
   // POST /api/v1/messages/replay
   replay: async (
-    namespaceId: string, 
+    namespaceId: string,
     sequenceNumber: number,
     entityName: string,
     subscriptionName?: string
@@ -147,14 +155,14 @@ export const messagesApi = {
       reason,
       ...(errorDescription && { errorDescription }),
     });
-    
+
     let url: string;
     if (entityType === 'topic' && subscriptionName) {
       url = `/namespaces/${namespaceId}/topics/${queueOrTopicName}/subscriptions/${subscriptionName}/deadletter`;
     } else {
       url = `/namespaces/${namespaceId}/queues/${queueOrTopicName}/deadletter`;
     }
-    
+
     const response = await apiClient.post<{ deadLetteredCount: number; reason: string }>(
       `${url}?${params.toString()}`,
       null,

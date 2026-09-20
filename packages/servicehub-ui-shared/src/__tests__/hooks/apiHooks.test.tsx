@@ -280,8 +280,8 @@ describe('useAllNamespacesQueues', () => {
     expect(result.current).toEqual([]);
   });
 
-  it('returns one entry per namespace with loading state initially', () => {
-    (apiClient.get as ReturnType<typeof vi.fn>).mockReturnValue(new Promise(() => {}));
+  it('returns one entry per namespace with loading state initially, via a single batched POST', () => {
+    (apiClient.post as ReturnType<typeof vi.fn>).mockReturnValue(new Promise(() => {}));
     const { result } = renderHook(
       () => useAllNamespacesQueues(['ns-1', 'ns-2']),
       { wrapper: createWrapper() },
@@ -290,14 +290,26 @@ describe('useAllNamespacesQueues', () => {
     expect(result.current[0].namespaceId).toBe('ns-1');
     expect(result.current[1].namespaceId).toBe('ns-2');
     expect(result.current[0].isLoading).toBe(true);
+    // Fleet-scale fix: one POST /namespaces/stats/batch, not one GET per namespace.
+    expect(apiClient.post).toHaveBeenCalledTimes(1);
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/namespaces/stats/batch',
+      { namespaceIds: ['ns-1', 'ns-2'] },
+      expect.objectContaining({ _silent: true }),
+    );
   });
 
-  it('aggregates queue stats after successful fetch', async () => {
-    const mockQueues = [
-      { name: 'q1', activeMessageCount: 5, deadLetterMessageCount: 2, scheduledMessageCount: 1 },
-      { name: 'q2', activeMessageCount: 3, deadLetterMessageCount: 0, scheduledMessageCount: 0 },
-    ];
-    (apiClient.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: mockQueues });
+  it('aggregates queue stats after a successful batched fetch', async () => {
+    (apiClient.post as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: [
+        {
+          namespaceId: 'ns-1',
+          stats: { totalQueues: 2, totalTopics: 0, totalSubscriptions: 0, totalActive: 8, totalDlq: 2, totalScheduled: 1 },
+          queueNames: ['q1', 'q2'],
+          topicNames: [],
+        },
+      ],
+    });
 
     const { result } = renderHook(
       () => useAllNamespacesQueues(['ns-1']),
@@ -309,19 +321,41 @@ describe('useAllNamespacesQueues', () => {
     expect(result.current[0].totalDlq).toBe(2);
     expect(result.current[0].totalScheduled).toBe(1);
     expect(result.current[0].totalQueues).toBe(2);
-    expect(result.current[0].queues).toEqual(mockQueues);
+    expect(result.current[0].queues?.map((q) => q.name)).toEqual(['q1', 'q2']);
   });
 
-  it('returns isError=true when one namespace fetch fails', async () => {
-    (apiClient.get as ReturnType<typeof vi.fn>).mockRejectedValue({ response: { status: 404 } });
+  it('returns isError=true when the batch fetch fails', async () => {
+    (apiClient.post as ReturnType<typeof vi.fn>).mockRejectedValue({ response: { status: 404 } });
 
     const { result } = renderHook(
       () => useAllNamespacesQueues(['ns-bad']),
       { wrapper: createWrapper() },
     );
 
-    await waitFor(() => result.current[0].isError === true);
+    await waitFor(() => expect(result.current[0].isError).toBe(true));
     expect(result.current[0].totalActive).toBe(0);
     expect(result.current[0].queues).toBeUndefined();
+  });
+
+  it('shares one batched request across multiple consumers requesting the same namespace set', async () => {
+    (apiClient.post as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: [
+        {
+          namespaceId: 'ns-1',
+          stats: { totalQueues: 1, totalTopics: 0, totalSubscriptions: 0, totalActive: 1, totalDlq: 0, totalScheduled: 0 },
+          queueNames: ['q1'],
+          topicNames: [],
+        },
+      ],
+    });
+
+    const wrapper = createWrapper();
+    const first = renderHook(() => useAllNamespacesQueues(['ns-1']), { wrapper });
+    renderHook(() => useAllNamespacesQueues(['ns-1']), { wrapper });
+
+    await waitFor(() => expect(first.result.current[0].isLoading).toBe(false));
+    // Two consumers, same namespace set — TanStack Query's cache dedupes them into one request,
+    // the same property the old per-namespace query key relied on, now at batch granularity.
+    expect(apiClient.post).toHaveBeenCalledTimes(1);
   });
 });

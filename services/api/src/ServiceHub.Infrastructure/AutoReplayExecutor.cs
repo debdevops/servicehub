@@ -23,10 +23,19 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
 {
     private const int DefaultFleetReplayVelocityCapPerHour = 500;
 
+    // Roadmap "same engine, second application" (item 14, Recover side): a computed plan that
+    // predicate 5 escalates purely for lack of earned autonomy — not a recurrence-cap safety
+    // stop — is exactly the Recover pillar's L2 "Recommend" candidate, proposed into the Playbook
+    // Ledger for human review the same way AnomalyDetectionWorker/DriftDetectionWorker propose
+    // AnomalyFlag/DriftFinding. Never itself authorizes anything; see PlaybookEntry's doc remarks.
+    private static readonly TimeSpan ReplayPlanProposalExpiry = TimeSpan.FromDays(7);
+    private static readonly PlaybookActor ReplayPlanProposer = new("System:AutoReplayExecutor", PlaybookActorKind.System);
+
     private readonly DlqDbContext _dbContext;
     private readonly IMessageOperationsService _messageOperations;
     private readonly IRecoveryLedger _recoveryLedger;
     private readonly IRecoveryEligibilityGate _eligibilityGate;
+    private readonly IPlaybookLedger _playbookLedger;
     private readonly IFailureFeatureExtractor _featureExtractor;
     private readonly IFailureFingerprintBuilder _fingerprintBuilder;
     private readonly ILogger<AutoReplayExecutor> _logger;
@@ -42,6 +51,7 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
         IMessageOperationsService messageOperations,
         IRecoveryLedger recoveryLedger,
         IRecoveryEligibilityGate eligibilityGate,
+        IPlaybookLedger playbookLedger,
         IFailureFeatureExtractor featureExtractor,
         IFailureFingerprintBuilder fingerprintBuilder,
         IConfiguration configuration,
@@ -51,6 +61,7 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
         _messageOperations = messageOperations ?? throw new ArgumentNullException(nameof(messageOperations));
         _recoveryLedger = recoveryLedger ?? throw new ArgumentNullException(nameof(recoveryLedger));
         _eligibilityGate = eligibilityGate ?? throw new ArgumentNullException(nameof(eligibilityGate));
+        _playbookLedger = playbookLedger ?? throw new ArgumentNullException(nameof(playbookLedger));
         _featureExtractor = featureExtractor ?? throw new ArgumentNullException(nameof(featureExtractor));
         _fingerprintBuilder = fingerprintBuilder ?? throw new ArgumentNullException(nameof(fingerprintBuilder));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -144,6 +155,25 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
                 _logger.LogError(ex,
                     "Failed to record Declined ledger entry for message {MessageId}",
                     LogRedactor.SanitiseForLog(message.MessageId));
+            }
+
+            // Only the "hasn't earned it yet" reason is a Recommend candidate — the
+            // recurrence-lineage cap is a safety stop, not a plan awaiting trust, so it gets no
+            // Playbook proposal.
+            if (decision.ReasonCode == RecoveryEligibilityGate.ReasonAutonomyGrantInsufficient)
+            {
+                try
+                {
+                    await ProposeReplayPlanAsync(message, rule, ns, signatureHash, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    // Same best-effort treatment as the RecordDeclinedAsync call above — a
+                    // Playbook Ledger write failure must never change the skip decision.
+                    _logger.LogError(ex,
+                        "Failed to propose Playbook Ledger ReplayPlan entry for message {MessageId}",
+                        LogRedactor.SanitiseForLog(message.MessageId));
+                }
             }
 
             return Result<string>.Failure(Error.Validation(
@@ -353,6 +383,84 @@ public sealed class AutoReplayExecutor : IAutoReplayExecutor
         }
 
         return fingerprintResult.Value.Hash;
+    }
+
+    // Roadmap "same engine, second application" (item 14, Recover side): proposes a Recover-pillar
+    // ReplayPlan into the Playbook Ledger for the entity/signature this rule would have replayed,
+    // had the signature earned Standing/Unattended autonomy. Joined the same way I3/P2 proposals
+    // already are — by (NamespaceId, EntityName) — via BacktestService, plus SignatureHashSnapshot
+    // for anything that later wants signature-level precision. Never itself authorizes a replay;
+    // a human reviews and dispositions it through the same generic Playbook Ledger API/UI every
+    // other pillar's proposals already use.
+    private async Task ProposeReplayPlanAsync(
+        DlqMessage message,
+        AutoReplayRule rule,
+        Namespace ns,
+        string? signatureHash,
+        CancellationToken cancellationToken)
+    {
+        // Dedup guard: DlqMonitorWorker's fairness sweep (default 10s poll,
+        // DlqMonitor:PollIntervalSeconds) re-evaluates a still-Active message every cycle —
+        // RecordDeclinedAsync never changes DlqMessage.Status — until the recurrence-lineage cap
+        // finally intervenes (up to 3 cycles per distinct BodyHash). Without this check, every one
+        // of those cycles would propose its own near-duplicate ReplayPlan for the same signature,
+        // flooding a human reviewer's queue and skewing BacktestService's corroboration rate (one
+        // real recovery would "corroborate" every duplicate). Scoped to the still-Proposed state:
+        // once a human has started reviewing (UnderReview/Edited) or dispositioned it, this is a
+        // distinct question, not noise from this same unattended loop.
+        var existingResult = await _playbookLedger.QueryEntriesAsync(
+            rule.OwnerId, PillarKind.Recover, ns.Id, PlaybookEntryState.Proposed, cancellationToken).ConfigureAwait(false);
+
+        if (existingResult.IsSuccess
+            && existingResult.Value.Any(e => e.ProposalKind == "ReplayPlan" && e.SignatureHashSnapshot == signatureHash))
+        {
+            return;
+        }
+
+        // EntityName must be message.EntityName (the full provider path, e.g.
+        // "topic/subscriptions/sub") — NOT the topic-stripped/alternate-routed local `entityName`
+        // ExecuteAsync computes for provider dispatch. RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest
+        // always stamps RecoveryLedgerEntry.EntityNameSnapshot from message.EntityName regardless of
+        // TargetEntity, and BacktestService's join (via FindEntriesForEntitySinceAsync) matches on
+        // EntityNameSnapshot — using the dispatch-target name here would make every Subscription-type
+        // or alternate-entity-routed ReplayPlan silently never corroborate.
+        var proposalJson = JsonSerializer.Serialize(new
+        {
+            EntityName = message.EntityName,
+            message.MessageId,
+            TargetAction = "Replay",
+            RuleId = rule.Id,
+            RuleName = rule.Name,
+        });
+        var evidenceRefJson = JsonSerializer.Serialize(new
+        {
+            message.MessageId,
+            message.SequenceNumber,
+            RuleId = rule.Id,
+        });
+
+        var result = await _playbookLedger.ProposeAsync(new ProposePlaybookEntryRequest
+        {
+            OwnerId = rule.OwnerId,
+            PillarKind = PillarKind.Recover,
+            ProposalKind = "ReplayPlan",
+            EvidenceRefJson = evidenceRefJson,
+            ProposalJson = proposalJson,
+            Proposer = ReplayPlanProposer,
+            SignatureHashSnapshot = signatureHash,
+            NamespaceId = ns.Id,
+            NamespaceNameSnapshot = ns.Name,
+            ProviderSnapshot = ns.Provider,
+            EnvironmentSnapshot = ns.Environment,
+            ExpiresAfter = ReplayPlanProposalExpiry,
+        }, cancellationToken).ConfigureAwait(false);
+
+        if (result.IsFailure)
+        {
+            _logger.LogWarning(
+                "Failed to propose Playbook Ledger ReplayPlan entry for message {MessageId} in namespace {NamespaceId}: {Error}",
+                LogRedactor.SanitiseForLog(message.MessageId), ns.Id, result.Error.Message);
+        }
     }
 
     /// <inheritdoc />

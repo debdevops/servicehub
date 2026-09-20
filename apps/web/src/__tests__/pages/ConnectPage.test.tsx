@@ -272,4 +272,18 @@ describe('ConnectPage multi-cloud provider gating', () => {
 
     await waitFor(() => expect(mockCreateNs).not.toHaveBeenCalled());
   });
+
+  it('allows selecting PROD as the environment (ADR-0010: registrable, recovery gated by elevation)', () => {
+    renderConnectPage();
+    const environmentSelect = screen.getByLabelText(/Environment/) as HTMLSelectElement;
+    const prodOption = screen.getByRole('option', { name: 'PROD — Production' }) as HTMLOptionElement;
+
+    expect(prodOption.disabled).toBe(false);
+
+    fireEvent.change(environmentSelect, { target: { value: 'prod' } });
+
+    expect(environmentSelect.value).toBe('prod');
+    expect(screen.getByText(/Production namespace:/)).toBeInTheDocument();
+    expect(screen.queryByText(/Production connectivity is disabled/)).not.toBeInTheDocument();
+  });
 });

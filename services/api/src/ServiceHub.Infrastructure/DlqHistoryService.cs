@@ -36,7 +36,8 @@ public sealed class DlqHistoryService : IDlqHistoryService
         FailureCategory? category = null,
         int page = 1,
         int pageSize = 50,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
         try
         {
@@ -44,6 +45,11 @@ public sealed class DlqHistoryService : IDlqHistoryService
 
             // TENANT ISOLATION: Filter messages by owner
             query = query.Where(m => m.OwnerId == ownerId);
+
+            // NAMESPACE ALLOW-LIST: further narrow to the caller's credential's namespace
+            // allow-list, when one is present — null means unrestricted (today's behaviour).
+            if (allowedNamespaceIds is not null)
+                query = query.Where(m => allowedNamespaceIds.Contains(m.NamespaceId));
 
             if (namespaceId.HasValue)
                 query = query.Where(m => m.NamespaceId == namespaceId.Value);
@@ -90,7 +96,11 @@ public sealed class DlqHistoryService : IDlqHistoryService
     }
 
     /// <inheritdoc />
-    public async Task<Result<DlqMessage>> GetByIdAsync(string ownerId, long id, CancellationToken cancellationToken = default)
+    public async Task<Result<DlqMessage>> GetByIdAsync(
+        string ownerId,
+        long id,
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
         try
         {
@@ -99,7 +109,8 @@ public sealed class DlqHistoryService : IDlqHistoryService
                 .Include(m => m.ReplayHistories)
                 .FirstOrDefaultAsync(m => m.Id == id && m.OwnerId == ownerId, cancellationToken);
 
-            if (message == null)
+            if (message == null
+                || (allowedNamespaceIds is not null && !allowedNamespaceIds.Contains(message.NamespaceId)))
                 return Result<DlqMessage>.Failure(Error.NotFound("Dlq.NotFound", $"DLQ message with ID {id} was not found"));
 
             return message;
@@ -347,7 +358,11 @@ public sealed class DlqHistoryService : IDlqHistoryService
 
     /// <inheritdoc />
     public async Task<Result<DlqSummary>> GetSummaryAsync(
-        string ownerId, Guid? namespaceId = null, int days = 30, CancellationToken cancellationToken = default)
+        string ownerId,
+        Guid? namespaceId = null,
+        int days = 30,
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
         try
         {
@@ -357,6 +372,11 @@ public sealed class DlqHistoryService : IDlqHistoryService
 
             // TENANT ISOLATION: Filter messages by owner
             query = query.Where(m => m.OwnerId == ownerId);
+
+            // NAMESPACE ALLOW-LIST: further narrow to the caller's credential's namespace
+            // allow-list, when one is present — null means unrestricted (today's behaviour).
+            if (allowedNamespaceIds is not null)
+                query = query.Where(m => allowedNamespaceIds.Contains(m.NamespaceId));
 
             if (namespaceId.HasValue)
                 query = query.Where(m => m.NamespaceId == namespaceId.Value);
@@ -455,7 +475,8 @@ public sealed class DlqHistoryService : IDlqHistoryService
         DateTimeOffset? from = null,
         DateTimeOffset? to = null,
         DlqMessageStatus? status = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
         try
         {
@@ -463,6 +484,11 @@ public sealed class DlqHistoryService : IDlqHistoryService
 
             // TENANT ISOLATION: Filter messages by owner
             query = query.Where(m => m.OwnerId == ownerId);
+
+            // NAMESPACE ALLOW-LIST: further narrow to the caller's credential's namespace
+            // allow-list, when one is present — null means unrestricted (today's behaviour).
+            if (allowedNamespaceIds is not null)
+                query = query.Where(m => allowedNamespaceIds.Contains(m.NamespaceId));
 
             if (namespaceId.HasValue)
                 query = query.Where(m => m.NamespaceId == namespaceId.Value);

@@ -22,6 +22,13 @@ public sealed class AutoReplayRule
     /// <summary>Description of what the rule does.</summary>
     public string? Description { get; set; }
 
+    /// <summary>
+    /// Namespace this rule is scoped to, or <c>null</c> for Global (fleet-wide, matches every
+    /// namespace) — the same meaning "no scope" has always had. Soft reference — no FK — resolved
+    /// through <c>INamespaceRepository</c> at the application layer.
+    /// </summary>
+    public Guid? NamespaceId { get; set; }
+
     /// <summary>Whether the rule is currently active.</summary>
     public bool Enabled { get; set; } = true;
 

@@ -380,7 +380,7 @@ export function DlqHistoryPage() {
       <div className="bg-white border-b border-gray-200 px-6 py-4 shrink-0">
         <div className="flex items-center justify-between mb-3">
           <div>
-            <h1 className="text-xl font-bold text-gray-900">DLQ Intelligence</h1>
+            <h1 className="text-xl font-bold text-gray-900">DLQ Message History</h1>
             <p className="text-sm text-gray-500 mt-0.5">
               Dead-letter queue message history and monitoring
               <HelpTooltip {...tooltips.dlqHistory.trendChart} position="right" className="ml-1" />
@@ -456,7 +456,7 @@ export function DlqHistoryPage() {
             <button
               onClick={handleRefresh}
               disabled={isFetching}
-              className="flex items-center gap-1.5 px-3 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+              className="flex items-center gap-1.5 px-3 py-2 bg-primary-700 hover:bg-primary-800 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
             >
               <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
               Refresh
@@ -475,7 +475,7 @@ export function DlqHistoryPage() {
                 isSelected={ns.id === namespaceId}
                 onSelect={() => {
                   setPage(1);
-                  setSearchParams({ namespace: ns.id });
+                  setSearchParams({ namespace: ns.id }, { replace: true });
                 }}
               />
             ))}

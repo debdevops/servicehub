@@ -35,9 +35,15 @@ public static class GcpDependencyInjection
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<ICloudMessagingProvider, GcpMessagingProvider>());
 
-        // Register the GCP health check so the /health/ready endpoint validates Pub/Sub connectivity.
+        // DLQ observer attestation reader (ADR-004; ADR-0011) — reads the observer's Firestore log.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Scoped<IDlqObserverLogReader, DlqObserver.FirestoreObserverLogReader>());
+
+        // Register the GCP health check so the /health/dependencies endpoint validates Pub/Sub
+        // connectivity. Tagged "dependencies", not "ready" — an unreachable GCP namespace is an
+        // external broker outage and must never flip /health/ready to Unhealthy.
         services.AddHealthChecks()
-            .AddCheck<GcpHealthCheck>("gcp-connectivity", tags: ["gcp", "ready"]);
+            .AddCheck<GcpHealthCheck>("gcp-connectivity", tags: ["gcp", "dependencies"]);
 
         return services;
     }

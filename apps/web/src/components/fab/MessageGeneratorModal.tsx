@@ -1,14 +1,14 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { 
-  X, 
-  Wand2, 
-  AlertTriangle, 
-  Package, 
-  CreditCard, 
-  Bell, 
-  Boxes, 
-  Users, 
+import {
+  X,
+  Wand2,
+  AlertTriangle,
+  Package,
+  CreditCard,
+  Bell,
+  Boxes,
+  Users,
   Bug,
   Check,
   Loader2,
@@ -160,7 +160,7 @@ export function MessageGeneratorModal({
     }
 
     setIsGenerating(true);
-    
+
     // Show initial toast with progress
     const toastId = toast.loading('Generating messages...');
 
@@ -186,11 +186,11 @@ export function MessageGeneratorModal({
       const batchSize = 10;
       for (let i = 0; i < messages.length; i += batchSize) {
         const batch = messages.slice(i, i + batchSize);
-        
+
         // Update progress
         const progress = Math.round((i / messages.length) * 100);
         toast.loading(`Generating messages... ${progress}%`, { id: toastId });
-        
+
         const results = await Promise.allSettled(
           batch.map(async (msg) => {
             await messagesApi.send(
@@ -262,7 +262,7 @@ export function MessageGeneratorModal({
       if (successCount > 0) {
         onGenerated?.();
       }
-      
+
       // Close modal on success
       if (errorCount === 0 || successCount > 0) {
         onClose();
@@ -320,8 +320,8 @@ export function MessageGeneratorModal({
             <div className="text-sm text-primary-800">
               <p className="font-medium mb-1">About Generated Messages</p>
               <p className="text-primary-700">
-                All generated messages are tagged with <code className="bg-primary-100 px-1 rounded">{GENERATOR_PROPERTY_KEY}</code> property 
-                for easy identification. Messages include realistic business scenarios with structured JSON bodies, 
+                All generated messages are tagged with <code className="bg-primary-100 px-1 rounded">{GENERATOR_PROPERTY_KEY}</code> property
+                for easy identification. Messages include realistic business scenarios with structured JSON bodies,
                 headers, and configurable anomalies for AI Insights testing.
               </p>
             </div>
@@ -330,7 +330,7 @@ export function MessageGeneratorModal({
           {/* Target Selection */}
           <div className="space-y-4">
             <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">Target</h3>
-            
+
             {/* Namespace */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Namespace</label>
@@ -503,7 +503,7 @@ export function MessageGeneratorModal({
               <Trash2 className="w-4 h-4" />
               {showCleanup ? 'Hide Cleanup Options' : 'Show Cleanup Options'}
             </button>
-            
+
             {showCleanup && (
               <div className="mt-3 p-4 bg-red-50 border border-red-200 rounded-lg">
                 <p className="text-sm text-red-800 mb-3">

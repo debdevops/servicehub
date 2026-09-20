@@ -21,6 +21,7 @@ public class AutoReplayExecutorTests : IDisposable
 {
     private readonly DlqDbContext _dbContext;
     private readonly Mock<IMessageOperationsService> _messageOperations = new();
+    private readonly Mock<IPlaybookLedger> _playbookLedger = new();
     private readonly Mock<ILogger<AutoReplayExecutor>> _logger = new();
     private readonly IRecoveryLedger _recoveryLedger;
     private readonly IRecoveryEligibilityGate _eligibilityGate;
@@ -44,8 +45,36 @@ public class AutoReplayExecutorTests : IDisposable
 
         _recoveryLedger = new RecoveryLedgerService(_dbContext);
         _eligibilityGate = new RecoveryEligibilityGate(_recoveryLedger, NullLogger<RecoveryEligibilityGate>.Instance);
+
+        // Default: no existing open ReplayPlan proposal — the dedup-guard query
+        // ProposeReplayPlanAsync runs before every ProposeAsync call finds nothing to dedup
+        // against, so tests that don't care about the guard behave as if it were absent.
+        _playbookLedger
+            .Setup(p => p.QueryEntriesAsync(
+                It.IsAny<string>(), It.IsAny<PillarKind?>(), It.IsAny<Guid?>(), It.IsAny<PlaybookEntryState?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success<IReadOnlyList<PlaybookEntry>>(Array.Empty<PlaybookEntry>()));
+
+        // Default: every ProposeAsync call succeeds with a throwaway entry — tests that care about
+        // the ReplayPlan proposal itself override this with their own Setup/Verify.
+        _playbookLedger
+            .Setup(p => p.ProposeAsync(It.IsAny<ProposePlaybookEntryRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ProposePlaybookEntryRequest request, CancellationToken _) => Result<PlaybookEntry>.Success(new PlaybookEntry
+            {
+                OwnerId = request.OwnerId,
+                PillarKind = request.PillarKind,
+                ProposalKind = request.ProposalKind,
+                EvidenceRefJson = request.EvidenceRefJson,
+                ProposalJson = request.ProposalJson,
+                ProposedAt = DateTimeOffset.UtcNow,
+                ProposerIdentity = request.Proposer.Identity,
+                ProposerKind = request.Proposer.Kind,
+                SignatureHashSnapshot = request.SignatureHashSnapshot,
+                NamespaceId = request.NamespaceId,
+                ExpiresAt = DateTimeOffset.UtcNow + request.ExpiresAfter,
+            }));
+
         _executor = new AutoReplayExecutor(
-            _dbContext, _messageOperations.Object, _recoveryLedger, _eligibilityGate,
+            _dbContext, _messageOperations.Object, _recoveryLedger, _eligibilityGate, _playbookLedger.Object,
             _featureExtractor, _fingerprintBuilder, _configuration, _logger.Object);
     }
 
@@ -137,7 +166,7 @@ public class AutoReplayExecutorTests : IDisposable
     public void Constructor_NullDbContext_Throws()
     {
         var act = () => new AutoReplayExecutor(
-            null!, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate,
+            null!, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate, _playbookLedger.Object,
             _featureExtractor, _fingerprintBuilder, _configuration, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("dbContext");
     }
@@ -146,7 +175,7 @@ public class AutoReplayExecutorTests : IDisposable
     public void Constructor_NullMessageOperations_Throws()
     {
         var act = () => new AutoReplayExecutor(
-            _dbContext, null!, new RecoveryLedgerService(_dbContext), _eligibilityGate,
+            _dbContext, null!, new RecoveryLedgerService(_dbContext), _eligibilityGate, _playbookLedger.Object,
             _featureExtractor, _fingerprintBuilder, _configuration, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("messageOperations");
     }
@@ -155,16 +184,25 @@ public class AutoReplayExecutorTests : IDisposable
     public void Constructor_NullEligibilityGate_Throws()
     {
         var act = () => new AutoReplayExecutor(
-            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), null!,
+            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), null!, _playbookLedger.Object,
             _featureExtractor, _fingerprintBuilder, _configuration, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("eligibilityGate");
+    }
+
+    [Fact]
+    public void Constructor_NullPlaybookLedger_Throws()
+    {
+        var act = () => new AutoReplayExecutor(
+            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate, null!,
+            _featureExtractor, _fingerprintBuilder, _configuration, _logger.Object);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("playbookLedger");
     }
 
     [Fact]
     public void Constructor_NullFeatureExtractor_Throws()
     {
         var act = () => new AutoReplayExecutor(
-            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate,
+            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate, _playbookLedger.Object,
             null!, _fingerprintBuilder, _configuration, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("featureExtractor");
     }
@@ -173,7 +211,7 @@ public class AutoReplayExecutorTests : IDisposable
     public void Constructor_NullFingerprintBuilder_Throws()
     {
         var act = () => new AutoReplayExecutor(
-            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate,
+            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate, _playbookLedger.Object,
             _featureExtractor, null!, _configuration, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("fingerprintBuilder");
     }
@@ -182,7 +220,7 @@ public class AutoReplayExecutorTests : IDisposable
     public void Constructor_NullConfiguration_Throws()
     {
         var act = () => new AutoReplayExecutor(
-            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate,
+            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate, _playbookLedger.Object,
             _featureExtractor, _fingerprintBuilder, null!, _logger.Object);
         act.Should().Throw<ArgumentNullException>().WithParameterName("configuration");
     }
@@ -191,7 +229,7 @@ public class AutoReplayExecutorTests : IDisposable
     public void Constructor_NullLogger_Throws()
     {
         var act = () => new AutoReplayExecutor(
-            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate,
+            _dbContext, _messageOperations.Object, new RecoveryLedgerService(_dbContext), _eligibilityGate, _playbookLedger.Object,
             _featureExtractor, _fingerprintBuilder, _configuration, null!);
         act.Should().Throw<ArgumentNullException>().WithParameterName("logger");
     }
@@ -247,7 +285,7 @@ public class AutoReplayExecutorTests : IDisposable
             })
             .Build();
         return new AutoReplayExecutor(
-            _dbContext, _messageOperations.Object, _recoveryLedger, _eligibilityGate,
+            _dbContext, _messageOperations.Object, _recoveryLedger, _eligibilityGate, _playbookLedger.Object,
             _featureExtractor, _fingerprintBuilder, configuration, _logger.Object);
     }
 
@@ -596,7 +634,7 @@ public class AutoReplayExecutorTests : IDisposable
         var racingLedger = new RecoveryLedgerService(dbContext);
         var executor = new AutoReplayExecutor(
             dbContext, messageOperations.Object, racingLedger,
-            new RecoveryEligibilityGate(racingLedger, NullLogger<RecoveryEligibilityGate>.Instance),
+            new RecoveryEligibilityGate(racingLedger, NullLogger<RecoveryEligibilityGate>.Instance), _playbookLedger.Object,
             _featureExtractor, _fingerprintBuilder, _configuration, _logger.Object);
         var action = new RuleAction();
 
@@ -932,6 +970,129 @@ public class AutoReplayExecutorTests : IDisposable
         });
         entries.Should().ContainSingle(e => e.State == RecoveryEntryState.Declined
                                              && e.SignatureHashSnapshot == expectedHash);
+    }
+
+    // ── ReplayPlan Playbook Ledger proposal (roadmap item 14, Recover side) ──
+
+    [Fact]
+    public async Task Execute_NoAutonomyGrant_ProposesReplayPlanPlaybookEntry()
+    {
+        // Predicate 5 escalating for AUTONOMY_GRANT_INSUFFICIENT is exactly the L2 "Recommend"
+        // moment — a computed plan that hasn't earned unattended execution — so it must propose a
+        // Recover-pillar ReplayPlan into the Playbook Ledger for human review.
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+        var expectedHash = await ComputeExpectedHashAsync(msg);
+
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
+
+        result.IsFailure.Should().BeTrue();
+
+        _playbookLedger.Verify(p => p.ProposeAsync(
+            It.Is<ProposePlaybookEntryRequest>(r =>
+                r.PillarKind == PillarKind.Recover
+                && r.ProposalKind == "ReplayPlan"
+                && r.OwnerId == rule.OwnerId
+                && r.SignatureHashSnapshot == expectedHash
+                && r.NamespaceId == _testNamespace.Id
+                && r.ProposalJson.Contains("test-queue")),
+            It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Execute_NoAutonomyGrant_SubscriptionTypeMessage_ProposalUsesFullEntityPath()
+    {
+        // Regression: EntityName in the proposal must be message.EntityName (the full
+        // "topic/subscriptions/sub" path RecoveryLedgerEntry.EntityNameSnapshot always carries via
+        // BuildBeginEntryRequest), not the topic-stripped dispatch name ExecuteAsync computes for
+        // ReplayMessageAsync — otherwise BacktestService's join (FindEntriesForEntitySinceAsync
+        // matches on EntityNameSnapshot) would never corroborate a Subscription-type ReplayPlan.
+        var rule = CreateRule();
+        var msg = CreateMessage(
+            entityType: ServiceBusEntityType.Subscription,
+            entityName: "my-topic/subscriptions/my-sub",
+            topicName: "my-topic");
+        var action = new RuleAction();
+
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
+
+        result.IsFailure.Should().BeTrue();
+
+        _playbookLedger.Verify(p => p.ProposeAsync(
+            It.Is<ProposePlaybookEntryRequest>(r => r.ProposalJson.Contains("my-topic/subscriptions/my-sub")
+                                                     && !r.ProposalJson.Contains("\"EntityName\":\"my-topic\"")),
+            It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Execute_NoAutonomyGrant_OpenReplayPlanAlreadyProposedForSameSignature_SkipsDuplicateProposal()
+    {
+        // Regression: DlqMonitorWorker's fairness sweep re-evaluates a still-Active message every
+        // poll cycle (default 10s) — without this guard, each cycle would propose its own
+        // near-duplicate ReplayPlan for the same signature until the recurrence cap intervenes.
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+        var expectedHash = await ComputeExpectedHashAsync(msg);
+
+        _playbookLedger
+            .Setup(p => p.QueryEntriesAsync(
+                rule.OwnerId, PillarKind.Recover, _testNamespace.Id, PlaybookEntryState.Proposed, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success<IReadOnlyList<PlaybookEntry>>(new[]
+            {
+                new PlaybookEntry
+                {
+                    OwnerId = rule.OwnerId,
+                    PillarKind = PillarKind.Recover,
+                    ProposalKind = "ReplayPlan",
+                    EvidenceRefJson = "{}",
+                    ProposalJson = "{}",
+                    ProposedAt = DateTimeOffset.UtcNow,
+                    ProposerIdentity = "System:AutoReplayExecutor",
+                    ProposerKind = PlaybookActorKind.System,
+                    SignatureHashSnapshot = expectedHash,
+                    NamespaceId = _testNamespace.Id,
+                    ExpiresAt = DateTimeOffset.UtcNow.AddDays(7),
+                    State = PlaybookEntryState.Proposed,
+                },
+            }));
+
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
+
+        result.IsFailure.Should().BeTrue();
+
+        _playbookLedger.Verify(
+            p => p.ProposeAsync(It.IsAny<ProposePlaybookEntryRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Execute_RecurrenceCapExceeded_DoesNotProposeReplayPlanPlaybookEntry()
+    {
+        // The recurrence-lineage cap is a safety stop, not a plan awaiting trust — it must not be
+        // proposed into the Playbook Ledger as though a human review could unblock it.
+        var rule = CreateRule();
+        var msg = CreateMessage(1);
+        var action = new RuleAction();
+
+        for (var i = 0; i < 3; i++)
+        {
+            SeedLineageEntry(
+                TestConstants.TestOwnerId, _testNamespace.Id, "test-queue", "hash-1",
+                DateTimeOffset.UtcNow.AddDays(-i - 1), confidence: VerificationConfidence.Exact);
+        }
+
+        var result = await _executor.ExecuteAsync(msg, rule, action, _testNamespace, await OpenOperationAsync(rule));
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("AutoReplay.RecurrenceCapExceeded");
+
+        _playbookLedger.Verify(p => p.ProposeAsync(
+            It.IsAny<ProposePlaybookEntryRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     [Fact]

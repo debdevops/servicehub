@@ -1,6 +1,13 @@
+using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Microsoft.Extensions.Logging;
+using Polly;
+using Polly.Retry;
 using ServiceHub.Core.Entities;
+using ServiceHub.Core.Enums;
 
 namespace ServiceHub.Infrastructure.Persistence;
 
@@ -10,11 +17,23 @@ namespace ServiceHub.Infrastructure.Persistence;
 /// </summary>
 public sealed class DlqDbContext : DbContext
 {
+    private readonly ResiliencePipeline _saveChangesRetryPipeline;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="DlqDbContext"/> class.
     /// </summary>
-    public DlqDbContext(DbContextOptions<DlqDbContext> options) : base(options)
+    /// <param name="options">The EF Core context options.</param>
+    /// <param name="retryOptions">Busy/locked retry tunables for <see cref="SaveChanges"/> and
+    /// <see cref="SaveChangesAsync(bool, CancellationToken)"/>. Optional and resolved from DI in
+    /// production; defaults apply when omitted, as every existing test fixture that constructs
+    /// this type directly with only <paramref name="options"/> does.</param>
+    /// <param name="logger">Optional logger for retry attempts; silent when not supplied.</param>
+    public DlqDbContext(
+        DbContextOptions<DlqDbContext> options,
+        SqliteBusyRetryOptions? retryOptions = null,
+        ILogger<DlqDbContext>? logger = null) : base(options)
     {
+        _saveChangesRetryPipeline = BuildSaveChangesRetryPipeline(retryOptions ?? SqliteBusyRetryOptions.Default, logger);
     }
 
     /// <summary>Dead-letter queue messages.</summary>
@@ -67,6 +86,65 @@ public sealed class DlqDbContext : DbContext
     /// mutable table in the Recovery Evidence Ledger family. See <see cref="AutonomyGrant"/>.</summary>
     public DbSet<AutonomyGrant> AutonomyGrants => Set<AutonomyGrant>();
 
+    /// <summary>Time-boxed, two-person-approved production access windows (ADR-0010 §Decision
+    /// phase 2). Mutable, like <see cref="AutonomyGrant"/>; see <see cref="ProductionElevation"/>.</summary>
+    public DbSet<ProductionElevation> ProductionElevations => Set<ProductionElevation>();
+
+    /// <summary>Per-namespace DLQ observer liveness state (ADR-004; ADR-0011). Mutable, not
+    /// hash-chained; see <see cref="DlqObserverAttestation"/>.</summary>
+    public DbSet<DlqObserverAttestation> DlqObserverAttestations => Set<DlqObserverAttestation>();
+
+    /// <summary>Namespace connection registrations — replaces the JSON-file-backed store (M2).</summary>
+    public DbSet<Core.Entities.Namespace> Namespaces => Set<Core.Entities.Namespace>();
+
+    /// <summary>Durable form of <see cref="Core.Entities.Namespace.SharedWithOwnerIds"/> — one row
+    /// per (namespace, shared-with-owner) pair (M2).</summary>
+    public DbSet<NamespaceSharedOwner> NamespaceSharedOwners => Set<NamespaceSharedOwner>();
+
+    /// <summary>Governance/RBAC grants — per-owner, per-namespace, per-pillar access model (M3).
+    /// Deliberately not hash-chained; see <see cref="GovernanceGrant"/>.</summary>
+    public DbSet<GovernanceGrant> GovernanceGrants => Set<GovernanceGrant>();
+
+    /// <summary>Playbook Ledger: immutable identity/context, one row per proposal, with a small
+    /// mutable lifecycle projection (M4). See <see cref="PlaybookEntry"/>.</summary>
+    public DbSet<PlaybookEntry> PlaybookEntries => Set<PlaybookEntry>();
+
+    /// <summary>Playbook Ledger: append-only, hash-chained events — the evidence itself, on a
+    /// fully independent chain from <see cref="RecoveryEvents"/> (M4).</summary>
+    public DbSet<PlaybookEvent> PlaybookEvents => Set<PlaybookEvent>();
+
+    /// <summary>C3's raw input: durably recorded deploy/config-change signals (M5, ADR-0008). No
+    /// hash chain — see <see cref="ExternalSignalEvent"/>.</summary>
+    public DbSet<ExternalSignalEvent> ExternalSignalEvents => Set<ExternalSignalEvent>();
+
+    /// <summary>Investigate pillar (I3) findings — durable as of the next chapter's M1
+    /// (ADR-0009), replacing <c>InMemoryAnomalyResultCache</c>. No hash chain: an observation,
+    /// not a claim about what happened. See <see cref="Anomaly"/>.</summary>
+    public DbSet<Anomaly> Anomalies => Set<Anomaly>();
+
+    /// <summary>Prevent pillar (P1/P2) findings — durable as of M1 (ADR-0009), replacing
+    /// <c>InMemoryDriftResultCache</c>. The row a <see cref="PlaybookEntry.EvidenceRefJson"/>
+    /// citation from <c>PreventionRuleEvaluationService</c> must keep resolving. See
+    /// <see cref="DriftFinding"/>.</summary>
+    public DbSet<DriftFinding> DriftFindings => Set<DriftFinding>();
+
+    /// <summary>Correlate pillar (C1/C2) findings — durable as of M1 (ADR-0009), replacing
+    /// <c>InMemoryCorrelationResultCache</c>. See <see cref="CorrelationFinding"/>.</summary>
+    public DbSet<CorrelationFinding> CorrelationFindings => Set<CorrelationFinding>();
+
+    /// <summary>I4 narrations stitching other pillars' findings together — durable as of M1
+    /// (ADR-0009), replacing <c>InMemoryNarrationResultCache</c>. See <see cref="Narration"/>.</summary>
+    public DbSet<Narration> Narrations => Set<Narration>();
+
+    /// <summary>Predictive backlog-breach forecasts (P4) — durable as of M1 (ADR-0009), replacing
+    /// <c>InMemoryBacklogForecastResultCache</c>. See <see cref="BacklogForecast"/>.</summary>
+    public DbSet<BacklogForecast> BacklogForecasts => Set<BacklogForecast>();
+
+    /// <summary>C3 anomaly-to-external-signal correlations — durable as of M1 (ADR-0009),
+    /// replacing <c>InMemoryExternalSignalCorrelationCache</c>. See
+    /// <see cref="ExternalSignalCorrelation"/>.</summary>
+    public DbSet<ExternalSignalCorrelation> ExternalSignalCorrelations => Set<ExternalSignalCorrelation>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -90,23 +168,90 @@ public sealed class DlqDbContext : DbContext
         ConfigureRecoveryLedgerEntry(modelBuilder);
         ConfigureRecoveryEvent(modelBuilder);
         ConfigureAutonomyGrant(modelBuilder);
+        ConfigureProductionElevation(modelBuilder);
+        ConfigureDlqObserverAttestation(modelBuilder);
+        ConfigureNamespace(modelBuilder);
+        ConfigureNamespaceSharedOwner(modelBuilder);
+        ConfigureGovernanceGrant(modelBuilder);
+        ConfigurePlaybookEntry(modelBuilder);
+        ConfigurePlaybookEvent(modelBuilder);
+        ConfigureExternalSignalEvent(modelBuilder);
+        ConfigureAnomaly(modelBuilder);
+        ConfigureDriftFinding(modelBuilder);
+        ConfigureCorrelationFinding(modelBuilder);
+        ConfigureNarration(modelBuilder);
+        ConfigureBacklogForecast(modelBuilder);
+        ConfigureExternalSignalCorrelation(modelBuilder);
     }
 
     /// <inheritdoc />
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         RecoveryLedgerAppendOnlyGuard.Enforce(ChangeTracker);
+        PlaybookLedgerAppendOnlyGuard.Enforce(ChangeTracker);
         StampAutonomyGrantConcurrencyTokens();
-        return base.SaveChanges(acceptAllChangesOnSuccess);
+        return _saveChangesRetryPipeline.Execute(() => base.SaveChanges(acceptAllChangesOnSuccess));
     }
 
     /// <inheritdoc />
     public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
         RecoveryLedgerAppendOnlyGuard.Enforce(ChangeTracker);
+        PlaybookLedgerAppendOnlyGuard.Enforce(ChangeTracker);
         StampAutonomyGrantConcurrencyTokens();
-        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        return _saveChangesRetryPipeline
+            .ExecuteAsync(
+                async ct => await base.SaveChangesAsync(acceptAllChangesOnSuccess, ct).ConfigureAwait(false),
+                cancellationToken)
+            .AsTask();
     }
+
+    /// <summary>
+    /// Builds the Polly pipeline that retries <see cref="SaveChanges"/>/<see cref="SaveChangesAsync(bool, CancellationToken)"/>
+    /// when — and only when — the failure is SQLITE_BUSY (another connection holds the write
+    /// lock) or SQLITE_LOCKED (a conflicting lock within the same connection). busy_timeout
+    /// (see <see cref="SqlitePragmaConnectionInterceptor"/>) already absorbs short contention
+    /// inside the SQLite driver itself; this is the outer safety net for when contention
+    /// outlasts that. Deliberately never retries <see cref="DbUpdateConcurrencyException"/> or
+    /// constraint-violation <see cref="DbUpdateException"/>s — every caller across the app that
+    /// already catches those for optimistic-concurrency handling must keep seeing them
+    /// immediately (roadmap F1).
+    /// </summary>
+    private static ResiliencePipeline BuildSaveChangesRetryPipeline(SqliteBusyRetryOptions retryOptions, ILogger<DlqDbContext>? logger)
+    {
+        return new ResiliencePipelineBuilder()
+            .AddRetry(new RetryStrategyOptions
+            {
+                MaxRetryAttempts = retryOptions.MaxRetryAttempts,
+                Delay = TimeSpan.FromMilliseconds(250),
+                MaxDelay = TimeSpan.FromSeconds(2),
+                BackoffType = DelayBackoffType.Exponential,
+                UseJitter = true,
+                ShouldHandle = new PredicateBuilder().Handle<Exception>(IsTransientSqliteContention),
+                OnRetry = args =>
+                {
+                    logger?.LogWarning(
+                        "DlqDbContext.SaveChanges retry attempt {AttemptNumber} after SQLite busy/locked contention, waiting {DelayMs}ms. {ExceptionMessage}",
+                        args.AttemptNumber,
+                        args.RetryDelay.TotalMilliseconds,
+                        args.Outcome.Exception?.Message);
+                    return default;
+                }
+            })
+            .Build();
+    }
+
+    private static bool IsTransientSqliteContention(Exception exception) =>
+        exception switch
+        {
+            SqliteException sqliteException => IsBusyOrLocked(sqliteException),
+            DbUpdateException { InnerException: SqliteException inner } => IsBusyOrLocked(inner),
+            _ => false
+        };
+
+    // SQLITE_BUSY = 5, SQLITE_LOCKED = 6.
+    private static bool IsBusyOrLocked(SqliteException exception) =>
+        exception.SqliteErrorCode is 5 or 6;
 
     /// <summary>
     /// Assigns a fresh <see cref="AutonomyGrant.ConcurrencyStamp"/> to every tracked
@@ -346,6 +491,10 @@ public sealed class DlqDbContext : DbContext
 
         entity.Property(e => e.DisabledReasonDetail)
             .HasMaxLength(256);
+
+        // Soft reference — no FK, matching NamespaceSignature.NamespaceId/AuditLog.NamespaceId.
+        // NULL means fleet-wide (Global), unchanged from today's behavior.
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId });
     }
 
     private static void ConfigureAuditLog(ModelBuilder modelBuilder)
@@ -584,17 +733,34 @@ public sealed class DlqDbContext : DbContext
             .HasMaxLength(2048)
             .IsRequired();
 
-        // One row per distinct signature per namespace per owner — the upsert key. Includes
-        // OwnerId (unlike the task's literal (NamespaceId, SignatureHash) spec) because
-        // Namespace.SharedWithOwnerIds means two owners can legitimately observe the same
-        // hash in the same namespace and must get independent, isolated rows.
-        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.SignatureHash })
+        // M1.4 (ADR-0009 Decision unit 2): which of the two incompatible vocabularies
+        // SignatureHash belongs to. No default — every write path (FailureSignatureRecognitionService
+        // for Fingerprint, DlqSignatureAnalysisService for Cluster) states its kind explicitly, and
+        // the M1.4 migration backfills existing rows the same way.
+        entity.Property(e => e.HashKind)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        // One row per distinct (signature, identity space) per namespace per owner — the upsert
+        // key. Includes OwnerId (unlike the task's literal (NamespaceId, SignatureHash) spec)
+        // because Namespace.SharedWithOwnerIds means two owners can legitimately observe the same
+        // hash in the same namespace and must get independent, isolated rows. HashKind joined the
+        // key in M1.4: it does not change today's uniqueness in practice (a fingerprint hash and a
+        // cluster hash for the same failure are different strings, computed by different
+        // algorithms), but it is the schema-correct key going forward.
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.SignatureHash, e.HashKind })
             .IsUnique()
-            .HasDatabaseName("IX_NamespaceSignatures_Owner_Namespace_SignatureHash");
+            .HasDatabaseName("IX_NamespaceSignatures_Owner_Namespace_SignatureHash_HashKind");
 
         // Owner-scoped queries.
         entity.HasIndex(e => new { e.OwnerId, e.NamespaceId })
             .HasDatabaseName("IX_NamespaceSignatures_Owner_Namespace");
+
+        // Per-space queries (AttentionQueueService, IncidentReadModelService — both read only the
+        // Fingerprint space).
+        entity.HasIndex(e => new { e.OwnerId, e.HashKind })
+            .HasDatabaseName("IX_NamespaceSignatures_Owner_HashKind");
     }
 
     private static void ConfigureFailureKnowledge(ModelBuilder modelBuilder)
@@ -1094,5 +1260,677 @@ public sealed class DlqDbContext : DbContext
         entity.HasIndex(e => new { e.OwnerId, e.SignatureHash, e.ActionKind })
             .IsUnique()
             .HasDatabaseName("IX_AutonomyGrants_Owner_SignatureHash_ActionKind");
+    }
+
+    private static void ConfigureProductionElevation(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<ProductionElevation>();
+
+        entity.ToTable("ProductionElevations");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.NamespaceNameSnapshot)
+            .HasMaxLength(Core.Entities.Namespace.MaxDisplayNameLength);
+
+        entity.Property(e => e.Reason)
+            .HasMaxLength(1000)
+            .IsRequired();
+
+        entity.Property(e => e.RequestedByIdentity)
+            .HasMaxLength(256)
+            .IsRequired();
+
+        entity.Property(e => e.ApprovedByIdentity)
+            .HasMaxLength(256);
+
+        entity.Property(e => e.RevokedByIdentity)
+            .HasMaxLength(256);
+
+        // No FK on NamespaceId — soft reference, same convention as every other ledger-adjacent
+        // NamespaceId in this schema.
+
+        // The Eligibility Gate's predicate 2 hot-path read (GetLiveProductionElevationAsync) —
+        // runs on every Prod recovery attempt.
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.ApprovedAt, e.RevokedAt })
+            .HasDatabaseName("IX_ProductionElevations_Owner_Namespace_Approved_Revoked");
+
+        // ProductionElevationExpiryWorker's sweep set.
+        entity.HasIndex(e => new { e.OwnerId, e.ExpiredEventRecorded, e.ExpiresAt })
+            .HasDatabaseName("IX_ProductionElevations_Owner_ExpiredEventRecorded_ExpiresAt");
+    }
+
+    private static void ConfigureDlqObserverAttestation(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<DlqObserverAttestation>();
+
+        entity.ToTable("DlqObserverAttestations");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.ObserverReference)
+            .HasMaxLength(256);
+
+        entity.Property(e => e.DlqEntityName)
+            .HasMaxLength(256);
+
+        entity.Property(e => e.LastCanaryMessageId)
+            .HasMaxLength(128);
+
+        // No FK on NamespaceId — soft reference, same convention as every other ledger-adjacent
+        // NamespaceId in this schema.
+
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId })
+            .IsUnique()
+            .HasDatabaseName("IX_DlqObserverAttestations_Owner_Namespace");
+
+        // DlqObserverAttestationWorker's sweep set.
+        entity.HasIndex(e => e.Enabled)
+            .HasDatabaseName("IX_DlqObserverAttestations_Enabled");
+    }
+
+    private static void ConfigureNamespace(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<Core.Entities.Namespace>();
+
+        entity.ToTable("Namespaces");
+        entity.HasKey(e => e.Id);
+
+        // Durable form lives in NamespaceSharedOwners (see ConfigureNamespaceSharedOwner) — the
+        // repository hydrates this property after querying rather than EF mapping it directly,
+        // since a plain string-list column would forfeit filterability for the same reason the
+        // persistence design rejected it for AutoReplayRule.NamespaceId.
+        entity.Ignore(e => e.SharedWithOwnerIds);
+
+        entity.Property(e => e.Name)
+            .HasMaxLength(Core.Entities.Namespace.MaxNameLength)
+            .IsRequired();
+
+        entity.Property(e => e.DisplayName)
+            .HasMaxLength(Core.Entities.Namespace.MaxDisplayNameLength);
+
+        entity.Property(e => e.Description)
+            .HasMaxLength(Core.Entities.Namespace.MaxDescriptionLength);
+
+        // Ciphertext moves byte-for-byte from the JSON store's ConnectionString field — same
+        // ENC[v1]/legacy envelope, no re-encryption. Column renamed for clarity at rest; the
+        // domain property name (ConnectionString) is unchanged.
+        entity.Property(e => e.ConnectionString)
+            .HasColumnName("ConnectionStringEncrypted");
+
+        entity.Property(e => e.ConnectionStringHash)
+            .HasMaxLength(64);
+
+        entity.Property(e => e.AuthType)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
+
+        entity.Property(e => e.Environment)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.Provider)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.AwsRegion)
+            .HasMaxLength(64);
+
+        entity.Property(e => e.GcpProjectId)
+            .HasMaxLength(128);
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.HasIndex(e => new { e.OwnerId, e.Name })
+            .IsUnique()
+            .HasDatabaseName("IX_Namespaces_OwnerId_Name");
+
+        entity.HasIndex(e => e.OwnerId)
+            .HasDatabaseName("IX_Namespaces_OwnerId");
+
+        entity.HasIndex(e => e.IsActive)
+            .HasDatabaseName("IX_Namespaces_IsActive");
+    }
+
+    private static void ConfigureNamespaceSharedOwner(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<NamespaceSharedOwner>();
+
+        entity.ToTable("NamespaceSharedOwners");
+        entity.HasKey(e => new { e.NamespaceId, e.OwnerId });
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        // The one deliberate real FK in the whole M1-M4 wave: sharing metadata has no
+        // evidentiary value, so deleting a namespace should delete who it was shared with —
+        // unlike every ledger-adjacent NamespaceId, which stays a soft reference.
+        entity.HasOne<Core.Entities.Namespace>()
+            .WithMany()
+            .HasForeignKey(e => e.NamespaceId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        entity.HasIndex(e => e.OwnerId)
+            .HasDatabaseName("IX_NamespaceSharedOwners_OwnerId");
+    }
+
+    private static void ConfigureGovernanceGrant(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<GovernanceGrant>();
+
+        entity.ToTable("GovernanceGrants");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.GranteeIdentity)
+            .HasMaxLength(256)
+            .IsRequired();
+
+        entity.Property(e => e.GranteeKind)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.Role)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.PillarKind)
+            .HasConversion<string>()
+            .HasMaxLength(16);
+
+        entity.Property(e => e.GrantedByIdentity)
+            .HasMaxLength(256)
+            .IsRequired();
+
+        entity.Property(e => e.RevokedByIdentity)
+            .HasMaxLength(256);
+
+        // No FK on NamespaceId — soft reference, same convention as every other ledger-adjacent
+        // NamespaceId in this wave.
+
+        entity.HasIndex(e => new { e.OwnerId, e.GranteeIdentity })
+            .HasDatabaseName("IX_GovernanceGrants_OwnerId_GranteeIdentity");
+
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId })
+            .HasDatabaseName("IX_GovernanceGrants_OwnerId_NamespaceId");
+
+        // Prevents two simultaneously-active grants for the same (grantee, namespace, pillar)
+        // scope from silently disagreeing on Role. NOTE (SQL NULL semantics, not fixed here so as
+        // not to silently deviate from the approved design): SQLite (like standard SQL) treats
+        // NULL as distinct from NULL for uniqueness purposes, so this index does NOT actually
+        // prevent duplicate fleet-wide/all-pillar (NamespaceId=null, PillarKind=null) grants for
+        // the same grantee — worth knowing for whoever builds the enforcement layer this schema
+        // supports (roadmap item 10), since a duplicate there would only ever be redundant, never
+        // a security gap (grants are additive-permissive, never restrictive).
+        entity.HasIndex(e => new { e.OwnerId, e.GranteeIdentity, e.NamespaceId, e.PillarKind })
+            .IsUnique()
+            .HasFilter("[RevokedAt] IS NULL")
+            .HasDatabaseName("IX_GovernanceGrants_ActiveScope_Unique");
+    }
+
+    private static void ConfigurePlaybookEntry(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<PlaybookEntry>();
+
+        entity.ToTable("PlaybookEntries");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.PillarKind)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.ProposalKind)
+            .HasMaxLength(64)
+            .IsRequired();
+
+        entity.Property(e => e.EvidenceRefJson)
+            .IsRequired();
+
+        entity.Property(e => e.ProposalJson)
+            .IsRequired();
+
+        entity.Property(e => e.ProposerIdentity)
+            .HasMaxLength(256)
+            .IsRequired();
+
+        entity.Property(e => e.ProposerKind)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.SignatureHashSnapshot)
+            .HasMaxLength(64);
+
+        entity.Property(e => e.NamespaceNameSnapshot)
+            .HasMaxLength(256);
+
+        entity.Property(e => e.ProviderSnapshot)
+            .HasConversion<string>()
+            .HasMaxLength(16);
+
+        entity.Property(e => e.EnvironmentSnapshot)
+            .HasConversion<string>()
+            .HasMaxLength(16);
+
+        entity.Property(e => e.State)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.Disposition)
+            .HasConversion<string>()
+            .HasMaxLength(16);
+
+        // No FK anywhere on this entity — SignatureHashSnapshot, NamespaceId, and
+        // RelatedRecoveryOperationId are all deliberate soft references, same convention as every
+        // other ledger-adjacent table in this codebase.
+
+        entity.HasIndex(e => new { e.OwnerId, e.State })
+            .HasDatabaseName("IX_PlaybookEntries_OwnerId_State");
+
+        entity.HasIndex(e => new { e.OwnerId, e.PillarKind })
+            .HasDatabaseName("IX_PlaybookEntries_OwnerId_PillarKind");
+
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId })
+            .HasDatabaseName("IX_PlaybookEntries_OwnerId_NamespaceId");
+    }
+
+    private static void ConfigurePlaybookEvent(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<PlaybookEvent>();
+
+        entity.ToTable("PlaybookEvents");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.EventType)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.ActorIdentity)
+            .HasMaxLength(256)
+            .IsRequired();
+
+        entity.Property(e => e.ActorKind)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        // No FK to PlaybookEntries (EntryId is a plain scalar column) and no FK of any kind to any
+        // Recovery ledger table — this chain must never become, or depend on, a cascade target.
+
+        entity.HasIndex(e => new { e.OwnerId, e.Seq })
+            .IsUnique()
+            .HasDatabaseName("IX_PlaybookEvents_OwnerId_Seq");
+
+        entity.HasIndex(e => new { e.EntryId, e.Seq })
+            .HasDatabaseName("IX_PlaybookEvents_EntryId_Seq");
+    }
+
+    private static void ConfigureExternalSignalEvent(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<ExternalSignalEvent>();
+
+        entity.ToTable("ExternalSignalEvents");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.SignalType)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.Source)
+            .HasMaxLength(256)
+            .IsRequired();
+
+        // No FK to Namespaces — NamespaceId is a soft reference, same convention as every other
+        // NamespaceId column in this schema (null means fleet-wide). No hash chain either — this
+        // is raw external input, not a system claim; see the entity's own remarks.
+
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.OccurredAt })
+            .HasDatabaseName("IX_ExternalSignalEvents_OwnerId_NamespaceId_OccurredAt");
+    }
+
+    // ── Next-chapter M1 (ADR-0009): the four Investigate/Correlate/Prevent pillar-finding
+    // tables, replacing the six process-local InMemory*ResultCache implementations. Every JSON
+    // column below uses a value converter, never a child table — these are read whole and never
+    // queried into (roadmap M1.1). OwnerId is an EF-only shadow property (never surfaced on the
+    // domain entity) on the three entities that don't already carry one — Anomaly, DriftFinding,
+    // BacklogForecast — matching the CLR-model-preservation choice explained on each Configure
+    // method below. No hash chain anywhere here: these are observations, not claims about what
+    // happened (see each entity's own remarks).
+
+    private static readonly JsonSerializerOptions PillarFindingJsonOptions = new();
+
+    // Applied on write only (the read direction is an identity pass-through, since the value is
+    // already redacted once stored) — the same "LogRedactor-passed before persisting" treatment
+    // ExternalSignalEvent.DetailJson gets at its own write call site, generalized to a converter
+    // here so every finding gets it at the schema level rather than depending on every future
+    // write path remembering to call LogRedactor itself (roadmap M1.1: "every string that could
+    // carry message content passes LogRedactor before it is written").
+    private static readonly ValueConverter<string, string> RedactedStringConverter = new(
+        v => Security.LogRedactor.Redact(v),
+        v => v);
+
+    private static readonly ValueConverter<IReadOnlyDictionary<string, double>, string> MetricsJsonConverter = new(
+        v => JsonSerializer.Serialize(v, PillarFindingJsonOptions),
+        v => Deserialize<Dictionary<string, double>>(v));
+
+    private static readonly ValueComparer<IReadOnlyDictionary<string, double>> MetricsValueComparer = new(
+        (a, b) => a!.Count == b!.Count && !a.Except(b).Any(),
+        v => v.Aggregate(0, (hash, kvp) => HashCode.Combine(hash, kvp.Key, kvp.Value)),
+        v => new Dictionary<string, double>(v));
+
+    private static readonly ValueConverter<IReadOnlyList<string>, string> StringListJsonConverter = new(
+        v => JsonSerializer.Serialize(v, PillarFindingJsonOptions),
+        v => Deserialize<List<string>>(v));
+
+    private static readonly ValueConverter<IReadOnlyList<Guid>, string> GuidListJsonConverter = new(
+        v => JsonSerializer.Serialize(v, PillarFindingJsonOptions),
+        v => Deserialize<List<Guid>>(v));
+
+    private static readonly ValueConverter<IReadOnlyList<CloudProviderType>, string> ProviderListJsonConverter = new(
+        v => JsonSerializer.Serialize(v, PillarFindingJsonOptions),
+        v => Deserialize<List<CloudProviderType>>(v));
+
+    private static readonly ValueConverter<IReadOnlyList<CorrelationMember>, string> MembersJsonConverter = new(
+        v => JsonSerializer.Serialize(v, PillarFindingJsonOptions),
+        v => Deserialize<List<CorrelationMember>>(v));
+
+    private static ValueComparer<IReadOnlyList<T>> CreateListValueComparer<T>() => new(
+        (a, b) => a!.SequenceEqual(b!),
+        v => v.Aggregate(0, (hash, item) => HashCode.Combine(hash, item)),
+        v => (IReadOnlyList<T>)v.ToList());
+
+    private static T Deserialize<T>(string json) where T : new() =>
+        JsonSerializer.Deserialize<T>(json, PillarFindingJsonOptions) ?? new T();
+
+    private static void ConfigureAnomaly(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<Anomaly>();
+
+        entity.ToTable("Anomalies");
+        entity.HasKey(e => e.Id);
+
+        // OwnerId is deliberately not a property on the Anomaly CLR type: the detection service
+        // that builds these is namespace-scoped and owner-agnostic by design (roadmap M1.1 —
+        // threading ownership through pure computation would blur that boundary for no benefit).
+        // It is stamped at write time by SqliteAnomalyResultCache.StoreAsync, which already has
+        // the caller's ownerId, and used only for tenant-partitioned storage/retention — never
+        // read back onto the domain object.
+        entity.Property<string>("OwnerId")
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.EntityName)
+            .HasMaxLength(512)
+            .IsRequired()
+            .HasConversion(RedactedStringConverter);
+
+        entity.Property(e => e.Type)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
+
+        entity.Property(e => e.Description)
+            .HasMaxLength(4096)
+            .IsRequired()
+            .HasConversion(RedactedStringConverter);
+
+        entity.Property(e => e.Metrics)
+            .HasConversion(MetricsJsonConverter)
+            .Metadata.SetValueComparer(MetricsValueComparer);
+
+        entity.Property(e => e.RecommendedActions)
+            .HasConversion(StringListJsonConverter)
+            .Metadata.SetValueComparer(CreateListValueComparer<string>());
+
+        // No FK on NamespaceId — soft reference, same convention as every other ledger-adjacent
+        // NamespaceId column in this schema.
+        entity.HasIndex("OwnerId", nameof(Anomaly.NamespaceId), nameof(Anomaly.DetectedAt))
+            .HasDatabaseName("IX_Anomalies_Owner_Namespace_DetectedAt");
+    }
+
+    private static void ConfigureDriftFinding(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<DriftFinding>();
+
+        entity.ToTable("DriftFindings");
+        entity.HasKey(e => e.Id);
+
+        // See ConfigureAnomaly's remarks — same shadow-property rationale.
+        entity.Property<string>("OwnerId")
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.EntityName)
+            .HasMaxLength(512)
+            .IsRequired()
+            .HasConversion(RedactedStringConverter);
+
+        entity.Property(e => e.Type)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
+
+        entity.Property(e => e.Description)
+            .HasMaxLength(4096)
+            .IsRequired()
+            .HasConversion(RedactedStringConverter);
+
+        entity.Property(e => e.Metrics)
+            .HasConversion(MetricsJsonConverter)
+            .Metadata.SetValueComparer(MetricsValueComparer);
+
+        entity.Property(e => e.RecommendedActions)
+            .HasConversion(StringListJsonConverter)
+            .Metadata.SetValueComparer(CreateListValueComparer<string>());
+
+        entity.HasIndex("OwnerId", nameof(DriftFinding.NamespaceId), nameof(DriftFinding.DetectedAt))
+            .HasDatabaseName("IX_DriftFindings_Owner_Namespace_DetectedAt");
+    }
+
+    private static void ConfigureCorrelationFinding(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<CorrelationFinding>();
+
+        entity.ToTable("CorrelationFindings");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.Description)
+            .HasMaxLength(4096)
+            .IsRequired()
+            .HasConversion(RedactedStringConverter);
+
+        entity.Property(e => e.Providers)
+            .HasConversion(ProviderListJsonConverter)
+            .Metadata.SetValueComparer(CreateListValueComparer<CloudProviderType>());
+
+        entity.Property(e => e.Members)
+            .HasConversion(MembersJsonConverter)
+            .Metadata.SetValueComparer(CreateListValueComparer<CorrelationMember>());
+
+        entity.Property(e => e.Metrics)
+            .HasConversion(MetricsJsonConverter)
+            .Metadata.SetValueComparer(MetricsValueComparer);
+
+        entity.Property(e => e.RecommendedActions)
+            .HasConversion(StringListJsonConverter)
+            .Metadata.SetValueComparer(CreateListValueComparer<string>());
+
+        entity.HasIndex(e => new { e.OwnerId, e.DetectedAt })
+            .HasDatabaseName("IX_CorrelationFindings_Owner_DetectedAt");
+    }
+
+    private static void ConfigureNarration(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<Narration>();
+
+        entity.ToTable("Narrations");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.Kind)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
+
+        entity.Property(e => e.Headline)
+            .HasMaxLength(512)
+            .IsRequired()
+            .HasConversion(RedactedStringConverter);
+
+        entity.Property(e => e.Summary)
+            .HasMaxLength(4096)
+            .IsRequired()
+            .HasConversion(RedactedStringConverter);
+
+        // A narration's own tenant-isolation key is AccessNamespaceIds (see the entity's own
+        // remarks: a cross-namespace correlation narration has no single owner), not a single
+        // OwnerId column — no shadow property added here, unlike Anomaly/DriftFinding/
+        // BacklogForecast.
+        entity.Property(e => e.AccessNamespaceIds)
+            .HasConversion(GuidListJsonConverter)
+            .Metadata.SetValueComparer(CreateListValueComparer<Guid>());
+
+        entity.Property(e => e.ContributingAnomalyIds)
+            .HasConversion(GuidListJsonConverter)
+            .Metadata.SetValueComparer(CreateListValueComparer<Guid>());
+
+        entity.Property(e => e.ContributingDriftFindingIds)
+            .HasConversion(GuidListJsonConverter)
+            .Metadata.SetValueComparer(CreateListValueComparer<Guid>());
+
+        entity.Property(e => e.ContributingCorrelationFindingIds)
+            .HasConversion(GuidListJsonConverter)
+            .Metadata.SetValueComparer(CreateListValueComparer<Guid>());
+
+        entity.Property(e => e.RecommendedActions)
+            .HasConversion(StringListJsonConverter)
+            .Metadata.SetValueComparer(CreateListValueComparer<string>());
+
+        entity.HasIndex(e => e.GeneratedAt)
+            .HasDatabaseName("IX_Narrations_GeneratedAt");
+
+        entity.HasIndex(e => e.NamespaceId)
+            .HasDatabaseName("IX_Narrations_NamespaceId");
+    }
+
+    private static void ConfigureBacklogForecast(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<BacklogForecast>();
+
+        entity.ToTable("BacklogForecasts");
+        entity.HasKey(e => e.Id);
+
+        // See ConfigureAnomaly's remarks — same shadow-property rationale.
+        entity.Property<string>("OwnerId")
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.EntityName)
+            .HasMaxLength(512)
+            .IsRequired()
+            .HasConversion(RedactedStringConverter);
+
+        entity.Property(e => e.Description)
+            .HasMaxLength(4096)
+            .IsRequired()
+            .HasConversion(RedactedStringConverter);
+
+        entity.Property(e => e.Metrics)
+            .HasConversion(MetricsJsonConverter)
+            .Metadata.SetValueComparer(MetricsValueComparer);
+
+        entity.Property(e => e.RecommendedActions)
+            .HasConversion(StringListJsonConverter)
+            .Metadata.SetValueComparer(CreateListValueComparer<string>());
+
+        entity.HasIndex("OwnerId", nameof(BacklogForecast.NamespaceId), nameof(BacklogForecast.DetectedAt))
+            .HasDatabaseName("IX_BacklogForecasts_Owner_Namespace_DetectedAt");
+    }
+
+    private static void ConfigureExternalSignalCorrelation(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<ExternalSignalCorrelation>();
+
+        entity.ToTable("ExternalSignalCorrelations");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.OwnerId)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        entity.Property(e => e.EntityName)
+            .HasMaxLength(512)
+            .IsRequired()
+            .HasConversion(RedactedStringConverter);
+
+        entity.Property(e => e.AnomalyType)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
+
+        entity.Property(e => e.Provider)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.SignalType)
+            .HasConversion<string>()
+            .HasMaxLength(16)
+            .IsRequired();
+
+        entity.Property(e => e.SignalSource)
+            .HasMaxLength(256)
+            .IsRequired()
+            .HasConversion(RedactedStringConverter);
+
+        entity.Property(e => e.Description)
+            .HasMaxLength(4096)
+            .IsRequired()
+            .HasConversion(RedactedStringConverter);
+
+        entity.Property(e => e.RecommendedActions)
+            .HasConversion(StringListJsonConverter)
+            .Metadata.SetValueComparer(CreateListValueComparer<string>());
+
+        // No FK to ExternalSignalEvents — SignalId is a soft reference, same convention as every
+        // other cross-table id in this schema.
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.DetectedAt })
+            .HasDatabaseName("IX_ExternalSignalCorrelations_Owner_Namespace_DetectedAt");
     }
 }

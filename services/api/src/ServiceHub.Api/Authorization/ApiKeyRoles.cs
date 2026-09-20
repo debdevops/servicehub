@@ -36,6 +36,10 @@ public static class ApiKeyRoles
                 ApiKeyScopes.MessagesPeek,
                 ApiKeyScopes.DlqRead,
                 ApiKeyScopes.AnomaliesRead,
+                ApiKeyScopes.DriftFindingsRead,
+                ApiKeyScopes.CorrelationFindingsRead,
+                ApiKeyScopes.NarrationsRead,
+                ApiKeyScopes.BacklogForecastsRead,
             ],
             [Operator] =
             [
@@ -48,6 +52,10 @@ public static class ApiKeyRoles
                 ApiKeyScopes.DlqRead,
                 ApiKeyScopes.DlqWrite,
                 ApiKeyScopes.AnomaliesRead,
+                ApiKeyScopes.DriftFindingsRead,
+                ApiKeyScopes.CorrelationFindingsRead,
+                ApiKeyScopes.NarrationsRead,
+                ApiKeyScopes.BacklogForecastsRead,
             ],
             [Auditor] =
             [
@@ -58,6 +66,9 @@ public static class ApiKeyRoles
                 ApiKeyScopes.MessagesPeek,
                 ApiKeyScopes.DlqRead,
                 ApiKeyScopes.AnomaliesRead,
+                ApiKeyScopes.DriftFindingsRead,
+                ApiKeyScopes.CorrelationFindingsRead,
+                ApiKeyScopes.NarrationsRead,
                 ApiKeyScopes.AuditRead,
             ],
         };

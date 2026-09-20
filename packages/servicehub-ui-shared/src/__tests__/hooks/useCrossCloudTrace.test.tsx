@@ -119,4 +119,19 @@ describe('useCrossCloudTrace', () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(mockToastError).toHaveBeenCalledWith('Cross-cloud trace failed.', { duration: 6000 });
   });
+
+  // Regression: the page's deep-link auto-run used to fire this search via a mount-time
+  // useEffect calling mutate() — fragile under React StrictMode's dev double-invoke, where the
+  // search would resolve but the calling component's mutation state never reflected it (search
+  // completes server-side, spinner stuck forever). Seeding the hook's own state from
+  // initialTraceId on first render (no effect involved) is what actually fixes that, so this is
+  // the test that would have caught it: no manual .mutate() call at all.
+  it('starts the search on its own when given an initial trace ID, without a mutate() call', async () => {
+    mockTrace.mockResolvedValueOnce(mockTraceResult);
+    const { result } = renderHook(() => useCrossCloudTrace('deep-linked-id'), { wrapper: createWrapper() });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockTrace).toHaveBeenCalledWith('deep-linked-id');
+    expect(result.current.data).toEqual(mockTraceResult);
+  });
 });

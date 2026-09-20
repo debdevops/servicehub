@@ -25,13 +25,13 @@ function formatJSON(jsonString: string): string {
 function highlightJSON(json: string): React.ReactNode {
   try {
     const lines = json.split('\n');
-    
+
     return (
       <div className="font-mono" style={{ whiteSpace: 'pre' }}>
         {lines.map((line, lineIndex) => {
           // Preserve entire line including leading spaces
           const trimmed = line.trim();
-          
+
           // Empty line
           if (!trimmed) {
             return <div key={lineIndex} className="leading-6" style={{ height: '1.5rem' }}>&nbsp;</div>;
@@ -52,7 +52,7 @@ function highlightJSON(json: string): React.ReactNode {
                 </>
               );
             }
-            
+
             // Key-value pair
             if (trimmed.includes(':')) {
               // Find the first colon (outside of strings)
@@ -67,11 +67,11 @@ function highlightJSON(json: string): React.ReactNode {
                   break;
                 }
               }
-              
+
               if (colonIndex > -1) {
                 const keyPart = trimmed.substring(0, colonIndex);
                 const valuePart = trimmed.substring(colonIndex + 1);
-                
+
                 return (
                   <>
                     <span>{indent}</span>
@@ -82,7 +82,7 @@ function highlightJSON(json: string): React.ReactNode {
                 );
               }
             }
-            
+
             // Fallback: render as-is with indentation
             return (
               <>
@@ -94,7 +94,7 @@ function highlightJSON(json: string): React.ReactNode {
 
           const renderValue = (value: string) => {
             const trimmedValue = value.trim();
-            
+
             // String value (starts and ends with quotes)
             if (trimmedValue.startsWith('"')) {
               return <span className="text-green-400">{value}</span>;
@@ -120,7 +120,7 @@ function highlightJSON(json: string): React.ReactNode {
               return <span className="text-gray-300">{value}</span>;
             }
           };
-          
+
           return (
             <div key={lineIndex} className="leading-6">
               {renderLine()}
@@ -136,9 +136,9 @@ function highlightJSON(json: string): React.ReactNode {
 
 export function BodyTab({ body, contentType }: BodyTabProps) {
   const [copied, setCopied] = useState(false);
-  
+
   const isJSON = contentType.includes('json');
-  
+
   // Format JSON with proper indentation
   const formattedBody = useMemo(() => {
     if (isJSON) {

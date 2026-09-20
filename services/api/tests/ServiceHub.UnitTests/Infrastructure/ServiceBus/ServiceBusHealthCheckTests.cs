@@ -173,6 +173,52 @@ public sealed class ServiceBusHealthCheckTests
     }
 
     [Fact]
+    public async Task CheckHealth_ManyUnreachableNamespaces_ChecksRunConcurrentlyNotSequentially()
+    {
+        // A real flood-scale fleet with several unreachable Azure namespaces (stale credentials,
+        // a deleted resource group) previously made this check's total duration scale linearly
+        // with namespace count — a sequential foreach loop, one slow/failed connection at a time.
+        // 20 namespaces at 200ms "network latency" each would take >=4s sequentially; bounded
+        // concurrent execution must finish in a small fraction of that.
+        const int namespaceCount = 20;
+        var delay = TimeSpan.FromMilliseconds(200);
+
+        var namespaces = Enumerable.Range(0, namespaceCount)
+            .Select(i => CreateNamespace($"unreachable-ns-{i}"))
+            .ToArray();
+
+        _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(namespaces));
+
+        foreach (var ns in namespaces)
+        {
+            var wrapperMock = new Mock<IServiceBusClientWrapper>();
+            wrapperMock.Setup(w => w.TestConnectionAsync(It.IsAny<CancellationToken>()))
+                .Returns(async () =>
+                {
+                    await Task.Delay(delay);
+                    return Result.Failure<bool>(Error.ExternalService("err", "unreachable"));
+                });
+            _cacheMock.Setup(c => c.GetOrCreate(ns.Id, ns.ConnectionString!))
+                .Returns(wrapperMock.Object);
+        }
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var result = await _sut.CheckHealthAsync(new HealthCheckContext());
+        stopwatch.Stop();
+
+        result.Status.Should().Be(HealthStatus.Unhealthy);
+        result.Data["UnhealthyNamespaces"].Should().Be(namespaceCount);
+
+        // Sequential execution would take at least namespaceCount * delay (4000ms). Bounded
+        // concurrent execution (10 at a time) takes roughly ceil(20/10) * 200ms = 400ms. A
+        // generous 2-second ceiling comfortably separates "parallel" from "sequential" without
+        // being flaky under CI load.
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2),
+            "namespace connectivity checks must run with bounded concurrency, not sequentially");
+    }
+
+    [Fact]
     public async Task CheckHealth_ExceptionThrown_ReturnsUnhealthy()
     {
         _repoMock.Setup(r => r.GetActiveAsync(It.IsAny<CancellationToken>()))

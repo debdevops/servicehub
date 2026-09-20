@@ -122,7 +122,8 @@ export function RuleTestDialog({
               <p className="text-sm text-gray-600">
                 Would match{' '}
                 <strong className="text-gray-900">{result.matchedCount}</strong> of{' '}
-                <strong className="text-gray-900">{result.totalTested}</strong> messages
+                <strong className="text-gray-900">{result.totalTested}</strong>{' '}
+                most recently dead-lettered active messages
               </p>
 
               {/* Sample Matches */}
@@ -154,9 +155,17 @@ export function RuleTestDialog({
                 </div>
               )}
 
+              {/* A test evaluates only the newest `totalTested` active messages across every
+                  namespace, while the rule card's own "Pending" count is evaluated over the whole
+                  active backlog. On a busy fleet the sample is dominated by the noisiest
+                  namespace, so a rule with real pending matches can still match nothing here —
+                  saying "no messages matched, adjust the rule" would flatly contradict the count
+                  shown on the card behind this dialog. State the sample's scope instead. */}
               {result.sampleMatches.length === 0 && result.matchedCount === 0 && (
                 <div className="py-3 text-center text-sm text-gray-500">
-                  No messages matched the conditions. Try adjusting the rule.
+                  None of the {result.totalTested} most recently dead-lettered active messages
+                  matched. This is a recent sample, not the whole backlog — check the rule's
+                  pending count for matches outside it.
                 </div>
               )}
             </div>

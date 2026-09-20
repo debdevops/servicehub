@@ -144,6 +144,17 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
+    // jsdom otherwise defaults to http://localhost:3000 — the Vite dev server's own origin — so
+    // any request a test forgets to mock resolves through the dev proxy into a REAL running API.
+    // That is not hypothetical: on 2026-09-05 a `./runtest.sh` run fired unauthenticated
+    // /api/v1/namespaces/ns1/topics and /api/v1/dlq/trend calls (fixture IDs) at the live
+    // instance. Each unauthenticated request counts as a failed authentication, and ten of them
+    // inside five minutes trip AuthFailureThrottle — which is IP-keyed, so running the test suite
+    // locked the developer's own browser session out of ServiceHub for five minutes.
+    // An unroutable origin makes an unmocked request fail in the test, where it belongs.
+    environmentOptions: {
+      jsdom: { url: 'http://servicehub.invalid/' },
+    },
     setupFiles: ['./src/test/setup.ts'],
     alias: {
       '@': resolve(__dirname, './src'),

@@ -40,6 +40,8 @@ describe('RuleBuilderDialog', () => {
       updatedAt: null,
       disabledReason: null,
       disabledReasonDetail: null,
+      namespaceId: null,
+      namespaceScope: { kind: 'Global' },
     };
     render(<RuleBuilderDialog {...defaultProps} editRule={editRule} />);
     expect(screen.getByText('Edit Auto-Replay Rule')).toBeInTheDocument();
@@ -62,6 +64,8 @@ describe('RuleBuilderDialog', () => {
       updatedAt: null,
       disabledReason: null,
       disabledReasonDetail: null,
+      namespaceId: null,
+      namespaceScope: { kind: 'Global' },
     };
     render(<RuleBuilderDialog {...defaultProps} editRule={editRule} />);
     const nameInput = screen.getByPlaceholderText(/e.g., Database Timeouts/i);
@@ -110,6 +114,77 @@ describe('RuleBuilderDialog', () => {
         ]),
       }),
     );
+  });
+
+  it('scope defaults to Global and includes namespaceId: null in the save payload', () => {
+    const onSave = vi.fn();
+    render(<RuleBuilderDialog {...defaultProps} onSave={onSave} />);
+    fireEvent.change(screen.getByPlaceholderText(/e.g., Database Timeouts/i), {
+      target: { value: 'Test Rule' },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/value\.\.\.$/i), {
+      target: { value: 'connection reset' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining<Partial<CreateRuleRequest>>({ namespaceId: null }),
+    );
+  });
+
+  it('lists namespaces in the scope picker and saves the selected namespaceId', () => {
+    const onSave = vi.fn();
+    render(
+      <RuleBuilderDialog
+        {...defaultProps}
+        onSave={onSave}
+        namespaces={[
+          { id: 'ns-1', name: 'aws-dev', displayName: 'AWS DEV', isActive: true, createdAt: '2024-01-01T00:00:00Z', cloudProvider: 'aws', environment: 'dev' },
+        ]}
+      />,
+    );
+    fireEvent.change(screen.getByPlaceholderText(/e.g., Database Timeouts/i), {
+      target: { value: 'Test Rule' },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/value\.\.\.$/i), {
+      target: { value: 'connection reset' },
+    });
+    fireEvent.change(screen.getByLabelText(/scope/i), { target: { value: 'ns-1' } });
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining<Partial<CreateRuleRequest>>({ namespaceId: 'ns-1' }),
+    );
+  });
+
+  it('prepopulates the scope picker from editRule.namespaceId', () => {
+    const editRule: RuleResponse = {
+      id: 3,
+      name: 'Scoped Rule',
+      description: null,
+      enabled: true,
+      conditions: [{ field: 'DeadLetterReason', operator: 'Contains', value: 'timeout' }],
+      action: { autoReplay: true, delaySeconds: 60, maxRetries: 3, exponentialBackoff: false },
+      maxReplaysPerHour: 100,
+      matchCount: 0,
+      successCount: 0,
+      successRate: 0,
+      pendingMatchCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: null,
+      disabledReason: null,
+      disabledReasonDetail: null,
+      namespaceId: 'ns-1',
+      namespaceScope: { kind: 'Namespace', name: 'AWS DEV' },
+    };
+    render(
+      <RuleBuilderDialog
+        {...defaultProps}
+        editRule={editRule}
+        namespaces={[
+          { id: 'ns-1', name: 'aws-dev', displayName: 'AWS DEV', isActive: true, createdAt: '2024-01-01T00:00:00Z', cloudProvider: 'aws', environment: 'dev' },
+        ]}
+      />,
+    );
+    expect((screen.getByLabelText(/scope/i) as HTMLSelectElement).value).toBe('ns-1');
   });
 
   it('adds a new condition when "Add Condition" is clicked', () => {

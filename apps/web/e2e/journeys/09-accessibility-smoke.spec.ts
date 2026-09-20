@@ -28,7 +28,7 @@ test.describe('Suite F — Accessibility smoke (azure)', () => {
   test('DLQ History page has no WCAG2 A/AA violations', async ({ page, noConsoleErrors }) => {
     void noConsoleErrors;
     await page.goto(`/demo/azure/dlq-history?namespace=${NAMESPACE}`);
-    await expect(page.getByRole('heading', { name: 'DLQ Intelligence' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'DLQ Message History' })).toBeVisible();
     await scan(page);
   });
 
@@ -64,6 +64,20 @@ test.describe('Suite F — Accessibility smoke (azure)', () => {
     void noConsoleErrors;
     await page.goto('/demo/azure/recovery');
     await page.waitForSelector('h1, h2');
+    await scan(page);
+  });
+
+  test('Autonomy page has no WCAG2 A/AA violations', async ({ page, noConsoleErrors }) => {
+    void noConsoleErrors;
+    await page.goto('/demo/azure/autonomy');
+    await expect(page.getByRole('heading', { name: 'Autonomy', level: 1 })).toBeVisible();
+    await scan(page);
+  });
+
+  test('Advanced ServiceHub educational page has no WCAG2 A/AA violations', async ({ page, noConsoleErrors }) => {
+    void noConsoleErrors;
+    await page.goto('/demo/azure/advanced-servicehub');
+    await expect(page.getByRole('heading', { name: 'Advanced ServiceHub', level: 1 })).toBeVisible();
     await scan(page);
   });
 

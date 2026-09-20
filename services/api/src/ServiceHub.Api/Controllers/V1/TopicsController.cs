@@ -538,7 +538,7 @@ public sealed class TopicsController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
-        
+
         // Check if namespace has Send permission (required to dead-letter messages)
         if (!ns.HasSendPermission)
         {

@@ -1,0 +1,219 @@
+# Backup & Restore
+
+> **In this article:** what a ServiceHub backup contains, how to trigger one, how to verify it's
+> trustworthy before you rely on it, and the step-by-step procedure to restore from one.
+>
+> **Who this is for:** whoever is responsible for keeping a self-hosted ServiceHub instance's data
+> safe — this could be a platform engineer, an IT administrator, or a solo operator. You don't need
+> to know SQLite internals to follow this guide; every command is copy-pasteable, and each one
+> explains what it does and why before you run it.
+
+ServiceHub's persistent state — DLQ intelligence, audit trail, recovery evidence ledger, namespace
+connections, and everything else the product remembers — lives in a single file: a SQLite
+database. Backing it up is therefore simple in principle (copy one file), but doing it *safely*
+while ServiceHub is running, and restoring it *correctly*, has a few rules worth understanding
+first. This document covers both.
+
+Restore is a **manual, operator-driven procedure** — there is no "click restore" button or
+automated restore endpoint, by design. That's deliberate: a restore replaces your live data, so it
+should never be one accidental click or API call away. See §4.
+
+> [!TIP]
+> **New here? Skip straight to §5** to trigger your first backup and confirm it works — it takes
+> under a minute and does not touch your live data. Come back to §1–§4 when you actually need to
+> restore.
+
+> **Namespaces moved into SQLite.** Namespaces were originally stored in a separate
+> `servicehub-namespaces.json` file, backed up and restored independently from the SQLite database
+> (the two-store model this document used to describe throughout). That JSON store was migrated
+> into the same SQLite database as everything else; on an instance that has started up since, the
+> one-time importer renames the old file to `servicehub-namespaces.json.migrated` and namespaces
+> live in SQLite from then on. `BackupService` still looks for `servicehub-namespaces.json`
+> verbatim and copies it into the bundle **only if found** — on any already-migrated instance that
+> will never happen again, so `manifest.json`'s `namespaceStore` field will simply be absent. The
+> rest of this document's references to a separate namespace JSON file describe the legacy
+> pre-migration case; skip them if your bundle has no `servicehub-namespaces.json`.
+
+## 1. What gets backed up
+
+Each backup run produces one timestamped **bundle directory** (e.g. `20260828-153000Z/`) under the
+configured backup directory, containing:
+
+| File | Contents |
+|---|---|
+| `servicehub-dlq.db` | A consistent snapshot of the SQLite database, taken via `VACUUM INTO`. |
+| `servicehub-namespaces.json` | **Legacy, pre-migration only** (see callout in the introduction) — a copy of the old namespace JSON store, present only on an instance that hasn't yet run the one-time SQLite import. Absent on every migrated instance. |
+| `manifest.json` | Metadata about the bundle — see §2. |
+
+## 2. The manifest
+
+`manifest.json` records, for each file: its name, size, and a SHA-256 checksum. It also records:
+
+- **`integrityCheck`** — the result of `PRAGMA integrity_check` run against the SQLite snapshot
+  immediately after it was taken. A backup whose snapshot fails this check is discarded
+  automatically and the backup operation reports failure — a broken bundle is never left on disk
+  looking like a good one.
+- **`encryptionKeyFingerprint`** — a non-reversible fingerprint (`sha256:<16 hex chars>`) of the
+  connection-string encryption key that was active when the backup was taken. **The key itself is
+  never included anywhere in a backup bundle.** Before restoring, compare this fingerprint against
+  the fingerprint of the environment you're restoring into (see §4, step 2) — if they don't match,
+  namespaces' encrypted connection strings (stored in SQLite; in the legacy JSON file on a
+  pre-migration bundle) will not decrypt, and every namespace will need to be re-added with its
+  plaintext connection string.
+- **`consistencyNote`** — a reminder of the model described in §3, embedded in the bundle itself so
+  it travels with the backup.
+
+## 3. Consistency model — read this before you restore
+
+**On a migrated instance (see the introduction's callout), this entire section is moot: namespaces
+live in the same SQLite database as everything else, so `VACUUM INTO` captures them atomically
+along with DLQ/audit/evidence data — there is no second store to be inconsistent with.** It only
+applies to a legacy bundle that still contains a `servicehub-namespaces.json` file.
+
+**The SQLite snapshot and the namespace JSON copy are captured independently. They are not a
+single atomic transaction across both stores.**
+
+- The SQLite snapshot has a well-defined consistent point: the instant `VACUUM INTO` completes.
+  Everything in `servicehub-dlq.db` reflects the database as of that instant.
+- The namespace JSON file is copied as a single atomic file operation (ServiceHub's namespace
+  repository always writes via a temp-file-then-rename sequence, so a copy never observes a
+  partial write) — but at a separate, nearby instant, not synchronized with the SQLite snapshot.
+
+In practice this means: if a namespace was added or edited in the few milliseconds between the two
+captures, the restored SQLite database and the restored namespace store could disagree about that
+one namespace (e.g. a `DlqMessage` row referencing a `NamespaceId` the restored namespace file
+doesn't yet contain, or vice versa). This is a narrow, cosmetic inconsistency — ServiceHub's UI and
+API tolerate a `NamespaceId` with no matching namespace (it just won't resolve a display name) —
+not a correctness or data-loss issue. If your operational tolerance for even this narrow window is
+zero, pause namespace create/edit/delete activity for the few seconds a backup takes.
+
+## 4. Manual restore procedure
+
+Restore is deliberately manual and fail-safe: nothing is overwritten until you've verified the
+bundle you're restoring is the one you intend, and every step below is easy to abort before the
+point of no return (step 5).
+
+1. **Stop the ServiceHub instance.** Restoring into a running instance risks corrupting whatever
+   the live process is mid-write on.
+
+2. **Verify the bundle before touching anything.**
+   - Recompute the SHA-256 of `servicehub-dlq.db` and (if present) `servicehub-namespaces.json`
+     and compare against `manifest.json`'s `sqlite.sha256` / `namespaceStore.sha256`.
+     ```bash
+     shasum -a 256 servicehub-dlq.db servicehub-namespaces.json
+     ```
+   - Confirm `manifest.json`'s `integrityCheck` reads `"ok"`. If it doesn't, do not use this
+     bundle — pick an earlier one.
+   - Confirm `manifest.json`'s `encryptionKeyFingerprint` matches the fingerprint of the
+     environment you're restoring into. You can read the current environment's fingerprint from
+     any backup taken on it, or take a fresh (discardable) backup on the target environment via
+     `POST /api/v1/admin/backup` and compare fingerprints. A mismatch means the restored
+     namespace store's encrypted connection strings will fail to decrypt after restore — every
+     namespace will need to be re-added with its plaintext connection string.
+
+3. **Back up the current (about-to-be-replaced) state**, even if it's broken — you may need to
+   compare against it, and this restore procedure is otherwise a one-way door:
+   ```bash
+   mv /var/servicehub/data/servicehub-dlq.db /var/servicehub/data/servicehub-dlq.db.pre-restore
+   mv /var/servicehub/data/servicehub-dlq.db-wal /var/servicehub/data/servicehub-dlq.db-wal.pre-restore 2>/dev/null
+   mv /var/servicehub/data/servicehub-dlq.db-shm /var/servicehub/data/servicehub-dlq.db-shm.pre-restore 2>/dev/null
+   mv /var/servicehub/data/servicehub-namespaces.json /var/servicehub/data/servicehub-namespaces.json.pre-restore 2>/dev/null
+   ```
+   The `-wal`/`-shm` files are SQLite's write-ahead-log sidecar files from the running instance;
+   they must not be left behind for the restored database to load cleanly. `VACUUM INTO` snapshots
+   never produce their own `-wal`/`-shm` files, so the bundle itself never has any to restore.
+
+4. **Copy the bundle's files into place:**
+   ```bash
+   cp /path/to/backup/20260828-153000Z/servicehub-dlq.db /var/servicehub/data/servicehub-dlq.db
+   cp /path/to/backup/20260828-153000Z/servicehub-namespaces.json /var/servicehub/data/servicehub-namespaces.json  # if present
+   ```
+   (Adjust paths to match your `DlqDatabase:DataDirectory` / `NamespaceRepository:DataDirectory`
+   configuration.)
+
+5. **Start ServiceHub and verify:**
+   - Check `/health/ready` returns healthy.
+   - Spot-check that expected namespaces appear and DLQ history/audit trail data looks right for
+     the backup's timestamp.
+   - If a namespace's connection string won't decrypt (encryption key fingerprint mismatch from
+     step 2), ServiceHub will surface it as a per-namespace decryption failure rather than
+     crashing — re-add that namespace with its plaintext connection string.
+
+6. **Once confident, clean up** the `.pre-restore` files from step 3 (or keep them somewhere safe
+   until you're fully confident the restore is correct).
+
+## 5. Triggering a backup
+
+**On-demand**, at any time, via the admin API:
+
+```bash
+curl -X POST https://your-servicehub-host/api/v1/admin/backup \
+  -H "X-API-Key: <an API key with the admin scope>"
+```
+
+Returns the manifest for the bundle just created (`200 OK`). Here's a real response, captured
+against a live ServiceHub instance during the 2026-09-19 verification pass, with a database that
+had grown to 150 MB under heavy real traffic — so you know exactly what to expect:
+
+```json
+{
+  "backupId": "20260919-102150Z",
+  "createdAtUtc": "2026-09-19T10:21:52.533647+00:00",
+  "serviceHubVersion": "1.0.0+7a519324a756d1f935f9ead44267cc11e42256d5",
+  "sqlite": {
+    "fileName": "servicehub-dlq.db",
+    "sizeBytes": 152104960,
+    "sha256": "1b46df613117ab1f6916670d005afbeb4ca03227f8149088a7f04fcb049946f0"
+  },
+  "integrityCheck": "ok",
+  "encryptionKeyFingerprint": "sha256:8bd65469c5c04d5b",
+  "consistencyNote": "The SQLite snapshot and the namespace JSON store were captured independently, not as a single atomic transaction across both stores. The SQLite snapshot is internally consistent as of its VACUUM INTO completion time; the namespace JSON file is copied as a single atomic file operation at a separate, nearby instant."
+}
+```
+
+The two fields worth actually reading before you close this terminal window:
+
+- **`"integrityCheck": "ok"`** — this is the one field that tells you the backup is trustworthy.
+  If this ever reads anything other than `"ok"`, ServiceHub has already discarded that bundle
+  automatically (see §2) — you'll see a failure response, not a broken file sitting on disk.
+- **`"encryptionKeyFingerprint"`** — write this down (or keep the manifest) if you're backing up
+  before a planned migration or key rotation. You'll need to compare it in §4 step 2 before you
+  ever restore this bundle somewhere else.
+
+**Scheduled**, via `Backup:ScheduledBackupIntervalHours` in configuration (or the
+`Backup__ScheduledBackupIntervalHours` environment variable). **On by default in Production**
+(every 24h, 14 bundles retained) — off (`0`) in the base configuration used by Development. Set it
+to `0` to opt back out. An on-demand backup remains available regardless of this setting.
+
+```json
+"Backup": {
+  "BackupDirectory": null,
+  "ScheduledBackupIntervalHours": 6,
+  "RetentionCount": 14
+}
+```
+
+- **`BackupDirectory`** — where bundles are written. Defaults to a `backups` subfolder under
+  `DlqDatabase:DataDirectory`. Point it at separate (larger, or more durable) storage if desired.
+- **`RetentionCount`** — how many of the most recent bundles to keep. Older bundles are deleted
+  immediately after each successful backup.
+
+List existing bundles (for DR verification / operator visibility) via:
+
+```bash
+curl https://your-servicehub-host/api/v1/admin/backup \
+  -H "X-API-Key: <an API key with the admin scope>"
+```
+
+## 6. What this does *not* do
+
+Deliberately out of scope for this feature:
+
+- No external backup services, S3/blob storage integration, or off-host shipping — bundles land on
+  local/mounted disk only; moving them offsite is an operator responsibility (e.g. your own volume
+  snapshot or sync job pointed at the backup directory).
+- No WAL shipping or continuous/point-in-time recovery — backups are periodic snapshots, not a
+  continuous replication stream.
+- No automated restore — restore is always the manual procedure in §4.
+- No schema changes, database-engine migration, or namespace-store migration — this feature backs
+  up what exists today (SQLite + namespace JSON) as-is.

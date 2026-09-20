@@ -3,7 +3,9 @@ using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Security;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Api.Controllers.V1;
 
@@ -17,18 +19,37 @@ namespace ServiceHub.Api.Controllers.V1;
 public sealed class BulkOperationsController : ApiControllerBase
 {
     private readonly IBulkOperationService _bulkOperationService;
+    private readonly IGovernanceAccessEvaluator _governanceAccessEvaluator;
     private readonly IAuditLogger _auditLogger;
     private readonly ILogger<BulkOperationsController> _logger;
 
     /// <summary>Initialises a new instance of <see cref="BulkOperationsController"/>.</summary>
     public BulkOperationsController(
         IBulkOperationService bulkOperationService,
+        IGovernanceAccessEvaluator governanceAccessEvaluator,
         IAuditLogger auditLogger,
         ILogger<BulkOperationsController> logger)
     {
         _bulkOperationService = bulkOperationService ?? throw new ArgumentNullException(nameof(bulkOperationService));
+        _governanceAccessEvaluator = governanceAccessEvaluator ?? throw new ArgumentNullException(nameof(governanceAccessEvaluator));
         _auditLogger = auditLogger ?? throw new ArgumentNullException(nameof(auditLogger));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Governance/RBAC check for bulk replay/purge — mirrors <c>RulesController</c>'s
+    /// <c>EvaluateRuleGovernanceAsync</c>: the namespace lives in the request body
+    /// (<c>request.Filter.NamespaceId</c>), not the route or query string, so the declarative
+    /// <see cref="RequireGovernanceRoleAttribute"/> (which only reads route/query) can't resolve
+    /// it — this endpoint is the same Recover-pillar mutation as
+    /// <c>MessagesController.ReplayMessage</c>/<c>PurgeMessage</c>, just batched, so it is held to
+    /// the same <see cref="GovernanceRole.Operator"/> bar.
+    /// </summary>
+    private async Task<Result> EvaluateBulkOperationGovernanceAsync(Guid namespaceId, CancellationToken cancellationToken)
+    {
+        var granteeIdentity = ResolveGovernanceGranteeIdentity();
+        return await _governanceAccessEvaluator.EvaluateAsync(
+            OwnerId, granteeIdentity, GovernanceRole.Operator, namespaceId, PillarKind.Recover, cancellationToken);
     }
 
     /// <summary>
@@ -67,6 +88,12 @@ public sealed class BulkOperationsController : ApiControllerBase
         [FromBody] BulkOperationCreateRequest request,
         CancellationToken cancellationToken = default)
     {
+        var governanceResult = await EvaluateBulkOperationGovernanceAsync(request.Filter.NamespaceId, cancellationToken);
+        if (governanceResult.IsFailure)
+        {
+            return ToActionResult<BulkOperationJobResponse>(governanceResult.Error);
+        }
+
         var expectedIntent = request.OperationType == Core.Enums.BulkOperationType.Purge
             ? IntentHeaders.IntentBulkPurge
             : IntentHeaders.IntentBulkReplay;
@@ -137,13 +164,17 @@ public sealed class BulkOperationsController : ApiControllerBase
         [FromQuery] int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
-        var result = await _bulkOperationService.ListJobsAsync(OwnerId, namespaceId, page, pageSize, cancellationToken);
+        var result = await _bulkOperationService.ListJobsAsync(OwnerId, namespaceId, page, pageSize, cancellationToken, AllowedNamespaceIds);
         return ToActionResult(result);
     }
 
     /// <summary>
     /// Requests cancellation of a pending or running job. Idempotent: cancelling an already
-    /// finished job returns its current (terminal) state rather than an error.
+    /// finished job returns its current (terminal) state rather than an error. Held to the same
+    /// <see cref="GovernanceRole.Operator"/> bar as <see cref="Create"/>: cancelling an in-flight
+    /// Recover-pillar mutation is itself a governed action, not a free pass, the same way
+    /// <c>RecoveryController</c>'s emergency-stop activate/clear both require a role rather than
+    /// only the "start" direction being gated.
     /// </summary>
     /// <param name="id">The job ID.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -154,6 +185,18 @@ public sealed class BulkOperationsController : ApiControllerBase
     public async Task<ActionResult<BulkOperationJobResponse>> Cancel(
         Guid id, CancellationToken cancellationToken = default)
     {
+        var jobResult = await _bulkOperationService.GetJobAsync(OwnerId, id, cancellationToken);
+        if (jobResult.IsFailure)
+        {
+            return ToActionResult(jobResult);
+        }
+
+        var governanceResult = await EvaluateBulkOperationGovernanceAsync(jobResult.Value.NamespaceId, cancellationToken);
+        if (governanceResult.IsFailure)
+        {
+            return ToActionResult<BulkOperationJobResponse>(governanceResult.Error);
+        }
+
         var result = await _bulkOperationService.CancelJobAsync(OwnerId, id, cancellationToken);
         return ToActionResult(result);
     }

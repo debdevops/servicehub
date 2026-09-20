@@ -18,6 +18,18 @@ vi.mock('@servicehub/ui-shared/hooks/useCloudBridge', () => ({
   useProviderCapabilities: vi.fn(),
 }));
 
+vi.mock('@servicehub/ui-shared/hooks/useFleet', () => ({
+  useFleetOverview: vi.fn(),
+}));
+
+vi.mock('@servicehub/ui-shared/hooks/useAudit', () => ({
+  useAuditLogs: vi.fn(),
+}));
+
+vi.mock('@servicehub/ui-shared/hooks/useDlqOverview', () => ({
+  useDlqOverview: vi.fn(),
+}));
+
 const mockNavigate = vi.fn();
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
@@ -27,12 +39,18 @@ vi.mock('react-router-dom', async () => {
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useQueues, useAllNamespacesQueues, useNamespaceStats } from '@servicehub/ui-shared/hooks/useQueues';
 import { useProviderCapabilities } from '@servicehub/ui-shared/hooks/useCloudBridge';
+import { useFleetOverview } from '@servicehub/ui-shared/hooks/useFleet';
+import { useAuditLogs } from '@servicehub/ui-shared/hooks/useAudit';
+import { useDlqOverview } from '@servicehub/ui-shared/hooks/useDlqOverview';
 
 const mockUseProviderCapabilities = useProviderCapabilities as ReturnType<typeof vi.fn>;
 const mockUseNamespaces = useNamespaces as ReturnType<typeof vi.fn>;
 const mockUseQueues = useQueues as ReturnType<typeof vi.fn>;
 const mockUseAllNamespacesQueues = useAllNamespacesQueues as ReturnType<typeof vi.fn>;
 const mockUseNamespaceStats = useNamespaceStats as ReturnType<typeof vi.fn>;
+const mockUseFleetOverview = useFleetOverview as ReturnType<typeof vi.fn>;
+const mockUseAuditLogs = useAuditLogs as ReturnType<typeof vi.fn>;
+const mockUseDlqOverview = useDlqOverview as ReturnType<typeof vi.fn>;
 
 const mockNamespace = {
   id: 'ns1',
@@ -49,7 +67,10 @@ const mockNamespace = {
 const mockQueues = [
   {
     name: 'queue-1',
-    activeMessageCount: 5,
+    // 50 active / 2 DLQ is a 3.8% ratio (B health grade) — deliberately "clearly healthy" so
+    // tests unrelated to DLQ-spike behavior don't incidentally trip the D/F-grade spike rule
+    // (see healthGrade.ts's isDlqSpike) and render an extra, unrelated hotspot/attention entry.
+    activeMessageCount: 50,
     deadLetterMessageCount: 2,
     scheduledMessageCount: 1,
     maxSizeInMegabytes: 1024,
@@ -91,7 +112,7 @@ describe('DashboardPage', () => {
       {
         namespaceId: 'ns1',
         queues: mockQueues,
-        totalActive: 5,
+        totalActive: 50,
         totalDlq: 2,
         totalScheduled: 1,
         totalQueues: 1,
@@ -99,6 +120,9 @@ describe('DashboardPage', () => {
         isError: false,
       },
     ]);
+    mockUseFleetOverview.mockReturnValue({ data: undefined, isLoading: false });
+    mockUseAuditLogs.mockReturnValue({ data: undefined, isLoading: false });
+    mockUseDlqOverview.mockReturnValue({ data: undefined, isLoading: false });
   });
 
   it('renders page title', () => {
@@ -173,7 +197,7 @@ describe('DashboardPage', () => {
       refetch: vi.fn(),
     });
     mockUseAllNamespacesQueues.mockReturnValue([
-      { namespaceId: 'ns1', queues: mockQueues, totalActive: 5, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
+      { namespaceId: 'ns1', queues: mockQueues, totalActive: 50, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
       { namespaceId: 'ns2', queues: mockQueues, totalActive: 3, totalDlq: 0, totalScheduled: 0, totalQueues: 1, isLoading: false, isError: false },
     ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
@@ -193,7 +217,14 @@ describe('DashboardPage', () => {
     expect(container.querySelector('.animate-pulse')).toBeTruthy();
   });
 
-  it('shows Healthy status when DLQ count is within threshold', async () => {
+  it('shows Healthy status when DLQ count is within threshold and the DLQ ratio is good', async () => {
+    // 2 DLQ is under the absolute spike threshold (10) AND, with 50 active messages, a 3.8%
+    // DLQ ratio — a B health grade, not D/F — so both signals agree this namespace is healthy.
+    mockUseQueues.mockReturnValue({
+      data: [{ ...mockQueues[0], activeMessageCount: 50, deadLetterMessageCount: 2 }],
+      isLoading: false,
+      isError: false,
+    });
     render(<DashboardPage />, { wrapper: createWrapper() });
     expect(await screen.findByText('Healthy')).toBeInTheDocument();
   });
@@ -218,6 +249,21 @@ describe('DashboardPage', () => {
     ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
     expect(await screen.findByText(/DLQ: 15 messages need attention/i)).toBeInTheDocument();
+  });
+
+  it('never shows the Healthy banner alongside a D or F health grade, even under the absolute DLQ spike threshold', async () => {
+    // Regression for a real bug found during the 2026-09-19 E2E pass: 0 active / 9 DLQ is a
+    // 100% DLQ ratio (an F health grade), but 9 is under the DLQ_SPIKE_THRESHOLD of 10 — the
+    // "Healthy" banner and the "F" grade badge rendered on the same card at the same time.
+    mockUseQueues.mockReturnValue({
+      data: [{ ...mockQueues[0], activeMessageCount: 0, deadLetterMessageCount: 9 }],
+      isLoading: false,
+      isError: false,
+    });
+    render(<DashboardPage />, { wrapper: createWrapper() });
+    expect(await screen.findByText('F')).toBeInTheDocument();
+    expect(screen.queryByText('Healthy')).not.toBeInTheDocument();
+    expect(await screen.findByText(/DLQ: 9 messages need attention/i)).toBeInTheDocument();
   });
 
   it('Browse Queues button navigates straight to the first queue', async () => {
@@ -245,7 +291,7 @@ describe('DashboardPage', () => {
       refetch: vi.fn(),
     });
     mockUseAllNamespacesQueues.mockReturnValue([
-      { namespaceId: 'ns1', queues: mockQueues, totalActive: 5, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
+      { namespaceId: 'ns1', queues: mockQueues, totalActive: 50, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
     ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
     expect(await screen.findByText('PROD')).toBeInTheDocument();
@@ -259,7 +305,7 @@ describe('DashboardPage', () => {
       refetch: vi.fn(),
     });
     mockUseAllNamespacesQueues.mockReturnValue([
-      { namespaceId: 'ns1', queues: mockQueues, totalActive: 5, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
+      { namespaceId: 'ns1', queues: mockQueues, totalActive: 50, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
     ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
     expect(await screen.findByText('UAT')).toBeInTheDocument();
@@ -294,10 +340,62 @@ describe('DashboardPage', () => {
       refetch: vi.fn(),
     });
     mockUseAllNamespacesQueues.mockReturnValue([
-      { namespaceId: 'ns1', queues: mockQueues, totalActive: 5, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
+      { namespaceId: 'ns1', queues: mockQueues, totalActive: 50, totalDlq: 2, totalScheduled: 1, totalQueues: 1, isLoading: false, isError: false },
     ]);
     render(<DashboardPage />, { wrapper: createWrapper() });
     expect(await screen.findByText('—')).toBeInTheDocument();
+  });
+
+  // Full E2E pass, 2026-09-12: the top "Dead Letter" aggregate summed each namespace's live
+  // provider query, so once every namespace's live request had settled (succeeded OR failed),
+  // `isLoading` went false and the sum of the failed namespaces' 0s displayed as a confirmed
+  // "0" — reproduced live with 30+ unreachable namespaces after a `/api/v1/namespaces/stats/batch`
+  // timeout. The persisted ledger (`useDlqOverview`) already knows the real total regardless of
+  // live connectivity — same fix already applied to the Dead-Letter tab's KPI tiles.
+  it('sources the "Dead Letter" aggregate from the DB-backed overview, not live per-namespace stats', async () => {
+    mockUseNamespaces.mockReturnValue({
+      data: [mockNamespace, { ...mockNamespace, id: 'ns2' }],
+      isLoading: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    // Both namespaces' live stats are 0 — as they would be while a request is still failing.
+    mockUseAllNamespacesQueues.mockReturnValue([
+      { namespaceId: 'ns1', queues: [], totalActive: 0, totalDlq: 0, totalScheduled: 0, totalQueues: 0, isLoading: false, isError: true },
+      { namespaceId: 'ns2', queues: [], totalActive: 0, totalDlq: 0, totalScheduled: 0, totalQueues: 0, isLoading: false, isError: true },
+    ]);
+    // The persisted DLQ ledger knows the real total regardless of live connectivity.
+    mockUseDlqOverview.mockReturnValue({
+      data: { totals: { totalDeadLettered: 14210, namespacesWithDlq: 35, namespacesTotal: 36 } },
+      isLoading: false,
+    });
+
+    render(<DashboardPage />, { wrapper: createWrapper() });
+
+    expect(await screen.findByText('Dead Letter')).toBeInTheDocument();
+    // The misleading-zero regression this guards against: the live aggregate for these two
+    // namespaces is 0, and that must not be what "Dead Letter" shows.
+    expect(screen.getByText('14,210')).toBeInTheDocument();
+  });
+
+  it('shows a loading placeholder, not a bare zero, while the DB-backed dead-letter overview is on its first fetch', async () => {
+    mockUseNamespaces.mockReturnValue({
+      data: [mockNamespace, { ...mockNamespace, id: 'ns2' }],
+      isLoading: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    mockUseAllNamespacesQueues.mockReturnValue([
+      { namespaceId: 'ns1', queues: [], totalActive: 5, totalDlq: 0, totalScheduled: 0, totalQueues: 1, isLoading: false, isError: false },
+      { namespaceId: 'ns2', queues: [], totalActive: 3, totalDlq: 0, totalScheduled: 0, totalQueues: 1, isLoading: false, isError: false },
+    ]);
+    mockUseDlqOverview.mockReturnValue({ data: undefined, isLoading: true });
+
+    render(<DashboardPage />, { wrapper: createWrapper() });
+
+    const deadLetterLabel = await screen.findByText('Dead Letter');
+    const cell = deadLetterLabel.closest('div')!.parentElement as HTMLElement;
+    expect(within(cell).getByText('…')).toBeInTheDocument();
   });
 
   // F3 — "Refresh" used to refetch only the namespace list while resetting the "Live · just now"
@@ -403,6 +501,134 @@ describe('DashboardPage', () => {
 
       expect(await screen.findByText('Healthy')).toBeInTheDocument();
       expect(screen.getAllByText('0').length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('fleet-level panels', () => {
+    it('header exposes Fleet Overview and Add Namespace actions', () => {
+      render(<DashboardPage />, { wrapper: createWrapper() });
+      // "Fleet Overview" appears twice: once in the header, once in Quick Actions.
+      expect(screen.getAllByRole('button', { name: /fleet overview/i }).length).toBeGreaterThanOrEqual(2);
+      expect(screen.getByRole('button', { name: /add namespace/i })).toBeInTheDocument();
+    });
+
+    it('Add Namespace navigates to /connect', () => {
+      render(<DashboardPage />, { wrapper: createWrapper() });
+      fireEvent.click(screen.getByRole('button', { name: /add namespace/i }));
+      expect(mockNavigate).toHaveBeenCalledWith('/connect');
+    });
+
+    it('Fleet Overview header button navigates to /fleet', () => {
+      render(<DashboardPage />, { wrapper: createWrapper() });
+      const [headerButton] = screen.getAllByRole('button', { name: /fleet overview/i });
+      fireEvent.click(headerButton);
+      expect(mockNavigate).toHaveBeenCalledWith('/fleet');
+    });
+
+    it('shows an empty state for Recent Namespace Events when the audit trail has no entries', async () => {
+      render(<DashboardPage />, { wrapper: createWrapper() });
+      expect(await screen.findByText('Recent Namespace Events')).toBeInTheDocument();
+      expect(await screen.findByText('No recent activity recorded yet.')).toBeInTheDocument();
+    });
+
+    it('renders recent audit entries when present', async () => {
+      mockUseAuditLogs.mockReturnValue({
+        data: {
+          items: [
+            {
+              id: 'a1',
+              timestamp: new Date().toISOString(),
+              userIdentity: 'alex@contoso.com',
+              action: 'Namespace.Create',
+              outcome: 'Success',
+              namespaceId: 'ns1',
+              namespaceName: 'My Namespace',
+              entityName: null,
+              cloudProvider: 'azure',
+              environment: 'dev',
+              resourceName: null,
+              sequenceNumber: null,
+              detailsJson: null,
+              errorDetails: null,
+              clientIp: null,
+              userAgent: null,
+              correlationId: null,
+              httpMethod: null,
+              httpPath: null,
+            },
+          ],
+          totalCount: 1,
+          page: 1,
+          pageSize: 8,
+          hasNextPage: false,
+          hasPreviousPage: false,
+        },
+        isLoading: false,
+      });
+      render(<DashboardPage />, { wrapper: createWrapper() });
+      expect(await screen.findByText(/Namespace Create/i)).toBeInTheDocument();
+    });
+
+    it('shows Top Failure Categories from the fleet overview rollup', async () => {
+      mockUseFleetOverview.mockReturnValue({
+        data: {
+          generatedAt: new Date().toISOString(),
+          windowHours: 24,
+          namespaceCount: 1,
+          totalActive: 5,
+          totalNewInWindow: 0,
+          totalResolvedInWindow: 0,
+          namespaces: [],
+          topCategories: { ProcessingError: 12, Transient: 4 },
+          dailyTrend: [],
+        },
+        isLoading: false,
+      });
+      render(<DashboardPage />, { wrapper: createWrapper() });
+      expect(await screen.findByText('Top Failure Categories')).toBeInTheDocument();
+      expect(await screen.findByText('ProcessingError')).toBeInTheDocument();
+    });
+
+    it('renders a Provider Distribution panel summarizing the fleet by cloud', async () => {
+      render(<DashboardPage />, { wrapper: createWrapper() });
+      expect(await screen.findByText('Provider Distribution')).toBeInTheDocument();
+    });
+
+    it('surfaces a namespace as "Needs Attention" when Fleet Health marks it critical, even with no local DLQ spike', async () => {
+      mockUseFleetOverview.mockReturnValue({
+        data: {
+          generatedAt: new Date().toISOString(),
+          windowHours: 24,
+          namespaceCount: 1,
+          totalActive: 0,
+          totalNewInWindow: 0,
+          totalResolvedInWindow: 0,
+          namespaces: [
+            {
+              namespaceId: 'ns1',
+              namespaceName: 'My Namespace',
+              provider: 'Azure',
+              environment: 'Dev',
+              activeCount: 60,
+              newInWindow: 12,
+              resolvedInWindow: 0,
+              totalCount: 60,
+              topEntity: null,
+              topEntityCount: 0,
+              topCategory: 'ProcessingError',
+              oldestActiveDetectedAt: null,
+              severity: 'critical',
+              coverage: 'scanned',
+              coverageNote: null,
+            },
+          ],
+          topCategories: {},
+          dailyTrend: [],
+        },
+        isLoading: false,
+      });
+      render(<DashboardPage />, { wrapper: createWrapper() });
+      expect(await screen.findByText(/Needs Attention/i)).toBeInTheDocument();
     });
   });
 });

@@ -11,6 +11,7 @@ using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
+using ServiceHub.Infrastructure.AI;
 using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Shared.Results;
 
@@ -27,6 +28,11 @@ public class MessagesControllerTests
     private readonly Mock<IDlqHistoryService> _dlqHistoryService;
     private readonly Mock<IRecoveryLedger> _recoveryLedger;
     private readonly Mock<IRecoveryEligibilityGate> _eligibilityGate;
+
+    // Real (not mocked) — deterministic pure-function pipeline, and tests below assert on its
+    // actual output hash, mirroring SignatureReplayExecutorTests' same choice for the same reason.
+    private readonly IFailureFeatureExtractor _featureExtractor = new FailureFeatureExtractor();
+    private readonly IFailureFingerprintBuilder _fingerprintBuilder = new FailureFingerprintBuilder();
     private readonly Mock<ILogger<MessagesController>> _logger;
     private readonly MessagesController _controller;
 
@@ -120,6 +126,8 @@ public class MessagesControllerTests
             _dlqHistoryService.Object,
             _recoveryLedger.Object,
             _eligibilityGate.Object,
+            _featureExtractor,
+            _fingerprintBuilder,
             _logger.Object)
         {
             ControllerContext = new ControllerContext
@@ -171,7 +179,8 @@ public class MessagesControllerTests
         var act = () => new MessagesController(
             null!, _namespaceRepository.Object, _providerRouter,
             _liveTailSessionFactory.Object, _liveTailConnectionLimiter.Object,
-            _dlqHistoryService.Object, _recoveryLedger.Object, _eligibilityGate.Object, _logger.Object);
+            _dlqHistoryService.Object, _recoveryLedger.Object, _eligibilityGate.Object,
+            _featureExtractor, _fingerprintBuilder, _logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -181,7 +190,8 @@ public class MessagesControllerTests
         var act = () => new MessagesController(
             _messageOperationsService.Object, _namespaceRepository.Object, _providerRouter,
             _liveTailSessionFactory.Object, _liveTailConnectionLimiter.Object,
-            _dlqHistoryService.Object, _recoveryLedger.Object, _eligibilityGate.Object, null!);
+            _dlqHistoryService.Object, _recoveryLedger.Object, _eligibilityGate.Object,
+            _featureExtractor, _fingerprintBuilder, null!);
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -290,7 +300,7 @@ public class MessagesControllerTests
 
         var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         var response = okResult.Value.Should().BeAssignableTo<IEnumerable<MessageResponse>>().Subject.ToList();
-        
+
         response.Should().HaveCount(1);
         response[0].MessageId.Should().Be("dlq-msg-1");
         response[0].SequenceNumber.Should().Be(1);
@@ -319,7 +329,7 @@ public class MessagesControllerTests
 
         var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
         var response = okResult.Value.Should().BeAssignableTo<IEnumerable<MessageResponse>>().Subject.ToList();
-        
+
         response.Should().HaveCount(1);
         response[0].MessageId.Should().Be("dlq-1");
         response[0].SequenceNumber.Should().Be(1);
@@ -402,6 +412,49 @@ public class MessagesControllerTests
         _recoveryLedger.Verify(
             l => l.RecordExecutionAsync(
                 It.Is<RecordExecutionRequest>(req => req.Outcome == RecoveryExecutionOutcome.Accepted),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ReplayMessage_TrackedMessage_StampsLedgerEntryAndGateRequestWithTrustFingerprint()
+    {
+        // Same defect class as the one fixed in SignatureReplayExecutor during the W1.3 soak run
+        // (F7): before this fix, single-message replay from the primary DLQ Intelligence workflow
+        // always opened the ledger entry with SignatureHashSnapshot=null and evaluated the
+        // Eligibility Gate with SignatureHash=null, so no manual single-message recovery could
+        // ever count toward a signature's autonomy trust record.
+        SetIntentHeaders(IntentHeaders.IntentReplayMessage);
+        var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        var tracked = CreateTrackedMessage(ns, "my-queue", 42);
+        _dlqHistoryService
+            .Setup(s => s.LookupAsync(ns.Id, "my-queue", 42, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqMessage>.Success(tracked));
+        _dlqHistoryService
+            .Setup(s => s.ClaimForRecoveryAsync(tracked.Id, tracked.OwnerId, DlqMessageStatus.Replaying, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqMessage>.Success(tracked));
+        _messageOperationsService.Setup(r => r.ReplayMessageAsync(ns.Id, "my-queue", null, 42, It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
+
+        var expectedHash = (await _fingerprintBuilder.ComputeAsync(
+            (await _featureExtractor.ExtractAsync(tracked, CancellationToken.None)).Value,
+            CancellationToken.None)).Value.Hash;
+
+        var result = await _controller.ReplayMessage(ns.Id, 42, "my-queue");
+
+        result.Should().BeOfType<AcceptedResult>();
+        expectedHash.Should().NotBeNullOrEmpty();
+        _eligibilityGate.Verify(
+            g => g.EvaluateAsync(
+                It.Is<RecoveryEligibilityRequest>(req => req.SignatureHash == expectedHash),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        _recoveryLedger.Verify(
+            l => l.BeginEntryAsync(
+                It.Is<BeginRecoveryEntryRequest>(req => req.SignatureHashSnapshot == expectedHash),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -751,6 +804,145 @@ public class MessagesControllerTests
                 tracked.Id, tracked.OwnerId, DlqMessageStatus.Purging, DlqMessageStatus.Active,
                 null, It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    #endregion
+
+    #region LiveTail Tests
+
+    // W4.1 conformance: LiveTail is the one enforcement point for
+    // ProviderCapabilities.SupportsRepeatablePeek — it had no test coverage at all before this
+    // region, so the 409 gate that keeps AWS/GCP off Live Tail (see the capability's own remarks
+    // on why polling those providers risks accidental dead-lettering) was an asserted fact with
+    // an unverified enforcement path.
+
+    private static Namespace CreateTestNamespace(CloudProviderType provider) => provider switch
+    {
+        CloudProviderType.Aws => Namespace.Create("aws-ns", "akid:secret", provider: CloudProviderType.Aws).Value,
+        CloudProviderType.Gcp => Namespace.Create("gcp-ns", "{\"type\":\"service_account\"}", provider: CloudProviderType.Gcp).Value,
+        _ => CreateTestNamespace(),
+    };
+
+    private MessagesController CreateControllerWithProvider(CloudProviderType provider)
+    {
+        var providerMock = new Mock<ICloudMessagingProvider>();
+        providerMock.SetupGet(p => p.ProviderType).Returns(provider);
+        providerMock.SetupGet(p => p.Capabilities).Returns(ProviderCapabilities.For(provider));
+        var router = new CloudProviderRouter([_cloudProvider.Object, providerMock.Object]);
+
+        return new MessagesController(
+            _messageOperationsService.Object,
+            _namespaceRepository.Object,
+            router,
+            _liveTailSessionFactory.Object,
+            _liveTailConnectionLimiter.Object,
+            _dlqHistoryService.Object,
+            _recoveryLedger.Object,
+            _eligibilityGate.Object,
+            _featureExtractor,
+            _fingerprintBuilder,
+            _logger.Object)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    Items = { { "OwnerId", Namespace.SpaOwnerId } }
+                }
+            }
+        };
+    }
+
+    [Fact]
+    public async Task LiveTail_MissingEntityName_ReturnsBadRequest()
+    {
+        await _controller.LiveTail(Guid.NewGuid(), " ", null, false, CancellationToken.None);
+
+        _controller.HttpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+    }
+
+    [Fact]
+    public async Task LiveTail_NamespaceNotFound_ReturnsNotFound()
+    {
+        _namespaceRepository.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Failure(Error.NotFound("NOT_FOUND", "Not found")));
+
+        await _controller.LiveTail(Guid.NewGuid(), "my-queue", null, false, CancellationToken.None);
+
+        _controller.HttpContext.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+    }
+
+    [Fact]
+    public async Task LiveTail_ProviderNotRegistered_ReturnsNotFound()
+    {
+        var ns = Namespace.Create("gcp-ns", "{\"type\":\"service_account\"}", provider: CloudProviderType.Gcp).Value;
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        // Default _controller's router only has Azure registered.
+        await _controller.LiveTail(ns.Id, "my-topic", null, false, CancellationToken.None);
+
+        _controller.HttpContext.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+    }
+
+    [Theory]
+    [InlineData(CloudProviderType.Aws)]
+    [InlineData(CloudProviderType.Gcp)]
+    public async Task LiveTail_ProviderDoesNotSupportRepeatablePeek_ReturnsConflict_NeverAcquiresOrCreatesSession(CloudProviderType provider)
+    {
+        var controller = CreateControllerWithProvider(provider);
+        var ns = CreateTestNamespace(provider);
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        await controller.LiveTail(ns.Id, "my-entity", null, false, CancellationToken.None);
+
+        controller.HttpContext.Response.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        _liveTailConnectionLimiter.Verify(l => l.TryAcquire(), Times.Never);
+        _liveTailSessionFactory.Verify(
+            f => f.Create(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<bool>(), It.IsAny<CloudProviderType>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task LiveTail_Azure_ConnectionLimitReached_ReturnsServiceUnavailable()
+    {
+        var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+        _liveTailConnectionLimiter.Setup(l => l.TryAcquire()).Returns(false);
+
+        await _controller.LiveTail(ns.Id, "my-queue", null, false, CancellationToken.None);
+
+        _controller.HttpContext.Response.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
+        _liveTailSessionFactory.Verify(
+            f => f.Create(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<bool>(), It.IsAny<CloudProviderType>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task LiveTail_Azure_SupportsRepeatablePeek_AcquiresLimiterAndOpensSession()
+    {
+        var ns = CreateTestNamespace();
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+        _liveTailConnectionLimiter.Setup(l => l.TryAcquire()).Returns(true);
+        var session = new Mock<ILiveTailSession>();
+        _liveTailSessionFactory
+            .Setup(f => f.Create(ns.Id, "my-queue", null, false, CloudProviderType.Azure))
+            .Returns(session.Object);
+
+        // Pre-cancelled: the handler still reaches session creation (proving the capability
+        // gate let Azure through) before its connected-frame write observes the cancellation
+        // and the stream unwinds via the documented client-disconnect path.
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await _controller.LiveTail(ns.Id, "my-queue", null, false, cts.Token);
+
+        _liveTailSessionFactory.Verify(
+            f => f.Create(ns.Id, "my-queue", null, false, CloudProviderType.Azure), Times.Once);
+        _liveTailConnectionLimiter.Verify(l => l.Release(), Times.Once);
     }
 
     #endregion

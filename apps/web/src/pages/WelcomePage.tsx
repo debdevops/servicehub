@@ -56,7 +56,7 @@ const CLOUD_PROVIDERS = [
     shortName: 'AWS',
     product: 'SQS / SNS',
     tagline: 'Highly available queuing and notification for AWS workloads',
-    badge: 'Preview',
+    badge: 'Supported',
     badgeColor: 'bg-orange-100 text-orange-700 border-orange-200',
     borderColor: 'border-orange-200 hover:border-orange-400',
     bgGradient: 'from-orange-50 to-white',
@@ -74,7 +74,7 @@ const CLOUD_PROVIDERS = [
     demoUrl: '/demo/aws',
     demoLabel: '▶ Open AWS Demo (50 messages)',
     demoColor: 'bg-orange-500 hover:bg-orange-600',
-    status: 'preview',
+    status: 'gated',
   },
   {
     id: 'gcp',
@@ -82,7 +82,7 @@ const CLOUD_PROVIDERS = [
     shortName: 'GCP',
     product: 'Pub/Sub',
     tagline: 'Global, scalable messaging for event-driven GCP architectures',
-    badge: 'Preview',
+    badge: 'Supported',
     badgeColor: 'bg-green-100 text-green-700 border-green-200',
     borderColor: 'border-green-200 hover:border-green-400',
     bgGradient: 'from-green-50 to-white',
@@ -100,7 +100,7 @@ const CLOUD_PROVIDERS = [
     demoUrl: '/demo/gcp',
     demoLabel: '▶ Open GCP Demo (50 messages)',
     demoColor: 'bg-green-600 hover:bg-green-700',
-    status: 'preview',
+    status: 'gated',
   },
 ];
 
@@ -514,9 +514,20 @@ export function WelcomePage() {
                     </li>
                   ))}
                 </ul>
-                {provider.status === 'preview' && (
+                {provider.status === 'gated' && (
                   <div className="mb-4 p-2.5 rounded-lg bg-white/70 border border-dashed border-gray-300 text-xs text-gray-500">
-                    <strong className={provider.accentColor}>Preview.</strong> Validated against live {provider.shortName} infrastructure, still capability-gated (see the Provider Support Matrix), no parity guarantee with Azure. Demo mode available now; live browsing requires an operator to enable it on the server.
+                    <strong className={provider.accentColor}>Supported.</strong> Conformance-tested
+                    against live {provider.shortName} infrastructure — see the{' '}
+                    <a
+                      href={`${GITHUB_URL}/blob/main/docs/PROVIDER-CONFORMANCE.md`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline hover:text-gray-700"
+                    >
+                      reproducible evidence
+                    </a>
+                    . Still capability-gated, no parity guarantee with Azure. Demo mode available
+                    now; live browsing requires an operator to enable it on the server.
                   </div>
                 )}
                 <button

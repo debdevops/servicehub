@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { X, Clock, AlertCircle, CheckCircle, XCircle, ArrowRight, FileText, ShieldCheck } from 'lucide-react';
+import { X, Clock, AlertCircle, CheckCircle, XCircle, ArrowRight, FileText, ShieldCheck, Copy, Check } from 'lucide-react';
 import { useDlqTimeline, useDlqMessageDetail, useUpdateDlqNotes, useUpdateDlqStatus } from '@servicehub/ui-shared/hooks/useDlqHistory';
 import { useRecoveryEntries } from '@servicehub/ui-shared/hooks/useRecoveryLedger';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
@@ -46,6 +46,84 @@ function formatRelativeTime(ts: string): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
+}
+
+// Tokenizes an already-formatted JSON string into colored spans without touching innerHTML —
+// the body came from a live message, so it's untrusted text and must stay React children, never
+// dangerouslySetInnerHTML.
+const JSON_TOKEN_RE = /("(?:\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\btrue\b|\bfalse\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g;
+
+function highlightJson(json: string) {
+  const nodes: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+  JSON_TOKEN_RE.lastIndex = 0;
+  while ((match = JSON_TOKEN_RE.exec(json)) !== null) {
+    if (match.index > lastIndex) nodes.push(json.slice(lastIndex, match.index));
+    const token = match[0];
+    let className = 'text-amber-700'; // number
+    if (token.startsWith('"')) {
+      className = token.endsWith(':') ? 'text-violet-700 font-medium' : 'text-emerald-700';
+    } else if (token === 'true' || token === 'false') {
+      className = 'text-sky-700';
+    } else if (token === 'null') {
+      className = 'text-gray-400';
+    }
+    nodes.push(<span key={key++} className={className}>{token}</span>);
+    lastIndex = JSON_TOKEN_RE.lastIndex;
+  }
+  if (lastIndex < json.length) nodes.push(json.slice(lastIndex));
+  return nodes;
+}
+
+function MessageBodyPreview({ body }: { body: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const pretty = useMemo(() => {
+    try {
+      return JSON.stringify(JSON.parse(body), null, 2);
+    } catch {
+      return null;
+    }
+  }, [body]);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(body);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard access can be denied by the browser — the preview is still readable/selectable.
+    }
+  };
+
+  return (
+    <div className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-gray-100/70 border-b border-gray-200">
+        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+          Body Preview{pretty && <span className="normal-case font-normal text-gray-400"> · JSON</span>}
+        </span>
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700"
+        >
+          {copied ? (
+            <>
+              <Check className="w-3 h-3 text-green-600" /> Copied
+            </>
+          ) : (
+            <>
+              <Copy className="w-3 h-3" /> Copy
+            </>
+          )}
+        </button>
+      </div>
+      <pre className="text-xs font-mono text-gray-700 p-3 whitespace-pre-wrap break-all max-h-64 overflow-y-auto leading-relaxed">
+        {pretty ? highlightJson(pretty) : body}
+      </pre>
+    </div>
+  );
 }
 
 export function DlqTimelineDrawer({ messageId, onClose }: DlqTimelineDrawerProps) {
@@ -232,23 +310,10 @@ export function DlqTimelineDrawer({ messageId, onClose }: DlqTimelineDrawerProps
                     </div>
                   )}
 
-                  {detail.bodyPreview && (
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <span className="text-xs font-semibold text-gray-500 uppercase">Body Preview</span>
-                      <pre className="text-xs text-gray-700 mt-1 whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
-                        {detail.bodyPreview}
-                      </pre>
-                    </div>
-                  )}
+                  {detail.bodyPreview && <MessageBodyPreview body={detail.bodyPreview} />}
 
-                  {detail.userNotes && (
-                    <div className="bg-yellow-50 rounded-lg p-3 border border-yellow-200">
-                      <span className="text-xs font-semibold text-yellow-700 uppercase">Notes</span>
-                      <p className="text-sm text-yellow-800 mt-1">{detail.userNotes}</p>
-                    </div>
-                  )}
-
-                  {/* User Notes — always visible, editable */}
+                  {/* User Notes — always visible, editable. Pre-filled with the saved value below,
+                      so there is no separate read-only preview of the same text. */}
                   <div className="mt-4">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">

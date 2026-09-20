@@ -16,10 +16,13 @@ namespace ServiceHub.UnitTests.Architecture;
 /// Phase 1 (AI-adjacent discovery) is dependency-based, not namespace-list-based (roadmap
 /// Changelog Pass 11): a type is AI-adjacent if it is declared in
 /// <c>ServiceHub.Infrastructure.AI</c>, OR any method it declares directly calls a member of
-/// <see cref="IAIServiceClient"/> — found this way specifically because
-/// <c>AnomalyDetectionWorker</c> resolves <see cref="IAIServiceClient"/> from a per-cycle DI
-/// scope inside its method body rather than holding it as a field, which a
-/// constructor/field-reflection scan would miss entirely.
+/// <see cref="IAIServiceClient"/> — route b exists to catch a type that resolves
+/// <see cref="IAIServiceClient"/> from a per-cycle DI scope inside a method body rather than
+/// holding it as a field, which a constructor/field-reflection scan would miss entirely.
+/// (<c>AnomalyDetectionWorker</c> and <c>AnomaliesController</c> previously matched route b before
+/// roadmap §5.B I3 replaced their AI-service-gated anomaly detection with deterministic
+/// statistics; they no longer call any <see cref="IAIServiceClient"/> member, so route b now
+/// correctly excludes them.)
 /// Phase 2 (forbidden-reference scan) is per-type, not per-caller: once a type is AI-adjacent,
 /// every method it declares — not only the one Phase 1 matched on — is checked against every
 /// mutating <see cref="IRecoveryLedger"/>/<see cref="IMessageOperationsService"/> member.
@@ -27,6 +30,11 @@ namespace ServiceHub.UnitTests.Architecture;
 /// explicit read-only allowlist, not hand-copied — a future write method added to either
 /// interface without updating this test is caught automatically (fail-closed), where the reverse
 /// (a hand-maintained forbidden list) would silently miss it (fail-open).
+/// <see cref="NoReasoningAgentAdjacentTypeReachesAMutatingLedgerOrProviderMemberOrADisallowedPlaybookLedgerMember"/>
+/// extends this same technique to the reasoning companion (roadmap §7, W5): "AIBoundaryArchitectureTests,
+/// extended to cover it." A second, narrower forbidden set applies to reasoning-agent-adjacent code
+/// only — every <see cref="IPlaybookLedger"/> member except <c>ProposeAsync</c> and its read-only
+/// queries, since <c>ProposeAsync</c> is the companion's one legal write anywhere in the system.
 /// </remarks>
 public sealed class AIBoundaryArchitectureTests
 {
@@ -110,20 +118,22 @@ public sealed class AIBoundaryArchitectureTests
         var aiAdjacentTypes = DiscoverAiAdjacentTypes(allTypes);
 
         // Canary: a scanner that silently finds nothing would pass vacuously forever. Verified
-        // this session against current source (roadmap §9.4.5 Pass 11): the AI-adjacent set must
-        // include the AI-namespace types plus the two dependency-discovered outliers.
+        // this session against current source (roadmap §5.B I3): AnomalyDetectionWorker and
+        // AnomaliesController were deliberately decoupled from IAIServiceClient as part of
+        // replacing the anomaly-detection stub with deterministic statistics (no ML, no LLM) —
+        // route b no longer finds them, since neither calls any IAIServiceClient member anymore.
+        // The AI-adjacent set is now just the namespace-based (route a) types.
         aiAdjacentTypes.Should().Contain(typeof(ServiceHub.Infrastructure.AI.DeterministicClassifier),
             "namespace-based discovery (route a) should find ServiceHub.Infrastructure.AI types");
-        aiAdjacentTypes.Should().Contain(typeof(ServiceHub.Infrastructure.BackgroundServices.AnomalyDetectionWorker),
-            "call-site discovery (route b) must find AnomalyDetectionWorker even though it resolves " +
-            "IAIServiceClient from a per-cycle DI scope inside its method body rather than holding it " +
-            "as a field (roadmap §9.4.5 Pass 11) — a declared-member scan would miss this");
-        aiAdjacentTypes.Should().Contain(typeof(ServiceHub.Api.Controllers.V1.AnomaliesController),
-            "call-site discovery (route b) must find AnomaliesController's constructor-injected client " +
-            "the same way it finds AnomalyDetectionWorker's DI-scope-resolved one");
-        aiAdjacentTypes.Count.Should().BeGreaterThanOrEqualTo(13,
-            "the eleven ServiceHub.Infrastructure.AI-namespace types plus the two dependency-discovered " +
-            "outliers — finding fewer means discovery itself has regressed, not that coverage improved");
+        aiAdjacentTypes.Should().NotContain(typeof(ServiceHub.Infrastructure.BackgroundServices.AnomalyDetectionWorker),
+            "roadmap §5.B I3 replaced its AI-service-gated detection with IAnomalyDetectionService " +
+            "(deterministic statistics) — it no longer calls any IAIServiceClient member");
+        aiAdjacentTypes.Should().NotContain(typeof(ServiceHub.Api.Controllers.V1.AnomaliesController),
+            "roadmap §5.B I3 replaced its AI-service-gated detection with IAnomalyDetectionService " +
+            "(deterministic statistics) — it no longer calls any IAIServiceClient member");
+        aiAdjacentTypes.Count.Should().BeGreaterThanOrEqualTo(11,
+            "the eleven ServiceHub.Infrastructure.AI-namespace types — finding fewer means discovery " +
+            "itself has regressed, not that coverage improved");
 
         var violations = new List<string>();
 
@@ -194,5 +204,134 @@ public sealed class AIBoundaryArchitectureTests
         }
 
         return aiAdjacent;
+    }
+
+    /// <summary>
+    /// Same technique as <see cref="DiscoverAiAdjacentTypes"/>, applied to the reasoning
+    /// companion (roadmap §7, W5): a type is reasoning-agent-adjacent if it is declared in
+    /// <c>ServiceHub.Infrastructure.Agent</c> (route a — the HTTP client, its health check, and
+    /// its evidence mapper), or any method it declares directly calls a member of
+    /// <see cref="IReasoningAgentClient"/> (route b — catches <c>ReasoningCompanionWorker</c>,
+    /// which lives in <c>ServiceHub.Infrastructure.BackgroundServices</c>, not under
+    /// <c>.Agent</c>).
+    /// </summary>
+    private static HashSet<Type> DiscoverReasoningAgentAdjacentTypes(IEnumerable<Type> candidateTypes)
+    {
+        var reasoningAgentAdjacent = new HashSet<Type>();
+
+        foreach (var type in candidateTypes)
+        {
+            if (type.Namespace == "ServiceHub.Infrastructure.Agent")
+            {
+                reasoningAgentAdjacent.Add(type);
+                continue;
+            }
+
+            foreach (var method in type.GetMethods(
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
+                | BindingFlags.Static | BindingFlags.DeclaredOnly))
+            {
+                var realBody = RecoveryPathIlScanner.ResolveRealMethodBody(method);
+                var callsReasoningAgentClient = RecoveryPathIlScanner.GetDirectlyCalledMethods(realBody)
+                    .Any(m => m.DeclaringType == typeof(IReasoningAgentClient));
+
+                if (callsReasoningAgentClient)
+                {
+                    reasoningAgentAdjacent.Add(type);
+                    break;
+                }
+            }
+        }
+
+        return reasoningAgentAdjacent;
+    }
+
+    /// <summary>
+    /// Every <see cref="IPlaybookLedger"/> member the reasoning companion is permitted to call —
+    /// <c>ProposeAsync</c> (its only legal write) plus every read-only query member. Everything
+    /// else (<c>MarkUnderReviewAsync</c>, <c>ReviseAsync</c>, <c>DispositionAsync</c>,
+    /// <c>ExpireAsync</c>, <c>SupersedeAsync</c>, <c>RevokeAsync</c>) records a human decision or
+    /// a system-authored lifecycle transition and is forbidden to reasoning-agent-adjacent code —
+    /// roadmap §7: "Nothing it produces executes, promotes, or confirms anything by itself."
+    /// </summary>
+    private static readonly HashSet<string> PlaybookLedgerAllowedForReasoningAgentMethodNames = new()
+    {
+        nameof(IPlaybookLedger.ProposeAsync),
+        nameof(IPlaybookLedger.QueryEntriesAsync),
+        nameof(IPlaybookLedger.GetEntryAsync),
+        nameof(IPlaybookLedger.GetDueForExpiryAsync),
+        nameof(IPlaybookLedger.GetEventsForEntryAsync),
+        nameof(IPlaybookLedger.VerifyChainAsync),
+    };
+
+    private static readonly HashSet<MethodInfo> ForbiddenPlaybookLedgerMembersForReasoningAgent = BuildForbiddenPlaybookLedgerMemberSet();
+
+    private static HashSet<MethodInfo> BuildForbiddenPlaybookLedgerMemberSet()
+    {
+        var forbidden = new HashSet<MethodInfo>();
+
+        foreach (var method in typeof(IPlaybookLedger).GetMethods())
+        {
+            if (!PlaybookLedgerAllowedForReasoningAgentMethodNames.Contains(method.Name))
+            {
+                forbidden.Add(method);
+            }
+        }
+
+        return forbidden;
+    }
+
+    [Fact]
+    public void NoReasoningAgentAdjacentTypeReachesAMutatingLedgerOrProviderMemberOrADisallowedPlaybookLedgerMember()
+    {
+        var assemblies = ScanAssemblyMarkers.Select(t => t.Assembly).Distinct().ToList();
+        var allTypes = assemblies.SelectMany(a => a.GetTypes()).ToList();
+
+        var reasoningAgentAdjacentTypes = DiscoverReasoningAgentAdjacentTypes(allTypes);
+
+        // Canary: verified this session against current source (roadmap §7, W5) —
+        // ReasoningCompanionWorker is the only type outside ServiceHub.Infrastructure.Agent that
+        // calls an IReasoningAgentClient member; a scanner that finds nothing would pass
+        // vacuously forever.
+        reasoningAgentAdjacentTypes.Should().Contain(
+            typeof(ServiceHub.Infrastructure.Agent.ReasoningAgentClient),
+            "namespace-based discovery (route a) should find ServiceHub.Infrastructure.Agent types");
+        reasoningAgentAdjacentTypes.Should().Contain(
+            typeof(ServiceHub.Infrastructure.BackgroundServices.ReasoningCompanionWorker),
+            "ReasoningCompanionWorker calls IReasoningAgentClient.ProposeAsync (route b) despite " +
+            "living outside the ServiceHub.Infrastructure.Agent namespace");
+
+        var forbidden = ForbiddenMembers.Concat(ForbiddenPlaybookLedgerMembersForReasoningAgent).ToHashSet();
+        var violations = new List<string>();
+
+        foreach (var type in reasoningAgentAdjacentTypes)
+        {
+            foreach (var method in type.GetMethods(
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
+                | BindingFlags.Static | BindingFlags.DeclaredOnly))
+            {
+                var realBody = RecoveryPathIlScanner.ResolveRealMethodBody(method);
+                var calledMethods = RecoveryPathIlScanner.GetDirectlyCalledMethods(realBody);
+
+                foreach (var called in calledMethods)
+                {
+                    if (called is MethodInfo calledMethodInfo && forbidden.Contains(calledMethodInfo))
+                    {
+                        var (owningType, owningMethodName) = RecoveryPathIlScanner.ResolveOwningMethod(method);
+                        violations.Add(
+                            $"{owningType.Name}.{owningMethodName} -> " +
+                            $"{calledMethodInfo.DeclaringType!.Name}.{calledMethodInfo.Name}");
+                    }
+                }
+            }
+        }
+
+        violations.Distinct().Should().BeEmpty(
+            "no reasoning-agent-adjacent type (roadmap §7: namespace ServiceHub.Infrastructure.Agent, " +
+            "or any method directly calling an IReasoningAgentClient member) may directly call any " +
+            "mutating member of IRecoveryLedger or IMessageOperationsService, or any IPlaybookLedger " +
+            "member other than ProposeAsync or a read-only query — the reasoning companion proposes, " +
+            "it never executes, promotes, or confirms anything itself. Offender(s): {0}",
+            string.Join(", ", violations.Distinct()));
     }
 }

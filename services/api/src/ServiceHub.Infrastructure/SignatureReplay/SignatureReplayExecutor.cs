@@ -36,6 +36,9 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
     private readonly IMessageOperationsService _messageOperationsService;
     private readonly IRecoveryLedger _recoveryLedger;
     private readonly IRecoveryEligibilityGate _eligibilityGate;
+    private readonly IFailureFeatureExtractor _featureExtractor;
+    private readonly IFailureFingerprintBuilder _fingerprintBuilder;
+    private readonly IAuditService _auditService;
     private readonly ILogger<SignatureReplayExecutor> _logger;
 
     /// <summary>Initialises a new instance of <see cref="SignatureReplayExecutor"/>.</summary>
@@ -45,6 +48,9 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         IMessageOperationsService messageOperationsService,
         IRecoveryLedger recoveryLedger,
         IRecoveryEligibilityGate eligibilityGate,
+        IFailureFeatureExtractor featureExtractor,
+        IFailureFingerprintBuilder fingerprintBuilder,
+        IAuditService auditService,
         ILogger<SignatureReplayExecutor> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
@@ -52,7 +58,33 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         _messageOperationsService = messageOperationsService ?? throw new ArgumentNullException(nameof(messageOperationsService));
         _recoveryLedger = recoveryLedger ?? throw new ArgumentNullException(nameof(recoveryLedger));
         _eligibilityGate = eligibilityGate ?? throw new ArgumentNullException(nameof(eligibilityGate));
+        _featureExtractor = featureExtractor ?? throw new ArgumentNullException(nameof(featureExtractor));
+        _fingerprintBuilder = fingerprintBuilder ?? throw new ArgumentNullException(nameof(fingerprintBuilder));
+        _auditService = auditService ?? throw new ArgumentNullException(nameof(auditService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Computes this message's stable trust-scoring identity — the same
+    /// <see cref="IFailureFeatureExtractor"/>/<see cref="IFailureFingerprintBuilder"/> pipeline
+    /// <c>AutoReplayExecutor</c> uses. <c>recovery.SignatureHash</c> (the DLQ Intelligence cluster
+    /// hash the caller selected this job by) identifies which messages belong to the job, but is a
+    /// different, display-oriented hash space — writing it onto <c>SignatureHashSnapshot</c> would
+    /// never match what <see cref="RecoveryEligibilityGate"/>/<c>AutonomyEvaluationWorker</c> look up
+    /// for the same message's automated replay, so no operator-driven signature replay could ever
+    /// count toward that signature's autonomy trust record. Falls back to the cluster hash (never
+    /// null, so the entry is still queryable) if fingerprinting fails for this message.
+    /// </summary>
+    private async Task<string> ResolveTrustSignatureHashAsync(DlqMessage message, RecoveryContext recovery, CancellationToken cancellationToken)
+    {
+        var featuresResult = await _featureExtractor.ExtractAsync(message, cancellationToken);
+        if (featuresResult.IsFailure)
+        {
+            return recovery.SignatureHash;
+        }
+
+        var fingerprintResult = await _fingerprintBuilder.ComputeAsync(featuresResult.Value, cancellationToken);
+        return fingerprintResult.IsSuccess ? fingerprintResult.Value.Hash : recovery.SignatureHash;
     }
 
     /// <summary>
@@ -122,7 +154,48 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
             }
 
             await SaveChangesTolerantOfStaleMessagesAsync();
+            RecordCompletionAudit(job);
         }
+    }
+
+    /// <summary>
+    /// Writes the terminal-status audit entry for this job. Without this, the Audit Trail's only
+    /// record of a signature replay is the "Attempt" SignatureReplayController.Start logs when the
+    /// job is accepted — a compliance-facing log that never says whether a replay touching real
+    /// messages actually succeeded. Mirrors <see cref="BulkOperations.BulkOperationExecutor"/>'s
+    /// identically-named method.
+    /// </summary>
+    private void RecordCompletionAudit(SignatureReplayJob job)
+    {
+        // Runs on the background worker, outside the HTTP request pipeline — no HttpContext
+        // exists here, so IAuditLogger (which requires one) can't be used. IAuditService.Enqueue
+        // takes a plain AuditLog entity for exactly this kind of context-free background write.
+        _auditService.Enqueue(new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            Timestamp = DateTimeOffset.UtcNow,
+            OwnerId = job.OwnerId,
+            UserIdentity = "system:signature-replay",
+            // Matches the literal SignatureReplayController.Start logs for its "Attempt"/"Denied"
+            // entries (IntentHeaders.IntentSignatureReplay) — Api isn't referenceable from here.
+            Action = "signature:replay",
+            Outcome = job.Status.ToString(),
+            NamespaceId = job.NamespaceId,
+            NamespaceName = job.NamespaceDisplayName,
+            ResourceName = job.SignatureHash,
+            DetailsJson = JsonSerializer.Serialize(new
+            {
+                jobId = job.Id,
+                signatureHash = job.SignatureHash,
+                totalMatched = job.TotalMatched,
+                processed = job.ProcessedCount,
+                succeeded = job.SuccessCount,
+                failed = job.FailureCount,
+                skipped = job.SkippedCount,
+            }),
+            ErrorDetails = job.ErrorSummary,
+            CorrelationId = job.CorrelationId,
+        });
     }
 
     /// <summary>
@@ -171,12 +244,14 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         var ns = nsResult.Value;
 
         // Re-check the same guard StartAsync validated — defensive against the namespace's
-        // environment changing between job creation and the worker picking it up. Mirrors
+        // environment changing (or an elevation expiring/being revoked) between job creation and
+        // the worker picking it up (ADR-0010 §Decision phase 2). Mirrors
         // BulkOperationExecutor.RunAsync's execution-time re-check.
-        if (ns.Environment == EnvironmentType.Prod)
+        if (ns.Environment == EnvironmentType.Prod
+            && await _recoveryLedger.GetLiveProductionElevationAsync(job.OwnerId, ns.Id, cancellationToken) is null)
         {
             job.Status = BulkOperationStatus.Failed;
-            job.ErrorSummary = "Namespace is now Production — signature replay blocked at execution time.";
+            job.ErrorSummary = "Namespace is Production and has no live elevation — signature replay blocked at execution time.";
             return;
         }
 
@@ -226,7 +301,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var (outcome, reason) = await ProcessMessageAsync(message, recovery, cancellationToken);
+            var (outcome, reason, reasonCategory) = await ProcessMessageAsync(message, recovery, cancellationToken);
             job.ProcessedCount++;
 
             switch (outcome)
@@ -236,11 +311,11 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
                     break;
                 case MessageOutcome.Failure:
                     job.FailureCount++;
-                    AddToSample(failureSample, message, reason!);
+                    AddToSample(failureSample, message, reason!, reasonCategory);
                     break;
                 case MessageOutcome.Skipped:
                     job.SkippedCount++;
-                    AddToSample(failureSample, message, reason!);
+                    AddToSample(failureSample, message, reason!, reasonCategory);
                     break;
             }
 
@@ -255,7 +330,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         job.FailureSampleJson = failureSample.Count > 0 ? JsonSerializer.Serialize(failureSample) : null;
     }
 
-    private async Task<(MessageOutcome Outcome, string? Reason)> ProcessMessageAsync(
+    private async Task<(MessageOutcome Outcome, string? Reason, string? ReasonCategory)> ProcessMessageAsync(
         DlqMessage message, RecoveryContext recovery, CancellationToken cancellationToken)
     {
         // A message already moved on (e.g. replayed manually between job creation and
@@ -264,23 +339,24 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         // BulkOperationExecutor.ProcessMessageAsync applies.
         if (message.Status != DlqMessageStatus.Active && message.Status != DlqMessageStatus.ReplayFailed)
         {
-            return (MessageOutcome.Skipped, $"Message status is now '{message.Status}', no longer eligible for replay");
+            return (MessageOutcome.Skipped, $"Message status is now '{message.Status}', no longer eligible for replay", null);
         }
 
         var (entityName, subscriptionName) = BulkOperationExecutor.ResolveEntityAndSubscription(message);
+        var trustSignatureHash = await ResolveTrustSignatureHashAsync(message, recovery, cancellationToken);
 
         var decision = await _eligibilityGate.EvaluateAsync(
             new RecoveryEligibilityRequest(
                 recovery.OwnerId, RecoveryOperationKind.Replay, recovery.Actor.Kind, RecoveryTrigger.SignatureJob,
-                recovery.Namespace.Id, message.EntityName, message.BodyHash, recovery.SignatureHash,
+                recovery.Namespace.Id, message.EntityName, message.BodyHash, trustSignatureHash,
                 recovery.Namespace.Environment, Provider: recovery.Namespace.Provider),
             cancellationToken);
 
         if (decision.Verdict != EligibilityVerdict.Allow)
         {
-            await RecordDeclinedAsync(message, recovery, entityName, decision, cancellationToken);
+            await RecordDeclinedAsync(message, recovery, entityName, trustSignatureHash, decision, cancellationToken);
             return (MessageOutcome.Skipped,
-                $"Blocked by the Eligibility Gate ({decision.ReasonCode}) — escalate for manual review");
+                $"Blocked by the Eligibility Gate ({decision.ReasonCode}) — escalate for manual review", null);
         }
 
         // Claim the message via optimistic concurrency (Status is a concurrency token — see
@@ -296,7 +372,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         catch (DbUpdateConcurrencyException)
         {
             await _dbContext.Entry(message).ReloadAsync(cancellationToken);
-            return (MessageOutcome.Skipped, "Message was claimed by another concurrent replay — skipped");
+            return (MessageOutcome.Skipped, "Message was claimed by another concurrent replay — skipped", null);
         }
 
         // CancellationToken.None from here through the provider call: the claim above is already
@@ -305,7 +381,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         var beginResult = await _recoveryLedger.BeginEntryAsync(
             RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest(
                 message, recovery.Namespace, recovery.OperationId, recovery.OwnerId, recovery.Actor, entityName,
-                signatureHashSnapshot: recovery.SignatureHash),
+                signatureHashSnapshot: trustSignatureHash),
             CancellationToken.None);
 
         if (beginResult.IsFailure)
@@ -313,7 +389,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
             // No message movement without ledger coverage: release the claim so a retry can pick
             // the message up again rather than call the provider unrecorded.
             message.Status = DlqMessageStatus.Active;
-            return (MessageOutcome.Skipped, $"Recovery ledger error: {beginResult.Error.Message}");
+            return (MessageOutcome.Skipped, $"Recovery ledger error: {beginResult.Error.Message}", null);
         }
 
         var entry = beginResult.Value;
@@ -328,12 +404,16 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
 
         // AWS.SQS.ReplayAmbiguous (send to source succeeded, delete from DLQ failed) routes to
         // Unknown rather than Rejected: the message is genuinely duplicated-if-retried, not
-        // safely retriable — see AwsMessageReceiver.ReplayMessageAsync.
+        // safely retriable — see AwsMessageReceiver.ReplayMessageAsync. Same distinction
+        // ReplayFailureClassifier makes as AmbiguousOutcome, kept as two separate checks here
+        // since RecoveryExecutionOutcome's ledger semantics and ReplayFailureReason's UI-facing
+        // taxonomy are deliberately independent concepts that happen to agree on this one case.
         var executionOutcome = result.IsSuccess
             ? RecoveryExecutionOutcome.Accepted
             : result.Error.Code == "AWS.SQS.ReplayAmbiguous"
                 ? RecoveryExecutionOutcome.Unknown
                 : RecoveryExecutionOutcome.Rejected;
+        var failureReasonCategory = result.IsSuccess ? null : ReplayFailureClassifier.Classify(result.Error).ToString();
 
         // CancellationToken.None: the provider call above already happened, so this outcome must
         // be recorded even if cancellation was requested in the meantime — same reasoning as the
@@ -393,8 +473,8 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         }
 
         return result.IsSuccess
-            ? (MessageOutcome.Success, null)
-            : (MessageOutcome.Failure, result.Error.Message);
+            ? (MessageOutcome.Success, null, null)
+            : (MessageOutcome.Failure, result.Error.Message, failureReasonCategory);
     }
 
     /// <summary>
@@ -405,7 +485,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
     /// changes the underlying skip decision (roadmap §18).
     /// </summary>
     private async Task RecordDeclinedAsync(
-        DlqMessage message, RecoveryContext recovery, string entityName, EligibilityDecision decision,
+        DlqMessage message, RecoveryContext recovery, string entityName, string trustSignatureHash, EligibilityDecision decision,
         CancellationToken cancellationToken)
     {
         try
@@ -413,7 +493,7 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
             await _recoveryLedger.RecordDeclinedAsync(
                 RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest(
                     message, recovery.Namespace, recovery.OperationId, recovery.OwnerId, recovery.Actor, entityName,
-                    signatureHashSnapshot: recovery.SignatureHash),
+                    signatureHashSnapshot: trustSignatureHash),
                 decision.ReasonCode ?? "ELIGIBILITY_GATE_DENIED",
                 JsonSerializer.Serialize(new { reasonCode = decision.ReasonCode, matchedCount = decision.MatchedCount }),
                 cancellationToken);
@@ -446,12 +526,13 @@ public sealed class SignatureReplayExecutor : ISignatureReplayExecutor
         }
     }
 
-    private static void AddToSample(List<BulkOperationFailureSample> sample, DlqMessage message, string reason)
+    private static void AddToSample(
+        List<BulkOperationFailureSample> sample, DlqMessage message, string reason, string? reasonCategory)
     {
         if (sample.Count >= MaxFailureSampleSize)
             return;
 
-        sample.Add(new BulkOperationFailureSample(message.MessageId, message.EntityName, reason));
+        sample.Add(new BulkOperationFailureSample(message.MessageId, message.EntityName, reason, reasonCategory));
     }
 
     private enum MessageOutcome

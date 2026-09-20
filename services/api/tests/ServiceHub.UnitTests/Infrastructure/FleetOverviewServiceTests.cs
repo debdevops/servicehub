@@ -170,6 +170,45 @@ public class FleetOverviewServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetOverviewAsync_UnmonitoredGcpNamespace_NoRows_IsUnknownNeverHealthy()
+    {
+        var ns = Namespace.Create("gcp-ns", "{\"type\":\"service_account\"}", ownerId: TestConstants.TestOwnerId, provider: CloudProviderType.Gcp).Value;
+        SetOwnedNamespaces(ns);
+
+        // GCP registered, but no DlqMonitor:AllowDestructivePeek:Gcp entry in appsettings.json
+        // at all — GetValue falls back to its `false` default, same effective behavior as AWS.
+        var service = CreateService(registeredProviders: CloudProviderType.Gcp);
+
+        var result = await service.GetOverviewAsync(TestConstants.TestOwnerId);
+
+        result.IsSuccess.Should().BeTrue();
+        var health = result.Value.Namespaces.Should().ContainSingle().Which;
+        health.Severity.Should().Be(FleetHealthSeverity.Unknown);
+        health.Severity.Should().NotBe(FleetHealthSeverity.Healthy);
+        health.Coverage.Should().Be(FleetMonitoringCoverage.NotMonitored);
+        health.CoverageNote.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task GetOverviewAsync_GcpNamespace_AllowDestructivePeekEnabled_IsScannedAndHealthy()
+    {
+        var ns = Namespace.Create("gcp-ns", "{\"type\":\"service_account\"}", ownerId: TestConstants.TestOwnerId, provider: CloudProviderType.Gcp).Value;
+        SetOwnedNamespaces(ns);
+
+        var service = CreateService(
+            configData: new Dictionary<string, string?> { ["DlqMonitor:AllowDestructivePeek:Gcp"] = "true" },
+            registeredProviders: CloudProviderType.Gcp);
+
+        var result = await service.GetOverviewAsync(TestConstants.TestOwnerId);
+
+        result.IsSuccess.Should().BeTrue();
+        var health = result.Value.Namespaces.Should().ContainSingle().Which;
+        health.Severity.Should().Be(FleetHealthSeverity.Healthy);
+        health.Coverage.Should().Be(FleetMonitoringCoverage.Scanned);
+        health.CoverageNote.Should().BeNull();
+    }
+
+    [Fact]
     public async Task GetOverviewAsync_UnmonitoredAwsNamespace_WithKnownActiveRows_KeepsRealSeverity()
     {
         // A confirmed backlog (from before monitoring was disabled, or a historical scan) must
@@ -228,6 +267,46 @@ public class FleetOverviewServiceTests : IDisposable
         ns1Health.ActiveCount.Should().Be(2);
         ns1Health.TopEntity.Should().Be("orders");
         ns1Health.TopEntityCount.Should().Be(2);
+    }
+
+    // ── Regression: namespace allow-list isolation (security fix) ──────────
+    //
+    // Before this fix, GetOverviewAsync always called GetByOwnerAsync with
+    // allowedNamespaceIds: null AND queried DlqMessages without any allow-list filter at all — so
+    // a namespace-restricted API key still saw cross-namespace TotalActive/TopCategories/
+    // DailyTrend aggregates for its full owner pool, not just its allow-listed namespace(s).
+
+    [Fact]
+    public async Task GetOverviewAsync_AllowedNamespaceIds_ExcludesNamespaceOutsideAllowList()
+    {
+        var allowed = CreateNamespace("allowed-ns");
+        var other = CreateNamespace("other-ns");
+
+        // Mirrors the real INamespaceRepository.GetByOwnerAsync contract: when given an
+        // allow-list, only namespaces in it are returned.
+        _namespaces.Setup(r => r.GetByOwnerAsync(
+                TestConstants.TestOwnerId,
+                It.Is<IReadOnlySet<Guid>>(s => s != null && s.SetEquals(new[] { allowed.Id })),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success<IReadOnlyList<Namespace>>([allowed]));
+
+        _dbContext.DlqMessages.AddRange(
+            Msg(allowed.Id, 1, entity: "orders"),
+            Msg(other.Id, 2, entity: "payments"));
+        await _dbContext.SaveChangesAsync();
+
+        var allowedNamespaceIds = new HashSet<Guid> { allowed.Id };
+
+        var result = await _service.GetOverviewAsync(
+            TestConstants.TestOwnerId, cancellationToken: default, allowedNamespaceIds: allowedNamespaceIds);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.NamespaceCount.Should().Be(1);
+        result.Value.Namespaces.Should().ContainSingle(n => n.NamespaceId == allowed.Id);
+        // The critical assertion: TotalActive/TopCategories must not leak the other namespace's
+        // message even though it exists in the same owner's data.
+        result.Value.TotalActive.Should().Be(1);
+        result.Value.TopCategories.Values.Sum().Should().Be(1);
     }
 
     [Fact]

@@ -131,6 +131,56 @@ public class AuditServiceTests : IDisposable
         result.Value.Items.Should().OnlyContain(l => l.NamespaceId == targetNs);
     }
 
+    // ── Regression: namespace allow-list isolation (security fix) ──────────
+    //
+    // Before this fix, GetLogsAsync/GetSummaryAsync/ExportAsync ignored a caller's
+    // AllowedNamespaceIds allow-list entirely, so a namespace-restricted API key could read
+    // audit logs for every namespace its owner has, not just the allow-listed subset.
+
+    [Fact]
+    public async Task GetLogsAsync_AllowedNamespaceIds_ExcludesLogsOutsideAllowList()
+    {
+        await SeedAuditLogsAsync();
+        var allowedNs = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var allowedNamespaceIds = new HashSet<Guid> { allowedNs };
+
+        var result = await _auditService.GetLogsAsync("__spa__", allowedNamespaceIds: allowedNamespaceIds);
+
+        result.IsSuccess.Should().BeTrue();
+        // ns1 (2 entries) plus the one entry with no NamespaceId (instance-level action) remain;
+        // ns2's entry must be excluded.
+        result.Value.Items.Should().NotContain(l => l.NamespaceId == Guid.Parse("00000000-0000-0000-0000-000000000002"));
+        result.Value.Items.Should().OnlyContain(l => l.NamespaceId == null || l.NamespaceId == allowedNs);
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_AllowedNamespaceIds_ExcludesStatsOutsideAllowList()
+    {
+        await SeedAuditLogsAsync();
+        var allowedNs = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var allowedNamespaceIds = new HashSet<Guid> { allowedNs };
+
+        var result = await _auditService.GetSummaryAsync("__spa__", allowedNamespaceIds: allowedNamespaceIds);
+
+        result.IsSuccess.Should().BeTrue();
+        // Without the ns2 entry (a Failure), total events for __spa__ drops from 3 to 2.
+        result.Value.TotalEvents.Should().Be(2);
+        result.Value.FailureCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ExportAsync_AllowedNamespaceIds_ExcludesEntriesOutsideAllowList()
+    {
+        await SeedAuditLogsAsync();
+        var allowedNs = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var allowedNamespaceIds = new HashSet<Guid> { allowedNs };
+
+        var result = await _auditService.ExportAsync("__spa__", allowedNamespaceIds: allowedNamespaceIds);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().NotContain(l => l.NamespaceId == Guid.Parse("00000000-0000-0000-0000-000000000002"));
+    }
+
     [Fact]
     public async Task GetLogsAsync_FiltersByActionType()
     {
@@ -227,6 +277,120 @@ public class AuditServiceTests : IDisposable
 
         savedLog.Should().NotBeNull();
         savedLog!.Action.Should().Be("Test.Background");
+    }
+
+    // ── Namespace snapshot at write time ─────────────────────────────────────
+    //
+    // AuditLog.NamespaceName is documented as "snapshotted at write time so deleted namespaces
+    // still appear correctly in audit history", and both the Audit page's namespace chip and the
+    // CSV export's NamespaceName/CloudProvider columns read it. No caller ever supplied it (a
+    // request thread must not block on the database to log), so every row persisted with those
+    // two columns null and both surfaces were permanently blank. The writer takes the snapshot.
+
+    [Fact]
+    public async Task BackgroundService_SnapshotsNamespaceNameAndProvider_FromNamespaceId()
+    {
+        var ns = Namespace.Create(
+            "sb-servicehub-dev",
+            "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=servicehub;SharedAccessKey=dGVzdGtleQ==",
+            displayName: "Azure DEV",
+            ownerId: "__spa__").Value;
+        _dbContext.Namespaces.Add(ns);
+        await _dbContext.SaveChangesAsync();
+
+        var cts = new CancellationTokenSource();
+        var runTask = _auditService.StartAsync(cts.Token);
+
+        _auditService.Enqueue(new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            Timestamp = DateTimeOffset.UtcNow,
+            OwnerId = "__spa__",
+            UserIdentity = "snapshot@test.com",
+            Action = "messages:replay",
+            Outcome = "Success",
+            NamespaceId = ns.Id,
+        });
+
+        await Task.Delay(100);
+        await _auditService.StopAsync(CancellationToken.None);
+        await runTask;
+
+        var saved = await _dbContext.AuditLogs
+            .AsNoTracking()
+            .FirstOrDefaultAsync(l => l.UserIdentity == "snapshot@test.com");
+
+        saved.Should().NotBeNull();
+        saved!.NamespaceName.Should().Be("Azure DEV", "the display name is what every other surface shows");
+        saved.CloudProvider.Should().Be("azure");
+    }
+
+    [Fact]
+    public async Task BackgroundService_LeavesNamespaceNameNull_WhenTheNamespaceNoLongerExists()
+    {
+        var cts = new CancellationTokenSource();
+        var runTask = _auditService.StartAsync(cts.Token);
+
+        _auditService.Enqueue(new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            Timestamp = DateTimeOffset.UtcNow,
+            OwnerId = "__spa__",
+            UserIdentity = "orphan@test.com",
+            Action = "namespaces:delete",
+            Outcome = "Success",
+            NamespaceId = Guid.NewGuid(),
+        });
+
+        await Task.Delay(100);
+        await _auditService.StopAsync(CancellationToken.None);
+        await runTask;
+
+        var saved = await _dbContext.AuditLogs
+            .AsNoTracking()
+            .FirstOrDefaultAsync(l => l.UserIdentity == "orphan@test.com");
+
+        saved.Should().NotBeNull();
+        saved!.NamespaceName.Should().BeNull("an unknown name must stay unknown, never be fabricated");
+        saved.CloudProvider.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task BackgroundService_KeepsACallerSuppliedSnapshot_RatherThanOverwritingIt()
+    {
+        var ns = Namespace.Create(
+            "sb-servicehub-dev",
+            "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=servicehub;SharedAccessKey=dGVzdGtleQ==",
+            displayName: "Azure DEV",
+            ownerId: "__spa__").Value;
+        _dbContext.Namespaces.Add(ns);
+        await _dbContext.SaveChangesAsync();
+
+        var cts = new CancellationTokenSource();
+        var runTask = _auditService.StartAsync(cts.Token);
+
+        _auditService.Enqueue(new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            Timestamp = DateTimeOffset.UtcNow,
+            OwnerId = "__spa__",
+            UserIdentity = "explicit@test.com",
+            Action = "messages:replay",
+            Outcome = "Success",
+            NamespaceId = ns.Id,
+            NamespaceName = "Name as it was when the action happened",
+            CloudProvider = "azure",
+        });
+
+        await Task.Delay(100);
+        await _auditService.StopAsync(CancellationToken.None);
+        await runTask;
+
+        var saved = await _dbContext.AuditLogs
+            .AsNoTracking()
+            .FirstOrDefaultAsync(l => l.UserIdentity == "explicit@test.com");
+
+        saved!.NamespaceName.Should().Be("Name as it was when the action happened");
     }
 
     // ── PurgeExpiredAsync ────────────────────────────────────────────────────

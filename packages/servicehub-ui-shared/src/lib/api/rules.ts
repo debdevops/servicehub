@@ -1,5 +1,6 @@
 import { apiClient } from './client';
 import { riskIntent, withRiskIntent } from './intentHeaders';
+import type { CloudProviderType, EnvironmentType } from './types';
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -19,6 +20,21 @@ export interface RuleAction {
   targetEntity?: string;
 }
 
+/**
+ * Server-computed scope for a rule — resolved from `RuleResponse.namespaceId` via
+ * `INamespaceRepository` on the API side, rather than inferred client-side from conditions
+ * (see the retired `resolveRuleScope`/`ruleScope.ts` heuristic this type replaces).
+ */
+export interface RuleNamespaceScope {
+  kind: 'Global' | 'Namespace' | 'Unresolved';
+  /** Set only when kind === 'Namespace'. */
+  name?: string | null;
+  /** Set only when kind === 'Namespace'. */
+  provider?: CloudProviderType | null;
+  /** Set only when kind === 'Namespace'. */
+  environment?: EnvironmentType | null;
+}
+
 export interface RuleResponse {
   id: number;
   name: string;
@@ -35,6 +51,9 @@ export interface RuleResponse {
   pendingMatchCount: number;
   disabledReason: 'Manual' | 'CircuitBreaker' | null;
   disabledReasonDetail: string | null;
+  /** Namespace this rule is scoped to, or null for Global (matches every namespace). */
+  namespaceId: string | null;
+  namespaceScope: RuleNamespaceScope;
 }
 
 export interface RuleMatchResultResponse {
@@ -95,6 +114,8 @@ export interface CreateRuleRequest {
   conditions: RuleCondition[];
   action: RuleAction;
   maxReplaysPerHour: number;
+  /** Namespace to scope this rule to, or omitted/null for Global (matches every namespace). */
+  namespaceId?: string | null;
 }
 
 export interface TestRuleRequest {

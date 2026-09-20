@@ -6,12 +6,12 @@ namespace ServiceHub.Api.Middleware;
 /// Middleware for Azure App Service Easy Authentication (Built-in authentication).
 /// Reads the X-MS-CLIENT-PRINCIPAL-ID header injected by Azure's authentication layer
 /// and sets per-user OwnerId for tenant isolation.
-/// 
+///
 /// This header is:
 /// - Injected by Azure's reverse proxy AFTER successful Microsoft authentication
 /// - STRIPPED from all inbound external requests (Postman, curl, etc cannot spoof it)
 /// - Contains the user's Entra Object ID (globally unique, unforgeable)
-/// 
+///
 /// Runs BEFORE ApiKeyAuthenticationMiddleware so that EasyAuth-authenticated
 /// requests bypass the legacy SPA token path.
 /// </summary>

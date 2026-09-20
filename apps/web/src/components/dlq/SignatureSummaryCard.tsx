@@ -173,7 +173,12 @@ export function SignatureSummaryCard({ signature, namespace, dlqSummary, confide
         <dl className="text-xs text-gray-600 grid grid-cols-2 gap-x-4 gap-y-1.5 bg-gray-50 rounded-lg p-3">
           <dt className="text-gray-400">Dominant dead-letter reason</dt>
           <dd className="text-gray-700">{signature.dominantDeadletterReason} ({signature.dominantDeadletterReasonCount}/{signature.size})</dd>
-          <dt className="text-gray-400">Occurrence count</dt>
+          <dt
+            className="text-gray-400"
+            title="How many times ServiceHub's analysis has re-detected this pattern since it was first seen — not a count of affected messages. See the message count above for that."
+          >
+            Occurrence count
+          </dt>
           <dd className="text-gray-700">{signature.occurrenceCount}</dd>
           {confidence && (
             <>

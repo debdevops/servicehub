@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Google.Apis.Auth.OAuth2;
+using Google.Cloud.Firestore;
 using Google.Cloud.PubSub.V1;
 using Grpc.Auth;
 using Grpc.Core;
@@ -45,6 +46,7 @@ public sealed class GcpClientFactory : IGcpClientFactory
     // thing actually holding the socket — is tracked alongside the client and shut down explicitly.
     private readonly ConcurrentDictionary<string, (SubscriberServiceApiClient Client, ChannelBase Channel)> _subscriberCache = new();
     private readonly ConcurrentDictionary<Guid, (PublisherServiceApiClient Client, ChannelBase Channel)> _topicAdminCache = new();
+    private readonly ConcurrentDictionary<Guid, FirestoreDb> _firestoreCache = new();
 
     /// <summary>
     /// Initialises a new instance of <see cref="GcpClientFactory"/>.
@@ -135,6 +137,28 @@ public sealed class GcpClientFactory : IGcpClientFactory
     }
 
     /// <inheritdoc/>
+    public async Task<FirestoreDb> GetFirestoreDbAsync(Namespace ns, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(ns);
+
+        if (_firestoreCache.TryGetValue(ns.Id, out var cached))
+            return cached;
+
+        var projectId = GetProjectId(ns);
+        var credential = await ResolveCredentialAsync(ns).ConfigureAwait(false);
+
+        var db = await new FirestoreDbBuilder
+        {
+            ProjectId = projectId,
+            Credential = credential,
+        }.BuildAsync(ct).ConfigureAwait(false);
+
+        _firestoreCache.TryAdd(ns.Id, db);
+        _logger.LogDebug("Created FirestoreDb client for project {ProjectId}", LogRedactor.SanitiseForLog(projectId));
+        return db;
+    }
+
+    /// <inheritdoc/>
     public async Task RemoveClientAsync(Guid namespaceId, CancellationToken cancellationToken = default)
     {
         var prefix = $"{namespaceId}:";
@@ -186,6 +210,14 @@ public sealed class GcpClientFactory : IGcpClientFactory
             {
                 _logger.LogWarning(ex, "Error shutting down topic-admin client channel for namespace {NamespaceId}", namespaceId);
             }
+        }
+
+        if (_firestoreCache.TryRemove(namespaceId, out _))
+        {
+            // FirestoreDb exposes no Shutdown/Dispose of its own to await — its underlying gRPC
+            // channel is managed internally by the client library. Removing it from the cache is
+            // sufficient; the instance becomes eligible for GC once nothing else references it.
+            _logger.LogInformation("Removed cached FirestoreDb client for namespace {NamespaceId}", namespaceId);
         }
     }
 

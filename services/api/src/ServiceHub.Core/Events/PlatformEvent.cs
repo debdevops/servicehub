@@ -90,6 +90,16 @@ public sealed record PlatformEvent
     public Guid? NamespaceId { get; init; }
 
     /// <summary>
+    /// The full set of namespaces an event spans, for a finding that is inherently
+    /// multi-namespace (e.g. a cross-namespace correlation or narration insight) and so cannot be
+    /// represented by the single <see cref="NamespaceId"/>. Null/empty for a single-namespace or
+    /// namespace-agnostic event. Consumers that enforce a namespace allow-list (see
+    /// <c>PlatformEventStreamBroker</c>) must treat every ID here as referenced by the event's
+    /// content — e.g. its description — and require all of them to be allowed, not just one.
+    /// </summary>
+    public IReadOnlySet<Guid>? NamespaceIds { get; init; }
+
+    /// <summary>
     /// Display name of the namespace involved in this event.
     /// Snapshotted at publish time so that consumers have a human-readable label
     /// even if the namespace is later deleted.

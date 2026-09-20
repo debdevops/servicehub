@@ -667,6 +667,7 @@ public class DlqHistoryControllerTests
                 NamespaceId = nsId,
                 OwnerId = Namespace.SpaOwnerId,
                 SignatureHash = hash,
+                HashKind = SignatureHashKind.Cluster,
                 FirstSeenAt = DateTimeOffset.UtcNow.AddDays(-10),
                 LastSeenAt = DateTimeOffset.UtcNow.AddDays(-5),
                 OccurrenceCount = 3,
@@ -685,6 +686,196 @@ public class DlqHistoryControllerTests
         response.RelatedMessages.Should().BeEmpty();
         response.OccurrenceCount.Should().Be(3);
         response.DominantDeadletterReason.Should().Be("TTLExpiredException");
+    }
+
+    [Fact]
+    public async Task GetSignatureDetail_FingerprintHash_ResolvesToTheLiveClusterForTheSameFailure()
+    {
+        // Incidents and the Home attention queue key on the trust fingerprint hash; this endpoint's
+        // clusters key on the DLQ-Intelligence cluster hash. The two never match, so before this
+        // was resolved, every incident's "Open full signature investigation" link landed on the
+        // historical-record view — "0% of this namespace's DLQ", replay disabled — while the
+        // failure's messages were sitting in the DLQ. Reproduced live against the real AWS dev
+        // queue on 2026-09-05 (316 dead-lettered messages, page reported 0%).
+        var nsId = Guid.NewGuid();
+        const string fingerprintHash = "fingerprint-space-hash-never-equal-to-a-cluster-hash";
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(CreateOwnedNamespace(nsId)));
+        _signatureAnalysisService.Setup(s => s.AnalyzeAsync(It.IsAny<string>(), nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqSignatureAnalysisResult>.Success(CreateAvailableAnalysis()));
+        _signatureLookupService.Setup(s => s.GetByHashAsync(It.IsAny<string>(), nsId, fingerprintHash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NamespaceSignature
+            {
+                NamespaceId = nsId,
+                OwnerId = Namespace.SpaOwnerId,
+                SignatureHash = fingerprintHash,
+                HashKind = SignatureHashKind.Fingerprint,
+                FirstSeenAt = DateTimeOffset.UtcNow.AddDays(-6),
+                LastSeenAt = DateTimeOffset.UtcNow,
+                OccurrenceCount = 27,
+                // Same failure as CreateAvailableAnalysis()'s only cluster, recorded in the
+                // fingerprint vocabulary (category:/deliveries:, not cause:/deliveryAttempts:).
+                DominantDeadletterReason = "MaxDeliveryCountExceeded",
+                TopTermsJson = "[\"reason:MaxDeliveryCountExceeded\",\"entity:orders-queue\",\"provider:Aws\",\"category:MaxDelivery\",\"deliveries:medium\"]",
+            });
+        _historyService.Setup(s => s.GetByIdsAsync(It.IsAny<string>(), It.Is<IReadOnlyList<long>>(ids => ids.Count == 4), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<DlqMessage>>.Success(
+                new List<DlqMessage> { CreateTestMessage(1), CreateTestMessage(2) }));
+
+        var result = await _controller.GetSignatureDetail(nsId, fingerprintHash);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<DlqSignatureDetailResponse>().Subject;
+        response.IsCurrentlyClustered.Should().BeTrue("the failure's messages are in the DLQ right now");
+        response.Size.Should().Be(4);
+        response.RelatedMessages.Should().HaveCount(2);
+        response.DominantEntity.Should().Be("orders-queue");
+        response.SignatureHash.Should().Be(ClusteredHash,
+            "replay resolves a signature by its cluster hash, so the response must carry that identity");
+    }
+
+    [Fact]
+    public async Task GetSignatureDetail_MultiplePersistedSignaturesShareEntityAndReason_StaysOnTheHistoricalRecord()
+    {
+        // Reproduced live on 2026-09-14: several manual Test DLQ batches in the same namespace are
+        // all tagged the same generic reason ("TestingDLQ" in the wild; "MaxDeliveryCountExceeded"
+        // here), so more than one *persisted* fingerprint shares entity + reason even though only
+        // one *live cluster* currently matches that entity + reason. Before this fix, every one of
+        // those persisted signatures' detail pages silently resolved onto that same single live
+        // cluster — different fingerprints in the URL all rendered the same signature's data, and
+        // "Replay Signature" would arm against whichever cluster won, not the one actually requested.
+        var nsId = Guid.NewGuid();
+        const string fingerprintHash = "fingerprint-a-one-of-two-sharing-entity-and-reason";
+        const string siblingFingerprintHash = "fingerprint-b-one-of-two-sharing-entity-and-reason";
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(CreateOwnedNamespace(nsId)));
+        _signatureAnalysisService.Setup(s => s.AnalyzeAsync(It.IsAny<string>(), nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqSignatureAnalysisResult>.Success(CreateAvailableAnalysis()));
+        var persisted = new NamespaceSignature
+        {
+            NamespaceId = nsId,
+            OwnerId = Namespace.SpaOwnerId,
+            SignatureHash = fingerprintHash,
+            HashKind = SignatureHashKind.Fingerprint,
+            FirstSeenAt = DateTimeOffset.UtcNow.AddHours(-2),
+            LastSeenAt = DateTimeOffset.UtcNow,
+            OccurrenceCount = 6,
+            DominantDeadletterReason = "MaxDeliveryCountExceeded",
+            TopTermsJson = "[\"reason:MaxDeliveryCountExceeded\",\"entity:orders-queue\",\"provider:Aws\"]",
+        };
+        var sibling = new NamespaceSignature
+        {
+            NamespaceId = nsId,
+            OwnerId = Namespace.SpaOwnerId,
+            SignatureHash = siblingFingerprintHash,
+            HashKind = SignatureHashKind.Fingerprint,
+            FirstSeenAt = DateTimeOffset.UtcNow.AddHours(-6),
+            LastSeenAt = DateTimeOffset.UtcNow.AddHours(-3),
+            OccurrenceCount = 22,
+            DominantDeadletterReason = "MaxDeliveryCountExceeded",
+            TopTermsJson = "[\"reason:MaxDeliveryCountExceeded\",\"entity:orders-queue\",\"provider:Aws\"]",
+        };
+        _signatureLookupService.Setup(s => s.GetByHashAsync(It.IsAny<string>(), nsId, fingerprintHash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(persisted);
+        _signatureLookupService.Setup(s => s.GetAllForNamespaceAsync(It.IsAny<string>(), nsId, SignatureHashKind.Fingerprint, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<NamespaceSignature> { persisted, sibling });
+        _knowledgeService.Setup(s => s.GetKnowledgeAsync(It.IsAny<string>(), nsId, fingerprintHash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<FailureKnowledge>.Success(new FailureKnowledge(
+                null, null, null, null, null, null, null, 0, null, null)));
+
+        var result = await _controller.GetSignatureDetail(nsId, fingerprintHash);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<DlqSignatureDetailResponse>().Subject;
+        response.IsCurrentlyClustered.Should().BeFalse(
+            "two persisted signatures share this entity + reason, so resolving either one onto the single live cluster would be a guess");
+        response.SignatureHash.Should().Be(fingerprintHash);
+    }
+
+    [Fact]
+    public async Task GetSignatureDetail_AmbiguousMatch_StaysOnTheHistoricalRecord()
+    {
+        // Two live clusters share the entity and reason, so there is no safe way to say which one
+        // the persisted signature became. Guessing would attach one failure's messages to another's
+        // investigation and arm replay against them.
+        var nsId = Guid.NewGuid();
+        const string hash = "ambiguous-fingerprint-hash";
+        var ambiguous = CreateAvailableAnalysis() with
+        {
+            Clusters =
+            [
+                new DlqClusterSignature(2, [1, 2], "orders-queue", "MaxDeliveryCountExceeded", 2,
+                    ["timeout"], true, DateTimeOffset.UtcNow, 1,
+                    DateTimeOffset.UtcNow.AddHours(-1), DateTimeOffset.UtcNow, "a"),
+                new DlqClusterSignature(3, [3, 4, 5], "orders-queue", "MaxDeliveryCountExceeded", 3,
+                    ["schema"], true, DateTimeOffset.UtcNow, 1,
+                    DateTimeOffset.UtcNow.AddHours(-1), DateTimeOffset.UtcNow, "b"),
+            ],
+        };
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(CreateOwnedNamespace(nsId)));
+        _signatureAnalysisService.Setup(s => s.AnalyzeAsync(It.IsAny<string>(), nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqSignatureAnalysisResult>.Success(ambiguous));
+        _signatureLookupService.Setup(s => s.GetByHashAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NamespaceSignature
+            {
+                NamespaceId = nsId,
+                OwnerId = Namespace.SpaOwnerId,
+                SignatureHash = hash,
+                HashKind = SignatureHashKind.Cluster,
+                FirstSeenAt = DateTimeOffset.UtcNow.AddDays(-6),
+                LastSeenAt = DateTimeOffset.UtcNow,
+                OccurrenceCount = 9,
+                DominantDeadletterReason = "MaxDeliveryCountExceeded",
+                TopTermsJson = "[\"entity:orders-queue\"]",
+            });
+        _knowledgeService.Setup(s => s.GetKnowledgeAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<FailureKnowledge>.Success(new FailureKnowledge(
+                null, null, null, null, null, null, null, 0, null, null)));
+
+        var result = await _controller.GetSignatureDetail(nsId, hash);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<DlqSignatureDetailResponse>().Subject;
+        response.IsCurrentlyClustered.Should().BeFalse();
+        response.SignatureHash.Should().Be(hash);
+    }
+
+    [Fact]
+    public async Task GetSignatureDetail_HistoricalRecord_DoesNotClaimTheMessagesLeftTheDlq()
+    {
+        // The endpoint only knows the signature is absent from the latest clustering pass. On AWS
+        // and GCP it cannot know more — ProviderCapabilities.CanProveDlqAbsence is false for both.
+        var nsId = Guid.NewGuid();
+        const string hash = "historical-only-hash";
+        _namespaceRepository.Setup(r => r.GetByIdAsync(nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(CreateOwnedNamespace(nsId)));
+        _signatureAnalysisService.Setup(s => s.AnalyzeAsync(It.IsAny<string>(), nsId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<DlqSignatureAnalysisResult>.Success(CreateAvailableAnalysis()));
+        _signatureLookupService.Setup(s => s.GetByHashAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NamespaceSignature
+            {
+                NamespaceId = nsId,
+                OwnerId = Namespace.SpaOwnerId,
+                SignatureHash = hash,
+                HashKind = SignatureHashKind.Cluster,
+                FirstSeenAt = DateTimeOffset.UtcNow.AddDays(-10),
+                LastSeenAt = DateTimeOffset.UtcNow.AddDays(-5),
+                OccurrenceCount = 3,
+                DominantDeadletterReason = "TTLExpiredException",
+                TopTermsJson = "[\"entity:some-other-queue\"]",
+            });
+        _knowledgeService.Setup(s => s.GetKnowledgeAsync(It.IsAny<string>(), nsId, hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<FailureKnowledge>.Success(new FailureKnowledge(
+                null, null, null, null, null, null, null, 0, null, null)));
+
+        var result = await _controller.GetSignatureDetail(nsId, hash);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<DlqSignatureDetailResponse>().Subject;
+        response.IsCurrentlyClustered.Should().BeFalse();
+        response.Explanation.Should().NotContain("no longer active in the DLQ");
+        response.Explanation.Should().Contain("not part of the current DLQ clustering pass");
     }
 
     [Fact]
@@ -722,6 +913,7 @@ public class DlqHistoryControllerTests
                 NamespaceId = nsId,
                 OwnerId = Namespace.SpaOwnerId,
                 SignatureHash = hash,
+                HashKind = SignatureHashKind.Cluster,
                 FirstSeenAt = firstSeen,
                 LastSeenAt = lastSeen,
                 OccurrenceCount = 4,
@@ -767,6 +959,7 @@ public class DlqHistoryControllerTests
                 NamespaceId = nsId,
                 OwnerId = Namespace.SpaOwnerId,
                 SignatureHash = hash,
+                HashKind = SignatureHashKind.Cluster,
                 FirstSeenAt = firstSeen,
                 LastSeenAt = lastSeen,
                 OccurrenceCount = 4,
@@ -834,6 +1027,7 @@ public class DlqHistoryControllerTests
                 NamespaceId = nsId,
                 OwnerId = Namespace.SpaOwnerId,
                 SignatureHash = hash,
+                HashKind = SignatureHashKind.Cluster,
                 FirstSeenAt = firstSeen,
                 LastSeenAt = firstSeen,
                 OccurrenceCount = 1,
@@ -909,6 +1103,7 @@ public class DlqHistoryControllerTests
             NamespaceId = namespaceId,
             OwnerId = Namespace.SpaOwnerId,
             SignatureHash = hash,
+            HashKind = SignatureHashKind.Cluster,
             FirstSeenAt = DateTimeOffset.UtcNow.AddDays(-3),
             LastSeenAt = DateTimeOffset.UtcNow.AddDays(-1),
             OccurrenceCount = occurrenceCount,

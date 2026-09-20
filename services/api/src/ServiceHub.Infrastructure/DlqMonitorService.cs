@@ -458,7 +458,15 @@ public sealed class DlqMonitorService : IDlqMonitorService
                     EntityName = fullEntityName,
                     EntityType = entityType,
                     EnqueuedTimeUtc = msg.EnqueuedTime,
-                    DeadLetterTimeUtc = msg.EnqueuedTime, // Best approximation from peek
+                    // No provider's peek API exposes the real system dead-letter timestamp, so this
+                    // is left unset rather than approximated with EnqueuedTime: a message can sit
+                    // Active for arbitrarily long before actually being dead-lettered, and stamping
+                    // EnqueuedTime here previously made DlqSignatureAnalysisService.OccurredAt()
+                    // (which prefers DeadLetterTimeUtc over DetectedAtUtc) render a signature's
+                    // "Last Active" time as earlier than its "First Seen" time. Everything that reads
+                    // this field already falls back to DetectedAtUtc (the moment our own scan found
+                    // the message) when it's null, which is the more truthful proxy.
+                    DeadLetterTimeUtc = null,
                     DetectedAtUtc = detectedAt,
                     DeadLetterReason = msg.DeadLetterReason,
                     DeadLetterErrorDescription = msg.DeadLetterErrorDescription,

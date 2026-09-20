@@ -40,3 +40,16 @@ for (const key of ['localStorage', 'sessionStorage'] as const) {
 // responsive side-panel breakpoints — set a normal desktop width so components
 // that read window.innerWidth render their default (non-narrow) state in tests.
 Object.defineProperty(window, 'innerWidth', { value: 1440, configurable: true, writable: true });
+
+// jsdom never performs layout, so it doesn't implement ResizeObserver at all. Components that
+// measure an element's real size (IconRail's overflow detection) only need the constructor to
+// exist and not throw — jsdom's clientHeight is always 0, which those components already treat
+// as "not yet measured" rather than "no room."
+if (!globalThis.ResizeObserver) {
+  class NoopResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  globalThis.ResizeObserver = NoopResizeObserver as unknown as typeof ResizeObserver;
+}

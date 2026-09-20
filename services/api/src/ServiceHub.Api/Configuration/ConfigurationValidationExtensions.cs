@@ -85,6 +85,30 @@ public static class ConfigurationValidationExtensions
                 "Audit:Retention:SweepIntervalHours must be at least 1.")
             .ValidateOnStart();
 
+        services.AddOptions<PillarFindingRetentionOptions>()
+            .Bind(configuration.GetSection(PillarFindingRetentionOptions.SectionName))
+            .Validate(
+                o => !o.Enabled || o.RetentionDays >= 1,
+                "Pillars:Retention:RetentionDays must be at least 1 when Pillars:Retention:Enabled is true.")
+            .Validate(
+                o => o.SweepIntervalHours >= 1,
+                "Pillars:Retention:SweepIntervalHours must be at least 1.")
+            .ValidateOnStart();
+
+        services.AddOptions<BackupOptions>()
+            .Bind(configuration.GetSection(BackupOptions.SectionName))
+            .Validate(
+                o => o.ScheduledBackupIntervalHours >= 0,
+                "Backup:ScheduledBackupIntervalHours must be non-negative (0 disables scheduled backups).")
+            .Validate(
+                o => o.RetentionCount >= 1,
+                "Backup:RetentionCount must be at least 1.")
+            .ValidateOnStart();
+
+        services.AddOptions<RecoveryEpochArchiveOptions>()
+            .Bind(configuration.GetSection(RecoveryEpochArchiveOptions.SectionName))
+            .ValidateOnStart();
+
         return services;
     }
 

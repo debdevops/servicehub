@@ -206,6 +206,156 @@ class LoadExportTests(unittest.TestCase):
             os.unlink(path)
 
 
+def make_seal_marker(prev_event):
+    """Builds a fixture EpochSealed marker event chained from prev_event's EntryHash — the row
+    RecoveryEpochArchiveService deliberately leaves live rather than archiving (its own Seq/hash
+    become an archive's sealEventSeq/sealEventHash)."""
+    event = {
+        "id": str(uuid.uuid4()),
+        "ownerId": OWNER_ID,
+        "seq": prev_event["seq"] + 1,
+        "entryId": None,
+        "operationId": str(uuid.uuid4()),
+        "eventType": "EpochSealed",
+        "occurredAt": "2026-09-06T00:00:00.0000000+00:00",
+        "actorIdentity": "alex@contoso.com",
+        "actorKind": "User",
+        "detailJson": None,
+        "prevHash": prev_event["entryHash"],
+        "schemaVersion": 1,
+    }
+    event["entryHash"] = verifier.compute_entry_hash(event)
+    return event
+
+
+def make_archive(epoch_number, events):
+    """Builds a well-formed epoch-archive document (roadmap next-chapter M5.2) around a fixture
+    chain from make_chain(), matching exactly what RecoveryEpochArchiveService writes — including
+    sealEventSeq/sealEventHash for the epoch's own trailing EpochSealed marker, which stays live
+    rather than being archived (there is always a one-Seq gap between endSeq and the next epoch's
+    startSeq)."""
+    seal_marker = make_seal_marker(events[-1])
+    return {
+        "ownerId": OWNER_ID,
+        "epochNumber": epoch_number,
+        "startSeq": events[0]["seq"],
+        "startPrevHash": events[0]["prevHash"],
+        "endSeq": events[-1]["seq"],
+        "terminalHash": events[-1]["entryHash"],
+        "sealEventSeq": seal_marker["seq"],
+        "sealEventHash": seal_marker["entryHash"],
+        "sealedAtUtc": "2026-09-06T00:00:00.0000000+00:00",
+        "events": events,
+    }
+
+
+class ArchiveChainTests(unittest.TestCase):
+    def _write_archive(self, directory, epoch_number, archive):
+        path = os.path.join(directory, f"epoch-{epoch_number:06d}.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(archive, f)
+        return path
+
+    def test_single_valid_archive_verifies_alone(self):
+        events = make_chain(3)
+        archive = make_archive(1, events)
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_archive(tmp, 1, archive)
+            findings, last_archive = verifier.verify_archive_chain(tmp)
+            self.assertEqual(findings, [])
+            self.assertEqual(last_archive["endSeq"], events[-1]["seq"])
+
+    def test_two_archives_chain_correctly(self):
+        epoch1_events = make_chain(3, start_seq=1)
+        archive1 = make_archive(1, epoch1_events)
+
+        # Epoch 2 starts right after epoch 1's live seal marker (sealEventSeq), not right after
+        # epoch1's own endSeq — the marker itself occupies the Seq in between and is never
+        # archived.
+        epoch2_events = make_chain(2, start_seq=archive1["sealEventSeq"] + 1)
+        epoch2_events[0]["prevHash"] = archive1["sealEventHash"]
+        epoch2_events[0]["entryHash"] = verifier.compute_entry_hash(epoch2_events[0])
+        prev_hash = epoch2_events[0]["entryHash"]
+        for evt in epoch2_events[1:]:
+            evt["prevHash"] = prev_hash
+            evt["entryHash"] = verifier.compute_entry_hash(evt)
+            prev_hash = evt["entryHash"]
+        archive2 = make_archive(2, epoch2_events)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_archive(tmp, 1, archive1)
+            self._write_archive(tmp, 2, archive2)
+            findings, last_archive = verifier.verify_archive_chain(tmp)
+            self.assertEqual(findings, [])
+            self.assertEqual(last_archive["endSeq"], epoch2_events[-1]["seq"])
+
+    def test_broken_link_between_archives_is_detected(self):
+        epoch1_events = make_chain(3, start_seq=1)
+        archive1 = make_archive(1, epoch1_events)
+        # Deliberately leave epoch2's startPrevHash NOT matching epoch1's sealEventHash.
+        epoch2_events = make_chain(2, start_seq=archive1["sealEventSeq"] + 1)
+        archive2 = make_archive(2, epoch2_events)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_archive(tmp, 1, archive1)
+            self._write_archive(tmp, 2, archive2)
+            findings, _ = verifier.verify_archive_chain(tmp)
+            self.assertTrue(any("do not chain to each other" in f for f in findings))
+
+    def test_no_archive_files_is_a_finding_not_a_crash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            findings, last_archive = verifier.verify_archive_chain(tmp)
+            self.assertTrue(any("No epoch-*.json archive files found" in f for f in findings))
+            self.assertIsNone(last_archive)
+
+    def test_cli_follows_archive_into_live_export(self):
+        epoch1_events = make_chain(3, start_seq=1)
+        archive1 = make_archive(1, epoch1_events)
+
+        # The next operation's events start right after the live seal marker, chained from its
+        # own EntryHash (sealEventHash) — not from epoch1's terminalHash directly.
+        live_events = make_chain(2, start_seq=archive1["sealEventSeq"] + 1)
+        live_events[0]["prevHash"] = archive1["sealEventHash"]
+        live_events[0]["entryHash"] = verifier.compute_entry_hash(live_events[0])
+        prev_hash = live_events[0]["entryHash"]
+        for evt in live_events[1:]:
+            evt["prevHash"] = prev_hash
+            evt["entryHash"] = verifier.compute_entry_hash(evt)
+            prev_hash = evt["entryHash"]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_archive(tmp, 1, archive1)
+            live_path = os.path.join(tmp, "events.json")
+            with open(live_path, "w", encoding="utf-8") as f:
+                json.dump(live_events, f)
+
+            old_argv = sys.argv
+            sys.argv = ["verify-recovery-chain.py", live_path, "--archive-dir", tmp]
+            try:
+                self.assertEqual(verifier.main(), 0)
+            finally:
+                sys.argv = old_argv
+
+    def test_cli_detects_live_export_not_continuing_from_archive(self):
+        epoch1_events = make_chain(3, start_seq=1)
+        archive1 = make_archive(1, epoch1_events)
+        # Live export starts fresh at Seq 1 again instead of continuing from the live seal marker.
+        live_events = make_chain(2, start_seq=1)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_archive(tmp, 1, archive1)
+            live_path = os.path.join(tmp, "events.json")
+            with open(live_path, "w", encoding="utf-8") as f:
+                json.dump(live_events, f)
+
+            old_argv = sys.argv
+            sys.argv = ["verify-recovery-chain.py", live_path, "--archive-dir", tmp]
+            try:
+                self.assertEqual(verifier.main(), 1)
+            finally:
+                sys.argv = old_argv
+
+
 class MainCliTests(unittest.TestCase):
     def _run_main(self, path):
         old_argv = sys.argv

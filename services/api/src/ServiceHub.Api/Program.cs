@@ -87,7 +87,18 @@ if (builder.Configuration.GetValue("CloudProviders:Gcp:Enabled", false))
 // whichever ICloudMessagingProvider set is active for this host.
 builder.Services.AddBackgroundWorkers();
 
+// Local test infrastructure for the high-volume/flood verification pass (see
+// FloodSeedController). Registration is inert unless invoked, and the controller itself refuses
+// every request outside Development — safe to register unconditionally.
+builder.Services.AddScoped<ServiceHub.Infrastructure.Testing.FloodSeedService>();
+
 var app = builder.Build();
+
+// Enforce the single-instance invariant the recovery evidence ledger's hash chain depends on
+// (roadmap W1.4). Resolved first, before anything else touches the data directory: a second
+// instance already running against the same directory fails fast here with a clear message
+// instead of silently corrupting the ledger's hash chain later.
+app.Services.GetRequiredService<ServiceHub.Infrastructure.Persistence.SqliteInstanceLock>();
 
 // Emit a single, secret-free summary of the effective configuration for operability.
 app.LogStartupSummary();
@@ -97,6 +108,27 @@ ProductionConfigurationValidator.ValidateProduction(
     app.Configuration,
     app.Environment,
     app.Logger);
+
+// Loud, non-fatal warning outside Development when the recovery observation window is
+// non-default (roadmap W1.1) — Staging included, not only Production, unlike the fail-fast
+// check above.
+ProductionConfigurationValidator.WarnIfObservationWindowNonDefault(
+    app.Configuration,
+    app.Environment,
+    app.Logger);
+
+// Same treatment for the per-rule success-rate circuit-breaker floor: a lowered floor is
+// legitimate in a soak run and invisible in normal operation, so say so at startup.
+ProductionConfigurationValidator.WarnIfCircuitBreakerFloorNonDefault(
+    app.Configuration,
+    app.Environment,
+    app.Logger);
+
+// Eagerly resolve the connection-string protector so a broken or invalid encryption key
+// registry (Security:EncryptionKeyRegistry / Security:EncryptionKey) fails startup with a clear
+// error instead of surfacing lazily on the first namespace request — in every environment, not
+// just Production (ProductionConfigurationValidator above only runs there).
+app.Services.GetRequiredService<IConnectionStringProtector>();
 
 // Wire Platform Event subscribers before any hosted service starts.
 // This registers WebhookDlqSpikeHandler (and future handlers) with the
@@ -129,6 +161,33 @@ using (var scope = app.Services.CreateScope())
 
         await dlqDbContext.Database.MigrateAsync();
         app.Logger.LogInformation("DLQ Intelligence database schema is up to date");
+
+        // One-shot, forward-only cutover from the JSON-file-backed namespace store to SQLite
+        // (M2 of the persistence wave). Must run after MigrateAsync (the Namespaces table needs
+        // to exist) and is allowed to throw — a failed import must not silently proceed with a
+        // partially-populated Namespaces table, so it shares the same non-Development rethrow
+        // behaviour as a failed MigrateAsync() below.
+        await NamespaceStoreImporter.ImportIfPresentAsync(dlqDbContext, app.Configuration, app.Logger);
+
+        // Classifies NamespaceSignatures.HashKind for rows the M1.4 migration defaulted to
+        // Fingerprint (ADR-0009 §Decision unit 2). Never throws — see
+        // NamespaceSignatureHashKindBackfiller's own remarks for why this is safe to leave
+        // non-fatal, unlike the import above.
+        await NamespaceSignatureHashKindBackfiller.BackfillAsync(dlqDbContext, app.Logger);
+
+        // Grandfathers every existing account into a fleet-wide Admin grant, plus one
+        // namespace-scoped Operator grant per existing namespace share (M3 of the persistence
+        // wave). Must run after the M2 import above (reads Namespaces/NamespaceSharedOwners).
+        // Unlike the import above, a seed-count mismatch here only logs a warning — never gates
+        // startup — since grant seeding is recoverable by hand.
+        try
+        {
+            await GovernanceGrantSeeder.SeedIfEmptyAsync(dlqDbContext, app.Logger);
+        }
+        catch (Exception governanceSeedEx)
+        {
+            app.Logger.LogError(governanceSeedEx, "Failed to seed Governance grants at startup");
+        }
 
         // Reconcile messages stranded mid-replay or mid-purge by a previous process. This must
         // run here — after the schema is ready but before any hosted service starts — so that

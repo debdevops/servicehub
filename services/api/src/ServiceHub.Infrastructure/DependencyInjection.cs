@@ -8,10 +8,12 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.AI;
+using ServiceHub.Infrastructure.Backup;
 using ServiceHub.Infrastructure.BackgroundServices;
 using ServiceHub.Infrastructure.BulkOperations;
+using ServiceHub.Infrastructure.DlqObserver;
 using ServiceHub.Infrastructure.Persistence;
-using ServiceHub.Infrastructure.Persistence.InMemory;
+using ServiceHub.Infrastructure.PlaybookLedger;
 using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Infrastructure.Security;
@@ -48,6 +50,9 @@ public static class DependencyInjection
 
         // AI
         services.AddAI(configuration);
+
+        // Reasoning companion (roadmap §7, W5)
+        services.AddReasoningAgent(configuration);
 
         // Webhooks
         services.AddWebhooks(configuration);
@@ -90,9 +95,11 @@ public static class DependencyInjection
         services.TryAddScoped<Core.Interfaces.ICloudProviderRouter>(
             sp => sp.GetRequiredService<ServiceHub.Infrastructure.Routing.CloudProviderRouter>());
 
-        // Health check
+        // Health check. Tagged "dependencies", not "ready" — an unreachable Azure namespace is an
+        // external broker outage, not an internal-storage readiness failure, and must never flip
+        // /health/ready to Unhealthy and pull the whole instance out of load-balancer rotation.
         services.AddHealthChecks()
-            .AddCheck<ServiceBusHealthCheck>("servicebus", tags: ["ready", "servicebus"]);
+            .AddCheck<ServiceBusHealthCheck>("servicebus", tags: ["dependencies", "servicebus"]);
 
         return services;
     }
@@ -118,8 +125,11 @@ public static class DependencyInjection
     /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddPersistence(this IServiceCollection services)
     {
-        // In-memory repository for MVP
-        services.TryAddSingleton<INamespaceRepository, InMemoryNamespaceRepository>();
+        // SQLite-backed (M2 of the persistence wave) — replaces the JSON-file-backed
+        // InMemoryNamespaceRepository. Scoped, not Singleton: SqliteNamespaceRepository depends on
+        // the per-request-scoped DlqDbContext (see AddDlqDatabase), matching every other
+        // DlqDbContext-backed service registration in this file.
+        services.TryAddScoped<INamespaceRepository, SqliteNamespaceRepository>();
 
         return services;
     }
@@ -141,8 +151,12 @@ public static class DependencyInjection
     /// <summary>
     /// Adds AI infrastructure services.
     /// <para>
-    /// <see cref="IAIServiceClient"/> — singleton anomaly-detection client used by AnomaliesController
-    /// for real-time message analysis. <br/>
+    /// <see cref="IAIServiceClient"/> — singleton client wrapping the optional, self-hosted AI
+    /// service. Consumed by <see cref="AI.AIClusteringStrategy"/> (tried first, with automatic
+    /// fallback to <see cref="AI.DeterministicClusteringStrategy"/>) inside
+    /// <see cref="AI.DlqSignatureAnalysisService"/> for DLQ signature clustering. Anomaly
+    /// detection itself (<c>AnomalyDetectionWorker</c>) is fully deterministic and has no AI
+    /// dependency. <br/>
     /// <see cref="IForensicEngine"/> — scoped three-tier forensic classifier registered in
     /// <see cref="AddDlqDatabase"/> because it operates on per-request <c>DlqMessage</c> entities.
     /// </para>
@@ -175,6 +189,50 @@ public static class DependencyInjection
         // Signature recognition service (business-level layer)
         services.TryAddScoped<IFailureSignatureRecognitionService, AI.FailureSignatureRecognitionService>();
 
+        // Surfaces AI availability on /health (and /health/dependencies) without waiting for a real
+        // clustering request — Degraded, never Unhealthy, since AI is an optional dependency. Tagged
+        // "dependencies", not "ready": AI is external and optional, never a readiness gate.
+        services.AddHealthChecks()
+            .AddCheck<AI.AIServiceHealthCheck>("ai", tags: ["dependencies", "ai"]);
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds the reasoning-companion HTTP client (roadmap §7, W5).
+    /// <para>
+    /// <see cref="IReasoningAgentClient"/> — singleton client wrapping the optional, self-hosted,
+    /// disabled-by-default <c>services/agent</c> container. Structurally mirrors
+    /// <see cref="AddAI"/>. Consumed only by <c>ReasoningCompanionWorker</c> — no controller or
+    /// other request-path code depends on this client, since the companion's only legal effect on
+    /// the system is a Playbook Ledger proposal written from a background sweep.
+    /// </para>
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">The configuration (optional).</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddReasoningAgent(this IServiceCollection services, IConfiguration? configuration = null)
+    {
+        services.Configure<ReasoningAgentOptions>(opts =>
+            configuration?.GetSection(ReasoningAgentOptions.SectionName).Bind(opts));
+
+        services.AddHttpClient(Agent.ReasoningAgentClient.HttpClientName, (sp, client) =>
+        {
+            var options = sp.GetRequiredService<IOptions<ReasoningAgentOptions>>().Value;
+            if (Uri.TryCreate(options.ServiceUrl, UriKind.Absolute, out var baseUri))
+            {
+                client.BaseAddress = baseUri;
+            }
+
+            client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+        });
+
+        services.TryAddSingleton<IReasoningAgentClient, Agent.ReasoningAgentClient>();
+
+        // Degraded, never Unhealthy — same reasoning as the "ai" check above.
+        services.AddHealthChecks()
+            .AddCheck<Agent.ReasoningAgentHealthCheck>("reasoning-agent", tags: ["dependencies", "reasoning-agent"]);
+
         return services;
     }
 
@@ -187,13 +245,44 @@ public static class DependencyInjection
     public static IServiceCollection AddBackgroundWorkers(this IServiceCollection services)
     {
         services.AddHostedService<AnomalyDetectionWorker>();
+        services.AddHostedService<DriftDetectionWorker>();
+        services.AddHostedService<CorrelationDetectionWorker>();
+        services.AddHostedService<ExternalSignalCorrelationWorker>();
+        services.AddHostedService<NarrationWorker>();
+        services.AddHostedService<BacklogForecastWorker>();
         services.AddHostedService<DlqMonitorWorker>();
         services.AddHostedService<BulkOperationWorker>();
         services.AddHostedService<SignatureReplayWorker>();
         services.AddHostedService<AuditRetentionWorker>();
+        services.AddHostedService<PillarFindingRetentionWorker>();
         services.AddHostedService<RecoveryVerificationWorker>();
         services.AddHostedService<RecoveryAgeingWorker>();
+        services.AddHostedService<PlaybookExpiryWorker>();
+        services.AddHostedService<PreventionRuleExpiryWorker>();
         services.AddHostedService<AutonomyEvaluationWorker>();
+        services.AddHostedService<ProductionElevationExpiryWorker>();
+        services.AddHostedService<DlqObserverAttestationWorker>();
+        services.AddHostedService<BackupWorker>();
+        services.AddHostedService<ReasoningCompanionWorker>();
+
+        // Self-observability of the autonomy machinery itself (roadmap §6, cross-cutting
+        // foundation item 4) — registered alongside the workers above as a matched unit, so an
+        // environment that skips AddBackgroundWorkers() (no workers running) also skips the
+        // health check that watches them, rather than reporting every worker perpetually
+        // "never reported".
+        services.TryAddSingleton<IWorkerHeartbeatStore, InMemoryWorkerHeartbeatStore>();
+        services.TryAddSingleton(serviceProvider =>
+        {
+            var resolvedConfiguration = serviceProvider.GetRequiredService<IConfiguration>();
+            return new WorkerHeartbeatHealthCheckOptions
+            {
+                StalenessMultiplier = resolvedConfiguration.GetValue(
+                    "WorkerHeartbeat:StalenessMultiplier",
+                    WorkerHeartbeatHealthCheckOptions.Default.StalenessMultiplier),
+            };
+        });
+        services.AddHealthChecks()
+            .AddCheck<WorkerHeartbeatHealthCheck>("worker-heartbeat", tags: ["workers"]);
 
         return services;
     }
@@ -222,7 +311,25 @@ public static class DependencyInjection
             Directory.CreateDirectory(dataDir);
 
             var dbPath = Path.Combine(dataDir, "servicehub-dlq.db");
-            options.UseSqlite($"Data Source={dbPath}");
+
+            // WAL journaling + busy_timeout (roadmap F1) — eight independent background
+            // workers write to this single file with no such configuration otherwise.
+            var busyTimeoutMilliseconds = resolvedConfiguration.GetValue(
+                "DlqDatabase:BusyTimeoutMilliseconds",
+                SqlitePragmaConnectionInterceptor.DefaultBusyTimeoutMilliseconds);
+
+            // Microsoft.Data.Sqlite retries SQLITE_BUSY/SQLITE_LOCKED internally on its own
+            // schedule, bounded by SqliteCommand.CommandTimeout — NOT by the busy_timeout PRAGMA
+            // SqlitePragmaConnectionInterceptor sets. Left at EF Core's default (30s), a command
+            // would keep retrying for up to 30 seconds regardless of BusyTimeoutMilliseconds,
+            // making that setting purely cosmetic. CommandTimeout must be set to match so the
+            // configured value actually bounds how long a write blocks before Polly's outer
+            // SaveChanges retry (DlqDbContext) ever gets a chance to run.
+            var commandTimeoutSeconds = (int)Math.Ceiling(busyTimeoutMilliseconds / 1000.0);
+            options.UseSqlite(
+                $"Data Source={dbPath}",
+                sqliteOptions => sqliteOptions.CommandTimeout(commandTimeoutSeconds));
+            options.AddInterceptors(new SqlitePragmaConnectionInterceptor(busyTimeoutMilliseconds));
 
             // EnableDetailedErrors surfaces EF Core internals (SQL, schema) in error messages.
             // Only enable in Development to prevent information leakage in production.
@@ -233,11 +340,81 @@ public static class DependencyInjection
             }
         });
 
+        // Single-instance invariant (roadmap W1.4) — Singleton so the OS-level file lock it
+        // acquires in its constructor is held for the process lifetime and released by the
+        // container on shutdown. Program.cs resolves this eagerly at startup so a second
+        // instance against the same data directory fails fast, before any database access.
+        services.TryAddSingleton(serviceProvider =>
+            new SqliteInstanceLock(serviceProvider.GetRequiredService<IConfiguration>()));
+
+        // SaveChanges retry tunables (roadmap F1) — Singleton is fine: Scoped DlqDbContext
+        // instances may depend on a Singleton, and the retry attempt count has no per-request
+        // state of its own.
+        services.TryAddSingleton(serviceProvider =>
+        {
+            var resolvedConfiguration = serviceProvider.GetRequiredService<IConfiguration>();
+            var maxRetryAttempts = resolvedConfiguration.GetValue(
+                "DlqDatabase:MaxBusyRetryAttempts",
+                SqliteBusyRetryOptions.Default.MaxRetryAttempts);
+            return new SqliteBusyRetryOptions { MaxRetryAttempts = maxRetryAttempts };
+        });
+
+        // Basic DB observability (roadmap §8 F-track item 4) — file size, WAL-checkpoint
+        // status, slow-query-equivalent logging, surfaced through the health check
+        // infrastructure that already exists. Singleton for the same reason as
+        // SqliteBusyRetryOptions above.
+        services.TryAddSingleton(serviceProvider =>
+        {
+            var resolvedConfiguration = serviceProvider.GetRequiredService<IConfiguration>();
+            return new SqliteDatabaseHealthCheckOptions
+            {
+                WalSizeWarningThresholdBytes = resolvedConfiguration.GetValue(
+                    "DlqDatabase:HealthCheck:WalSizeWarningThresholdBytes",
+                    SqliteDatabaseHealthCheckOptions.Default.WalSizeWarningThresholdBytes),
+                SlowCheckThreshold = TimeSpan.FromMilliseconds(resolvedConfiguration.GetValue(
+                    "DlqDatabase:HealthCheck:SlowCheckThresholdMilliseconds",
+                    SqliteDatabaseHealthCheckOptions.Default.SlowCheckThreshold.TotalMilliseconds))
+            };
+        });
+
+        services.AddHealthChecks()
+            .AddCheck<SqliteDatabaseHealthCheck>("sqlite", tags: ["ready", "database"]);
+
         // Register DLQ services
         services.TryAddSingleton<DlqNotMonitoredLogGuard>();
         services.TryAddScoped<IDlqMonitorService, DlqMonitorService>();
         services.TryAddScoped<IDlqHistoryService, DlqHistoryService>();
         services.TryAddScoped<INamespaceSignatureLookupService, NamespaceSignatureLookupService>();
+        services.TryAddScoped<IGovernanceGrantService, GovernanceGrantService>();
+        services.TryAddScoped<IGovernanceAccessEvaluator, Governance.GovernanceAccessEvaluator>();
+
+        // Configuration as code (roadmap next-chapter M5.4) — round-trip export/import of
+        // AutoReplayRules and GovernanceGrants only; never namespace credentials, never ledger
+        // events or pillar findings. See IConfigurationExportService's own remarks.
+        services.TryAddScoped<IConfigurationExportService, ConfigurationExportService>();
+        services.TryAddScoped<IPlaybookLedger, PlaybookLedgerService>();
+        services.TryAddScoped<ICorrelationAccountabilityService, CorrelationAccountabilityService>();
+        services.TryAddScoped<IBacktestService, BacktestService>();
+        services.TryAddScoped<IIncidentReadModelService, Incidents.IncidentReadModelService>();
+        services.TryAddScoped<IAttentionQueueService, Incidents.AttentionQueueService>();
+        services.TryAddScoped<IPreventionRuleEvaluationService, PreventionRuleEvaluationService>();
+        services.TryAddScoped<IAnomalyDetectionService, Analytics.DeterministicAnomalyDetectionService>();
+        // Durable as of next-chapter M1 (ADR-0009) — Scoped, not Singleton, since each now
+        // depends on the per-request/per-scope DlqDbContext rather than holding process-local
+        // state itself.
+        services.TryAddScoped<IAnomalyResultCache, Analytics.SqliteAnomalyResultCache>();
+        services.TryAddScoped<IDriftDetectionService, Analytics.DeterministicDriftDetectionService>();
+        services.TryAddScoped<IDriftResultCache, Analytics.SqliteDriftResultCache>();
+        services.TryAddScoped<IContractViolationExportService, Analytics.DeterministicContractViolationExportService>();
+        services.TryAddScoped<ICorrelationDetectionService, Analytics.DeterministicCorrelationDetectionService>();
+        services.TryAddScoped<ICorrelationResultCache, Analytics.SqliteCorrelationResultCache>();
+        services.TryAddScoped<IExternalSignalRepository, ExternalSignalRepository>();
+        services.TryAddScoped<IExternalSignalCorrelationService, Analytics.DeterministicExternalSignalCorrelationService>();
+        services.TryAddScoped<IExternalSignalCorrelationCache, Analytics.SqliteExternalSignalCorrelationCache>();
+        services.TryAddScoped<INarrationService, Analytics.DeterministicNarrationService>();
+        services.TryAddScoped<INarrationResultCache, Analytics.SqliteNarrationResultCache>();
+        services.TryAddScoped<IBacklogForecastService, Analytics.DeterministicBacklogForecastService>();
+        services.TryAddScoped<IBacklogForecastResultCache, Analytics.SqliteBacklogForecastResultCache>();
 
         // Register signature analysis strategies.
         // AIClusteringStrategy wraps the AI service client and provides rich clustering.
@@ -261,16 +438,45 @@ public static class DependencyInjection
         // DlqDbContext-backed service. No callers yet; wired to the recovery paths in a later phase.
         services.TryAddScoped<IRecoveryLedger, RecoveryLedgerService>();
         services.TryAddScoped<IRecoveryEvidenceExporter, RecoveryEvidenceExporter>();
+        services.TryAddScoped<IPlaybookEvidenceExporter, PlaybookEvidenceExporter>();
 
         // Deterministic Eligibility Gate (roadmap §9/Phase B) — the single safety-decision point
         // every recovery attempt passes through before a provider call.
         services.TryAddScoped<IRecoveryEligibilityGate, RecoveryEligibilityGate>();
 
+        // DLQ observer attestation (ADR-004; ADR-0011) — EF Core (DlqDbContext)-backed, so Scoped
+        // like every other DlqDbContext-backed service.
+        services.TryAddScoped<IDlqObserverAttestationService, DlqObserverAttestationService>();
+
         // Evidence-Derived Trust Scoring (roadmap §8.10/Phase C) — read-only aggregation over
         // the ledger; never writes, never grants autonomy.
         services.TryAddScoped<IRecoveryTrustScoringService, RecoveryTrustScoringService>();
 
+        // Approval Queue (roadmap §11 item 1) — read-only view over rule-triggered Escalate
+        // declines; approval itself reuses the existing single-message replay endpoint, so this
+        // service never writes.
+        services.TryAddScoped<IApprovalQueueService, ApprovalQueueService>();
+
+        // Rehearsal mode (roadmap §7 W1.2) — runs the Eligibility Gate against a recorded entry's
+        // identity and reports the verdict; depends on nothing capable of executing a recovery
+        // action, so it can never reach a broker regardless of the verdict.
+        services.TryAddScoped<IRecoveryRehearsalService, RecoveryRehearsalService>();
+
         services.TryAddScoped<IFleetOverviewService, FleetOverviewService>();
+
+        // Cross-cloud DLQ overview (provider-grouped triage dashboard) — read-only aggregation
+        // over DlqMessages, independent of IFleetOverviewService's flat per-namespace rollup.
+        services.TryAddScoped<IDlqOverviewService, DlqOverviewService>();
+
+        // Fleet-wide autonomy dashboard (roadmap §11 item 5, §15 item 9) — read-only aggregation
+        // over AutonomyGrants/AutoReplayRules/RecoveryEvents; never writes, never grants autonomy.
+        services.TryAddScoped<IAutonomyDashboardService, AutonomyDashboardService>();
+
+        // Outcome metrics (roadmap next-chapter M4.1) — what the fleet achieved, not how
+        // autonomous it is. Read-only aggregation over RecoveryLedgerEntries/RecoveryOperations/
+        // RecoveryEvents; never writes, never a modelled or estimated figure.
+        services.TryAddScoped<IOutcomeMetricsService, OutcomeMetricsService>();
+
         services.TryAddScoped<IRuleEngine, RuleEngine>();
         services.TryAddScoped<IAutoReplayExecutor, AutoReplayExecutor>();
 
@@ -309,6 +515,18 @@ public static class DependencyInjection
         // Failure Intelligence Center — aggregation service for incident command center
         services.TryAddScoped<IFailureIntelligenceCenterService, FailureIntelligenceCenterService>();
 
+        // Backup & Restore (roadmap F2) — Scoped like every other DlqDbContext-backed service;
+        // BackupWorker creates its own scope per scheduled run (same pattern as DlqMonitorWorker).
+        // BackupOptions itself is bound + validated by
+        // ConfigurationValidationExtensions.AddServiceHubConfigurationValidation (mirrors
+        // AuditRetentionOptions), not here.
+        services.TryAddScoped<IBackupService, BackupService>();
+
+        // Recovery Evidence Ledger epoch sealing/archival (roadmap next-chapter M5.2) —
+        // RecoveryEpochArchiveOptions itself is bound + validated by
+        // ConfigurationValidationExtensions.AddServiceHubConfigurationValidation, not here.
+        services.TryAddScoped<IRecoveryEpochArchiveService, RecoveryEpochArchiveService>();
+
         return services;
     }
 
@@ -331,9 +549,31 @@ public static class DependencyInjection
         services.AddSingleton<Core.Interfaces.IWebhookMessageFormatter, Webhooks.SlackWebhookFormatter>();
         services.AddSingleton<Core.Interfaces.IWebhookMessageFormatter, Webhooks.TeamsWebhookFormatter>();
 
+        // Resolves a configured webhook hostname before WebhookNotifier's SSRF guard validates
+        // it — a hostname that resolves to a loopback/private/link-local address must be rejected
+        // just as an IP-literal one already is.
+        services.AddSingleton<Security.IDnsResolver, Security.DnsResolver>();
+
         services.AddHttpClient<IWebhookNotifier, WebhookNotifier>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(30);
+        })
+        .ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.SocketsHttpHandler
+        {
+            // Pins each connection to the exact address WebhookNotifier's SSRF guard already
+            // validated, instead of letting the framework DNS-resolve the hostname a second time
+            // at connect time — see WebhookConnectCallback for why that second lookup is the
+            // rebinding gap. TLS SNI/Host still come from the request URI, unaffected.
+            ConnectCallback = WebhookConnectCallback.ConnectAsync,
+
+            // The SSRF guard only ever validates WebhookOptions.Url — never a 3xx response's
+            // Location header. Auto-following redirects would let a compromised or malicious
+            // webhook endpoint redirect to an internal address and reach it with none of the
+            // above validation applied. Webhook destinations (Slack/Teams/generic incoming
+            // webhooks) have no legitimate reason to redirect, so redirects are simply not
+            // followed: a 3xx response comes back to PostAsync like any other non-success status
+            // and is reported as a failed notification, exactly as a 4xx/5xx already is.
+            AllowAutoRedirect = false,
         });
 
         return services;
@@ -379,6 +619,18 @@ public static class DependencyInjection
         // IWebhookNotifier — same pattern as WebhookDlqSpikeHandler above.
         services.AddSingleton<WebhookBulkOperationCompletedHandler>();
 
+        // WebhookAutonomyTransitionHandler bridges AutonomyGrantTransitioned events to
+        // IWebhookNotifier — same pattern as WebhookDlqSpikeHandler above.
+        services.AddSingleton<WebhookAutonomyTransitionHandler>();
+
+        // WebhookCircuitBreakerTrippedHandler bridges AutoReplayRuleCircuitBreakerTripped
+        // events to IWebhookNotifier — same pattern as WebhookDlqSpikeHandler above.
+        services.AddSingleton<WebhookCircuitBreakerTrippedHandler>();
+
+        // WebhookInsightDetectedHandler bridges InsightDetected events (roadmap §5, I5 — "Push")
+        // to IWebhookNotifier — same pattern as WebhookDlqSpikeHandler above.
+        services.AddSingleton<WebhookInsightDetectedHandler>();
+
         return services;
     }
 
@@ -397,5 +649,14 @@ public static class DependencyInjection
 
         var bulkOperationWebhookHandler = serviceProvider.GetRequiredService<WebhookBulkOperationCompletedHandler>();
         bus.Subscribe(bulkOperationWebhookHandler.HandleAsync);
+
+        var autonomyTransitionWebhookHandler = serviceProvider.GetRequiredService<WebhookAutonomyTransitionHandler>();
+        bus.Subscribe(autonomyTransitionWebhookHandler.HandleAsync);
+
+        var circuitBreakerWebhookHandler = serviceProvider.GetRequiredService<WebhookCircuitBreakerTrippedHandler>();
+        bus.Subscribe(circuitBreakerWebhookHandler.HandleAsync);
+
+        var insightDetectedWebhookHandler = serviceProvider.GetRequiredService<WebhookInsightDetectedHandler>();
+        bus.Subscribe(insightDetectedWebhookHandler.HandleAsync);
     }
 }

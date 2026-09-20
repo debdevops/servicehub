@@ -58,7 +58,7 @@ public class SecurityHeadersOptions
     /// Gets or sets the Content-Security-Policy header value for development/staging.
     /// More permissive to allow Swagger UI.
     /// </summary>
-    public string ContentSecurityPolicyDevelopment { get; set; } = 
+    public string ContentSecurityPolicyDevelopment { get; set; } =
         "default-src 'self'; " +
         "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
         "style-src 'self' 'unsafe-inline'; " +
@@ -70,7 +70,7 @@ public class SecurityHeadersOptions
     /// Gets or sets the Permissions-Policy header value.
     /// Disables unnecessary browser features.
     /// </summary>
-    public string PermissionsPolicy { get; set; } = 
+    public string PermissionsPolicy { get; set; } =
         "accelerometer=(), " +
         "camera=(), " +
         "geolocation=(), " +

@@ -35,12 +35,12 @@ const defaultTraceState = {
 const azureNamespace = { id: 'ns-azure', name: 'azure-ns', displayName: 'Azure Prod', cloudProvider: 'azure' };
 const awsNamespace = { id: 'ns-aws', name: 'aws-ns', displayName: 'AWS East', cloudProvider: 'aws' };
 
-function createWrapper() {
+function createWrapper(initialPath = '/cross-cloud-trace') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return ({ children }: { children: React.ReactNode }) => (
-    <MemoryRouter initialEntries={['/cross-cloud-trace']}>
+    <MemoryRouter initialEntries={[initialPath]}>
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     </MemoryRouter>
   );
@@ -264,5 +264,17 @@ describe('CrossCloudTracePage', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><CrossCloudTracePage /></Wrapper>);
     expect(screen.getByLabelText('Trace ID')).toBeEnabled();
+  });
+
+  // Regression: a deep link (e.g. "View cross-cloud path" from a signature) used to auto-run
+  // the search via a mount-time useEffect calling mutate() — fragile under React StrictMode's
+  // dev-mode double-invoke, where the search would complete server-side but the spinner never
+  // cleared. The fix passes the deep-linked traceId straight into the hook instead, so this only
+  // asserts the page still forwards it there.
+  it('forwards a deep-linked ?traceId= straight into the trace hook', () => {
+    mockUseNamespaces.mockReturnValue({ data: [azureNamespace, awsNamespace] });
+    const Wrapper = createWrapper('/cross-cloud-trace?traceId=shs-deep-link-0001');
+    render(<Wrapper><CrossCloudTracePage /></Wrapper>);
+    expect(mockUseCrossCloudTrace).toHaveBeenCalledWith('shs-deep-link-0001');
   });
 });

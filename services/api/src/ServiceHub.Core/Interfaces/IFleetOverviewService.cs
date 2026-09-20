@@ -17,10 +17,15 @@ public interface IFleetOverviewService
     /// <param name="windowHours">The "recent activity" window, in hours (clamped 1–720). Drives
     /// the "new in window" counts that surface what changed overnight.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="allowedNamespaceIds">
+    /// Optional namespace allow-list from the caller's credential. When non-null, the overview is
+    /// built only from namespaces in this set — null means unrestricted (today's behaviour).
+    /// </param>
     Task<Result<FleetOverview>> GetOverviewAsync(
         string ownerId,
         int windowHours = 24,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null);
 }
 
 /// <summary>Fleet-wide DLQ operations snapshot across all of an owner's namespaces.</summary>

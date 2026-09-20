@@ -23,6 +23,8 @@ import { EnvironmentBadge } from '@/components/EnvironmentBadge';
 import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
 import toast from 'react-hot-toast';
 import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
+import { HelpTooltip } from '@/components/help';
+import { tooltips, type TooltipContent } from '@servicehub/ui-shared/lib/helpContent';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -69,12 +71,14 @@ function StatCard({
   sub,
   icon: Icon,
   colorClass,
+  tooltip,
 }: {
   label: string;
   value: string | number;
   sub?: string;
   icon: React.ElementType;
   colorClass: string;
+  tooltip?: TooltipContent;
 }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex items-start gap-3">
@@ -82,7 +86,10 @@ function StatCard({
         <Icon className="w-5 h-5" />
       </div>
       <div>
-        <p className="text-xs text-gray-500 font-medium">{label}</p>
+        <p className="text-xs text-gray-500 font-medium flex items-center gap-1">
+          {label}
+          {tooltip && <HelpTooltip {...tooltip} size={12} position="bottom" />}
+        </p>
         <p className="text-2xl font-bold text-gray-900 leading-tight">{value}</p>
         {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
       </div>
@@ -253,20 +260,30 @@ function Row({
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function AuditPage() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   // No namespace filter unless the URL explicitly requests one (e.g. a deep link from a
   // namespace-scoped page) — this page's own scope is "all critical operations," and
   // `isActive` on a Namespace means "not deleted," not "currently selected," so defaulting
   // to namespaces.find(isActive) silently hid every other namespace's audit events.
   const namespaceId = searchParams.get('namespace') || undefined;
 
+  // A deep link (e.g. "Recent Changes Before Failure" on a signature) can hand this page an
+  // exact window instead of a preset — captured once from the URL at mount so clicking a preset
+  // afterwards can cleanly replace it.
+  const [customRange, setCustomRange] = useState<{ from: string; to: string } | null>(() => {
+    const from = searchParams.get('from');
+    const to = searchParams.get('to');
+    return from && to ? { from, to } : null;
+  });
+
   // ─── Filters ────────────────────────────────────────────────────────
   const [search, setSearch] = useState('');
   const [actionType, setActionType] = useState('');
   const [outcome, setOutcome] = useState('');
-  const [selectedPreset, setSelectedPreset] = useState<number | null>(null);
+  // Defaults to "Last 7 Days" unless a deep link already supplied an exact window.
+  const [selectedPreset, setSelectedPreset] = useState<number | null>(() => (customRange ? null : 168));
   const [page, setPage] = useState(1);
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(() => customRange !== null);
   const [selectedEntry, setSelectedEntry] = useState<AuditLogItem | null>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement>(null);
@@ -293,13 +310,14 @@ export function AuditPage() {
     };
   }, [showExportMenu]);
 
-  // ─── Derive time range from preset ──────────────────────────────────
+  // ─── Derive time range from preset or an incoming custom range ───────
   const { from, to } = useMemo(() => {
+    if (customRange) return customRange;
     if (selectedPreset === null) return { from: undefined, to: undefined };
     const now = new Date();
     const f = new Date(now.getTime() - selectedPreset * 3_600_000);
     return { from: f.toISOString(), to: now.toISOString() };
-  }, [selectedPreset]);
+  }, [selectedPreset, customRange]);
 
   // ─── Debounced search ────────────────────────────────────────────────
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -328,15 +346,28 @@ export function AuditPage() {
   const { data, isLoading, isError, refetch, isFetching } = useAuditLogs(params, true);
   const { data: summary } = useAuditSummary(namespaceId);
 
-  const activeFilters = [actionType, outcome, selectedPreset !== null ? 'date' : ''].filter(Boolean).length;
+  const activeFilters = [actionType, outcome, selectedPreset !== null || customRange ? 'date' : ''].filter(Boolean).length;
+
+  // Also strips the deep-link "from"/"to" query params — otherwise a refresh or revisit of
+  // this URL would keep re-applying the stale window instead of the default Last 7 Days.
+  const clearCustomRange = useCallback(() => {
+    setCustomRange(null);
+    setSelectedPreset(168);
+    setPage(1);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete('from');
+      next.delete('to');
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   const handleClearFilters = () => {
     setActionType('');
     setOutcome('');
-    setSelectedPreset(null);
     setSearch('');
     setDebouncedSearch('');
-    setPage(1);
+    clearCustomRange();
   };
 
   const handleExport = async (format: 'csv' | 'json') => {
@@ -368,9 +399,12 @@ export function AuditPage() {
             <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
               <Shield className="w-5 h-5 text-violet-600" />
               Audit Trail
+              <HelpTooltip {...tooltips.audit.overview} position="bottom" />
             </h1>
             <p className="text-sm text-gray-500 mt-0.5">
-              Persistent record of all critical operations and access events
+              {customRange
+                ? 'Filtered to the window before a specific failure — clear the date filter below to see everything.'
+                : 'Persistent record of all critical operations and access events'}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -381,6 +415,7 @@ export function AuditPage() {
                 aria-haspopup="menu"
                 aria-expanded={showExportMenu}
                 className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
+                title={tooltips.audit.export.text}
               >
                 <Download className="w-4 h-4" />
                 Export
@@ -443,6 +478,7 @@ export function AuditPage() {
               value={summary.totalEvents.toLocaleString()}
               icon={Activity}
               colorClass="bg-violet-50 text-violet-600"
+              tooltip={tooltips.audit.totalEvents}
             />
             <StatCard
               label="Success Rate"
@@ -450,18 +486,21 @@ export function AuditPage() {
               sub={`${summary.successCount.toLocaleString()} successful`}
               icon={CheckCircle}
               colorClass="bg-green-50 text-green-600"
+              tooltip={tooltips.audit.successRate}
             />
             <StatCard
               label="Failures"
               value={summary.failureCount.toLocaleString()}
               icon={XCircle}
               colorClass="bg-red-50 text-red-600"
+              tooltip={tooltips.audit.failures}
             />
             <StatCard
               label="Active Users"
               value={summary.activeUsers.toLocaleString()}
               icon={Users}
               colorClass="bg-sky-50 text-sky-600"
+              tooltip={tooltips.audit.activeUsers}
             />
           </div>
         )}
@@ -495,19 +534,35 @@ export function AuditPage() {
             {/* Date presets */}
             <div className="flex items-center gap-1">
               <Clock className="w-4 h-4 text-gray-400" />
-              {DATE_PRESETS.map(p => (
-                <button
-                  key={p.hours}
-                  onClick={() => { setSelectedPreset(prev => prev === p.hours ? null : p.hours); setPage(1); }}
-                  className={`text-xs px-2.5 py-1 rounded-md border transition-all ${
-                    selectedPreset === p.hours
-                      ? 'bg-violet-600 text-white border-violet-600'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-violet-300'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
+              <HelpTooltip {...tooltips.audit.datePresets} position="bottom" className="mr-1" />
+              {customRange ? (
+                <span className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border bg-violet-600 text-white border-violet-600">
+                  {new Date(customRange.from).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  {' – '}
+                  {new Date(customRange.to).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  <button
+                    onClick={clearCustomRange}
+                    aria-label="Clear custom date range"
+                    className="hover:opacity-75"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ) : (
+                DATE_PRESETS.map(p => (
+                  <button
+                    key={p.hours}
+                    onClick={() => { setSelectedPreset(prev => prev === p.hours ? null : p.hours); setCustomRange(null); setPage(1); }}
+                    className={`text-xs px-2.5 py-1 rounded-md border transition-all ${
+                      selectedPreset === p.hours
+                        ? 'bg-violet-600 text-white border-violet-600'
+                        : 'bg-white text-gray-600 border-gray-200 hover:border-violet-300'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))
+              )}
             </div>
 
             {/* Clear */}
@@ -573,10 +628,22 @@ export function AuditPage() {
           <div className="flex items-center justify-center h-64">
             <div className="text-center">
               <Shield className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500 font-medium">No audit logs found</p>
-              <p className="text-sm text-gray-400 mt-1">
-                {activeFilters > 0 ? 'Try adjusting your filters' : 'Audit events will appear here as operations are performed'}
+              <p className="text-gray-500 font-medium">
+                {customRange ? 'No configuration changes in this window' : 'No audit logs found'}
               </p>
+              <p className="text-sm text-gray-400 mt-1">
+                {customRange
+                  ? "That's expected if nothing was changed in this namespace before the failure — it isn't a sign of missing data."
+                  : activeFilters > 0 ? 'Try adjusting your filters' : 'Audit events will appear here as operations are performed'}
+              </p>
+              {customRange && (
+                <button
+                  onClick={clearCustomRange}
+                  className="mt-3 px-4 py-2 text-sm text-primary-600 hover:text-primary-700 border border-primary-300 rounded-lg hover:bg-primary-50 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1"
+                >
+                  See all audit events
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -589,6 +656,7 @@ export function AuditPage() {
                 <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Action</th>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-500">Resource</th>
                 <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-24">Outcome</th>
+                <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-500 w-20">Details</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -632,6 +700,14 @@ export function AuditPage() {
                   </td>
                   <td className="px-4 py-3">
                     <OutcomeBadge outcome={entry.outcome} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setSelectedEntry(entry); }}
+                      className="text-xs font-medium text-primary-600 hover:text-primary-700 hover:underline focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 rounded"
+                    >
+                      View
+                    </button>
                   </td>
                 </tr>
               ))}
