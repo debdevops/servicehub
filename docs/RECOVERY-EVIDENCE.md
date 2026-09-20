@@ -292,6 +292,13 @@ archive's `sealEventSeq`/`sealEventHash`. A single archive file also verifies st
 valid input to the plain, no-flag form of the script) — "a sealed epoch verifies from its archive
 alone."
 
+> **Verified live on 2026-09-20.** Two real epochs were sealed back-to-back against a live,
+> actively-growing owner chain (92,051 events, then 22 more): both seal markers stayed live as
+> chain anchors, both archive files carried the new `sealEventSeq`/`sealEventHash` fields, the
+> live `/verify` endpoint reported `isValid: true` immediately after each seal (no false-fail),
+> and `verify-recovery-chain.py --archive-dir` independently confirmed continuity across both
+> archives plus the live tail, Seq 1 through 92,092, with zero findings.
+
 ## 4. What ServiceHub can and cannot prove
 
 Recovery verification depends on ServiceHub actually being able to observe the dead-letter queue
