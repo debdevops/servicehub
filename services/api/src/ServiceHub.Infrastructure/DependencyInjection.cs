@@ -557,6 +557,14 @@ public static class DependencyInjection
         services.AddHttpClient<IWebhookNotifier, WebhookNotifier>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(30);
+        })
+        .ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.SocketsHttpHandler
+        {
+            // Pins each connection to the exact address WebhookNotifier's SSRF guard already
+            // validated, instead of letting the framework DNS-resolve the hostname a second time
+            // at connect time — see WebhookConnectCallback for why that second lookup is the
+            // rebinding gap. TLS SNI/Host still come from the request URI, unaffected.
+            ConnectCallback = WebhookConnectCallback.ConnectAsync,
         });
 
         return services;

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -9,6 +10,7 @@ using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Infrastructure.Webhooks;
+using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Infrastructure;
 
@@ -805,6 +807,118 @@ public sealed class WebhookNotifierTests
         handler.CallCount.Should().Be(1);
     }
 
+    [Fact]
+    public async Task NotifyDlqSpike_HostnameResolvesToPublicAddress_PinsConnectionToTheValidatedAddress()
+    {
+        // Closes the DNS-rebinding gap: the guard must pin the TCP connection to the exact
+        // address it validated, not let HttpClient re-resolve the hostname a second time.
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var publicAddress = IPAddress.Parse("203.0.113.10");
+        var resolver = new FakeDnsResolver(publicAddress);
+        var sut = CreateSut(DefaultEnabledOptions(), handler, resolver);
+
+        var result = await sut.NotifyDlqSpikeAsync(TestNamespaceId, TestNamespaceName, 15);
+
+        result.IsSuccess.Should().BeTrue();
+        handler.LastRequestOptions.Should().NotBeNull();
+        handler.LastRequestOptions!.TryGetValue(WebhookConnectCallback.PinnedAddressKey, out var pinned)
+            .Should().BeTrue("the connection must be pinned to the address the SSRF guard validated");
+        pinned.Should().Be(publicAddress);
+    }
+
+    [Fact]
+    public async Task NotifyDlqSpike_IpLiteralHost_DoesNotPinAConnectionAddress()
+    {
+        // An IP-literal host has no second, divergent DNS lookup to pin against — the literal
+        // itself already is the connect target, so no pinned-address option should be set.
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var opts = DefaultEnabledOptions(url: "https://203.0.113.10/dlq");
+        var sut = CreateSut(opts, handler, new FakeDnsResolver());
+
+        await sut.NotifyDlqSpikeAsync(TestNamespaceId, TestNamespaceName, 15);
+
+        handler.LastRequestOptions!.TryGetValue(WebhookConnectCallback.PinnedAddressKey, out _).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("::ffff:127.0.0.1")]   // IPv4-mapped loopback
+    [InlineData("::ffff:10.0.0.5")]    // IPv4-mapped RFC-1918
+    [InlineData("::ffff:169.254.169.254")]  // IPv4-mapped cloud metadata
+    public async Task NotifyDlqSpike_HostnameResolvesToIPv4MappedIPv6LocalAddress_ReturnsFailureWithoutSending(string mapped)
+    {
+        // Regression: an unnormalized IPv4-mapped IPv6 address matched neither IPAddress.IsLoopback
+        // nor either IPv6 prefix in IsRfc1918OrLinkLocal, so it passed the guard as "public."
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var resolver = new FakeDnsResolver(IPAddress.Parse(mapped));
+        var sut = CreateSut(DefaultEnabledOptions(), handler, resolver);
+
+        var result = await sut.NotifyDlqSpikeAsync(TestNamespaceId, TestNamespaceName, 15);
+
+        result.IsFailure.Should().BeTrue();
+        handler.CallCount.Should().Be(0, "an IPv4-mapped IPv6 local address must be recognized after normalization");
+    }
+
+    [Fact]
+    public async Task NotifyDlqSpike_IpLiteralIPv4MappedIPv6Loopback_ReturnsFailureWithoutSending()
+    {
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var opts = DefaultEnabledOptions(url: "https://[::ffff:127.0.0.1]/dlq");
+        var sut = CreateSut(opts, handler, new FakeDnsResolver());
+
+        var result = await sut.NotifyDlqSpikeAsync(TestNamespaceId, TestNamespaceName, 15);
+
+        result.IsFailure.Should().BeTrue();
+        handler.CallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task NotifyDlqSpike_DnsResolutionCancelled_ReturnsFailureInsteadOfThrowing()
+    {
+        // Regression: Dns.GetHostAddressesAsync throwing OperationCanceledException/
+        // TaskCanceledException during resolution used to escape uncaught instead of coming back
+        // as the same Result.Failure contract PostAsync's own cancellation handling already gives.
+        var handler = new FakeHttpHandler(HttpStatusCode.OK);
+        var resolver = new CancellingDnsResolver();
+        var sut = CreateSut(DefaultEnabledOptions(), handler, resolver);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Func<Task<Result>> act = () => sut.NotifyDlqSpikeAsync(TestNamespaceId, TestNamespaceName, 15, cts.Token);
+
+        var result = await act.Should().NotThrowAsync();
+        result.Subject.IsFailure.Should().BeTrue();
+        handler.CallCount.Should().Be(0);
+    }
+
+    // ── WebhookConnectCallback ────────────────────────────────
+
+    [Fact]
+    public void SelectConnectTarget_PinnedAddressPresent_ReturnsPinnedEndpoint()
+    {
+        var pinned = IPAddress.Parse("203.0.113.10");
+        var request = new HttpRequestMessage(HttpMethod.Post, "https://hooks.example.com/dlq");
+        request.Options.Set(WebhookConnectCallback.PinnedAddressKey, pinned);
+        var fallback = new DnsEndPoint("hooks.example.com", 443);
+
+        var target = WebhookConnectCallback.SelectConnectTarget(request.Options, fallback);
+
+        target.Should().BeOfType<IPEndPoint>();
+        ((IPEndPoint)target).Address.Should().Be(pinned);
+        ((IPEndPoint)target).Port.Should().Be(443);
+    }
+
+    [Fact]
+    public void SelectConnectTarget_NoPinnedAddress_FallsBackToDnsEndPoint()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "https://hooks.example.com/dlq");
+        var fallback = new DnsEndPoint("hooks.example.com", 443);
+
+        var target = WebhookConnectCallback.SelectConnectTarget(request.Options, fallback);
+
+        target.Should().Be(fallback);
+    }
+
     // ── Helpers ──────────────────────────────────────────────
 
     /// <summary>
@@ -825,6 +939,22 @@ public sealed class WebhookNotifierTests
     }
 
     /// <summary>
+    /// A fake <see cref="IDnsResolver"/> that throws <see cref="OperationCanceledException"/> when
+    /// the supplied token is already cancelled — matching how a real
+    /// <see cref="Dns.GetHostAddressesAsync(string, CancellationToken)"/> call behaves when
+    /// cancelled mid-resolution, as opposed to <see cref="FakeDnsResolver"/>, which ignores the
+    /// token entirely.
+    /// </summary>
+    private sealed class CancellingDnsResolver : IDnsResolver
+    {
+        public Task<IPAddress[]> ResolveHostAddressesAsync(string host, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(Array.Empty<IPAddress>());
+        }
+    }
+
+    /// <summary>
     /// A fake DelegatingHandler for testing HttpClient without real network calls. Captures the
     /// request body so tests can assert the exact payload shape a formatter produced.
     /// </summary>
@@ -837,6 +967,7 @@ public sealed class WebhookNotifierTests
         public string? LastRequestUri { get; private set; }
         public HttpMethod? LastMethod { get; private set; }
         public string? LastRequestBody { get; private set; }
+        public HttpRequestOptions? LastRequestOptions { get; private set; }
 
         public FakeHttpHandler(HttpStatusCode statusCode)
         {
@@ -854,6 +985,7 @@ public sealed class WebhookNotifierTests
             CallCount++;
             LastRequestUri = request.RequestUri?.ToString();
             LastMethod = request.Method;
+            LastRequestOptions = request.Options;
             LastRequestBody = request.Content is null
                 ? null
                 : await request.Content.ReadAsStringAsync(cancellationToken);
