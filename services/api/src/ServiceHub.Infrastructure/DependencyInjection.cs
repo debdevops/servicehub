@@ -549,6 +549,11 @@ public static class DependencyInjection
         services.AddSingleton<Core.Interfaces.IWebhookMessageFormatter, Webhooks.SlackWebhookFormatter>();
         services.AddSingleton<Core.Interfaces.IWebhookMessageFormatter, Webhooks.TeamsWebhookFormatter>();
 
+        // Resolves a configured webhook hostname before WebhookNotifier's SSRF guard validates
+        // it — a hostname that resolves to a loopback/private/link-local address must be rejected
+        // just as an IP-literal one already is.
+        services.AddSingleton<Security.IDnsResolver, Security.DnsResolver>();
+
         services.AddHttpClient<IWebhookNotifier, WebhookNotifier>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(30);

@@ -22,6 +22,7 @@ public sealed class WebhookNotifier : IWebhookNotifier
     private readonly WebhookOptions _options;
     private readonly IReadOnlyDictionary<WebhookFormat, IWebhookMessageFormatter> _formatters;
     private readonly ILogger<WebhookNotifier> _logger;
+    private readonly Security.IDnsResolver _dnsResolver;
 
     // Tracks when the last DLQ-spike notification was sent for each namespace (cooldown).
     // Bulk-operation-completed notifications are not cooled down — see NotifyBulkOperationCompletedAsync.
@@ -34,11 +35,13 @@ public sealed class WebhookNotifier : IWebhookNotifier
         HttpClient httpClient,
         IOptions<WebhookOptions> options,
         IEnumerable<IWebhookMessageFormatter> formatters,
-        ILogger<WebhookNotifier> logger)
+        ILogger<WebhookNotifier> logger,
+        Security.IDnsResolver? dnsResolver = null)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _dnsResolver = dnsResolver ?? new Security.DnsResolver();
 
         ArgumentNullException.ThrowIfNull(formatters);
         _formatters = formatters.ToDictionary(f => f.Format);
@@ -57,7 +60,8 @@ public sealed class WebhookNotifier : IWebhookNotifier
             return Result.Success();
         }
 
-        if (!TryGetSafeWebhookUri(_options.Url, out var webhookUri))
+        var webhookUri = await TryGetSafeWebhookUriAsync(_options.Url, cancellationToken);
+        if (webhookUri is null)
         {
             // The configured URL is never logged, even redacted: a Slack/Teams webhook URL is a
             // bearer secret in itself, and the rejection reason (non-HTTPS or internal address)
@@ -126,7 +130,8 @@ public sealed class WebhookNotifier : IWebhookNotifier
             return Result.Success();
         }
 
-        if (!TryGetSafeWebhookUri(_options.Url, out var webhookUri))
+        var webhookUri = await TryGetSafeWebhookUriAsync(_options.Url, cancellationToken);
+        if (webhookUri is null)
         {
             // The configured URL is never logged, even redacted: a Slack/Teams webhook URL is a
             // bearer secret in itself, and the rejection reason (non-HTTPS or internal address)
@@ -174,7 +179,8 @@ public sealed class WebhookNotifier : IWebhookNotifier
             return Result.Success();
         }
 
-        if (!TryGetSafeWebhookUri(_options.Url, out var webhookUri))
+        var webhookUri = await TryGetSafeWebhookUriAsync(_options.Url, cancellationToken);
+        if (webhookUri is null)
         {
             _logger.LogWarning("Configured webhook URL is not a permitted destination (must be HTTPS and not an internal address)");
             return Result.Failure(Error.Validation("Webhook.InvalidUrl",
@@ -214,7 +220,8 @@ public sealed class WebhookNotifier : IWebhookNotifier
             return Result.Success();
         }
 
-        if (!TryGetSafeWebhookUri(_options.Url, out var webhookUri))
+        var webhookUri = await TryGetSafeWebhookUriAsync(_options.Url, cancellationToken);
+        if (webhookUri is null)
         {
             _logger.LogWarning("Configured webhook URL is not a permitted destination (must be HTTPS and not an internal address)");
             return Result.Failure(Error.Validation("Webhook.InvalidUrl",
@@ -256,7 +263,8 @@ public sealed class WebhookNotifier : IWebhookNotifier
             return Result.Success();
         }
 
-        if (!TryGetSafeWebhookUri(_options.Url, out var webhookUri))
+        var webhookUri = await TryGetSafeWebhookUriAsync(_options.Url, cancellationToken);
+        if (webhookUri is null)
         {
             _logger.LogWarning("Configured webhook URL is not a permitted destination (must be HTTPS and not an internal address)");
             return Result.Failure(Error.Validation("Webhook.InvalidUrl",
@@ -352,35 +360,54 @@ public sealed class WebhookNotifier : IWebhookNotifier
 
     /// <summary>
     /// Validates the webhook URL is safe to call (SSRF guard).
-    /// Returns true only for HTTPS URLs that resolve to a non-loopback, non-private-IP host.
+    /// Returns the URL only for HTTPS URLs that resolve to a non-loopback, non-private-IP host.
+    /// A hostname (as opposed to an IP literal) is DNS-resolved and every returned address is
+    /// checked — an IP-literal-only check lets a hostname that resolves to a loopback, RFC-1918,
+    /// or link-local/cloud-metadata address (e.g. 169.254.169.254) straight through, since
+    /// <c>IPAddress.TryParse</c> only ever succeeds for a literal.
     /// </summary>
-    private static bool TryGetSafeWebhookUri(string rawUrl, out Uri safeUri)
+    private async Task<Uri?> TryGetSafeWebhookUriAsync(string rawUrl, CancellationToken cancellationToken)
     {
-        safeUri = null!;
-
         if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri))
-            return false;
+            return null;
 
         // Only HTTPS — no plain HTTP, no file://, no ftp://
         if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
-            return false;
+            return null;
 
         var host = uri.Host;
 
         // Block loopback names
         if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(host, "::1", StringComparison.OrdinalIgnoreCase))
-            return false;
+            return null;
 
-        // Block IP-literal hosts that are loopback or RFC-1918 private ranges
-        if (System.Net.IPAddress.TryParse(host, out var ip))
+        if (System.Net.IPAddress.TryParse(host, out var literalIp))
         {
-            if (System.Net.IPAddress.IsLoopback(ip) || IsRfc1918OrLinkLocal(ip))
-                return false;
+            // IP-literal host — validate it directly, no DNS involved.
+            if (System.Net.IPAddress.IsLoopback(literalIp) || IsRfc1918OrLinkLocal(literalIp))
+                return null;
+        }
+        else
+        {
+            // Hostname host — resolve and validate every returned address. Fail closed (reject)
+            // on a resolution failure or an empty result rather than letting an unreachable/
+            // misconfigured host fall through as "safe."
+            System.Net.IPAddress[] resolved;
+            try
+            {
+                resolved = await _dnsResolver.ResolveHostAddressesAsync(host, cancellationToken);
+            }
+            catch (Exception ex) when (ex is System.Net.Sockets.SocketException or ArgumentException)
+            {
+                return null;
+            }
+
+            if (resolved.Length == 0 || resolved.Any(a => System.Net.IPAddress.IsLoopback(a) || IsRfc1918OrLinkLocal(a)))
+                return null;
         }
 
-        safeUri = uri;
-        return true;
+        return uri;
     }
 
     /// <summary>

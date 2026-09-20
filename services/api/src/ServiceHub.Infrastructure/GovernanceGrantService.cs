@@ -179,4 +179,17 @@ public sealed class GovernanceGrantService : IGovernanceGrantService
 
         return Result.Success(everGranted);
     }
+
+    /// <inheritdoc/>
+    public async Task<Result<bool>> HasAnyGrantEverAsync(string ownerId, CancellationToken cancellationToken = default)
+    {
+        // Deliberately no RevokedAt filter, same rationale as HasEverHadOwnGrantAsync: a fully
+        // revoked history still proves Governance was activated for this owner, so it must never
+        // be treated the same as an owner who has never had a grant seeded at all.
+        var everGranted = await _dbContext.GovernanceGrants
+            .AsNoTracking()
+            .AnyAsync(g => g.OwnerId == ownerId, cancellationToken);
+
+        return Result.Success(everGranted);
+    }
 }
