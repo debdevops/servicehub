@@ -70,7 +70,7 @@ test.describe('Suite F — Accessibility smoke (azure)', () => {
   test('Autonomy page has no WCAG2 A/AA violations', async ({ page, noConsoleErrors }) => {
     void noConsoleErrors;
     await page.goto('/demo/azure/autonomy');
-    await expect(page.getByRole('heading', { name: 'Autonomy' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Autonomy', level: 1 })).toBeVisible();
     await scan(page);
   });
 

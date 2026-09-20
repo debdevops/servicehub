@@ -82,7 +82,12 @@ export function PageHeader({
         <div className="flex items-start gap-3 min-w-0">
           <IconTile icon={icon} tone={tone} size="lg" />
           <div className="min-w-0">
-            <h1 className="text-xl font-bold text-gray-900 leading-tight flex items-center gap-1.5">
+            {/* Explicit aria-label pins the heading's accessible name to the title text alone —
+                without it, the nested help button's own aria-label ("Help") would be appended to
+                the computed name (name-from-content includes embedded controls' labels), so a
+                screen reader would announce this landmark heading as e.g. "Autonomy Control
+                Center Help" instead of "Autonomy Control Center". */}
+            <h1 className="text-xl font-bold text-gray-900 leading-tight flex items-center gap-1.5" aria-label={title}>
               {title}
               {titleTooltip && <HelpTooltip {...titleTooltip} position="bottom" />}
             </h1>

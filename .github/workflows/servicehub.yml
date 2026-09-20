@@ -148,11 +148,14 @@ jobs:
 
       - name: Trigger AI degradation check
         # Anomaly detection is fully deterministic and never touches the AI service, so nothing
-        # calls it on a background cadence. Hitting /health/ready runs the "ai" health check
-        # (AIServiceHealthCheck -> IAIServiceClient.IsAvailableAsync), which is what actually
-        # exercises the degrade-to-"not available" path and its once-per-process warning log.
+        # calls it on a background cadence. Hitting /health/dependencies runs the "ai" health
+        # check (AIServiceHealthCheck -> IAIServiceClient.IsAvailableAsync), which is what
+        # actually exercises the degrade-to-"not available" path and its once-per-process
+        # warning log. /health/ready no longer touches it — that probe is scoped to internal
+        # storage only (see HealthCheckConfiguration.cs) so an unreachable AI service can't
+        # flip readiness.
         run: |
-          curl -s -o /dev/null http://localhost:5153/health/ready || true
+          curl -s -o /dev/null http://localhost:5153/health/dependencies || true
           sleep 2
 
       - name: Verify AI unavailability is logged once, not spammed
