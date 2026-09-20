@@ -72,11 +72,13 @@ public sealed class FailureIntelligenceCenterServiceTests : IDisposable
         _dbContext.Dispose();
     }
 
-    private static NamespaceSignature MakeSignature(Guid namespaceId, string hash) => new()
+    private static NamespaceSignature MakeSignature(
+        Guid namespaceId, string hash, SignatureHashKind hashKind = SignatureHashKind.Fingerprint) => new()
     {
         NamespaceId = namespaceId,
         OwnerId = OwnerId,
         SignatureHash = hash,
+        HashKind = hashKind,
         FirstSeenAt = DateTimeOffset.UtcNow.AddDays(-10),
         LastSeenAt = DateTimeOffset.UtcNow.AddDays(-1),
         OccurrenceCount = 4,
@@ -127,6 +129,94 @@ public sealed class FailureIntelligenceCenterServiceTests : IDisposable
         result.IsSuccess.Should().BeTrue();
         result.Value.InvestigationQueue.Should().NotContain(i => i.NamespaceId == deletedNamespaceId);
         result.Value.InvestigationQueue.Should().Contain(i => i.NamespaceId == liveNamespaceId);
+    }
+
+    // ── Regression: namespace allow-list isolation (security fix) ──────────
+    //
+    // Before this fix, GetInvestigationCenterAsync/GetIncidentsListAsync always called
+    // GetByOwnerAsync (and IFleetOverviewService.GetOverviewAsync) with allowedNamespaceIds:
+    // null — a namespace-restricted API key still saw investigation-queue/incident-list entries
+    // for namespaces outside its allow-list.
+
+    [Fact]
+    public async Task GetInvestigationCenterAsync_AllowedNamespaceIds_ExcludesSignatureOutsideAllowList()
+    {
+        var allowedNamespaceId = Guid.NewGuid();
+        var otherNamespaceId = Guid.NewGuid();
+        _dbContext.NamespaceSignatures.Add(MakeSignature(allowedNamespaceId, "hash-allowed"));
+        _dbContext.NamespaceSignatures.Add(MakeSignature(otherNamespaceId, "hash-outside-allowlist"));
+        await _dbContext.SaveChangesAsync();
+
+        var allowedNamespaceIds = new HashSet<Guid> { allowedNamespaceId };
+
+        // Mirrors the real INamespaceRepository.GetByOwnerAsync contract: when given an
+        // allow-list, only namespaces in it are returned.
+        _namespaceRepositoryMock
+            .Setup(r => r.GetByOwnerAsync(OwnerId, allowedNamespaceIds, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(
+                new List<Namespace> { MakeNamespace(allowedNamespaceId) }));
+
+        // The constructor's default fleet-overview setup only matches a null 4th
+        // (allowedNamespaceIds) arg — this call passes a non-null one, so it needs its own.
+        _fleetOverviewMock
+            .Setup(f => f.GetOverviewAsync(OwnerId, It.IsAny<int>(), It.IsAny<CancellationToken>(), allowedNamespaceIds))
+            .ReturnsAsync(Result<FleetOverview>.Success(
+                new FleetOverview(DateTimeOffset.UtcNow, 24, 0, 0, 0, 0, [], new Dictionary<string, int>(), [])));
+
+        var result = await _sut.GetInvestigationCenterAsync(
+            OwnerId, cancellationToken: default, allowedNamespaceIds: allowedNamespaceIds);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.InvestigationQueue.Should().NotContain(i => i.NamespaceId == otherNamespaceId);
+        result.Value.InvestigationQueue.Should().Contain(i => i.NamespaceId == allowedNamespaceId);
+    }
+
+    [Fact]
+    public async Task GetIncidentsListAsync_AllowedNamespaceIds_ExcludesSignatureOutsideAllowList()
+    {
+        var allowedNamespaceId = Guid.NewGuid();
+        var otherNamespaceId = Guid.NewGuid();
+        _dbContext.NamespaceSignatures.Add(MakeSignature(allowedNamespaceId, "hash-allowed"));
+        _dbContext.NamespaceSignatures.Add(MakeSignature(otherNamespaceId, "hash-outside-allowlist"));
+        await _dbContext.SaveChangesAsync();
+
+        var allowedNamespaceIds = new HashSet<Guid> { allowedNamespaceId };
+
+        _namespaceRepositoryMock
+            .Setup(r => r.GetByOwnerAsync(OwnerId, allowedNamespaceIds, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(
+                new List<Namespace> { MakeNamespace(allowedNamespaceId) }));
+
+        var result = await _sut.GetIncidentsListAsync(
+            OwnerId, trendDays: 7, cancellationToken: default, allowedNamespaceIds: allowedNamespaceIds);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Items.Should().NotContain(i => i.NamespaceId == otherNamespaceId);
+        result.Value.Items.Should().Contain(i => i.NamespaceId == allowedNamespaceId);
+    }
+
+    // Full E2E pass, 2026-09-12: reproduced live with a real flood-seeded signature — Incident
+    // Center's "Investigate" link opened IncidentReadModelService.GetIncidentAsync, which (per its
+    // own ADR-0009 comment, mirrored by AttentionQueueService) only ever resolves a Fingerprint-
+    // kind row. This query had no HashKind filter at all, so a Cluster-kind row for the very same
+    // real failure (written by the DLQ Intelligence clustering path) surfaced here as its own
+    // "incident" whose "Investigate" link 404'd — confirmed live via
+    // GET /api/v1/namespaces/{id}/incidents/{hash} against a real Cluster-kind row.
+    [Fact]
+    public async Task GetInvestigationCenterAsync_ClusterKindSignature_ExcludedFromInvestigationQueue()
+    {
+        var namespaceId = Guid.NewGuid();
+        var fingerprintSignature = MakeSignature(namespaceId, "hash-fingerprint");
+        var clusterSignature = MakeSignature(namespaceId, "hash-cluster", SignatureHashKind.Cluster);
+        _dbContext.NamespaceSignatures.Add(fingerprintSignature);
+        _dbContext.NamespaceSignatures.Add(clusterSignature);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _sut.GetInvestigationCenterAsync(OwnerId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.InvestigationQueue.Should().Contain(i => i.SignatureHash == "hash-fingerprint");
+        result.Value.InvestigationQueue.Should().NotContain(i => i.SignatureHash == "hash-cluster");
     }
 
     [Fact]
@@ -263,6 +353,113 @@ public sealed class FailureIntelligenceCenterServiceTests : IDisposable
 
         result.IsSuccess.Should().BeTrue();
         result.Value.FleetHealth.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetIncidentsListAsync_IncludesSignaturesOfEveryLifecycleStatus()
+    {
+        var namespaceId = Guid.NewGuid();
+        _dbContext.NamespaceSignatures.Add(MakeSignature(namespaceId, "hash-active"));
+        _dbContext.NamespaceSignatures.Add(MakeSignature(namespaceId, "hash-resolved"));
+        _dbContext.SignatureLifecycleStates.Add(new SignatureLifecycleState
+        {
+            OwnerId = OwnerId,
+            NamespaceId = namespaceId,
+            SignatureHash = "hash-resolved",
+            Status = SignatureLifecycleStatus.Resolved,
+            PreviousStatus = SignatureLifecycleStatus.Active,
+            TransitionedAt = DateTimeOffset.UtcNow.AddHours(-1),
+            CreatedAt = DateTimeOffset.UtcNow.AddHours(-1),
+        });
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _sut.GetIncidentsListAsync(OwnerId, trendDays: 7);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Items.Should().HaveCount(2);
+        result.Value.Items.Should().Contain(i => i.SignatureHash == "hash-active" && i.Status == "Active");
+        result.Value.Items.Should().Contain(i => i.SignatureHash == "hash-resolved" && i.Status == "Resolved");
+    }
+
+    [Fact]
+    public async Task GetIncidentsListAsync_SignatureNamespaceNoLongerRegistered_ExcludesOrphanedSignature()
+    {
+        var deletedNamespaceId = Guid.NewGuid();
+        var liveNamespaceId = Guid.NewGuid();
+        _dbContext.NamespaceSignatures.Add(MakeSignature(deletedNamespaceId, "hash-orphaned"));
+        _dbContext.NamespaceSignatures.Add(MakeSignature(liveNamespaceId, "hash-live"));
+        await _dbContext.SaveChangesAsync();
+
+        _namespaceRepositoryMock
+            .Setup(r => r.GetByOwnerAsync(OwnerId, null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<Namespace>>.Success(
+                new List<Namespace> { MakeNamespace(liveNamespaceId) }));
+
+        var result = await _sut.GetIncidentsListAsync(OwnerId, trendDays: 7);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Items.Should().NotContain(i => i.NamespaceId == deletedNamespaceId);
+        result.Value.Items.Should().Contain(i => i.NamespaceId == liveNamespaceId);
+    }
+
+    [Fact]
+    public async Task GetIncidentsListAsync_ClusterKindSignature_ExcludedFromList()
+    {
+        var namespaceId = Guid.NewGuid();
+        var fingerprintSignature = MakeSignature(namespaceId, "hash-fingerprint");
+        var clusterSignature = MakeSignature(namespaceId, "hash-cluster", SignatureHashKind.Cluster);
+        _dbContext.NamespaceSignatures.Add(fingerprintSignature);
+        _dbContext.NamespaceSignatures.Add(clusterSignature);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _sut.GetIncidentsListAsync(OwnerId, trendDays: 7);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Items.Should().Contain(i => i.SignatureHash == "hash-fingerprint");
+        result.Value.Items.Should().NotContain(i => i.SignatureHash == "hash-cluster");
+    }
+
+    [Fact]
+    public async Task GetIncidentsListAsync_ComputesTopCategoriesByOccurrenceCount()
+    {
+        var namespaceId = Guid.NewGuid();
+        var high = MakeSignature(namespaceId, "hash-high");
+        high.OccurrenceCount = 20;
+        _dbContext.NamespaceSignatures.Add(high);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _sut.GetIncidentsListAsync(OwnerId, trendDays: 7);
+
+        result.Value.TopCategories.Should().ContainSingle();
+        result.Value.TopCategories[0].Category.Should().Be("MaxDeliveryCountExceeded");
+        result.Value.TopCategories[0].Count.Should().Be(20);
+        result.Value.TopCategories[0].Percent.Should().Be(100);
+    }
+
+    [Fact]
+    public async Task GetIncidentsListAsync_TrendCountsNewSignatureInTodaysBucket()
+    {
+        var namespaceId = Guid.NewGuid();
+        var sig = new NamespaceSignature
+        {
+            NamespaceId = namespaceId,
+            OwnerId = OwnerId,
+            SignatureHash = "hash-new",
+            HashKind = SignatureHashKind.Fingerprint,
+            FirstSeenAt = DateTimeOffset.UtcNow.AddMinutes(-30),
+            LastSeenAt = DateTimeOffset.UtcNow.AddMinutes(-30),
+            OccurrenceCount = 1,
+            DominantDeadletterReason = "MaxDeliveryCountExceeded",
+            TopTermsJson = "[\"timeout\"]",
+        };
+        _dbContext.NamespaceSignatures.Add(sig);
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _sut.GetIncidentsListAsync(OwnerId, trendDays: 7);
+
+        result.Value.Trend.Should().NotBeEmpty();
+        result.Value.Trend.Sum(t => t.New).Should().Be(1);
+        result.Value.Trend.Sum(t => t.Active).Should().Be(1);
     }
 
     private static FleetNamespaceHealth MakeNamespaceHealth(string name, FleetHealthSeverity severity) => new(

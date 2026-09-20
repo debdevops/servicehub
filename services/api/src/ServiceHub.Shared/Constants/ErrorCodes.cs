@@ -361,6 +361,55 @@ public static class ErrorCodes
     }
 
     /// <summary>
+    /// Error codes related to Governance/RBAC grants (M3 of the persistence wave).
+    /// </summary>
+    public static class Governance
+    {
+        /// <summary>The grant was not found.</summary>
+        public const string NotFound = "Governance.NotFound";
+
+        /// <summary>An active grant already exists for this exact (grantee, namespace, pillar) scope.</summary>
+        public const string AlreadyExists = "Governance.AlreadyExists";
+
+        /// <summary>The caller's Governance role does not meet the action's required minimum.</summary>
+        public const string InsufficientRole = "Governance.InsufficientRole";
+    }
+
+    /// <summary>
+    /// Error codes related to the Playbook Ledger (M4 of the persistence wave).
+    /// </summary>
+    public static class Playbook
+    {
+        /// <summary>The entry was not found.</summary>
+        public const string NotFound = "Playbook.NotFound";
+
+        /// <summary>The requested transition is not valid from the entry's current state.</summary>
+        public const string InvalidTransition = "Playbook.InvalidTransition";
+
+        /// <summary>A reason is required to reject a proposal.</summary>
+        public const string ReasonRequired = "Playbook.ReasonRequired";
+
+        /// <summary>The proposal's own fields (e.g. a <c>PreventionRule</c>'s condition) failed
+        /// validation before it could be written to the ledger.</summary>
+        public const string ProposalInvalid = "Playbook.ProposalInvalid";
+    }
+
+    /// <summary>
+    /// Error codes related to backup and restore operations.
+    /// </summary>
+    public static class Backup
+    {
+        /// <summary>The SQLite snapshot failed its post-copy integrity check.</summary>
+        public const string IntegrityCheckFailed = "Backup.IntegrityCheckFailed";
+
+        /// <summary>The backup operation failed before or during snapshot creation.</summary>
+        public const string CreateFailed = "Backup.CreateFailed";
+
+        /// <summary>Failed to enumerate existing backups.</summary>
+        public const string ListFailed = "Backup.ListFailed";
+    }
+
+    /// <summary>
     /// General error codes.
     /// </summary>
     public static class General

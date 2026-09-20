@@ -7,6 +7,7 @@ import { AppInsightsContext } from '@microsoft/applicationinsights-react-js';
 import { router } from './router';
 import { queryClient } from '@servicehub/ui-shared/lib/queryClient';
 import { reactPlugin } from '@servicehub/ui-shared/lib/telemetry';
+import { ActiveJobsProvider } from '@servicehub/ui-shared/lib/activeJobs/ActiveJobsContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './styles/index.css';
 
@@ -15,7 +16,9 @@ createRoot(document.getElementById('root')!).render(
     <AppInsightsContext.Provider value={reactPlugin}>
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
+        <ActiveJobsProvider>
+          <RouterProvider router={router} />
+        </ActiveJobsProvider>
       <Toaster
       position="top-right"
       toastOptions={{

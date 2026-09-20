@@ -28,6 +28,8 @@ const sampleRule: RuleResponse = {
   updatedAt: null,
   disabledReason: null,
   disabledReasonDetail: null,
+  namespaceId: null,
+  namespaceScope: { kind: 'Global' },
 };
 
 describe('RuleTestDialog', () => {
@@ -139,6 +141,31 @@ describe('RuleTestDialog', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /re-test/i }));
     expect(mutate).toHaveBeenCalled();
+  });
+
+  // A test evaluates only the newest N active messages fleet-wide, while the rule card behind
+  // this dialog shows a pending count computed over the entire active backlog. Telling the
+  // operator "no messages matched — adjust the rule" contradicted that count outright whenever
+  // the sample was dominated by a noisier namespace (reproduced live 2026-09-13: card said
+  // "Pending: 6", dialog said nothing matched).
+  it('states the sample scope instead of claiming the rule matches nothing', () => {
+    const mutate = vi.fn((_vars, opts) => opts.onSuccess({
+      totalTested: 100,
+      matchedCount: 0,
+      estimatedSuccessRate: 0,
+      sampleMatches: [],
+    }));
+    mockUseTestRule.mockReturnValue({ mutate, isPending: false, isError: false });
+
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <RuleTestDialog open={true} onClose={vi.fn()} rule={sampleRule} />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getAllByText(/most recently dead-lettered active messages/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/not the whole backlog/)).toBeInTheDocument();
+    expect(screen.queryByText(/Try adjusting the rule/)).not.toBeInTheDocument();
   });
 
   it('calls onClose when Escape key is pressed', () => {

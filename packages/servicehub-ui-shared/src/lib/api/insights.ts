@@ -3,14 +3,14 @@ import { AIInsight, GetInsightsParams } from './types';
 
 /**
  * AI Insights API
- * 
+ *
  * This module provides AI-powered pattern detection for Service Bus messages.
- * 
+ *
  * Current Implementation:
  * - Client-side analysis is always available
  * - Backend AI service is optional and may not be implemented
  * - Graceful degradation when backend is unavailable
- * 
+ *
  * TRUST GUARANTEES:
  * - All insights are labeled as "ServiceHub Interpretation"
  * - AI never presents inference as fact
@@ -33,10 +33,10 @@ function sanitizeEntityName(name: string): string {
 export const insightsApi = {
   /**
    * List insights for a namespace/entity
-   * 
+   *
    * When BACKEND_AI_ENABLED is false:
    * - Returns empty array (client-side analysis happens in hooks)
-   * 
+   *
    * When BACKEND_AI_ENABLED is true:
    * - Calls backend API for AI insights
    */
@@ -46,14 +46,14 @@ export const insightsApi = {
     if (!BACKEND_AI_ENABLED) {
       return [];
     }
-    
+
     const { namespaceId, ...queryParams } = params;
-    
+
     // Sanitize the queueOrTopicName if present
     if (queryParams.queueOrTopicName) {
       queryParams.queueOrTopicName = sanitizeEntityName(queryParams.queueOrTopicName);
     }
-    
+
     try {
       const response = await apiClient.get<AIInsight[]>(
         `/namespaces/${namespaceId}/insights`,
@@ -77,7 +77,7 @@ export const insightsApi = {
     if (!BACKEND_AI_ENABLED) {
       throw new Error('AI insights backend is not enabled. Client-side insights do not support individual lookup.');
     }
-    
+
     const response = await apiClient.get<AIInsight>(
       `/namespaces/${namespaceId}/insights/${insightId}`
     );
@@ -108,7 +108,7 @@ export const insightsApi = {
 
   /**
    * Get insights summary for a queue/topic
-   * 
+   *
    * When BACKEND_AI_ENABLED is false:
    * - Returns empty summary (client-side analysis happens in hooks)
    */
@@ -117,9 +117,9 @@ export const insightsApi = {
       // Return empty summary - actual analysis happens in hooks with real message data
       return { activeCount: 0, insights: [] };
     }
-    
+
     const sanitizedName = sanitizeEntityName(queueOrTopicName);
-    
+
     try {
       const response = await apiClient.get<{ activeCount: number; insights: AIInsight[] }>(
         `/namespaces/${namespaceId}/queues/${sanitizedName}/insights/summary`
@@ -132,7 +132,7 @@ export const insightsApi = {
       throw error;
     }
   },
-  
+
   /**
    * Check if AI insights are available
    * This can be used to conditionally show AI UI elements

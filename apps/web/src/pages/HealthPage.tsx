@@ -10,6 +10,8 @@ import {
   RefreshCw,
   AlertTriangle,
 } from 'lucide-react';
+import { HelpTooltip } from '@/components/help';
+import { tooltips, type TooltipContent } from '@servicehub/ui-shared/lib/helpContent';
 
 // Maps a health-check entry name (registered in Program.cs / AwsDependencyInjection /
 // GcpDependencyInjection) to the provider it reports connectivity for, if any.
@@ -51,12 +53,14 @@ function StatCard({
   value,
   detail,
   color,
+  tooltip,
 }: {
   icon: React.ElementType;
   label: string;
   value: string | number;
   detail?: string;
   color: string;
+  tooltip?: TooltipContent;
 }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
@@ -64,7 +68,10 @@ function StatCard({
         <div className={`p-2 rounded-lg ${color}`}>
           <Icon className="w-5 h-5 text-white" />
         </div>
-        <span className="text-sm font-medium text-gray-500">{label}</span>
+        <span className="text-sm font-medium text-gray-500 flex items-center gap-1">
+          {label}
+          {tooltip && <HelpTooltip {...tooltip} size={12} position="bottom" />}
+        </span>
       </div>
       <p className="text-2xl font-bold text-gray-900">{value}</p>
       {detail && (
@@ -177,6 +184,7 @@ export function HealthPage() {
                 label="Uptime"
                 value={status ? formatUptime(status.uptime) : '—'}
                 color="bg-blue-500"
+                tooltip={tooltips.health.uptime}
               />
               <StatCard
                 icon={HardDrive}
@@ -188,12 +196,14 @@ export function HealthPage() {
                     : undefined
                 }
                 color="bg-purple-500"
+                tooltip={tooltips.health.memory}
               />
               <StatCard
                 icon={Cpu}
                 label="Threads"
                 value={status?.threadCount ?? '—'}
                 color="bg-amber-500"
+                tooltip={tooltips.health.threads}
               />
               <StatCard
                 icon={Activity}
@@ -205,6 +215,7 @@ export function HealthPage() {
                 }
                 detail="Gen0 / Gen1 / Gen2"
                 color="bg-rose-500"
+                tooltip={tooltips.health.gcCollections}
               />
             </div>
 
@@ -221,6 +232,7 @@ export function HealthPage() {
                   {Object.entries(report.entries).map(([name, entry]) => {
                     const style = checkStatusStyle(entry.status);
                     const provider = CHECK_PROVIDER[name];
+                    const dataDirectory = entry.data?.['DataDirectory'];
                     return (
                       <div
                         key={name}
@@ -236,11 +248,19 @@ export function HealthPage() {
                           <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
                           {entry.status}
                         </span>
-                        {(entry.description || entry.exception) && (
+                        {(entry.description || entry.exception || typeof dataDirectory === 'string') && (
                           <div className="min-w-0 flex flex-col gap-0.5">
                             {entry.description && (
                               <span className="text-gray-500 truncate">
                                 {entry.description}
+                              </span>
+                            )}
+                            {typeof dataDirectory === 'string' && (
+                              <span
+                                className="text-gray-400 text-xs truncate font-mono"
+                                title="Where the evidence ledger is stored on disk — confirm this is a mounted, durable volume"
+                              >
+                                data path: {dataDirectory}
                               </span>
                             )}
                             {entry.exception && (

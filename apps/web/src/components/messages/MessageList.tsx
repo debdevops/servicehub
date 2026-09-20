@@ -36,6 +36,14 @@ interface MessageListProps {
    * MessagesOverviewPage's CountBadge.
    */
   countsUnsupported?: boolean;
+  /**
+   * True when the provider's count API is eventually consistent (AWS SQS's
+   * ApproximateNumberOfMessages, which AWS documents can lag up to a minute behind a burst of
+   * sends or a replay). Prefixes the tab counts with "~" and explains the delay in a tooltip,
+   * so a count that briefly reads 0 right after generating/replaying messages doesn't read as
+   * a ServiceHub bug.
+   */
+  approximateCounts?: boolean;
 }
 
 // ============================================================================
@@ -74,7 +82,7 @@ const STATUS_CONFIG = {
 function StatusBadge({ status, deliveryCount }: { status: Message['status']; deliveryCount?: number }) {
   const config = STATUS_CONFIG[status];
   const Icon = config.icon;
-  
+
   // Build detailed tooltip
   const tooltip = deliveryCount !== undefined && status !== 'success'
     ? `ServiceHub Assessment: ${config.tooltip} — Delivery count: ${deliveryCount}`
@@ -133,7 +141,7 @@ const MessageCard = memo(function MessageCard({ message, isSelected, onClick }: 
         <span className="font-bold text-base text-gray-900 truncate flex-1 mr-2">
           {displayTitle}
         </span>
-        <span 
+        <span
           className="text-xs text-gray-400 cursor-help whitespace-nowrap"
           title={message.enqueuedTime.toISOString()}
         >
@@ -194,7 +202,10 @@ export function MessageList({
   isFiltered = false,
   tabLabels = { active: 'Active', deadletter: 'Dead-Letter' },
   countsUnsupported = false,
+  approximateCounts = false,
 }: MessageListProps) {
+  const approximateTitle =
+    'AWS reports this count with a short delay (eventually consistent) — it can take up to a minute to catch up after sending or replaying messages.';
   const parentRef = useRef<HTMLDivElement>(null);
 
   // Filter messages by queue type - memoized for performance
@@ -219,7 +230,7 @@ export function MessageList({
       }
 
       if (!filteredMessages.length) return;
-      
+
       const selectedIndex = filteredMessages.findIndex(m => m.id === selectedId);
       let nextIndex = -1;
 
@@ -264,8 +275,9 @@ export function MessageList({
               : 'text-gray-500 hover:text-gray-700'
             }
           `}
+          title={!countsUnsupported && approximateCounts ? approximateTitle : undefined}
         >
-          {tabLabels.active} ({countsUnsupported ? '—' : activeCounts.active.toLocaleString()})
+          {tabLabels.active} ({countsUnsupported ? '—' : `${approximateCounts ? '~' : ''}${activeCounts.active.toLocaleString()}`})
         </button>
         <button
           onClick={() => onQueueTabChange('deadletter')}
@@ -281,9 +293,9 @@ export function MessageList({
             className="flex items-center justify-center gap-2"
             title={countsUnsupported
               ? 'This provider has no message-count API — the number shown reflects only what has been loaded so far'
-              : tabLabels.deadletterTitle}
+              : approximateCounts ? approximateTitle : tabLabels.deadletterTitle}
           >
-            {tabLabels.deadletter} ({countsUnsupported ? '—' : activeCounts.deadletter.toLocaleString()})
+            {tabLabels.deadletter} ({countsUnsupported ? '—' : `${approximateCounts ? '~' : ''}${activeCounts.deadletter.toLocaleString()}`})
             {!countsUnsupported && activeCounts.deadletter > 0 && (
               <span className="w-2 h-2 rounded-full bg-red-500" />
             )}

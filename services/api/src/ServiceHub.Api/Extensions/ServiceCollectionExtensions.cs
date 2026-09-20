@@ -55,6 +55,7 @@ public static class ServiceCollectionExtensions
             options.Filters.Add<ValidateModelAttribute>();
             options.Filters.Add<ApiExceptionFilterAttribute>();
             options.Filters.Add<ScopeAuthorizationFilter>(); // Enforce API key scopes
+            options.Filters.Add<GovernanceAuthorizationFilter>(); // Enforce per-identity Governance/RBAC roles
             options.SuppressAsyncSuffixInActionNames = true;
         })
         .AddJsonOptions(options =>

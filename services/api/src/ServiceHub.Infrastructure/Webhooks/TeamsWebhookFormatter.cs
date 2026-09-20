@@ -70,6 +70,82 @@ public sealed class TeamsWebhookFormatter : IWebhookMessageFormatter
             PotentialAction: n.InvestigateUrl is null ? null : [TeamsOpenUriAction.To("View DLQ History", n.InvestigateUrl)]);
     }
 
+    /// <inheritdoc />
+    public object BuildAutonomyTransitionPayload(AutonomyTransitionNotification n)
+    {
+        var isPromotion = n.NewLevel > n.PreviousLevel;
+        var (color, headline) = isPromotion
+            ? (SuccessColor, "⬆️ Autonomy grant promoted")
+            : (WarningColor, "⬇️ Autonomy grant demoted");
+
+        var facts = new List<TeamsFact>
+        {
+            new("Signature", n.SignatureHash),
+            new("Transition", $"{n.PreviousLevel} → {n.NewLevel}"),
+            new("Reason", n.Reason),
+            new("Transitioned", $"{n.TransitionedAtUtc:yyyy-MM-dd HH:mm} UTC"),
+        };
+
+        return new TeamsMessageCard(
+            Summary: headline,
+            ThemeColor: color,
+            Title: headline,
+            Sections: [new TeamsSection(facts)],
+            PotentialAction: n.InvestigateUrl is null ? null : [TeamsOpenUriAction.To("View Signature", n.InvestigateUrl)]);
+    }
+
+    /// <inheritdoc />
+    public object BuildCircuitBreakerTrippedPayload(CircuitBreakerTrippedNotification n)
+    {
+        var facts = new List<TeamsFact>
+        {
+            new("Rule", n.RuleName),
+            new("Verified Success Rate", $"{n.VerifiedSuccessRate:P0} over last {n.SampleSize} outcomes"),
+            new("Tripped", $"{n.TrippedAtUtc:yyyy-MM-dd HH:mm} UTC"),
+        };
+
+        return new TeamsMessageCard(
+            Summary: "Circuit breaker tripped",
+            ThemeColor: ErrorColor,
+            Title: "🛑 Circuit breaker tripped",
+            Sections: [new TeamsSection(facts)],
+            PotentialAction: n.InvestigateUrl is null ? null : [TeamsOpenUriAction.To("View Rules", n.InvestigateUrl)]);
+    }
+
+    /// <inheritdoc />
+    public object BuildInsightDetectedPayload(InsightDetectedNotification n)
+    {
+        var (emoji, color) = n.Kind switch
+        {
+            InsightKind.Anomaly => ("🔎", WarningColor),
+            InsightKind.Drift => ("📐", WarningColor),
+            InsightKind.Correlation => ("🔗", WarningColor),
+            InsightKind.Narration => ("📝", NeutralColor),
+            _ => ("ℹ️", NeutralColor),
+        };
+
+        var scope = n.NamespaceName is not null
+            ? n.EntityName is not null ? $"{n.EntityName} — {n.NamespaceName}" : n.NamespaceName
+            : "cross-namespace";
+
+        var headline = $"{emoji} {n.Kind} detected";
+
+        var facts = new List<TeamsFact>
+        {
+            new("Scope", scope),
+            new("Severity", $"{n.Severity}/100"),
+            new("Description", n.Description),
+            new("Detected", $"{n.DetectedAtUtc:yyyy-MM-dd HH:mm} UTC"),
+        };
+
+        return new TeamsMessageCard(
+            Summary: headline,
+            ThemeColor: color,
+            Title: headline,
+            Sections: [new TeamsSection(facts)],
+            PotentialAction: n.InvestigateUrl is null ? null : [TeamsOpenUriAction.To("Investigate", n.InvestigateUrl)]);
+    }
+
     // ── Teams MessageCard shapes ─────────────────────────────────────────────
 
     private sealed record TeamsMessageCard(

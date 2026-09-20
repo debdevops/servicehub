@@ -123,8 +123,8 @@ public sealed class DlqSignatureAnalysisServiceTests
     {
         _signatureLookupService
             .Setup(s => s.LookupAndRecordAsync(
-                OwnerId, NamespaceId, It.IsAny<IReadOnlyList<ClusterSignatureObservation>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string _, Guid _, IReadOnlyList<ClusterSignatureObservation> obs, CancellationToken _) =>
+                OwnerId, NamespaceId, It.IsAny<IReadOnlyList<ClusterSignatureObservation>>(), It.IsAny<SignatureHashKind>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string _, Guid _, IReadOnlyList<ClusterSignatureObservation> obs, SignatureHashKind _, CancellationToken _) =>
                 obs.ToDictionary(
                     o => o.SignatureHash,
                     o => new SignatureLookupResult(IsNew: true, FirstSeenAt: DateTimeOffset.UtcNow, OccurrenceCount: 1)));
@@ -183,7 +183,7 @@ public sealed class DlqSignatureAnalysisServiceTests
 
         // Signature lookup should still be called for persistence
         _signatureLookupService.Verify(s => s.LookupAndRecordAsync(
-            OwnerId, NamespaceId, It.IsAny<IReadOnlyList<ClusterSignatureObservation>>(), It.IsAny<CancellationToken>()),
+            OwnerId, NamespaceId, It.IsAny<IReadOnlyList<ClusterSignatureObservation>>(), It.IsAny<SignatureHashKind>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -244,15 +244,15 @@ public sealed class DlqSignatureAnalysisServiceTests
 
         IReadOnlyList<ClusterSignatureObservation>? capturedObservations = null;
         _signatureLookupService
-            .Setup(s => s.LookupAndRecordAsync(OwnerId, NamespaceId, It.IsAny<IReadOnlyList<ClusterSignatureObservation>>(), It.IsAny<CancellationToken>()))
-            .Callback<string, Guid, IReadOnlyList<ClusterSignatureObservation>, CancellationToken>((_, _, obs, _) => capturedObservations = obs)
-            .ReturnsAsync((string _, Guid _, IReadOnlyList<ClusterSignatureObservation> obs, CancellationToken _) =>
+            .Setup(s => s.LookupAndRecordAsync(OwnerId, NamespaceId, It.IsAny<IReadOnlyList<ClusterSignatureObservation>>(), It.IsAny<SignatureHashKind>(), It.IsAny<CancellationToken>()))
+            .Callback<string, Guid, IReadOnlyList<ClusterSignatureObservation>, SignatureHashKind, CancellationToken>((_, _, obs, _, _) => capturedObservations = obs)
+            .ReturnsAsync((string _, Guid _, IReadOnlyList<ClusterSignatureObservation> obs, SignatureHashKind _, CancellationToken _) =>
                 obs.ToDictionary(o => o.SignatureHash, o => new SignatureLookupResult(true, DateTimeOffset.UtcNow, 1)));
 
         await _sut.AnalyzeAsync(OwnerId, NamespaceId);
 
         _signatureLookupService.Verify(s => s.LookupAndRecordAsync(
-            OwnerId, NamespaceId, It.IsAny<IReadOnlyList<ClusterSignatureObservation>>(), It.IsAny<CancellationToken>()), Times.Once);
+            OwnerId, NamespaceId, It.IsAny<IReadOnlyList<ClusterSignatureObservation>>(), It.IsAny<SignatureHashKind>(), It.IsAny<CancellationToken>()), Times.Once);
 
         capturedObservations.Should().HaveCount(2);
         capturedObservations![0].SignatureHash.Should().Be(ClusterSignatureHasher.ComputeHash(clusterA.TopTerms, clusterA.DominantDeadletterReason));
@@ -273,7 +273,7 @@ public sealed class DlqSignatureAnalysisServiceTests
         var firstSeen = DateTimeOffset.UtcNow.AddDays(-3);
         var hash = ClusterSignatureHasher.ComputeHash(cluster.TopTerms, cluster.DominantDeadletterReason);
         _signatureLookupService
-            .Setup(s => s.LookupAndRecordAsync(OwnerId, NamespaceId, It.IsAny<IReadOnlyList<ClusterSignatureObservation>>(), It.IsAny<CancellationToken>()))
+            .Setup(s => s.LookupAndRecordAsync(OwnerId, NamespaceId, It.IsAny<IReadOnlyList<ClusterSignatureObservation>>(), It.IsAny<SignatureHashKind>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Dictionary<string, SignatureLookupResult>
             {
                 [hash] = new SignatureLookupResult(IsNew: false, FirstSeenAt: firstSeen, OccurrenceCount: 7)

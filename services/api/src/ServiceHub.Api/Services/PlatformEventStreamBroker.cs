@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Linq;
 using System.Threading.Channels;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Events;
@@ -47,6 +48,8 @@ public sealed class PlatformEventStreamBroker
         EventTypes.RuleMatched,
         EventTypes.AutoReplayRuleCircuitBreakerTripped,
         EventTypes.BulkOperationCompleted,
+        EventTypes.AutonomyGrantTransitioned,
+        EventTypes.InsightDetected,
     };
 
     private readonly ConcurrentDictionary<Guid, Connection> _connections = new();
@@ -161,13 +164,23 @@ public sealed class PlatformEventStreamBroker
     /// <summary>
     /// Further restricts a namespace-scoped event to a connection's own allow-list, on top of
     /// the owner-wide visibility already established by <see cref="IsVisibleToOwnerAsync"/>.
-    /// Events without a <see cref="PlatformEvent.NamespaceId"/> (e.g. actor-only matches) are
-    /// never namespace-restricted — the allow-list only narrows namespace-scoped visibility.
+    /// A multi-namespace event (<see cref="PlatformEvent.NamespaceIds"/> — e.g. a cross-namespace
+    /// correlation/narration insight) requires every referenced namespace to be within the
+    /// allow-list, since the event's own description can mention any of them; a single-namespace
+    /// event falls back to <see cref="PlatformEvent.NamespaceId"/>. Events with neither set (e.g.
+    /// actor-only matches) are never namespace-restricted — the allow-list only narrows
+    /// namespace-scoped visibility.
     /// </summary>
-    private static bool IsWithinAllowList(PlatformEvent platformEvent, IReadOnlySet<Guid>? allowedNamespaceIds) =>
-        allowedNamespaceIds is null
-        || platformEvent.NamespaceId is not Guid namespaceId
-        || allowedNamespaceIds.Contains(namespaceId);
+    private static bool IsWithinAllowList(PlatformEvent platformEvent, IReadOnlySet<Guid>? allowedNamespaceIds)
+    {
+        if (allowedNamespaceIds is null)
+            return true;
+
+        if (platformEvent.NamespaceIds is { Count: > 0 } namespaceIds)
+            return namespaceIds.All(allowedNamespaceIds.Contains);
+
+        return platformEvent.NamespaceId is not Guid namespaceId || allowedNamespaceIds.Contains(namespaceId);
+    }
 
     internal void Unregister(Guid connectionId)
     {

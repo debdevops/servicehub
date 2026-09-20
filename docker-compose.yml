@@ -11,9 +11,13 @@
 # the generation command if either is missing, rather than starting a container that
 # crash-loops on the Production configuration validator.
 #
+# Evidence (the SQLite DLQ/audit/recovery-ledger database and the namespace store) persists to
+# the named `servicehub-data` volume by default — `docker compose down` keeps it; only
+# `docker compose down -v` discards it.
+#
 # For a zero-credential exploration of the UI without any backend, see Demo Mode
-# (apps/web — no container required). For a real deployment with persisted data see
-# the "production" service below and self-hosting/README.md.
+# (apps/web — no container required). For a LAN-exposed deployment connecting to real cloud
+# messaging, see the "production" example service below and self-hosting/README.md.
 services:
   servicehub:
     build:
@@ -34,6 +38,12 @@ services:
       #   SECURITY__ENCRYPTIONKEY=$(openssl rand -hex 32) docker compose up --build
       # Reusing the same key across deployments or checking keys into version control
       # compromises connection-string encryption for every namespace stored with that key.
+      #
+      # To rotate this key later without losing access to already-stored connection strings,
+      # switch to SECURITY__ENCRYPTIONKEYREGISTRY instead (takes precedence over this variable
+      # when set) — a JSON blob naming an ActiveKeyId plus every key still needed to decrypt
+      # older data. See docs/ENCRYPTION-KEY-ROTATION.md for the full procedure; do not put a
+      # registry with real key material in this file — env var or secret store only.
       SECURITY__ENCRYPTIONKEY: "${SECURITY__ENCRYPTIONKEY:?is not set. Copy .env.example to .env and fill in both secrets, then re run docker compose up. See .env.example for the generate commands.}"
       # appsettings.Production.json's AllowedHosts placeholder rejects every Host header
       # until overridden; this container is only reachable via localhost per the ports mapping.
@@ -52,10 +62,21 @@ services:
     restart: unless-stopped
     depends_on:
       - servicehub-ai
+      - servicehub-agent
+    # Named, tracked volume for the SQLite DLQ/audit/evidence database and the namespace store —
+    # both already write here by default (DlqDatabase__DataDirectory / NamespaceRepository__DataDirectory
+    # in the Dockerfile). Without this mount, Docker still creates an anonymous volume for the
+    # Dockerfile's VOLUME declaration, but a fresh anonymous volume is allocated on every
+    # `docker compose down && up`, silently discarding the evidence ledger. Naming it here is what
+    # makes `docker compose down` (no `-v`) keep it, and `docker compose down -v` the explicit,
+    # deliberate way to discard it.
+    volumes:
+      - servicehub-data:/var/servicehub/data
 
-  # Skeleton only (no algorithm yet) — internal network only, never publish this
-  # port to the host. servicehub must start/serve normally if this is absent or
-  # unhealthy, hence no `condition: service_healthy` on the depends_on above.
+  # TF-IDF + DBSCAN error-signature clustering (services/ai/app/clustering.py) — internal
+  # network only, never publish this port to the host. servicehub must start/serve normally
+  # if this is absent or unhealthy, hence no `condition: service_healthy` on the depends_on
+  # above.
   servicehub-ai:
     build:
       context: ./services/ai
@@ -63,10 +84,25 @@ services:
     image: servicehub-ai:local
     restart: unless-stopped
 
+  # Reasoning companion (services/agent, roadmap §7, W5) — internal network only, same rule as
+  # servicehub-ai above. Disabled by default at the .NET side (ReasoningAgent:Enabled=false); this
+  # container itself also does nothing without its own OLLAMA_HOST pointed at a local Ollama
+  # instance the operator runs (never a cloud LLM API — see services/agent/README.md). Leave
+  # OLLAMA_HOST unset to run with this container present but fully inert.
+  servicehub-agent:
+    build:
+      context: ./services/agent
+      dockerfile: Dockerfile
+    image: servicehub-agent:local
+    environment:
+      OLLAMA_HOST: ${OLLAMA_HOST:-}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1}
+    restart: unless-stopped
+
   # ---------------------------------------------------------------------------------------
-  # Production example — connect to real cloud messaging. Uncomment, then supply a random key:
+  # LAN-exposed example — same persisted volume as the default `servicehub` service above;
+  # the only difference is the port binding. Uncomment, then supply a random key:
   #   SECURITY__ENCRYPTIONKEY=$(openssl rand -hex 32) docker compose up -d servicehub-prod
-  # Data (namespace store + SQLite DLQ/audit DB) is persisted to the named volume.
   # ---------------------------------------------------------------------------------------
   # servicehub-prod:
   #   build: { context: ., dockerfile: Dockerfile }

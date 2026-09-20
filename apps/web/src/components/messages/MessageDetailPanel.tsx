@@ -111,7 +111,7 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
   const purgeSupported = providerCapabilities?.supportsPurge ?? false;
   const purgeUnsupportedReason = providerCapabilities?.notes ?? 'Purge is not supported for this provider.';
   const [searchParams] = useSearchParams();
-  
+
   const [confirmState, setConfirmState] = useState<ConfirmState>({
     isOpen: false,
     title: '',
@@ -124,7 +124,7 @@ function ActionButtons({ message, namespaceId }: ActionButtonsProps) {
   const queueName = searchParams.get('queue');
   const topicName = searchParams.get('topic');
   const subscriptionName = searchParams.get('subscription');
-  
+
   // Determine entity name and type
   const entityName = topicName || queueName || '';
   const isFromDeadLetter = message.queueType === 'deadletter' || !!message.deadLetterReason;
@@ -343,7 +343,7 @@ function extractMessageTitle(message: Message): { title: string; subtitle: strin
   // Try to parse body as JSON to extract meaningful info
   try {
     const body = typeof message.body === 'string' ? JSON.parse(message.body) : message.body;
-    
+
     // Common patterns for extracting meaningful titles
     const eventType = body?.eventType || body?.type || body?.event;
     const orderId = body?.data?.orderId || body?.orderId;
@@ -352,21 +352,21 @@ function extractMessageTitle(message: Message): { title: string; subtitle: strin
     const userId = body?.data?.userId || body?.userId;
     const errorCode = body?.data?.error?.code || body?.error?.code || body?.errorCode;
     const status = body?.data?.status || body?.status;
-    
+
     // Build meaningful title based on available data
     if (eventType) {
       const formattedEvent = eventType.replace(/([A-Z])/g, ' $1').trim();
       let subtitle = '';
-      
+
       if (orderId) subtitle = `Order: ${orderId}`;
       else if (transactionId) subtitle = `Transaction: ${transactionId}`;
       else if (notificationId) subtitle = `Notification: ${notificationId}`;
       else if (errorCode) subtitle = `Error: ${errorCode}`;
       else if (status) subtitle = `Status: ${status}`;
-      
+
       return { title: formattedEvent, subtitle };
     }
-    
+
     // Fallback to any identifiable field
     if (orderId) return { title: 'Order Message', subtitle: orderId };
     if (transactionId) return { title: 'Payment Transaction', subtitle: transactionId };
@@ -376,11 +376,11 @@ function extractMessageTitle(message: Message): { title: string; subtitle: strin
   } catch {
     // Body is not valid JSON
   }
-  
+
   // Use message ID or sequence number
-  const shortId = message.id 
-    ? (message.id.includes('-') 
-        ? message.id.split('-').slice(0, 2).join('-') 
+  const shortId = message.id
+    ? (message.id.includes('-')
+        ? message.id.split('-').slice(0, 2).join('-')
         : message.id.substring(0, 12))
     : `#${message.sequenceNumber}`;
   return { title: 'Message', subtitle: shortId };
@@ -400,7 +400,7 @@ export function MessageDetailPanel({ message, onViewPattern, insights }: Message
 
   const { title, subtitle } = extractMessageTitle(message);
   const isDLQ = message.queueType === 'deadletter' || !!message.deadLetterReason;
-  
+
   // Get DLQ severity for appropriate styling
   const getDLQSeverity = (msg: Message): 'test' | 'warning' | 'critical' => {
     const reason = (msg.deadLetterReason || '').toLowerCase();
@@ -414,7 +414,7 @@ export function MessageDetailPanel({ message, onViewPattern, insights }: Message
     }
     return 'warning';
   };
-  
+
   const dlqSeverity = isDLQ ? getDLQSeverity(message) : null;
 
   return (

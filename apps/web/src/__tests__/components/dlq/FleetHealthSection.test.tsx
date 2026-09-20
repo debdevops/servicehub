@@ -44,8 +44,8 @@ function summary(overrides: Partial<FleetHealthSummary> = {}): FleetHealthSummar
   };
 }
 
-function renderSection(fleetHealth: FleetHealthSummary | null | undefined) {
-  return render(<FleetHealthSection fleetHealth={fleetHealth} />, { wrapper: MemoryRouter });
+function renderSection(fleetHealth: FleetHealthSummary | null | undefined, navPrefix = '') {
+  return render(<FleetHealthSection fleetHealth={fleetHealth} navPrefix={navPrefix} />, { wrapper: MemoryRouter });
 }
 
 describe('FleetHealthSection', () => {
@@ -96,5 +96,18 @@ describe('FleetHealthSection', () => {
     renderSection(summary());
 
     expect(screen.getByRole('link', { name: /View all fleet health/i })).toHaveAttribute('href', '/fleet');
+  });
+
+  it('preserves the /demo/{provider} prefix on both the Open Namespace navigation and the Fleet Health link', async () => {
+    const user = userEvent.setup();
+    renderSection(
+      summary({ topUnhealthyNamespaces: [namespaceHealth({ namespaceId: 'ns-42', namespaceName: 'prod-orders' })] }),
+      '/demo/aws',
+    );
+
+    expect(screen.getByRole('link', { name: /View all fleet health/i })).toHaveAttribute('href', '/demo/aws/fleet');
+
+    await user.click(screen.getByRole('button', { name: 'Open namespace prod-orders' }));
+    expect(mockNavigate).toHaveBeenCalledWith('/demo/aws/dlq-history?namespace=ns-42');
   });
 });

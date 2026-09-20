@@ -38,7 +38,7 @@ public sealed class FleetController : ApiControllerBase
         [FromQuery] int windowHours = 24,
         CancellationToken cancellationToken = default)
     {
-        var result = await _fleetOverviewService.GetOverviewAsync(OwnerId, windowHours, cancellationToken);
+        var result = await _fleetOverviewService.GetOverviewAsync(OwnerId, windowHours, cancellationToken, AllowedNamespaceIds);
         if (result.IsSuccess)
         {
             _metrics.RecordFleetOverview(result.Value.TotalActive, result.Value.NamespaceCount);

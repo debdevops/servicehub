@@ -56,3 +56,17 @@ export function getHealthGrade(totalActive: number, totalDlq: number): HealthGra
     borderClass: 'border-red-200',
   };
 }
+
+/**
+ * A namespace counts as "spiking" either on an absolute DLQ count above `threshold`, or on a
+ * bad DLQ-to-active ratio (D/F health grade) — the same rule `getHealthGrade` uses. This keeps
+ * every "spike"-labeled UI element (a namespace card's banner, the fleet-wide spike count, the
+ * DLQ hot-spot list) in agreement: none can call a namespace spiking while another calls it fine.
+ * Callers must all use this single definition rather than re-deriving their own absolute-only or
+ * ratio-only check.
+ */
+export function isDlqSpike(totalActive: number, totalDlq: number, threshold: number): boolean {
+  if (totalDlq > threshold) return true;
+  const grade = getHealthGrade(totalActive, totalDlq).grade;
+  return grade === 'D' || grade === 'F';
+}

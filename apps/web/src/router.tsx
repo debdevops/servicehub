@@ -19,15 +19,20 @@ const DemoGcpLayoutLazy = lazy(() => import('./layouts/AppLayouts').then(m => ({
 
 // Lazy-load heavy pages to improve initial bundle size and cold-start performance
 const DashboardPageLazy = lazy(() => import('./pages/DashboardPage'));
+const HomePageLazy = lazy(() => import('./pages/HomePage').then(m => ({ default: m.HomePage })));
 const FleetPageLazy = lazy(() => import('./pages/FleetPage'));
+const DlqOverviewPageLazy = lazy(() => import('./pages/DlqOverviewPage'));
 const DlqHistoryPageLazy = lazy(() => import('./pages/DlqHistoryPage'));
 const SignatureListPageLazy = lazy(() => import('./pages/SignatureListPage'));
 const SignatureDetailsPageLazy = lazy(() => import('./pages/SignatureDetailsPage'));
 const FailureIntelligenceCenterPageLazy = lazy(() => import('./pages/FailureIntelligenceCenterPage').then(m => ({ default: m.FailureIntelligenceCenterPage })));
+const IncidentWorkspacePageLazy = lazy(() => import('./pages/IncidentWorkspacePage').then(m => ({ default: m.IncidentWorkspacePage })));
 const CloudBridgePageLazy = lazy(() => import('./pages/CloudBridgePage').then(m => ({ default: m.CloudBridgePage })));
 const CrossCloudTracePageLazy = lazy(() => import('./pages/CrossCloudTracePage').then(m => ({ default: m.CrossCloudTracePage })));
 const AuditPageLazy = lazy(() => import('./pages/AuditPage').then(m => ({ default: m.AuditPage })));
 const RecoveryLedgerPageLazy = lazy(() => import('./pages/RecoveryLedgerPage'));
+const PlaybookLedgerPageLazy = lazy(() => import('./pages/PlaybookLedgerPage'));
+const GovernanceGrantsPageLazy = lazy(() => import('./pages/GovernanceGrantsPage'));
 const RecoveryAgeingPageLazy = lazy(() => import('./pages/RecoveryAgeingPage'));
 const RecoveryOperationDetailPageLazy = lazy(() => import('./pages/RecoveryOperationDetailPage'));
 const MessagesOverviewPageLazy = lazy(() => import('./pages/MessagesOverviewPage'));
@@ -35,8 +40,12 @@ const MessagesPageLazy = lazy(() => import('./pages/MessagesPage').then(m => ({ 
 const LiveTailPageLazy = lazy(() => import('./pages/LiveTailPage').then(m => ({ default: m.LiveTailPage })));
 const ConnectPageLazy = lazy(() => import('./pages/ConnectPage').then(m => ({ default: m.ConnectPage })));
 const RulesPageLazy = lazy(() => import('./pages/RulesPage').then(m => ({ default: m.RulesPage })));
+const ApprovalQueuePageLazy = lazy(() => import('./pages/ApprovalQueuePage'));
+const AutonomyPageLazy = lazy(() => import('./pages/AutonomyPage'));
+const ProactiveInsightsPageLazy = lazy(() => import('./pages/ProactiveInsightsPage'));
 const HealthPageLazy = lazy(() => import('./pages/HealthPage').then(m => ({ default: m.HealthPage })));
 const HelpPageLazy = lazy(() => import('./pages/HelpPage').then(m => ({ default: m.HelpPage })));
+const AdvancedServiceHubPageLazy = lazy(() => import('./pages/AdvancedServiceHubPage').then(m => ({ default: m.AdvancedServiceHubPage })));
 const ScheduledMessagesPageLazy = lazy(() => import('./pages/ScheduledMessagesPage').then(m => ({ default: m.ScheduledMessagesPage })));
 const SecurityPageLazy = lazy(() => import('./pages/SecurityPage').then(m => ({ default: m.SecurityPage })));
 
@@ -103,6 +112,36 @@ const sharedChildren = [
     ),
   },
   {
+    path: 'approval-queue',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <ApprovalQueuePageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'autonomy',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <AutonomyPageLazy />
+      </Suspense>
+    ),
+  },
+  // Old route, renamed to '/autonomy' as part of the Advanced ServiceHub redesign — kept as a
+  // redirect so existing bookmarks and the browser back-button history don't 404.
+  {
+    path: 'autonomy-dashboard',
+    element: <Navigate to="../autonomy" replace />,
+  },
+  {
+    path: 'insights',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <ProactiveInsightsPageLazy />
+      </Suspense>
+    ),
+  },
+  {
     path: 'health',
     element: (
       <Suspense fallback={<PageLoading />}>
@@ -115,6 +154,14 @@ const sharedChildren = [
     element: (
       <Suspense fallback={<PageLoading />}>
         <HelpPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'advanced-servicehub',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <AdvancedServiceHubPageLazy />
       </Suspense>
     ),
   },
@@ -135,6 +182,14 @@ const sharedChildren = [
     ),
   },
   {
+    path: 'home',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <HomePageLazy />
+      </Suspense>
+    ),
+  },
+  {
     path: 'dashboard',
     element: (
       <Suspense fallback={<PageLoading />}>
@@ -147,6 +202,14 @@ const sharedChildren = [
     element: (
       <Suspense fallback={<PageLoading />}>
         <FleetPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'dlq-overview',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <DlqOverviewPageLazy />
       </Suspense>
     ),
   },
@@ -179,6 +242,14 @@ const sharedChildren = [
     element: (
       <Suspense fallback={<PageLoading />}>
         <FailureIntelligenceCenterPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'incidents/:signatureHash',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <IncidentWorkspacePageLazy />
       </Suspense>
     ),
   },
@@ -227,6 +298,22 @@ const sharedChildren = [
     element: (
       <Suspense fallback={<PageLoading />}>
         <RecoveryOperationDetailPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'playbook',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <PlaybookLedgerPageLazy />
+      </Suspense>
+    ),
+  },
+  {
+    path: 'governance',
+    element: (
+      <Suspense fallback={<PageLoading />}>
+        <GovernanceGrantsPageLazy />
       </Suspense>
     ),
   },
@@ -320,7 +407,7 @@ export const router = createBrowserRouter([
   // MainLayout with all feature routes — no DemoModeProvider, uses real API.
   // Reuses sharedChildren (same route list the /demo/* trees use) rather than a
   // hand-duplicated copy — a prior hand-duplicated copy had silently dropped the
-  // 'fleet' route, so the sidebar's Fleet Operations link 404'd to /welcome.
+  // 'fleet' route, so the sidebar's Fleet Overview link 404'd to /welcome.
   // Layout is lazy-loaded to defer MainLayout dependencies from initial bundle.
   {
     path: '/',

@@ -34,7 +34,7 @@ public static class SwaggerConfiguration
                 Version = "v1",
                 Description = "Azure Service Bus forensic inspector and DLQ intelligence platform"
             });
-            
+
             // Include XML comments from the API assembly
             var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
             var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);

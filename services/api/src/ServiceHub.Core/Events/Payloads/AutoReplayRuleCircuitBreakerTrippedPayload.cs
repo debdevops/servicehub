@@ -19,6 +19,14 @@ public sealed record AutoReplayRuleCircuitBreakerTrippedPayload
     /// the configured floor.</summary>
     public required double VerifiedSuccessRate { get; init; }
 
+    /// <summary>
+    /// The success-rate floor that was actually in force when this trip fired. Recorded so a
+    /// subscriber sees the threshold rather than assuming the default — a deployment may run a
+    /// non-default floor outside Production, and in Production it cannot go below
+    /// <c>AutonomyEvaluationWorker.MinimumProductionCircuitBreakerSuccessRateFloor</c>.
+    /// </summary>
+    public required double AppliedSuccessRateFloor { get; init; }
+
     /// <summary>UTC timestamp when the circuit breaker tripped.</summary>
     public required DateTimeOffset TrippedAtUtc { get; init; }
 }

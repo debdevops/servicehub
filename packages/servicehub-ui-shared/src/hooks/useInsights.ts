@@ -7,11 +7,11 @@ import toast from 'react-hot-toast';
 
 /**
  * Hook to fetch AI insights for a namespace/entity
- * 
+ *
  * This hook provides AI-powered pattern detection:
  * 1. First tries backend API (if available)
  * 2. Falls back to client-side analysis using message data
- * 
+ *
  * TRUST GUARANTEES:
  * - All insights labeled as "ServiceHub Interpretation"
  * - Uncertainty explicitly stated
@@ -70,10 +70,10 @@ export function useInsightsSummary(namespaceId: string, queueOrTopicName: string
 
 /**
  * Hook to perform client-side AI analysis on messages
- * 
+ *
  * This is the main hook for AI pattern detection when backend is unavailable.
  * It analyzes the provided messages and generates insights.
- * 
+ *
  * @param messages - Array of messages to analyze
  * @param context - Analysis context (namespace, entity info)
  * @param enabled - Whether analysis should run
@@ -89,12 +89,24 @@ export function useClientSideInsights(
   enabled: boolean = true
 ) {
   return useQuery({
-    queryKey: ['insights', 'client-side', context.namespaceId, context.entityName, messages?.length],
+    // Keyed on the actual message IDs (not just count) — two different tabs/pages can return
+    // the same number of messages, and a length-only key would return one tab's cached
+    // insights (and their affectedMessageIds) while a different set of messages is on screen,
+    // making "View affected messages" match nothing.
+    queryKey: [
+      'insights',
+      'client-side',
+      context.namespaceId,
+      context.entityName,
+      context.subscriptionName,
+      context.entityType,
+      messages?.map(m => m.messageId),
+    ],
     queryFn: () => {
       if (!messages || messages.length === 0) {
         return [];
       }
-      
+
       // Perform client-side analysis
       return analyzeMessages(messages, context);
     },

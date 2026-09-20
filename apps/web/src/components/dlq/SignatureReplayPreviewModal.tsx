@@ -23,6 +23,12 @@ const SCOPE_OPTIONS: { value: SignatureReplayScope; label: string }[] = [
  * Dry-run + confirmation for "replay every message in this failure signature" — same
  * preview-then-confirm convention as BulkOperationPreviewModal, scoped to a signature's current
  * member messages instead of a namespace-wide filter.
+ *
+ * Roadmap W2.5 ("recovery proposal, then verification"): the dry-run preview already stated scope
+ * and sample; this states risk, policy and stop condition alongside them so the whole proposal is
+ * visible before the one confirm button executes anything. What happens after confirming — real
+ * accept/fail counts, then a pointer to where lasting verification appears — lives in
+ * {@link SignatureReplayProgressPanel}, which the caller mounts once this reports a started job.
  */
 export function SignatureReplayPreviewModal({
   namespaceId,
@@ -154,17 +160,28 @@ export function SignatureReplayPreviewModal({
               </span>
             </div>
 
-            {data.warnings.length > 0 && (
-              <div className="mb-4 space-y-2">
-                {data.warnings.map((warning, i) => (
-                  <div
-                    key={i}
-                    className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800"
-                  >
-                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                    <span>{warning}</span>
-                  </div>
-                ))}
+            {(data.warnings.length > 0 || data.unsafeReplayCount > 0) && (
+              <div className="mb-4">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Risk</h3>
+                <div className="space-y-2">
+                  {data.unsafeReplayCount > 0 && (
+                    <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-sm text-red-800">
+                      <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>
+                        {data.unsafeReplayCount} of {data.totalMatched} match{data.unsafeReplayCount === 1 ? '' : 'es'} flagged unsafe to replay — included in this scope, not excluded.
+                      </span>
+                    </div>
+                  )}
+                  {data.warnings.map((warning, i) => (
+                    <div
+                      key={i}
+                      className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800"
+                    >
+                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>{warning}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -193,6 +210,20 @@ export function SignatureReplayPreviewModal({
                 </div>
               </div>
             )}
+
+            <div className="mb-4 grid gap-3 text-xs text-gray-600 sm:grid-cols-2">
+              <div>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Policy</h3>
+                <p>Blocked outright on production namespaces; only DEV/UAT are replayable from here.
+                  Requires explicit confirmation on every call — there is no silent auto-replay path
+                  through this screen.</p>
+              </div>
+              <div>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Stop condition</h3>
+                <p>Only messages matching this scope right now are replayed — new arrivals need a
+                  fresh scope. The job can be cancelled mid-run from its progress panel once started.</p>
+              </div>
+            </div>
           </>
         ) : null}
 

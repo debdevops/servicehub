@@ -113,10 +113,57 @@ public sealed class AuditService : BackgroundService, IAuditService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<DlqDbContext>();
 
+        await SnapshotNamespaceContextAsync(db, batch, cancellationToken);
+
         db.AuditLogs.AddRange(batch);
         await db.SaveChangesAsync(cancellationToken);
 
         _logger.LogDebug("Audit batch committed: {Count} entries", batch.Count);
+    }
+
+    /// <summary>
+    /// Fills in <see cref="AuditLog.NamespaceName"/>/<see cref="AuditLog.CloudProvider"/> for
+    /// entries that carry a <see cref="AuditLog.NamespaceId"/> but no snapshot of their own.
+    /// Callers deliberately don't resolve these — logging must never make a request thread wait
+    /// on the database — so the snapshot documented on those properties has to be taken here, at
+    /// the write boundary, or it is never taken at all and the Audit Trail's Namespace column
+    /// (and its CSV export) stays permanently blank. One query per batch over the batch's own
+    /// distinct namespace ids; a namespace already deleted by flush time simply stays null,
+    /// which is the honest answer rather than a fabricated name.
+    /// </summary>
+    private static async Task SnapshotNamespaceContextAsync(
+        DlqDbContext db,
+        List<AuditLog> batch,
+        CancellationToken cancellationToken)
+    {
+        var pending = batch
+            .Where(e => e.NamespaceId is not null && (e.NamespaceName is null || e.CloudProvider is null))
+            .ToList();
+
+        if (pending.Count == 0)
+            return;
+
+        var namespaceIds = pending.Select(e => e.NamespaceId!.Value).Distinct().ToList();
+
+        var snapshots = await db.Namespaces
+            .AsNoTracking()
+            .Where(n => namespaceIds.Contains(n.Id))
+            .Select(n => new { n.Id, n.DisplayName, n.Name, n.Provider })
+            .ToListAsync(cancellationToken);
+
+        if (snapshots.Count == 0)
+            return;
+
+        var byId = snapshots.ToDictionary(n => n.Id);
+
+        foreach (var entry in pending)
+        {
+            if (!byId.TryGetValue(entry.NamespaceId!.Value, out var ns))
+                continue;
+
+            entry.NamespaceName ??= string.IsNullOrWhiteSpace(ns.DisplayName) ? ns.Name : ns.DisplayName;
+            entry.CloudProvider ??= ns.Provider.ToString().ToLowerInvariant();
+        }
     }
 
     private async Task DrainRemainingAsync()
@@ -154,7 +201,8 @@ public sealed class AuditService : BackgroundService, IAuditService
         DateTimeOffset? to = null,
         int page = 1,
         int pageSize = 50,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<DlqDbContext>();
@@ -162,6 +210,13 @@ public sealed class AuditService : BackgroundService, IAuditService
         var query = db.AuditLogs
             .AsNoTracking()
             .Where(l => l.OwnerId == ownerId);
+
+        // NAMESPACE ALLOW-LIST: further narrow namespace-scoped entries to the caller's
+        // credential's namespace allow-list, when one is present. Instance-level entries
+        // (NamespaceId == null) are not namespace data and are unaffected — null means
+        // unrestricted (today's behaviour).
+        if (allowedNamespaceIds is not null)
+            query = query.Where(l => l.NamespaceId == null || allowedNamespaceIds.Contains(l.NamespaceId.Value));
 
         if (namespaceId.HasValue)
             query = query.Where(l => l.NamespaceId == namespaceId);
@@ -211,7 +266,8 @@ public sealed class AuditService : BackgroundService, IAuditService
     public async Task<Result<AuditSummary>> GetSummaryAsync(
         string ownerId,
         Guid? namespaceId = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<DlqDbContext>();
@@ -219,6 +275,9 @@ public sealed class AuditService : BackgroundService, IAuditService
         var query = db.AuditLogs
             .AsNoTracking()
             .Where(l => l.OwnerId == ownerId);
+
+        if (allowedNamespaceIds is not null)
+            query = query.Where(l => l.NamespaceId == null || allowedNamespaceIds.Contains(l.NamespaceId.Value));
 
         if (namespaceId.HasValue)
             query = query.Where(l => l.NamespaceId == namespaceId);
@@ -253,7 +312,8 @@ public sealed class AuditService : BackgroundService, IAuditService
         string? outcome = null,
         DateTimeOffset? from = null,
         DateTimeOffset? to = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<DlqDbContext>();
@@ -261,6 +321,9 @@ public sealed class AuditService : BackgroundService, IAuditService
         var query = db.AuditLogs
             .AsNoTracking()
             .Where(l => l.OwnerId == ownerId);
+
+        if (allowedNamespaceIds is not null)
+            query = query.Where(l => l.NamespaceId == null || allowedNamespaceIds.Contains(l.NamespaceId.Value));
 
         if (namespaceId.HasValue)
             query = query.Where(l => l.NamespaceId == namespaceId);

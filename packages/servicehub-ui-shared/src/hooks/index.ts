@@ -15,3 +15,5 @@ export {
 } from './useInsights';
 export { useInvestigationQueue } from './useInvestigationQueue';
 export type { InvestigationCenterResponse, InvestigationQueueItem, KnowledgeReviewItem, NewSignatureItem } from './useInvestigationQueue';
+export { useAttentionQueue } from './useAttentionQueue';
+export type { AttentionQueueItem, AttentionQueueResponse } from './useAttentionQueue';

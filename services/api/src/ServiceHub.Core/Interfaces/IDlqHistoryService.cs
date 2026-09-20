@@ -11,7 +11,10 @@ namespace ServiceHub.Core.Interfaces;
 public interface IDlqHistoryService
 {
     /// <summary>
-    /// Gets paginated DLQ message history with optional filters.
+    /// Gets paginated DLQ message history with optional filters. When
+    /// <paramref name="allowedNamespaceIds"/> is non-null (a namespace-restricted API key),
+    /// results are further restricted to messages whose namespace ID appears in this set — null
+    /// means unrestricted (today's behaviour).
     /// </summary>
     Task<Result<DlqHistoryPageResult>> GetHistoryAsync(
         string ownerId,
@@ -23,13 +26,19 @@ public interface IDlqHistoryService
         FailureCategory? category = null,
         int page = 1,
         int pageSize = 50,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null);
 
     /// <summary>
     /// Gets a single DLQ message by ID with full details, scoped to the owner.
-    /// Returns NotFound when the message belongs to a different owner.
+    /// Returns NotFound when the message belongs to a different owner, or when the message's
+    /// namespace falls outside <paramref name="allowedNamespaceIds"/> (null means unrestricted).
     /// </summary>
-    Task<Result<DlqMessage>> GetByIdAsync(string ownerId, long id, CancellationToken cancellationToken = default);
+    Task<Result<DlqMessage>> GetByIdAsync(
+        string ownerId,
+        long id,
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null);
 
     /// <summary>
     /// Gets the timeline (lifecycle events) for a specific DLQ message, scoped to the owner.
@@ -64,10 +73,23 @@ public interface IDlqHistoryService
     /// <param name="namespaceId">Optional namespace filter.</param>
     /// <param name="days">Number of days for the daily trend (default 30).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task<Result<DlqSummary>> GetSummaryAsync(string ownerId, Guid? namespaceId = null, int days = 30, CancellationToken cancellationToken = default);
+    /// <param name="allowedNamespaceIds">
+    /// Optional namespace allow-list from the caller's credential. When non-null, results are
+    /// further restricted to messages whose namespace ID appears in this set — null means
+    /// unrestricted (today's behaviour).
+    /// </param>
+    Task<Result<DlqSummary>> GetSummaryAsync(
+        string ownerId,
+        Guid? namespaceId = null,
+        int days = 30,
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null);
 
     /// <summary>
-    /// Exports DLQ messages matching the given filters, scoped to the owner.
+    /// Exports DLQ messages matching the given filters, scoped to the owner. When
+    /// <paramref name="allowedNamespaceIds"/> is non-null (a namespace-restricted API key),
+    /// results are further restricted to messages whose namespace ID appears in this set — null
+    /// means unrestricted (today's behaviour).
     /// </summary>
     Task<Result<IReadOnlyList<DlqMessage>>> ExportAsync(
         string ownerId,
@@ -76,7 +98,8 @@ public interface IDlqHistoryService
         DateTimeOffset? from = null,
         DateTimeOffset? to = null,
         DlqMessageStatus? status = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null);
 
     /// <summary>
     /// Persists the forensic analysis results on a DLQ message.

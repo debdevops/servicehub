@@ -129,7 +129,7 @@ esac
 
 # Check if running under WSL
 detect_wsl() {
-    if grep -qEi "(Microsoft|WSL)" /proc/version 2>/dev/null || 
+    if grep -qEi "(Microsoft|WSL)" /proc/version 2>/dev/null ||
        grep -qEi "(Microsoft|WSL)" /proc/sys/kernel/osrelease 2>/dev/null; then
         IS_WSL=true
         echo -e "${CYAN}ℹ Detected Windows Subsystem for Linux (WSL)${NC}"
@@ -175,7 +175,7 @@ check_connectivity() {
         echo -e "${YELLOW}⚠ Warning: curl not found. Some downloads may fail.${NC}"
         return 0  # Don't fail here, let tools try anyway
     fi
-    
+
     if ! curl -s --connect-timeout 5 --max-time 5 https://www.google.com >/dev/null 2>&1; then
         echo -e "${YELLOW}⚠ Warning: Internet connectivity check failed. Some downloads may not work.${NC}"
     fi
@@ -204,7 +204,7 @@ detect_os() {
             OS="linux"
             detect_wsl
             get_linux_distro
-            
+
             # Detect package manager
             if command -v apt-get >/dev/null 2>&1; then
                 PACKAGE_MANAGER="apt"
@@ -246,7 +246,7 @@ detect_os() {
             exit 1
             ;;
     esac
-    
+
     check_sudo
 }
 
@@ -255,12 +255,12 @@ install_homebrew() {
     if [ "$OS" = "macos" ] && ! command -v brew &> /dev/null; then
         echo -e "${YELLOW}Homebrew not found. Installing Homebrew...${NC}"
         /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        
+
         # Add Homebrew to PATH for Apple Silicon Macs
         if [ -f "/opt/homebrew/bin/brew" ]; then
             eval "$(/opt/homebrew/bin/brew shellenv)"
         fi
-        
+
         echo -e "${GREEN}✓ Homebrew installed successfully${NC}"
     fi
 }
@@ -427,17 +427,17 @@ check_and_install_dotnet() {
 check_and_install_nodejs() {
     local node_installed=false
     local node_version=""
-    
+
     if command -v node >/dev/null 2>&1; then
         node_version=$(node --version 2>/dev/null | cut -d'v' -f2 | cut -d'.' -f1)
         if [ "$node_version" -ge "$REQUIRED_NODE_MAJOR_VERSION" ] 2>/dev/null; then
             node_installed=true
         fi
     fi
-    
+
     if [ "$node_installed" = false ]; then
         echo -e "${YELLOW}Installing Node.js (LTS version)...${NC}"
-        
+
         if [ "$OS" = "macos" ]; then
             brew install node
         elif [ "$OS" = "linux" ]; then
@@ -449,10 +449,10 @@ check_and_install_nodejs() {
                 }
                 sudo apt-get install -y nodejs
             elif [ "$PACKAGE_MANAGER" = "dnf" ] && [ "$HAS_SUDO" = true ]; then
-                curl -fsSL https://rpm.nodesource.com/setup_22.x 2>/dev/null | sudo bash - || 
+                curl -fsSL https://rpm.nodesource.com/setup_22.x 2>/dev/null | sudo bash - ||
                 sudo dnf install -y nodejs
             elif [ "$PACKAGE_MANAGER" = "yum" ] && [ "$HAS_SUDO" = true ]; then
-                curl -fsSL https://rpm.nodesource.com/setup_22.x 2>/dev/null | sudo bash - || 
+                curl -fsSL https://rpm.nodesource.com/setup_22.x 2>/dev/null | sudo bash - ||
                 sudo yum install -y nodejs
             elif [ "$PACKAGE_MANAGER" = "pacman" ] && [ "$HAS_SUDO" = true ]; then
                 sudo pacman -S --noconfirm nodejs npm
@@ -462,7 +462,7 @@ check_and_install_nodejs() {
                 sudo apk add --no-cache nodejs npm
             fi
         fi
-        
+
         # Verify installation
         if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
             echo -e "${GREEN}✓ Node.js installed successfully ($(node --version))${NC}"
@@ -481,7 +481,7 @@ check_and_install_nodejs() {
         fi
     else
         echo -e "${GREEN}✓ Node.js already installed ($(node --version))${NC}"
-        
+
         # Check npm separately
         if ! command -v npm >/dev/null 2>&1; then
             echo -e "${YELLOW}npm not found. Installing npm...${NC}"
@@ -525,7 +525,7 @@ check_and_install_utilities() {
             fi
         fi
     fi
-    
+
     # curl (usually pre-installed)
     if ! command -v curl >/dev/null 2>&1; then
         echo -e "${YELLOW}Installing curl...${NC}"
@@ -541,7 +541,7 @@ check_and_install_utilities() {
             fi
         fi
     fi
-    
+
     # wget (needed for some package installations)
     if ! command -v wget >/dev/null 2>&1 && [ "$OS" = "linux" ]; then
         echo -e "${YELLOW}Installing wget...${NC}"
@@ -557,7 +557,7 @@ check_and_install_utilities() {
             fi
         fi
     fi
-    
+
     echo -e "${GREEN}✓ System utilities verified${NC}"
 }
 

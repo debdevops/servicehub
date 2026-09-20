@@ -1,3 +1,4 @@
+using Google.Cloud.Firestore;
 using Google.Cloud.PubSub.V1;
 using ServiceHub.Core.Entities;
 
@@ -37,6 +38,17 @@ public interface IGcpClientFactory
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A configured <see cref="PublisherServiceApiClient"/>.</returns>
     Task<PublisherServiceApiClient> GetTopicAdminClientAsync(Namespace ns, CancellationToken ct);
+
+    /// <summary>
+    /// Returns a <see cref="FirestoreDb"/> client — used only by the DLQ observer attestation
+    /// reader (ADR-004; ADR-0011) to read the observer's own document collection. Same
+    /// namespace credentials as the Pub/Sub clients; the observer's Cloud Function writes with
+    /// its own separate service account, this client only ever reads.
+    /// </summary>
+    /// <param name="ns">The namespace containing project ID and credentials.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A configured <see cref="FirestoreDb"/> client.</returns>
+    Task<FirestoreDb> GetFirestoreDbAsync(Namespace ns, CancellationToken ct);
 
     /// <summary>
     /// Shuts down and removes any cached publisher/subscriber/topic-admin clients for the

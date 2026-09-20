@@ -3,6 +3,8 @@ import { Clock, AlertCircle, RefreshCw, Info } from 'lucide-react';
 import { useRecoveryAgeing } from '@servicehub/ui-shared/hooks/useRecoveryAgeing';
 import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { RecoveryStateBadge } from '@/components/recovery/RecoveryStateBadge';
+import { HelpTooltip } from '@/components/help';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
 
 function ageInDays(begunAt: string): number {
   return Math.floor((Date.now() - new Date(begunAt).getTime()) / 86_400_000);
@@ -27,6 +29,7 @@ export default function RecoveryAgeingPage() {
             <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
               <Clock className="w-5 h-5 text-teal-600" />
               Recovery Ageing Report
+              <HelpTooltip {...tooltips.recoveryAgeing.overview} position="bottom" />
             </h1>
             <p className="text-sm text-gray-500 mt-0.5">
               Open recovery entries that have not yet reached a terminal outcome — nothing here
@@ -92,7 +95,7 @@ export default function RecoveryAgeingPage() {
                     <td className="px-4 py-3 text-gray-700 font-mono text-xs">{entry.targetEntity}</td>
                     <td className="px-4 py-3"><RecoveryStateBadge state={entry.state} /></td>
                     <td className="px-4 py-3 text-gray-600 text-xs">
-                      {days}d{days >= 7 && <span className="ml-1 text-amber-600 font-medium">· flagged</span>}
+                      {days}d{days >= 7 && <span className="ml-1 text-amber-600 font-medium" title={tooltips.recoveryAgeing.flagged.detail}>· flagged</span>}
                     </td>
                     <td className="px-4 py-3 text-gray-500 text-xs">{entry.namespaceNameSnapshot ?? '—'}</td>
                     <td className="px-4 py-3">

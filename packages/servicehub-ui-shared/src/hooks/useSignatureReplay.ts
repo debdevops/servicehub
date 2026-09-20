@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient, UseQueryOptions } from '@tanstack/react-query';
 import { signatureReplayApi } from '../lib/api/signatureReplay';
 import type { SignatureReplayFilter } from '../lib/api/signatureReplay';
@@ -10,6 +10,24 @@ import { getMockSignatureReplayHistory } from '../lib/demo/mockProviders';
 import toast from 'react-hot-toast';
 
 const POLL_INTERVAL_MS = 1_500;
+
+// Module-level (not per-hook-instance): useSignatureReplayJob is deliberately mounted from more
+// than one place at once — the in-page SignatureReplayProgressPanel and the app-root
+// ActiveJobsProvider both poll the same job so the toast still fires after the originating page
+// is navigated away from. React Query dedupes the network request via the shared queryKey, but
+// each hook instance still runs its own effect — a per-instance ref would let both instances
+// independently decide "not yet notified" and toast twice.
+const notifiedSignatureReplayJobIds = new Set<string>();
+
+/**
+ * Test-only: clears the module-level notified-job-ids set. Tests that reuse the same fixture
+ * job id (e.g. the default "job-1") across multiple cases would otherwise see later cases
+ * silently skip the completion toast/invalidation, since the set persists for the lifetime of
+ * the test file's module import, not per test.
+ */
+export function __resetSignatureReplayNotificationsForTests(): void {
+  notifiedSignatureReplayJobIds.clear();
+}
 
 /** Dry-runs a signature replay — no intent headers, no mutation on the backend. */
 export function useSignatureReplayPreview() {
@@ -73,7 +91,6 @@ export function useSignatureReplayJob(
   signatureHash?: string,
 ) {
   const queryClient = useQueryClient();
-  const notifiedRef = useRef<string | null>(null);
   const { isDemoMode } = useDemoContext();
 
   const query = useQuery({
@@ -88,8 +105,8 @@ export function useSignatureReplayJob(
 
   useEffect(() => {
     const job = query.data;
-    if (!job || !isTerminalBulkOperationStatus(job.status) || notifiedRef.current === job.id) return;
-    notifiedRef.current = job.id;
+    if (!job || !isTerminalBulkOperationStatus(job.status) || notifiedSignatureReplayJobIds.has(job.id)) return;
+    notifiedSignatureReplayJobIds.add(job.id);
 
     void queryClient.invalidateQueries({ queryKey: ['dlq-history'] });
     void queryClient.invalidateQueries({ queryKey: ['dlq-summary'] });

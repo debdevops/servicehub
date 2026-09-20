@@ -3,10 +3,11 @@
 This guide assumes no prior ServiceHub experience. It was tested live against a real GCP
 Pub/Sub topic and subscription, not a mockup.
 
-GCP Pub/Sub is a **Preview** provider in ServiceHub: validated against live GCP infrastructure
-and safe to use, but with real limitations imposed by the Pub/Sub API itself (explained below)
-— not full feature parity with Azure. Live browsing requires an operator to enable it on the
-server first (off by default).
+GCP Pub/Sub is a **Supported** provider in ServiceHub: conformance-tested against live GCP
+infrastructure (see [Provider Conformance](../PROVIDER-CONFORMANCE.md) for the reproducible
+evidence) and safe to use, but with real limitations imposed by the Pub/Sub API itself (explained
+below) — not full feature parity with Azure. Live browsing requires an operator to enable it on
+the server first (off by default).
 
 ---
 
@@ -80,7 +81,7 @@ Open a DLQ message and check **AI Insights**. Pub/Sub's dead-letter mechanism, u
 doesn't attach a specific failure reason to each message — so when there's genuinely no signal
 to work with, ServiceHub says so instead of guessing:
 
-![AI Insights honestly reporting "no per-message reason" available from GCP](../screenshots/guides/gcp/03-ai-insights.png)
+![AI Insights on a real GCP DLQ message: a detected "PaymentTimeout" pattern across 8 messages (16% of the DLQ), with the "ServiceHub Interpretation (Not GCP Data)" disclaimer above it](../screenshots/guides/gcp/03-ai-insights.png)
 
 Switch to the **Properties** tab on the same message, and you'll see the same honesty applied
 to raw data, not just AI commentary:
@@ -101,7 +102,7 @@ provider:
 
 ### 4. Bulk Replay and Bulk Purge
 
-GCP isn't limited to one-at-a-time recovery. Like AWS, **DLQ Intelligence** (`/dlq-history`)
+GCP isn't limited to one-at-a-time recovery. Like AWS, **DLQ Message History** (`/dlq-history`)
 offers **Bulk Replay** and **Bulk Purge** for a GCP subscription's dead-letter backlog — the same
 preview-before-action UI shown in the
 [AWS guide's Bulk Replay](aws-guide.md#4-bulk-replay--with-a-real-safety-gate) and

@@ -29,7 +29,7 @@ public sealed class RedactingLoggerProvider : ILoggerProvider
     {
         if (_disposed)
             throw new ObjectDisposedException(nameof(RedactingLoggerProvider));
-        
+
         return new RedactingLogger(categoryName, _minimumLevel);
     }
 
@@ -38,7 +38,7 @@ public sealed class RedactingLoggerProvider : ILoggerProvider
     {
         if (_disposed)
             return;
-        
+
         _disposed = true;
     }
 }
@@ -100,7 +100,7 @@ public sealed class RedactingLogger : ILogger
         var exceptionInfo = exception != null ? $"\n{LogRedactor.Redact(exception.ToString())}" : string.Empty;
 
         var logOutput = $"[{timestamp}] [{levelString}] [{_categoryName}] {redactedMessage}{exceptionInfo}";
-        
+
         Console.WriteLine(logOutput);
     }
 

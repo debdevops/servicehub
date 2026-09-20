@@ -13,19 +13,22 @@ namespace ServiceHub.UnitTests.Api.Controllers.V1;
 
 public class AnomaliesControllerTests
 {
-    private readonly Mock<IAIServiceClient> _aiServiceClient;
+    private readonly Mock<IAnomalyDetectionService> _detectionService;
+    private readonly Mock<IAnomalyResultCache> _resultCache;
     private readonly Mock<INamespaceRepository> _namespaceRepository;
     private readonly Mock<ILogger<AnomaliesController>> _logger;
     private readonly AnomaliesController _controller;
 
     public AnomaliesControllerTests()
     {
-        _aiServiceClient = new Mock<IAIServiceClient>();
+        _detectionService = new Mock<IAnomalyDetectionService>();
+        _resultCache = new Mock<IAnomalyResultCache>();
         _namespaceRepository = new Mock<INamespaceRepository>();
         _logger = new Mock<ILogger<AnomaliesController>>();
 
         _controller = new AnomaliesController(
-            _aiServiceClient.Object,
+            _detectionService.Object,
+            _resultCache.Object,
             _namespaceRepository.Object,
             _logger.Object)
         {
@@ -36,18 +39,14 @@ public class AnomaliesControllerTests
         };
     }
 
-    private static Namespace CreateTestNamespace()
-    {
-        var result = Namespace.Create(
+    private static Namespace CreateTestNamespace() =>
+        Namespace.Create(
             "test-namespace",
             "Endpoint=sb://test.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
-            "Test NS");
-        return result.Value;
-    }
+            "Test NS").Value;
 
-    private static Anomaly CreateTestAnomaly(Guid namespaceId)
-    {
-        return Anomaly.Create(
+    private static Anomaly CreateTestAnomaly(Guid namespaceId) =>
+        Anomaly.Create(
             namespaceId,
             "test-queue",
             AnomalyType.HighFailureRate,
@@ -55,21 +54,27 @@ public class AnomaliesControllerTests
             "Unusual spike in dead letter messages",
             new Dictionary<string, double> { ["dlq_count"] = 150 },
             new List<string> { "Check consumer health" });
-    }
 
     #region Constructor Tests
 
     [Fact]
-    public void Constructor_NullAIClient_ShouldThrow()
+    public void Constructor_NullDetectionService_ShouldThrow()
     {
-        var act = () => new AnomaliesController(null!, _namespaceRepository.Object, _logger.Object);
+        var act = () => new AnomaliesController(null!, _resultCache.Object, _namespaceRepository.Object, _logger.Object);
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void Constructor_NullResultCache_ShouldThrow()
+    {
+        var act = () => new AnomaliesController(_detectionService.Object, null!, _namespaceRepository.Object, _logger.Object);
         act.Should().Throw<ArgumentNullException>();
     }
 
     [Fact]
     public void Constructor_NullLogger_ShouldThrow()
     {
-        var act = () => new AnomaliesController(_aiServiceClient.Object, _namespaceRepository.Object, null!);
+        var act = () => new AnomaliesController(_detectionService.Object, _resultCache.Object, _namespaceRepository.Object, null!);
         act.Should().Throw<ArgumentNullException>();
     }
 
@@ -86,10 +91,7 @@ public class AnomaliesControllerTests
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
-        _aiServiceClient.Setup(a => a.IsAvailableAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<bool>.Success(true));
-
-        _aiServiceClient.Setup(a => a.DetectAnomaliesAsync(
+        _detectionService.Setup(a => a.DetectAnomaliesAsync(
             ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Anomaly>>.Success(new List<Anomaly> { anomaly }));
 
@@ -99,6 +101,7 @@ public class AnomaliesControllerTests
         var response = okResult.Value.Should().BeOfType<AnomalyDetectionResponse>().Subject;
         response.Anomalies.Should().HaveCount(1);
         response.NamespaceId.Should().Be(ns.Id);
+        _resultCache.Verify(c => c.StoreAsync(It.IsAny<string>(), It.Is<IEnumerable<Anomaly>>(a => a.Contains(anomaly)), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -114,22 +117,6 @@ public class AnomaliesControllerTests
     }
 
     [Fact]
-    public async Task DetectAnomalies_AIUnavailable_ShouldReturn503()
-    {
-        var ns = CreateTestNamespace();
-        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<Namespace>.Success(ns));
-
-        _aiServiceClient.Setup(a => a.IsAvailableAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<bool>.Success(false));
-
-        var result = await _controller.DetectAnomalies(ns.Id);
-
-        var statusResult = result.Result.Should().BeOfType<ObjectResult>().Subject;
-        statusResult.StatusCode.Should().Be(503);
-    }
-
-    [Fact]
     public async Task DetectAnomalies_WithTimeWindow_ShouldPassParameters()
     {
         var ns = CreateTestNamespace();
@@ -139,10 +126,7 @@ public class AnomaliesControllerTests
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
-        _aiServiceClient.Setup(a => a.IsAvailableAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<bool>.Success(true));
-
-        _aiServiceClient.Setup(a => a.DetectAnomaliesAsync(
+        _detectionService.Setup(a => a.DetectAnomaliesAsync(
             ns.Id, start, end, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<IReadOnlyList<Anomaly>>.Success(new List<Anomaly>()));
 
@@ -161,16 +145,14 @@ public class AnomaliesControllerTests
         _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(ns));
 
-        _aiServiceClient.Setup(a => a.IsAvailableAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<bool>.Success(true));
-
-        _aiServiceClient.Setup(a => a.DetectAnomaliesAsync(
+        _detectionService.Setup(a => a.DetectAnomaliesAsync(
             ns.Id, It.IsAny<DateTimeOffset>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<IReadOnlyList<Anomaly>>.Failure(Error.Internal("AI_ERR", "Detection failed")));
+            .ReturnsAsync(Result<IReadOnlyList<Anomaly>>.Failure(Error.Validation("BAD_REQUEST", "Detection failed")));
 
         var result = await _controller.DetectAnomalies(ns.Id);
 
         result.Result.Should().NotBeOfType<OkObjectResult>();
+        _resultCache.Verify(c => c.StoreAsync(It.IsAny<string>(), It.IsAny<IEnumerable<Anomaly>>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     #endregion
@@ -187,8 +169,7 @@ public class AnomaliesControllerTests
             50,
             "Message volume anomaly");
 
-        _aiServiceClient.Setup(a => a.GetAnomalyByIdAsync(anomaly.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<Anomaly>.Success(anomaly));
+        _resultCache.Setup(c => c.TryGetAsync(anomaly.Id, It.IsAny<CancellationToken>())).ReturnsAsync(anomaly);
         _namespaceRepository.Setup(r => r.GetByIdAsync(anomaly.NamespaceId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(CreateTestNamespace()));
 
@@ -214,14 +195,59 @@ public class AnomaliesControllerTests
             "Endpoint=sb://other.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=testkey123456789=",
             ownerId: "key_othertenant").Value;
 
-        _aiServiceClient.Setup(a => a.GetAnomalyByIdAsync(anomaly.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<Anomaly>.Success(anomaly));
+        _resultCache.Setup(c => c.TryGetAsync(anomaly.Id, It.IsAny<CancellationToken>())).ReturnsAsync(anomaly);
         _namespaceRepository.Setup(r => r.GetByIdAsync(anomaly.NamespaceId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Success(foreignNamespace));
 
         var result = await _controller.GetById(anomaly.Id);
 
         result.Result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    // ── Regression: namespace allow-list isolation (security fix) ──────────
+    //
+    // Before this fix, GetById did a manual `OwnerId == namespace.OwnerId` string comparison
+    // instead of Namespace.IsAccessibleBy(OwnerId, AllowedNamespaceIds) — so a namespace-restricted
+    // API key could read an anomaly from ANOTHER namespace under the SAME owner, as long as it
+    // guessed/was-told the anomaly's ID, even though that namespace was outside its allow-list.
+
+    [Fact]
+    public async Task GetById_NamespaceOutsideAllowedNamespaceIds_ShouldReturnNotFound()
+    {
+        var ns = CreateTestNamespace(); // OwnerId defaults to Namespace.SpaOwnerId, matching the caller.
+        var anomaly = Anomaly.Create(
+            ns.Id, "test-queue", AnomalyType.HighMessageVolume, 50, "Message volume anomaly");
+
+        _resultCache.Setup(c => c.TryGetAsync(anomaly.Id, It.IsAny<CancellationToken>())).ReturnsAsync(anomaly);
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        // Namespace-restricted API key allow-list that deliberately excludes this namespace.
+        _controller.ControllerContext.HttpContext.Items["AllowedNamespaceIds"] =
+            (IReadOnlySet<Guid>)new HashSet<Guid> { Guid.NewGuid() };
+
+        var result = await _controller.GetById(anomaly.Id);
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
+    public async Task GetById_NamespaceInsideAllowedNamespaceIds_ShouldReturnOk()
+    {
+        var ns = CreateTestNamespace();
+        var anomaly = Anomaly.Create(
+            ns.Id, "test-queue", AnomalyType.HighMessageVolume, 50, "Message volume anomaly");
+
+        _resultCache.Setup(c => c.TryGetAsync(anomaly.Id, It.IsAny<CancellationToken>())).ReturnsAsync(anomaly);
+        _namespaceRepository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(ns));
+
+        _controller.ControllerContext.HttpContext.Items["AllowedNamespaceIds"] =
+            (IReadOnlySet<Guid>)new HashSet<Guid> { ns.Id };
+
+        var result = await _controller.GetById(anomaly.Id);
+
+        result.Result.Should().BeOfType<OkObjectResult>();
     }
 
     [Fact]
@@ -234,8 +260,7 @@ public class AnomaliesControllerTests
             50,
             "Message volume anomaly");
 
-        _aiServiceClient.Setup(a => a.GetAnomalyByIdAsync(anomaly.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<Anomaly>.Success(anomaly));
+        _resultCache.Setup(c => c.TryGetAsync(anomaly.Id, It.IsAny<CancellationToken>())).ReturnsAsync(anomaly);
         _namespaceRepository.Setup(r => r.GetByIdAsync(anomaly.NamespaceId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Failure(Error.NotFound("NOT_FOUND", "Namespace not found")));
 
@@ -254,8 +279,7 @@ public class AnomaliesControllerTests
             50,
             "Message volume anomaly");
 
-        _aiServiceClient.Setup(a => a.GetAnomalyByIdAsync(anomaly.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<Anomaly>.Success(anomaly));
+        _resultCache.Setup(c => c.TryGetAsync(anomaly.Id, It.IsAny<CancellationToken>())).ReturnsAsync(anomaly);
         _namespaceRepository.Setup(r => r.GetByIdAsync(anomaly.NamespaceId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result<Namespace>.Failure(Error.Internal("DB_ERR", "Database unavailable")));
 
@@ -269,8 +293,7 @@ public class AnomaliesControllerTests
     public async Task GetById_NotFound_ShouldReturnNotFound()
     {
         var id = Guid.NewGuid();
-        _aiServiceClient.Setup(a => a.GetAnomalyByIdAsync(id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<Anomaly>.Failure(Error.NotFound("NOT_FOUND", "Anomaly not found")));
+        _resultCache.Setup(c => c.TryGetAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync((Anomaly?)null);
 
         var result = await _controller.GetById(id);
 

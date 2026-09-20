@@ -46,6 +46,8 @@ public sealed class MessagesController : ApiControllerBase
     private readonly IDlqHistoryService _dlqHistoryService;
     private readonly IRecoveryLedger _recoveryLedger;
     private readonly IRecoveryEligibilityGate _eligibilityGate;
+    private readonly IFailureFeatureExtractor _featureExtractor;
+    private readonly IFailureFingerprintBuilder _fingerprintBuilder;
     private readonly IAuditLogger _auditLogger;
     private readonly ILogger<MessagesController> _logger;
 
@@ -60,6 +62,8 @@ public sealed class MessagesController : ApiControllerBase
     /// <param name="dlqHistoryService">Looks up and claims a message's tracked DLQ history row.</param>
     /// <param name="recoveryLedger">The Recovery Evidence Ledger.</param>
     /// <param name="eligibilityGate">The deterministic Eligibility Gate every recovery attempt passes through.</param>
+    /// <param name="featureExtractor">Extracts a tracked message's failure characteristics, used to resolve its trust-scoring signature hash.</param>
+    /// <param name="fingerprintBuilder">Computes the stable trust-scoring fingerprint from extracted features.</param>
     /// <param name="logger">The logger.</param>
     /// <param name="auditLogger">The security audit logger.</param>
     public MessagesController(
@@ -71,6 +75,8 @@ public sealed class MessagesController : ApiControllerBase
         IDlqHistoryService dlqHistoryService,
         IRecoveryLedger recoveryLedger,
         IRecoveryEligibilityGate eligibilityGate,
+        IFailureFeatureExtractor featureExtractor,
+        IFailureFingerprintBuilder fingerprintBuilder,
         ILogger<MessagesController> logger,
         IAuditLogger? auditLogger = null)
     {
@@ -82,8 +88,40 @@ public sealed class MessagesController : ApiControllerBase
         _dlqHistoryService = dlqHistoryService ?? throw new ArgumentNullException(nameof(dlqHistoryService));
         _recoveryLedger = recoveryLedger ?? throw new ArgumentNullException(nameof(recoveryLedger));
         _eligibilityGate = eligibilityGate ?? throw new ArgumentNullException(nameof(eligibilityGate));
+        _featureExtractor = featureExtractor ?? throw new ArgumentNullException(nameof(featureExtractor));
+        _fingerprintBuilder = fingerprintBuilder ?? throw new ArgumentNullException(nameof(fingerprintBuilder));
         _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Resolves a tracked message's stable trust-scoring identity — the same
+    /// <see cref="IFailureFeatureExtractor"/>/<see cref="IFailureFingerprintBuilder"/> pipeline
+    /// <c>AutoReplayExecutor</c> and <c>SignatureReplayExecutor</c> use to stamp
+    /// <c>SignatureHashSnapshot</c>. Without this, single-message replay/purge from the primary
+    /// DLQ Intelligence workflow always wrote <c>SignatureHashSnapshot: null</c>, so no manual
+    /// single-message recovery could ever count toward a signature's autonomy trust record — the
+    /// same defect class fixed for <c>SignatureReplayExecutor</c> during the W1.3 soak run (F7),
+    /// left open there for this call site. Returns <c>null</c> (never throws) if extraction or
+    /// fingerprinting fails, or if the message isn't tracked — there is no display-cluster hash to
+    /// fall back to here, unlike <c>SignatureReplayExecutor</c>, so the entry is simply unscoped,
+    /// matching this path's prior behaviour.
+    /// </summary>
+    private async Task<string?> ResolveTrustSignatureHashAsync(DlqMessage? trackedMessage, CancellationToken cancellationToken)
+    {
+        if (trackedMessage is null)
+        {
+            return null;
+        }
+
+        var featuresResult = await _featureExtractor.ExtractAsync(trackedMessage, cancellationToken);
+        if (featuresResult.IsFailure)
+        {
+            return null;
+        }
+
+        var fingerprintResult = await _fingerprintBuilder.ComputeAsync(featuresResult.Value, cancellationToken);
+        return fingerprintResult.IsSuccess ? fingerprintResult.Value.Hash : null;
     }
 
     /// <summary>
@@ -422,9 +460,12 @@ public sealed class MessagesController : ApiControllerBase
             return Result<(RecoveryActor, RecoveryLedgerEntry, string, DlqMessage?)>.Failure(operationResult.Error);
         }
 
+        var trustSignatureHash = await ResolveTrustSignatureHashAsync(trackedMessage, cancellationToken);
+
         var beginRequest = trackedMessage is not null
             ? RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest(
-                trackedMessage, ns, operationResult.Value.Id, OwnerId, actor, entityName)
+                trackedMessage, ns, operationResult.Value.Id, OwnerId, actor, entityName,
+                signatureHashSnapshot: trustSignatureHash)
             : new BeginRecoveryEntryRequest
             {
                 OperationId = operationResult.Value.Id,
@@ -448,7 +489,7 @@ public sealed class MessagesController : ApiControllerBase
         var decision = await _eligibilityGate.EvaluateAsync(
             new RecoveryEligibilityRequest(
                 OwnerId, kind, actor.Kind, RecoveryTrigger.Manual,
-                ns.Id, combinedEntityName, trackedMessage?.BodyHash, SignatureHash: null, ns.Environment,
+                ns.Id, combinedEntityName, trackedMessage?.BodyHash, SignatureHash: trustSignatureHash, ns.Environment,
                 Provider: ns.Provider),
             cancellationToken);
 
@@ -571,6 +612,7 @@ public sealed class MessagesController : ApiControllerBase
     /// ServiceHub is primarily read-only, but this operation is essential for DLQ recovery.
     /// </remarks>
     [RequireScope(ApiKeyScopes.MessagesSend)]
+    [RequireGovernanceRole(GovernanceRole.Operator, PillarKind.Recover)]
     [HttpPost("replay")]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -638,8 +680,12 @@ public sealed class MessagesController : ApiControllerBase
                 type: "https://docs.microsoft.com/azure/service-bus-messaging/service-bus-sas");
         }
 
-        // Safety-by-default guard: destructive replay is blocked in production.
-        if (ns.Environment == EnvironmentType.Prod)
+        // Safety-by-default guard (ADR-0010 §Decision phase 2): destructive replay in production
+        // requires a live, two-person-approved ProductionElevation covering this exact namespace.
+        // The Recovery Eligibility Gate's predicate 2 re-checks this independently — this is the
+        // fast front-door denial, not the sole enforcement point.
+        if (ns.Environment == EnvironmentType.Prod
+            && await _recoveryLedger.GetLiveProductionElevationAsync(OwnerId, namespaceId, cancellationToken) is null)
         {
             _auditLogger.LogCriticalAction(
                 HttpContext,
@@ -650,12 +696,13 @@ public sealed class MessagesController : ApiControllerBase
                 environment: ns.Environment,
                 resourceName: entityName,
                 sequenceNumber: sequenceNumber,
-                detail: "Replay blocked in production environment");
+                detail: "Replay blocked in production environment — no live elevation");
 
             return Problem(
                 statusCode: StatusCodes.Status403Forbidden,
                 title: "Production Restriction",
-                detail: "Replay is blocked for production namespaces. Validate in DEV and UAT first.");
+                detail: "Replay in production requires a live, approved production elevation covering this namespace. " +
+                       "Request one via the Production Elevations endpoint, or validate in DEV/UAT first.");
         }
 
         var recoveryAttempt = await TryBeginRecoveryAsync(
@@ -757,6 +804,7 @@ public sealed class MessagesController : ApiControllerBase
     /// Azure Service Bus has no reliable single-message delete; the provider returns an error.
     /// </remarks>
     [RequireScope(ApiKeyScopes.MessagesSend)]
+    [RequireGovernanceRole(GovernanceRole.Operator, PillarKind.Recover)]
     [HttpDelete("purge")]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -808,8 +856,10 @@ public sealed class MessagesController : ApiControllerBase
             return NotFound();
         }
 
-        // Safety-by-default guard: destructive purge is blocked in production.
-        if (ns.Environment == EnvironmentType.Prod)
+        // Safety-by-default guard (ADR-0010 §Decision phase 2): destructive purge in production
+        // requires a live, two-person-approved ProductionElevation covering this exact namespace.
+        if (ns.Environment == EnvironmentType.Prod
+            && await _recoveryLedger.GetLiveProductionElevationAsync(OwnerId, namespaceId, cancellationToken) is null)
         {
             _auditLogger.LogCriticalAction(
                 HttpContext,
@@ -820,7 +870,7 @@ public sealed class MessagesController : ApiControllerBase
                 environment: ns.Environment,
                 resourceName: entityName,
                 sequenceNumber: sequenceNumber,
-                detail: "Purge blocked in production environment");
+                detail: "Purge blocked in production environment — no live elevation");
 
             return Problem(
                 statusCode: StatusCodes.Status403Forbidden,

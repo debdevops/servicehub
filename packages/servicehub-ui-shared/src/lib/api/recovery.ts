@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import type { CloudProviderType } from './types';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 //
@@ -102,6 +103,31 @@ export interface RecoveryEntriesParams {
   limit?: number;
 }
 
+/**
+ * Mirrors ServiceHub.Core.DTOs.Responses.ApprovalQueueEntryResponse — one auto-replay rule match
+ * the Eligibility Gate escalated for manual review, still `Active` and so still approvable.
+ * Carries everything `messagesApi.replay` needs: approving an entry is a plain call to that
+ * already-gated endpoint using these fields, not a separate execution path.
+ */
+export interface ApprovalQueueEntry {
+  entryId: string;
+  namespaceId: string;
+  namespaceName: string | null;
+  provider: string | null;
+  environment: string | null;
+  entityName: string;
+  subscriptionName: string | null;
+  sequenceNumber: number;
+  failureCategory: string | null;
+  ruleId: number;
+  ruleName: string;
+  reasonCode: string | null;
+  matchedCount: number | null;
+  declinedAt: string;
+  /** The failure signature this entry belongs to, when one was computed (see W1.5). */
+  signatureHash: string | null;
+}
+
 /** Mirrors ServiceHub.Core.DTOs.Responses.SignatureAutonomyStatusResponse. */
 export interface SignatureAutonomyStatus {
   signatureHash: string;
@@ -111,6 +137,97 @@ export interface SignatureAutonomyStatus {
   canAutoReplay: boolean;
   canProveDlqAbsence: boolean;
   blockedReason: string | null;
+}
+
+/** Mirrors ServiceHub.Core.Interfaces.AutonomyLevelCount (fleet-wide autonomy dashboard). */
+export interface AutonomyLevelCount {
+  actionKind: string;
+  level: number;
+  levelLabel: string;
+  count: number;
+}
+
+/** Mirrors ServiceHub.Core.Interfaces.AutonomyGrantSummary. */
+export interface AutonomyGrantSummary {
+  signatureHash: string;
+  actionKind: string;
+  currentLevel: number;
+  levelLabel: string;
+  updatedAtUtc: string;
+}
+
+/** Mirrors ServiceHub.Core.Interfaces.CircuitBreakerTrip. */
+export interface CircuitBreakerTrip {
+  ruleId: number;
+  ruleName: string;
+  disabledReasonDetail: string | null;
+}
+
+/**
+ * Mirrors ServiceHub.Core.DTOs.Responses.SignatureTrustEvidenceResponse — the Evidence-Derived
+ * Trust Scoring report for one failure signature (`GET recovery/trust/{signatureHash}`).
+ * `reasons` are already-composed, deterministic sentences (no ML-scored text anywhere, roadmap
+ * §8.10) — e.g. "8 verified execution(s) counted (80% verified success rate)." and "L3→L4
+ * requires a sample of at least 10; only 8 verified execution(s) exist." — reused verbatim by the
+ * proposal screens instead of re-deriving the same numbers client-side (roadmap W2.5, §5.2).
+ */
+export interface SignatureTrustEvidence {
+  signatureHash: string;
+  actionKind: string;
+  recoveredCount: number;
+  returnedCount: number;
+  failedCount: number;
+  unverifiedCount: number;
+  declinedCount: number;
+  sampleSize: number;
+  verifiedSuccessRate: number | null;
+  meetsL4SampleAndRate: boolean;
+  meetsL5SampleAndRate: boolean;
+  unsafeOutcomePresent: boolean;
+  duplicateAssociationPresent: boolean;
+  reasons: string[];
+}
+
+/** Mirrors ServiceHub.Core.Interfaces.AutonomyTransitionSummary. */
+export interface AutonomyTransitionSummary {
+  signatureHash: string;
+  actionKind: string;
+  previousLevel: number;
+  newLevel: number;
+  reason: string;
+  occurredAtUtc: string;
+}
+
+/**
+ * Mirrors ServiceHub.Core.Interfaces.AutonomyDashboardOverview — the fleet-wide "how much
+ * unattended trust has the fleet actually earned, and is anything currently constraining it?"
+ * snapshot (roadmap §11 item 5, §15 item 9). Pure read-side aggregation; never itself a trust
+ * decision.
+ */
+export interface AutonomyDashboardOverview {
+  generatedAt: string;
+  emergencyStopActive: boolean;
+  totalSignatures: number;
+  levelCounts: AutonomyLevelCount[];
+  grants: AutonomyGrantSummary[];
+  circuitBreakerTrips: CircuitBreakerTrip[];
+  recentTransitions: AutonomyTransitionSummary[];
+}
+
+/**
+ * Mirrors ServiceHub.Core.Interfaces.OutcomeMetricsOverview — what the fleet actually achieved
+ * over a trailing window (roadmap next-chapter M4.1), never how autonomous it is. Every field
+ * traces to a specific RecoveryLedgerEntry/RecoveryEvent row; none is modelled or estimated.
+ */
+export interface OutcomeMetricsOverview {
+  generatedAt: string;
+  windowStartUtc: string;
+  windowEndUtc: string;
+  messagesRecovered: number;
+  messagesAbandoned: number;
+  medianSecondsToVerifiedRecovery: number | null;
+  autonomousRecoveries: number;
+  gateRefusals: number;
 }
 
 // The verification-limitation sentence every surface rendering a verification result must show
@@ -153,6 +270,43 @@ export function describeRecoveryDetailReason(detailJson: string | null | undefin
   } catch {
     return null;
   }
+}
+
+/**
+ * Human sentence for ANY RecoveryEvent.detailJson, whatever shape its writer used — for surfaces
+ * that render the whole event chain rather than only a verification-coverage event.
+ *
+ * {@link describeRecoveryDetailReason} understands exactly one shape, `{"reason": "..."}`, which
+ * only RecoveryVerificationWorker's closing events use. The ledger's other writers record
+ * `{"reasonCode": "...", ...}` (every gate refusal — EligibilityDeclined, RecurrenceCapObserved)
+ * or, for ProviderRejected, the provider's own error text as a bare non-JSON string. Reading all
+ * of them through the `reason`-only parser silently rendered a recorded reason as "—", which is
+ * the one thing an operator most needs from a declined or rejected recovery.
+ *
+ * Reason codes resolve through {@link APPROVAL_QUEUE_REASON_LABELS} — the same sentences the
+ * Approval Queue already shows for the same codes — and an unrecognized code (or a plain-text
+ * detail) is returned verbatim rather than dropped, per the same "say so honestly" rule.
+ * Returns null only when there genuinely is no reason recorded.
+ */
+export function describeRecoveryEventDetail(detailJson: string | null | undefined): string | null {
+  if (!detailJson) return null;
+
+  const verificationReason = describeRecoveryDetailReason(detailJson);
+  if (verificationReason) return verificationReason;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(detailJson);
+  } catch {
+    // Not JSON — the provider's raw error message. Verbatim beats blank.
+    return detailJson.trim() || null;
+  }
+
+  if (typeof parsed === 'string') return parsed.trim() || null;
+  if (parsed === null || typeof parsed !== 'object') return null;
+
+  const reasonCode = (parsed as { reasonCode?: unknown }).reasonCode;
+  return typeof reasonCode === 'string' && reasonCode ? describeApprovalQueueReason(reasonCode) : null;
 }
 
 /**
@@ -249,6 +403,71 @@ export const RECOVERY_STATE_EXPLANATIONS: Record<RecoveryEntryState, RecoverySta
   },
 };
 
+// Humanized sentences for the Eligibility Gate's Escalate-verdict reason codes
+// (services/api ...RecoveryEligibilityGate.cs) — the only reason codes an Approval Queue entry
+// can carry (Deny-verdict codes are excluded server-side; see ApprovalQueueService).
+/**
+ * What the Eligibility Gate *would* decide for one ledger entry, right now, evaluated as a given
+ * actor kind (roadmap W1.2 rehearsal mode). Purely a read — `IRecoveryRehearsalService` depends on
+ * nothing capable of executing a recovery action, so a rehearsal can never reach a broker
+ * regardless of the verdict, and nothing is written to either ledger by asking.
+ */
+export interface RecoveryRehearsal {
+  entryId: string;
+  actorKindEvaluated: string;
+  verdict: 'Allow' | 'Escalate' | 'Deny';
+  reasonCode: string | null;
+  matchedCount: number;
+  evaluatedAt: string;
+}
+
+export const APPROVAL_QUEUE_REASON_LABELS: Record<string, string> = {
+  EMERGENCY_STOP_ACTIVE: 'Blocked by an active emergency stop for this owner.',
+  EMERGENCY_STOP_QUERY_ERROR: 'The emergency-stop check itself failed, so the attempt was blocked to fail closed.',
+  RECURRENCE_CAP_EXCEEDED: 'This message has recurred past the automatic-replay cap on this lineage.',
+  RECURRENCE_CAP_EXCEEDED_HEURISTIC: 'This message has recurred past the automatic-replay cap (heuristic match).',
+  RECURRENCE_CAP_AMBIGUOUS_COLLISION: 'Multiple failure signatures matched this lineage — the cap fired on an ambiguous match.',
+  RECURRENCE_CAP_QUERY_ERROR: 'The recurrence-lineage check itself failed, so the attempt was blocked to fail closed.',
+  AUTONOMY_SIGNATURE_HASH_MISSING: 'No failure signature could be computed for this message, so unattended replay was refused.',
+  AUTONOMY_GRANT_QUERY_ERROR: 'The autonomy-grant check itself failed, so the attempt was blocked to fail closed.',
+  AUTONOMY_GRANT_INSUFFICIENT: 'This failure signature has not yet earned unattended (Standing/Unattended) trust.',
+  PROVIDER_CANNOT_VERIFY_ABSENCE: "This message's cloud provider cannot independently verify DLQ absence, so unattended replay was refused.",
+  // Reachable in a rehearsal but never in the Approval Queue, which only ever holds entries the
+  // gate escalated on the autonomy or recurrence predicates.
+  PURGE_AUTOMATION_PROHIBITED: 'Purge can never be automated — the gate denies it unconditionally for any non-human actor.',
+  PRODUCTION_ELEVATION_REQUIRED: 'This namespace is marked Production, where every mutating recovery path is blocked.',
+  RATE_LIMITED: "This rule's own replay rate limit was already exhausted for the hour.",
+  FLEET_RATE_LIMITED: "This owner's combined automated-replay rate across every rule was already exhausted for the hour.",
+};
+
+/**
+ * Human sentence for an Approval Queue entry's reason code. An unrecognized code is returned
+ * verbatim rather than dropped — same "say so honestly" rule as {@link describeRecoveryDetailReason}.
+ */
+export function describeApprovalQueueReason(reasonCode: string | null): string | null {
+  if (!reasonCode) return null;
+  return APPROVAL_QUEUE_REASON_LABELS[reasonCode] ?? reasonCode;
+}
+
+/**
+ * Composes the plain-language explanation for one Approval Queue entry, preferring the
+ * signature's actual trust evidence over the generic static label whenever both the reason code
+ * is `AUTONOMY_GRANT_INSUFFICIENT` and evidence was successfully fetched — same fact, same gate,
+ * but "8 of 10 verified recoveries succeeded" instead of "has not yet earned unattended trust"
+ * (roadmap §5.2). Falls back to {@link describeApprovalQueueReason} whenever evidence isn't
+ * available (still-loading, fetch failed, or a different reason code) rather than blocking on it.
+ */
+export function describeApprovalQueueReasonWithEvidence(
+  reasonCode: string | null,
+  evidence: SignatureTrustEvidence | undefined,
+): string {
+  const fallback = describeApprovalQueueReason(reasonCode) ?? 'No reason recorded.';
+  if (reasonCode !== 'AUTONOMY_GRANT_INSUFFICIENT' || !evidence || evidence.reasons.length === 0) {
+    return fallback;
+  }
+  return evidence.reasons.join(' ');
+}
+
 // ─── API Client ─────────────────────────────────────────────────────────────
 
 export const recoveryApi = {
@@ -274,14 +493,61 @@ export const recoveryApi = {
     return response.data;
   },
 
+  getApprovalQueue: async (namespaceId?: string, limit = 100): Promise<ApprovalQueueEntry[]> => {
+    const response = await apiClient.get<ApprovalQueueEntry[]>('/recovery/approval-queue', {
+      params: { namespaceId, limit },
+    });
+    return response.data;
+  },
+
   getAutonomyStatus: async (signatureHash: string): Promise<SignatureAutonomyStatus> => {
     const response = await apiClient.get<SignatureAutonomyStatus>(`/recovery/autonomy/${signatureHash}`);
+    return response.data;
+  },
+
+  getAutonomyDashboard: async (): Promise<AutonomyDashboardOverview> => {
+    const response = await apiClient.get<AutonomyDashboardOverview>('/recovery/autonomy-dashboard');
+    return response.data;
+  },
+
+  getOutcomes: async (days = 7, provider?: CloudProviderType): Promise<OutcomeMetricsOverview> => {
+    const response = await apiClient.get<OutcomeMetricsOverview>('/recovery/outcomes', {
+      params: { days, provider },
+    });
+    return response.data;
+  },
+
+  getTrustEvidence: async (
+    signatureHash: string,
+    actionKind: 'Replay' | 'Purge' = 'Replay',
+  ): Promise<SignatureTrustEvidence> => {
+    const response = await apiClient.get<SignatureTrustEvidence>(`/recovery/trust/${signatureHash}`, {
+      params: { actionKind },
+    });
     return response.data;
   },
 
   verifyChain: async (operationId: string): Promise<ChainVerificationResult> => {
     const response = await apiClient.post<ChainVerificationResult>(
       `/recovery/operations/${operationId}/verify`,
+    );
+    return response.data;
+  },
+
+  /**
+   * Rehearses the Eligibility Gate against one entry (roadmap W1.2). POST because the gate is
+   * evaluated on demand, not because anything is mutated — the endpoint requires only
+   * `RecoveryRead` scope, and carries no intent/confirm headers precisely because there is no
+   * action to confirm.
+   */
+  rehearse: async (
+    entryId: string,
+    actorKind: 'Automation' | 'User' = 'Automation',
+  ): Promise<RecoveryRehearsal> => {
+    const response = await apiClient.post<RecoveryRehearsal>(
+      `/recovery/entries/${entryId}/rehearse`,
+      undefined,
+      { params: { actorKind } },
     );
     return response.data;
   },

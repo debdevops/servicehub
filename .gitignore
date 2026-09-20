@@ -269,7 +269,9 @@ How-To-Use.md
 # symlink into .claude/skills/ exists only so Claude Code can discover it by name)
 .claude/skills/aws-e2e-specialist
 
-docs/linkedin
+# Claude Code full-app E2E verification skill (same pattern as aws-e2e-specialist above)
+.claude/skills/e2e-verify
+
 # Playwright test artifacts
 apps/web/test-results/
 apps/web/playwright-report/
@@ -284,3 +286,7 @@ docs/internal
 CLAUDE.md
 
 docs/architecture/ARCHITECTURE_VISION.md
+.claude/skills/full-e2e-and-docs-refresh
+docs/BACKUP-RESTORE.md
+docs/BACKUP-RESTORE.md
+docs/BACKUP-RESTORE.md

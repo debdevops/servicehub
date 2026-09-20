@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
+using ServiceHub.Shared.Helpers;
 using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Infrastructure.AI;
@@ -95,16 +96,13 @@ public sealed class FailureFingerprintBuilder : IFailureFingerprintBuilder
             terms.Add($"category:{features.FailureCategory}");
         }
 
-        // Add delivery count bucket (useful for aggregation)
-        if (features.DeliveryCount > 0)
+        // Add delivery count band. Must stay a band, never the raw count — see
+        // DeliveryCountBucket's remarks. Changing this changes every existing fingerprint,
+        // and AutonomyGrants are keyed by fingerprint hash.
+        var deliveryBand = DeliveryCountBucket.Classify(features.DeliveryCount);
+        if (deliveryBand is not null)
         {
-            var bucket = features.DeliveryCount switch
-            {
-                <= 3 => "deliveries:low",
-                <= 10 => "deliveries:medium",
-                _ => "deliveries:high",
-            };
-            terms.Add(bucket);
+            terms.Add($"deliveries:{deliveryBand}");
         }
 
         return terms.Take(5).ToList(); // Limit to top 5 for stability

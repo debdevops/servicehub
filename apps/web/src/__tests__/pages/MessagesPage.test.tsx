@@ -7,6 +7,7 @@ import { MessagesPage } from '@/pages/MessagesPage';
 // Mock hooks
 vi.mock('@servicehub/ui-shared/hooks/useMessages', () => ({
   useMessages: vi.fn(),
+  useOptimisticSentMessages: vi.fn(() => []),
 }));
 vi.mock('@servicehub/ui-shared/hooks/useInsights', () => ({
   useClientSideInsights: vi.fn(),

@@ -36,6 +36,17 @@ public sealed class PlatformEventStreamBrokerTests
             Actor = actor,
         };
 
+    private static PlatformEvent BuildInsightEvent(string actor, IReadOnlySet<Guid>? namespaceIds = null) =>
+        new()
+        {
+            Source = "Test",
+            Category = EventCategories.Insight,
+            EventType = EventTypes.InsightDetected,
+            Severity = EventSeverity.Warning,
+            Actor = actor,
+            NamespaceIds = namespaceIds,
+        };
+
     private static PlatformEvent BuildNamespaceCreatedEvent(string actor) =>
         new()
         {
@@ -236,6 +247,78 @@ public sealed class PlatformEventStreamBrokerTests
 
         subscriptionA.Reader.TryRead(out _).Should().BeTrue();
         subscriptionB.Reader.TryRead(out _).Should().BeFalse();
+    }
+
+    // ── HandleAsync — namespace allow-list ───────────────────────────────────
+
+    [Fact]
+    public async Task HandleAsync_RestrictedConnection_NamespaceOutsideAllowList_NotDelivered()
+    {
+        var ns = BuildNamespace(OwnerA);
+        var otherNamespaceId = Guid.NewGuid();
+        var (broker, _) = BuildSut((OwnerA, [ns]));
+        using var subscription = broker.Register(OwnerA, new HashSet<Guid> { otherNamespaceId })!;
+        var evt = BuildDlqSpikeEvent(namespaceId: ns.Id);
+
+        await broker.HandleAsync(evt, CancellationToken.None);
+
+        subscription.Reader.TryRead(out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task HandleAsync_RestrictedConnection_NamespaceWithinAllowList_Delivered()
+    {
+        var ns = BuildNamespace(OwnerA);
+        var (broker, _) = BuildSut((OwnerA, [ns]));
+        using var subscription = broker.Register(OwnerA, new HashSet<Guid> { ns.Id })!;
+        var evt = BuildDlqSpikeEvent(namespaceId: ns.Id);
+
+        await broker.HandleAsync(evt, CancellationToken.None);
+
+        subscription.Reader.TryRead(out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task HandleAsync_RestrictedConnection_MultiNamespaceInsightMissingOneMember_NotDelivered()
+    {
+        // Regression: a cross-namespace correlation/narration InsightDetected event used to carry
+        // only Actor (no NamespaceId at all), so IsWithinAllowList treated it as unrestricted and
+        // a namespace-scoped key received descriptions covering namespaces outside its allow-list.
+        var memberA = Guid.NewGuid();
+        var memberB = Guid.NewGuid();
+        var (broker, _) = BuildSut();
+        using var subscription = broker.Register(OwnerA, new HashSet<Guid> { memberA })!;
+        var evt = BuildInsightEvent(OwnerA, new HashSet<Guid> { memberA, memberB });
+
+        await broker.HandleAsync(evt, CancellationToken.None);
+
+        subscription.Reader.TryRead(out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task HandleAsync_RestrictedConnection_MultiNamespaceInsightCoveringAllMembers_Delivered()
+    {
+        var memberA = Guid.NewGuid();
+        var memberB = Guid.NewGuid();
+        var (broker, _) = BuildSut();
+        using var subscription = broker.Register(OwnerA, new HashSet<Guid> { memberA, memberB })!;
+        var evt = BuildInsightEvent(OwnerA, new HashSet<Guid> { memberA, memberB });
+
+        await broker.HandleAsync(evt, CancellationToken.None);
+
+        subscription.Reader.TryRead(out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task HandleAsync_UnrestrictedConnection_MultiNamespaceInsight_Delivered()
+    {
+        var (broker, _) = BuildSut();
+        using var subscription = broker.Register(OwnerA)!;
+        var evt = BuildInsightEvent(OwnerA, new HashSet<Guid> { Guid.NewGuid(), Guid.NewGuid() });
+
+        await broker.HandleAsync(evt, CancellationToken.None);
+
+        subscription.Reader.TryRead(out _).Should().BeTrue();
     }
 
     [Fact]

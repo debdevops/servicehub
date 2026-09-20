@@ -3,10 +3,11 @@
 This guide assumes no prior ServiceHub experience. It was tested live against a real AWS SQS
 queue and SNS topic, not a mockup.
 
-AWS SQS/SNS is a **Preview** provider in ServiceHub: validated against live AWS infrastructure
-and safe to use, but with real limitations imposed by how SQS itself works (explained below) —
-not full feature parity with Azure. Live browsing requires an operator to enable it on the
-server first (off by default).
+AWS SQS/SNS is a **Supported** provider in ServiceHub: conformance-tested against live AWS
+infrastructure (see [Provider Conformance](../PROVIDER-CONFORMANCE.md) for the reproducible
+evidence) and safe to use, but with real limitations imposed by how SQS itself works (explained
+below) — not full feature parity with Azure. Live browsing requires an operator to enable it on
+the server first (off by default).
 
 ---
 
@@ -67,12 +68,12 @@ Here's the queue's toolbar close-up — notice **Auto: OFF**, no Live Tail butto
 ![AWS toolbar: Auto refresh OFF by default, no Live Tail button](../screenshots/guides/aws/08-dlq-no-live-tail-toolbar.png)
 
 **DLQ History** (visible on the DLQ tab's toolbar) is a shortcut, not a separate feature —
-click it and ServiceHub takes you straight to **DLQ Intelligence** (`/dlq-history`), pre-scoped
+click it and ServiceHub takes you straight to **DLQ Message History** (`/dlq-history`), pre-scoped
 to the queue you came from:
 
-![DLQ History destination — DLQ Intelligence pre-scoped to the entity you clicked from](../screenshots/guides/aws/12-dlq-history-destination.png)
+![DLQ History destination — DLQ Message History pre-scoped to the entity you clicked from](../screenshots/guides/aws/12-dlq-history-destination.png)
 
-**What to expect:** it's the same DLQ Intelligence page documented in the
+**What to expect:** it's the same DLQ Message History page documented in the
 [Quick Access Guide](quick-access-guide.md#dlq-intelligence), just reached with one click from
 a specific queue's message list instead of navigating there and picking the namespace/provider
 tab yourself. GCP Pub/Sub subscriptions have the same button in the same place.
@@ -89,12 +90,13 @@ extra failure information — Amazon simply moves the message once its receive c
 the redrive threshold, with no reason attached. ServiceHub is honest about this instead of
 inventing a fake pattern:
 
-![AI Insights correctly showing "No Patterns Detected" when there's no real signal](../screenshots/guides/aws/03-dlq-ai-insights.png)
+![AI Insights on a real AWS DLQ message: a detected "PaymentTimeout" pattern across 29 messages (58% of the DLQ), with the "ServiceHub Interpretation (Not AWS Data)" disclaimer above it](../screenshots/guides/aws/03-dlq-ai-insights.png)
 
-**What to expect:** if the message carries no distinguishing error information, you'll see "No
-Patterns Detected... appears to be processing normally" rather than a fabricated root cause.
-If your application *does* attach custom failure information as a message attribute,
-ServiceHub will pick it up and cluster on it just like it does for Azure.
+**What to expect:** when your application *does* attach custom failure information as a message
+attribute, ServiceHub picks it up and clusters on it just like it does for Azure — always framed
+as a heuristic interpretation, never presented as confirmed AWS-reported fact. If the message
+carries no distinguishing error information at all, you'll instead see "No Patterns Detected...
+appears to be processing normally" rather than a fabricated root cause.
 
 The **Properties** tab is honest in the same way. SQS itself doesn't attach a per-message
 dead-letter reason the way Azure does, so ServiceHub says exactly that instead of inventing
@@ -113,7 +115,7 @@ Click **Replay** on a DLQ message, confirm, and then check the **Recovery Eviden
 
 ### 4. Bulk Replay — with a real safety gate
 
-For queues with many failed messages, **DLQ Intelligence** (`/dlq-history`) offers a **Bulk
+For queues with many failed messages, **DLQ Message History** (`/dlq-history`) offers a **Bulk
 Replay** action. Before anything happens, ServiceHub shows you exactly how many messages
 matched and flags any it considers unsafe to retry blindly:
 
@@ -137,7 +139,7 @@ untouched.
 
 ### 6. Bulk Purge — the same permanence, at scale
 
-**DLQ Intelligence** also offers **Bulk Purge**, next to Bulk Replay. It carries the same
+**DLQ Message History** also offers **Bulk Purge**, next to Bulk Replay. It carries the same
 preview-before-action pattern as Bulk Replay, but the consequence is irreversible:
 
 ![Bulk Purge Preview — match count, a 10-message sample, and an explicit "no undo" warning](../screenshots/guides/aws/13-bulk-purge-preview.png)

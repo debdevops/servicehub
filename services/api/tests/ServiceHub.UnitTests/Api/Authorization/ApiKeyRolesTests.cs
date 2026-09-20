@@ -19,6 +19,10 @@ public sealed class ApiKeyRolesTests
             ApiKeyScopes.MessagesPeek,
             ApiKeyScopes.DlqRead,
             ApiKeyScopes.AnomaliesRead,
+            ApiKeyScopes.DriftFindingsRead,
+            ApiKeyScopes.CorrelationFindingsRead,
+            ApiKeyScopes.NarrationsRead,
+            ApiKeyScopes.BacklogForecastsRead,
         ]);
     }
 

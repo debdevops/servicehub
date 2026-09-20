@@ -38,11 +38,39 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
     private readonly IPlatformEventBus _eventBus;
     private readonly Telemetry.ServiceHubMetrics? _metrics;
     private readonly ILogger<AutonomyEvaluationWorker> _logger;
+    private readonly IWorkerHeartbeatStore? _heartbeatStore;
 
     private static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(45);
     private const int DefaultSweepIntervalSeconds = 3600;
-    private const int DefaultCircuitBreakerSampleSize = 20;
-    private const double DefaultCircuitBreakerSuccessRateFloor = 0.50;
+
+    /// <summary>
+    /// The number of most recent verified dispositions the success-rate circuit breaker scores
+    /// when <c>RecoveryEvidence:CircuitBreakerSampleSize</c> is not configured (roadmap §4).
+    /// </summary>
+    public const int DefaultCircuitBreakerSampleSize = 20;
+
+    /// <summary>
+    /// The verified-success-rate floor an auto-replay rule must hold when
+    /// <c>RecoveryEvidence:CircuitBreakerSuccessRateFloor</c> is not configured (roadmap §4).
+    /// </summary>
+    public const double DefaultCircuitBreakerSuccessRateFloor = 0.50;
+
+    /// <summary>
+    /// The floor <c>RecoveryEvidence:CircuitBreakerSuccessRateFloor</c> cannot be configured below
+    /// in Production — enforced at startup by <c>ProductionConfigurationValidator</c>, the same way
+    /// <see cref="RecoveryLedgerService.MinimumProductionObservationWindowHours"/> is, so it cannot
+    /// be bypassed by constructing this worker directly.
+    /// <para>
+    /// The master roadmap's §4 states the success-rate circuit breaker is non-configurable-off, and
+    /// without this floor it was not: a verified success rate is always <c>&gt;= 0</c>, so a
+    /// configured <c>0.0</c> silently disabled the breaker entirely while every log line and
+    /// dashboard continued to describe it as active. A lower floor remains legitimate outside
+    /// Production — a soak run deliberately driving a rule to 0% needs the breaker to fire, not to
+    /// be tuned away — which is why this is a startup policy rather than a clamp bound.
+    /// </para>
+    /// </summary>
+    public const double MinimumProductionCircuitBreakerSuccessRateFloor = 0.25;
+
     private const int DefaultMaxSignatureSweepBatchSize = 1000;
 
     private readonly TimeSpan _sweepInterval;
@@ -90,6 +118,10 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
         // Optional: GetService (not GetRequiredService) so tests that build a root provider
         // without registering it keep working — metrics recording degrades to a no-op instead.
         _metrics = serviceProvider.GetService<Telemetry.ServiceHubMetrics>();
+
+        // Same optional-resolution convention as _metrics above — heartbeat recording degrades
+        // to a no-op instead of failing tests that don't register it.
+        _heartbeatStore = serviceProvider.GetService<IWorkerHeartbeatStore>();
     }
 
     /// <inheritdoc />
@@ -132,6 +164,8 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
                         "Autonomy Evaluation Worker could not list active namespaces: {Error}",
                         namespacesResult.Error.Message);
                 }
+
+                _heartbeatStore?.RecordHeartbeat(nameof(AutonomyEvaluationWorker), _sweepInterval);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -192,6 +226,29 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            // ADR-0010 §Decision's M2.4 hard ceiling: no promotion evaluation runs for a Prod
+            // signature, ever, under any configuration. A pre-existing grant above the L3 floor
+            // (only reachable if a namespace was relabelled to Prod after already earning one) is
+            // demoted back to the floor rather than left standing, since a grant above L3 for a
+            // Prod signature would misrepresent the ceiling this ADR fixes.
+            var signatureEnvironment = await recoveryLedger.GetSignatureEnvironmentAsync(
+                ownerId, signatureHash, cancellationToken);
+            if (signatureEnvironment == EnvironmentType.Prod)
+            {
+                var prodGrant = await recoveryLedger.GetAutonomyGrantAsync(
+                    ownerId, signatureHash, RecoveryOperationKind.Replay, cancellationToken);
+                if (prodGrant is { CurrentLevel: > AutonomyLevel.Approve })
+                {
+                    await recoveryLedger.RecordAutonomyGrantTransitionAsync(
+                        ownerId, signatureHash, RecoveryOperationKind.Replay,
+                        prodGrant.CurrentLevel, AutonomyLevel.Approve,
+                        "Production ceiling (ADR-0010): no autonomy above L3 in Prod, under any configuration.",
+                        evidenceJson: null, cancellationToken);
+                }
+
+                continue;
+            }
+
             var result = await trustScoring.EvaluateAsync(
                 ownerId, signatureHash, RecoveryOperationKind.Replay, cancellationToken);
 
@@ -220,7 +277,9 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
             var currentLevel = currentGrant?.CurrentLevel ?? AutonomyLevel.Approve;
 
             var provider = await recoveryLedger.GetSignatureProviderAsync(ownerId, signatureHash, cancellationToken);
-            var canProveDlqAbsence = GetCapabilities(provider).CanProveDlqAbsence;
+            var attestationService = services.GetService<IDlqObserverAttestationService>();
+            var canProveDlqAbsence = (await GetCapabilitiesAsync(
+                recoveryLedger, attestationService, ownerId, signatureHash, provider, cancellationToken)).CanProveDlqAbsence;
 
             var transition = DetermineTransition(currentLevel, evidence, canProveDlqAbsence);
             if (transition is null)
@@ -238,8 +297,35 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
                 if (transitionResult.IsSuccess)
                 {
                     transitionsWritten++;
-                    var direction = transition.Value.NewLevel > currentLevel ? "promotion" : "demotion";
+                    var isPromotion = transition.Value.NewLevel > currentLevel;
+                    var direction = isPromotion ? "promotion" : "demotion";
                     _metrics?.RecordAutonomyTransition(direction, currentLevel.ToString(), transition.Value.NewLevel.ToString());
+
+                    // Owner-scoped, no NamespaceId (a signature is not tied to one namespace) —
+                    // Actor must be the raw OwnerId for PlatformEventStreamBroker's visibility
+                    // check to resolve it to the right SSE connections, same convention as the
+                    // circuit-breaker trip event below.
+                    var transitionEvt = new PlatformEvent
+                    {
+                        Source = "ServiceHub.Infrastructure.BackgroundServices.AutonomyEvaluationWorker",
+                        Category = EventCategories.Autonomy,
+                        EventType = EventTypes.AutonomyGrantTransitioned,
+                        Severity = isPromotion ? EventSeverity.Info : EventSeverity.Warning,
+                        Actor = ownerId,
+                        TargetScope = signatureHash,
+                        Payload = new AutonomyGrantTransitionedPayload
+                        {
+                            OwnerId = ownerId,
+                            SignatureHash = signatureHash,
+                            OperationKind = RecoveryOperationKind.Replay,
+                            PreviousLevel = currentLevel,
+                            NewLevel = transition.Value.NewLevel,
+                            Reason = transition.Value.Reason,
+                            TransitionedAtUtc = DateTimeOffset.UtcNow,
+                        },
+                    };
+
+                    await _eventBus.PublishAsync(transitionEvt, cancellationToken);
                 }
                 else
                 {
@@ -333,7 +419,8 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
 
             var actor = ActorIdentityResolver.ResolveSystemActor("AutonomyEvaluationWorker:CircuitBreaker");
             var ledgerResult = await recoveryLedger.RecordAutoReplayCircuitBreakerTripAsync(
-                ownerId, rule.Id, rule.Name, actor, dispositions.Count, verifiedSuccessRate, cancellationToken);
+                ownerId, rule.Id, rule.Name, actor, dispositions.Count, verifiedSuccessRate,
+                _circuitBreakerSuccessRateFloor, cancellationToken);
 
             if (ledgerResult.IsFailure)
             {
@@ -366,6 +453,7 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
                     RuleName = rule.Name,
                     SampleSize = dispositions.Count,
                     VerifiedSuccessRate = verifiedSuccessRate,
+                    AppliedSuccessRateFloor = _circuitBreakerSuccessRateFloor,
                     TrippedAtUtc = DateTimeOffset.UtcNow,
                 },
             };
@@ -437,13 +525,33 @@ public sealed class AutonomyEvaluationWorker : BackgroundService
     }
 
     /// <summary>
-    /// Maps a signature's provider (roadmap §14) to its <see cref="ProviderCapabilities"/>.
-    /// <see langword="null"/> (no ledger entry has a <c>ProviderSnapshot</c> yet, e.g. a very old
-    /// record predating that column) fails closed to AWS's/GCP's non-verifying capabilities —
-    /// never Azure's — so an unresolvable provider can never itself justify an L4/L5 promotion.
+    /// Maps a signature's provider (roadmap §14) to its <see cref="ProviderCapabilities"/>, then —
+    /// ADR-004/ADR-0011 — overrides <c>CanProveDlqAbsence</c> to <see langword="true"/> when the
+    /// signature's namespace has a live DLQ observer attestation and the static default was
+    /// otherwise false. <see langword="null"/> provider (no ledger entry has a
+    /// <c>ProviderSnapshot</c> yet) fails closed to AWS's/GCP's non-verifying capabilities — never
+    /// Azure's — so an unresolvable provider can never itself justify an L4/L5 promotion, and a
+    /// signature with no resolvable namespace gets no attestation override either.
     /// </summary>
-    private static ProviderCapabilities GetCapabilities(CloudProviderType? provider) =>
-        ProviderCapabilities.For(provider ?? CloudProviderType.Aws);
+    private static async Task<ProviderCapabilities> GetCapabilitiesAsync(
+        IRecoveryLedger recoveryLedger, IDlqObserverAttestationService? attestationService,
+        string ownerId, string signatureHash, CloudProviderType? provider, CancellationToken cancellationToken)
+    {
+        var baseCapabilities = ProviderCapabilities.For(provider ?? CloudProviderType.Aws);
+        if (baseCapabilities.CanProveDlqAbsence || attestationService is null)
+        {
+            return baseCapabilities;
+        }
+
+        var namespaceId = await recoveryLedger.GetSignatureNamespaceIdAsync(ownerId, signatureHash, cancellationToken);
+        if (namespaceId is not { } nsId)
+        {
+            return baseCapabilities;
+        }
+
+        var attested = await attestationService.IsLiveAsync(ownerId, nsId, cancellationToken);
+        return attested ? baseCapabilities with { CanProveDlqAbsence = true } : baseCapabilities;
+    }
 
     private static string FormatPromotionReason(AutonomyLevel from, AutonomyLevel to, SignatureTrustEvidence evidence) =>
         $"Promoted {from}→{to}: n={evidence.SampleSize}, verified_success_rate={evidence.VerifiedSuccessRate:P0}, " +

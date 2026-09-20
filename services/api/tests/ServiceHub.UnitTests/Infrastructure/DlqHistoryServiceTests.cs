@@ -135,6 +135,50 @@ public class DlqHistoryServiceTests : IDisposable
         result.Value.TotalCount.Should().Be(1);
     }
 
+    // ── Regression: namespace allow-list isolation (security fix) ──────────
+    //
+    // A namespace-restricted API key carries an AllowedNamespaceIds set (see
+    // ApiControllerBase.AllowedNamespaceIds). Before this fix, GetHistoryAsync ignored that set
+    // entirely and returned every namespace the owner has — a restricted key could read another
+    // namespace's DLQ history it was never granted. These tests create two namespaces under the
+    // SAME owner, restrict to only namespace A, and confirm namespace B's data never comes back.
+
+    [Fact]
+    public async Task GetHistory_AllowedNamespaceIds_ExcludesMessagesOutsideAllowList()
+    {
+        var allowedNamespaceId = Guid.NewGuid();
+        var otherNamespaceId = Guid.NewGuid();
+        _dbContext.DlqMessages.Add(CreateMessage(1, namespaceId: allowedNamespaceId));
+        _dbContext.DlqMessages.Add(CreateMessage(2, namespaceId: otherNamespaceId));
+        await _dbContext.SaveChangesAsync();
+
+        var allowedNamespaceIds = new HashSet<Guid> { allowedNamespaceId };
+
+        var result = await _service.GetHistoryAsync(
+            TestConstants.TestOwnerId, allowedNamespaceIds: allowedNamespaceIds);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.TotalCount.Should().Be(1);
+        result.Value.Items.Should().ContainSingle(m => m.NamespaceId == allowedNamespaceId);
+        result.Value.Items.Should().NotContain(m => m.NamespaceId == otherNamespaceId);
+    }
+
+    [Fact]
+    public async Task GetHistory_NullAllowedNamespaceIds_ReturnsEveryNamespace()
+    {
+        var nsA = Guid.NewGuid();
+        var nsB = Guid.NewGuid();
+        _dbContext.DlqMessages.Add(CreateMessage(1, namespaceId: nsA));
+        _dbContext.DlqMessages.Add(CreateMessage(2, namespaceId: nsB));
+        await _dbContext.SaveChangesAsync();
+
+        // Null allow-list (e.g. SPA session, unrestricted API key) must remain unrestricted.
+        var result = await _service.GetHistoryAsync(TestConstants.TestOwnerId, allowedNamespaceIds: null);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.TotalCount.Should().Be(2);
+    }
+
     [Fact]
     public async Task GetHistory_FilterByEntityName()
     {
@@ -215,6 +259,47 @@ public class DlqHistoryServiceTests : IDisposable
 
         var result = await _service.GetByIdAsync(TestConstants.AltOwnerId, msg.Id);
         result.IsFailure.Should().BeTrue();
+    }
+
+    // ── Regression: namespace allow-list isolation (security fix) ──────────
+    //
+    // Before this fix, GetByIdAsync only checked OwnerId — a namespace-restricted key that
+    // knew/guessed/was-told a DLQ message ID belonging to a DIFFERENT namespace under the SAME
+    // owner could fetch its full detail (body preview, replay history, etc.) even though that
+    // namespace was outside the key's allow-list.
+
+    [Fact]
+    public async Task GetById_OutsideAllowedNamespaceIds_ReturnsFailure()
+    {
+        var allowedNamespaceId = Guid.NewGuid();
+        var otherNamespaceId = Guid.NewGuid();
+        var msgInOtherNamespace = CreateMessage(1, namespaceId: otherNamespaceId);
+        _dbContext.DlqMessages.Add(msgInOtherNamespace);
+        await _dbContext.SaveChangesAsync();
+
+        var allowedNamespaceIds = new HashSet<Guid> { allowedNamespaceId };
+
+        var result = await _service.GetByIdAsync(
+            TestConstants.TestOwnerId, msgInOtherNamespace.Id, allowedNamespaceIds: allowedNamespaceIds);
+
+        result.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetById_InsideAllowedNamespaceIds_ReturnsMessage()
+    {
+        var allowedNamespaceId = Guid.NewGuid();
+        var msg = CreateMessage(1, namespaceId: allowedNamespaceId);
+        _dbContext.DlqMessages.Add(msg);
+        await _dbContext.SaveChangesAsync();
+
+        var allowedNamespaceIds = new HashSet<Guid> { allowedNamespaceId };
+
+        var result = await _service.GetByIdAsync(
+            TestConstants.TestOwnerId, msg.Id, allowedNamespaceIds: allowedNamespaceIds);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Id.Should().Be(msg.Id);
     }
 
     // ── GetTimelineAsync ────────────────────────────────────

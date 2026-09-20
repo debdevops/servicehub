@@ -92,7 +92,7 @@ public sealed class DlqHistoryController : ApiControllerBase
 
         var result = await _historyService.GetHistoryAsync(
             OwnerId, namespaceId, entityName, from, to, status, category,
-            page, pageSize, cancellationToken);
+            page, pageSize, cancellationToken, AllowedNamespaceIds);
 
         if (result.IsFailure)
             return ToActionResult<PaginatedResponse<DlqHistoryResponse>>(result.Error);
@@ -125,7 +125,7 @@ public sealed class DlqHistoryController : ApiControllerBase
         long id,
         CancellationToken cancellationToken = default)
     {
-        var result = await _historyService.GetByIdAsync(OwnerId, id, cancellationToken);
+        var result = await _historyService.GetByIdAsync(OwnerId, id, cancellationToken, AllowedNamespaceIds);
         if (result.IsFailure)
             return ToActionResult<DlqMessageDetailResponse>(result.Error);
 
@@ -315,7 +315,7 @@ public sealed class DlqHistoryController : ApiControllerBase
         CancellationToken cancellationToken = default)
     {
         var result = await _historyService.ExportAsync(
-            OwnerId, namespaceId, entityName, from, to, status, cancellationToken);
+            OwnerId, namespaceId, entityName, from, to, status, cancellationToken, AllowedNamespaceIds);
 
         if (result.IsFailure)
             return ToActionResult(ServiceHub.Shared.Results.Result.Failure(result.Error));
@@ -354,7 +354,7 @@ public sealed class DlqHistoryController : ApiControllerBase
         [FromQuery] int days = 30,
         CancellationToken cancellationToken = default)
     {
-        var result = await _historyService.GetSummaryAsync(OwnerId, namespaceId, days, cancellationToken);
+        var result = await _historyService.GetSummaryAsync(OwnerId, namespaceId, days, cancellationToken, AllowedNamespaceIds);
         if (result.IsFailure)
             return ToActionResult<DlqSummaryResponse>(result.Error);
 
@@ -394,7 +394,7 @@ public sealed class DlqHistoryController : ApiControllerBase
         CancellationToken cancellationToken = default)
     {
         days = Math.Clamp(days, 1, 30);
-        var result = await _historyService.GetSummaryAsync(OwnerId, namespaceId, days, cancellationToken);
+        var result = await _historyService.GetSummaryAsync(OwnerId, namespaceId, days, cancellationToken, AllowedNamespaceIds);
         if (result.IsFailure)
             return ToActionResult<IReadOnlyList<DlqTrendPointResponse>>(result.Error);
 
@@ -512,7 +512,7 @@ public sealed class DlqHistoryController : ApiControllerBase
                     ? snapshot.Status
                     : SignatureLifecycleStatus.Active;
                 var trend = Shared.Helpers.SignatureTrendHeuristic.Compute(
-                    c.IsNew, c.OccurrenceCount, c.FirstSeenAt, c.WindowEnd, now);
+                    c.IsNew, c.OccurrenceCount, c.FirstSeenAt, c.WindowEnd, now, isCurrentlyClustered: true);
 
                 return new DlqClusterSignatureResponse(
                     Size: c.Size,
@@ -585,6 +585,25 @@ public sealed class DlqHistoryController : ApiControllerBase
             return ToActionResult<DlqSignatureDetailResponse>(signaturesResult.Error);
 
         var cluster = signaturesResult.Value.Clusters.FirstOrDefault(c => c.SignatureHash == signatureHash);
+
+        // ServiceHub carries two signature identities for the same failure: the trust fingerprint
+        // (FailureFingerprintBuilder — what Incidents and the Home attention queue key on) and the
+        // DLQ-Intelligence cluster hash (ClusterSignatureHasher — what this endpoint's clusters key
+        // on). Both are persisted into NamespaceSignatures, so a caller can legitimately arrive here
+        // holding either. A fingerprint hash never matches a cluster hash, which used to send every
+        // incident's "Open full signature investigation" link into the historical-record fallback —
+        // reporting "0% of this namespace's DLQ" and disabling replay for a signature whose messages
+        // were sitting in the DLQ at that moment. Re-resolve by the part of the identity both spaces
+        // agree on (entity + dominant dead-letter reason) before giving up.
+        var persistedSignature = await _signatureLookupService.GetByHashAsync(
+            OwnerId, namespaceId, signatureHash, cancellationToken);
+        if (cluster is null && persistedSignature is not null)
+        {
+            var siblingSignatures = await _signatureLookupService.GetAllForNamespaceAsync(
+                OwnerId, namespaceId, persistedSignature.HashKind, cancellationToken);
+            cluster = ResolveEquivalentLiveCluster(signaturesResult.Value.Clusters, persistedSignature, siblingSignatures);
+        }
+
         if (cluster is not null)
         {
             var relatedResult = await _historyService.GetByIdsAsync(OwnerId, cluster.MessageIds, cancellationToken);
@@ -593,7 +612,10 @@ public sealed class DlqHistoryController : ApiControllerBase
                 : [];
 
             return Ok(new DlqSignatureDetailResponse(
-                SignatureHash: signatureHash,
+                // The cluster's own hash, not the requested one — when a fingerprint hash was
+                // re-resolved above, replay and every other cluster-keyed action need the identity
+                // the clustering pass actually uses.
+                SignatureHash: cluster.SignatureHash,
                 NamespaceId: namespaceId,
                 Size: cluster.Size,
                 MessageIds: cluster.MessageIds,
@@ -615,9 +637,8 @@ public sealed class DlqHistoryController : ApiControllerBase
                 RelatedMessages: relatedMessages));
         }
 
-        // Not currently clustered — fall back to the persisted historical record, if any.
-        var persisted = await _signatureLookupService.GetByHashAsync(
-            OwnerId, namespaceId, signatureHash, cancellationToken);
+        // Neither a live cluster nor resolvable to one — fall back to the persisted record, if any.
+        var persisted = persistedSignature;
         if (persisted is null)
         {
             return ToActionResult<DlqSignatureDetailResponse>(Error.NotFound(
@@ -634,7 +655,8 @@ public sealed class DlqHistoryController : ApiControllerBase
 
         var topTerms = JsonSerializer.Deserialize<List<string>>(persisted.TopTermsJson) ?? [];
         var trend = Shared.Helpers.SignatureTrendHeuristic.Compute(
-            isNew: false, persisted.OccurrenceCount, persisted.FirstSeenAt, persisted.LastSeenAt, DateTimeOffset.UtcNow);
+            isNew: false, persisted.OccurrenceCount, persisted.FirstSeenAt, persisted.LastSeenAt,
+            DateTimeOffset.UtcNow, isCurrentlyClustered: false);
 
         return Ok(new DlqSignatureDetailResponse(
             SignatureHash: signatureHash,
@@ -650,13 +672,83 @@ public sealed class DlqHistoryController : ApiControllerBase
             OccurrenceCount: persisted.OccurrenceCount,
             WindowStart: persisted.FirstSeenAt,
             WindowEnd: persisted.LastSeenAt,
-            Explanation: "This signature's messages are no longer active in the DLQ — showing its historical record only.",
+            // Deliberately does not claim the messages are gone: this endpoint only knows the
+            // signature is absent from the most recent clustering pass. Whether its messages left
+            // the DLQ, or are simply not in the scanned window, is not established here — and on
+            // AWS/GCP it cannot be (ProviderCapabilities.CanProveDlqAbsence is false).
+            Explanation: "This signature is not part of the current DLQ clustering pass — showing its historical record only.",
             Knowledge: knowledgeResponse,
             Status: status.ToString(),
             Trend: trend,
             Confidence: "Medium",
             IsCurrentlyClustered: false,
             RelatedMessages: []));
+    }
+
+    /// <summary>
+    /// Finds the live cluster that currently represents the same failure as a persisted signature
+    /// recorded under a different identity space (see the call site for why both exist).
+    /// </summary>
+    /// <remarks>
+    /// Matches on the two attributes both the fingerprint and the cluster hash derive from and
+    /// agree on: the entity the message dead-lettered in, and the dominant dead-letter reason.
+    /// Everything else differs between the two vocabularies (<c>category:</c>/<c>deliveries:</c>
+    /// versus <c>cause:</c>/<c>deliveryAttempts:</c>) and cannot be compared.
+    /// Deliberately requires a single unambiguous match — resolving to the wrong cluster would
+    /// attach one failure's messages to another's investigation and arm replay against them, which
+    /// is far worse than falling through to the honest historical view.
+    ///
+    /// That single-live-cluster check alone isn't enough: it only guards against two live
+    /// clusters sharing entity + reason, not against two or more *persisted* signatures (e.g.
+    /// several manual Test DLQ batches, all tagged the same generic reason) sharing entity +
+    /// reason while only one live cluster currently matches. In that case every one of those
+    /// persisted signatures would silently resolve onto the same single live cluster, attaching
+    /// the wrong signature's investigation (and replay target) to whichever one a caller
+    /// requested. <paramref name="siblingSignatures"/> — every persisted signature in this
+    /// namespace sharing <paramref name="persisted"/>'s hash kind — lets this method refuse to
+    /// resolve unless <paramref name="persisted"/> is itself the unique persisted signature for
+    /// its entity + reason.
+    /// </remarks>
+    private static DlqClusterSignatureResponse? ResolveEquivalentLiveCluster(
+        IReadOnlyList<DlqClusterSignatureResponse> clusters,
+        Core.Entities.NamespaceSignature persisted,
+        IReadOnlyList<Core.Entities.NamespaceSignature> siblingSignatures)
+    {
+        var persistedEntity = ExtractTermValue(persisted.TopTermsJson, "entity:");
+        if (string.IsNullOrWhiteSpace(persistedEntity))
+            return null;
+
+        var siblingCount = (siblingSignatures ?? []).Count(s =>
+            string.Equals(ExtractTermValue(s.TopTermsJson, "entity:"), persistedEntity, StringComparison.Ordinal)
+            && string.Equals(s.DominantDeadletterReason, persisted.DominantDeadletterReason, StringComparison.Ordinal));
+        if (siblingCount > 1)
+            return null;
+
+        var matches = clusters
+            .Where(c =>
+                string.Equals(c.DominantEntity, persistedEntity, StringComparison.Ordinal)
+                && string.Equals(c.DominantDeadletterReason, persisted.DominantDeadletterReason, StringComparison.Ordinal))
+            .Take(2)
+            .ToList();
+
+        return matches.Count == 1 ? matches[0] : null;
+    }
+
+    /// <summary>Reads the value of a <c>prefix:value</c> entry out of a persisted top-terms array.</summary>
+    private static string? ExtractTermValue(string topTermsJson, string prefix)
+    {
+        List<string>? terms;
+        try
+        {
+            terms = JsonSerializer.Deserialize<List<string>>(topTermsJson);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        var term = terms?.FirstOrDefault(t => t.StartsWith(prefix, StringComparison.Ordinal));
+        return term?[prefix.Length..];
     }
 
     /// <summary>

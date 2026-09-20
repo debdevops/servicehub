@@ -146,7 +146,7 @@ export function generateAzureMockMessages(count = 50): Message[] {
     const isError = i < 10;
     const isWarning = !isError && i < 20;
     const isDeadletter = i < 15;
-    
+
     // Distribute messages among entities
     let entityName = 'orders-queue';
     let subscriptionName: string | undefined;
