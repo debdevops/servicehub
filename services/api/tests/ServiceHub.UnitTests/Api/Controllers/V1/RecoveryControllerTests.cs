@@ -3,6 +3,10 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Moq;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Controllers.V1;
 using ServiceHub.Api.Security;
@@ -14,6 +18,7 @@ using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.RecoveryLedger;
+using ServiceHub.Shared.Results;
 
 namespace ServiceHub.UnitTests.Api.Controllers.V1;
 
@@ -26,6 +31,12 @@ public sealed class RecoveryControllerTests : IDisposable
     private readonly IRecoveryLedger _recoveryLedger;
     private readonly IRecoveryEvidenceExporter _evidenceExporter;
     private readonly IRecoveryTrustScoringService _trustScoring;
+    private readonly IApprovalQueueService _approvalQueue;
+    private readonly IAutonomyDashboardService _autonomyDashboard;
+    private readonly IOutcomeMetricsService _outcomeMetrics;
+    private readonly Mock<IGovernanceAccessEvaluator> _governanceAccessEvaluator = new();
+    private readonly IRecoveryRehearsalService _rehearsalService;
+    private readonly IRecoveryEpochArchiveService _epochArchiveService;
     private readonly RecoveryController _controller;
 
     public RecoveryControllerTests()
@@ -40,10 +51,28 @@ public sealed class RecoveryControllerTests : IDisposable
         _recoveryLedger = new RecoveryLedgerService(_dbContext);
         _evidenceExporter = new RecoveryEvidenceExporter(_recoveryLedger);
         _trustScoring = new RecoveryTrustScoringService(_recoveryLedger);
+        _approvalQueue = new ApprovalQueueService(_dbContext);
+        _autonomyDashboard = new AutonomyDashboardService(_recoveryLedger, _dbContext);
+        _outcomeMetrics = new OutcomeMetricsService(_dbContext);
+        var eligibilityGate = new RecoveryEligibilityGate(_recoveryLedger, NullLogger<RecoveryEligibilityGate>.Instance);
+        _rehearsalService = new RecoveryRehearsalService(_recoveryLedger, eligibilityGate);
+        _epochArchiveService = new RecoveryEpochArchiveService(
+            _recoveryLedger, _dbContext, new ConfigurationBuilder().Build(),
+            Options.Create(new RecoveryEpochArchiveOptions { ArchiveDirectory = Path.Combine(Path.GetTempPath(), $"servicehub-epoch-archive-tests-{Guid.NewGuid():N}") }),
+            NullLogger<RecoveryEpochArchiveService>.Instance);
+
+        _governanceAccessEvaluator
+            .Setup(e => e.EvaluateAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<GovernanceRole>(),
+                It.IsAny<Guid?>(), It.IsAny<PillarKind?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success());
+
         _controller = CreateController(OwnerA);
     }
 
-    private RecoveryController CreateController(string ownerId) => new(_recoveryLedger, _evidenceExporter, _trustScoring)
+    private RecoveryController CreateController(string ownerId) => new(
+        _recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard,
+        _outcomeMetrics, _governanceAccessEvaluator.Object, _rehearsalService, _epochArchiveService)
     {
         ControllerContext = new ControllerContext
         {
@@ -84,22 +113,64 @@ public sealed class RecoveryControllerTests : IDisposable
     [Fact]
     public void Constructor_NullRecoveryLedger_Throws()
     {
-        var act = () => new RecoveryController(null!, _evidenceExporter, _trustScoring);
+        var act = () => new RecoveryController(null!, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard, _outcomeMetrics, _governanceAccessEvaluator.Object, _rehearsalService, _epochArchiveService);
         act.Should().Throw<ArgumentNullException>().WithParameterName("recoveryLedger");
     }
 
     [Fact]
     public void Constructor_NullEvidenceExporter_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, null!, _trustScoring);
+        var act = () => new RecoveryController(_recoveryLedger, null!, _trustScoring, _approvalQueue, _autonomyDashboard, _outcomeMetrics, _governanceAccessEvaluator.Object, _rehearsalService, _epochArchiveService);
         act.Should().Throw<ArgumentNullException>().WithParameterName("evidenceExporter");
     }
 
     [Fact]
     public void Constructor_NullTrustScoring_Throws()
     {
-        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, null!);
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, null!, _approvalQueue, _autonomyDashboard, _outcomeMetrics, _governanceAccessEvaluator.Object, _rehearsalService, _epochArchiveService);
         act.Should().Throw<ArgumentNullException>().WithParameterName("trustScoring");
+    }
+
+    [Fact]
+    public void Constructor_NullApprovalQueue_Throws()
+    {
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, null!, _autonomyDashboard, _outcomeMetrics, _governanceAccessEvaluator.Object, _rehearsalService, _epochArchiveService);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("approvalQueue");
+    }
+
+    [Fact]
+    public void Constructor_NullAutonomyDashboard_Throws()
+    {
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, null!, _outcomeMetrics, _governanceAccessEvaluator.Object, _rehearsalService, _epochArchiveService);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("autonomyDashboard");
+    }
+
+    [Fact]
+    public void Constructor_NullOutcomeMetrics_Throws()
+    {
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard, null!, _governanceAccessEvaluator.Object, _rehearsalService, _epochArchiveService);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("outcomeMetrics");
+    }
+
+    [Fact]
+    public void Constructor_NullGovernanceAccessEvaluator_Throws()
+    {
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard, _outcomeMetrics, null!, _rehearsalService, _epochArchiveService);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("governanceAccessEvaluator");
+    }
+
+    [Fact]
+    public void Constructor_NullRehearsalService_Throws()
+    {
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard, _outcomeMetrics, _governanceAccessEvaluator.Object, null!, _epochArchiveService);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("rehearsalService");
+    }
+
+    [Fact]
+    public void Constructor_NullEpochArchiveService_Throws()
+    {
+        var act = () => new RecoveryController(_recoveryLedger, _evidenceExporter, _trustScoring, _approvalQueue, _autonomyDashboard, _outcomeMetrics, _governanceAccessEvaluator.Object, _rehearsalService, null!);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("epochArchiveService");
     }
 
     [Fact]
@@ -428,6 +499,168 @@ public sealed class RecoveryControllerTests : IDisposable
         result.Result.Should().BeOfType<NotFoundObjectResult>();
     }
 
+    [Fact]
+    public async Task WriteOff_InsufficientGovernanceRole_ReturnsForbidden()
+    {
+        var namespaceId = Guid.NewGuid();
+        var operation = await OpenOperationAsync(OwnerA, namespaceId);
+        var entry = await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerA,
+            NamespaceId = namespaceId,
+            Actor = new RecoveryActor("test-actor", RecoveryActorKind.User),
+            BodyHash = "hash-writeoff-forbidden",
+            TargetEntity = "queue-writeoff-forbidden",
+        });
+        SetExplicitIntent(_controller, IntentHeaders.IntentWriteOffRecovery);
+        _governanceAccessEvaluator
+            .Setup(e => e.EvaluateAsync(
+                OwnerA, It.IsAny<string>(), GovernanceRole.Operator, namespaceId, PillarKind.Recover, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.Forbidden("Governance.InsufficientRole", "denied")));
+
+        var result = await _controller.WriteOff(entry.Value.Id, new WriteOffRecoveryEntryRequest("blocked"));
+
+        result.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
+    public async Task WriteOff_InsufficientGovernanceRoleAndMissingIntentHeader_ReturnsForbiddenNotPreconditionRequired()
+    {
+        // Governance is evaluated before the explicit-intent check (deliberately — an
+        // unauthorized caller should be told they lack the role, not learn what headers a
+        // properly-authorized call would additionally need), so a caller failing both checks at
+        // once must see 403, never 428.
+        var namespaceId = Guid.NewGuid();
+        var operation = await OpenOperationAsync(OwnerA, namespaceId);
+        var entry = await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerA,
+            NamespaceId = namespaceId,
+            Actor = new RecoveryActor("test-actor", RecoveryActorKind.User),
+            BodyHash = "hash-writeoff-forbidden-no-intent",
+            TargetEntity = "queue-writeoff-forbidden-no-intent",
+        });
+        _governanceAccessEvaluator
+            .Setup(e => e.EvaluateAsync(
+                OwnerA, It.IsAny<string>(), GovernanceRole.Operator, namespaceId, PillarKind.Recover, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(Error.Forbidden("Governance.InsufficientRole", "denied")));
+
+        var result = await _controller.WriteOff(entry.Value.Id, new WriteOffRecoveryEntryRequest("blocked"));
+
+        result.Result.Should().BeOfType<ObjectResult>().Which.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+    }
+
+    [Fact]
+    public async Task WriteOff_EntryNotFound_ReturnsNotFoundWithoutGovernanceCheck()
+    {
+        var result = await _controller.WriteOff(Guid.NewGuid(), new WriteOffRecoveryEntryRequest("missing"));
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+        _governanceAccessEvaluator.Verify(
+            e => e.EvaluateAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<GovernanceRole>(),
+                It.IsAny<Guid?>(), It.IsAny<PillarKind?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    // ── Rehearsal mode (roadmap §7 W1.2) ──────────────────────────────────────
+
+    [Fact]
+    public async Task Rehearse_DefaultsToAutomationActorKind_EscalatesForUngrantedSignature()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var entry = await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerA,
+            Actor = new RecoveryActor("test-actor", RecoveryActorKind.User),
+            BodyHash = "hash-rehearse-1",
+            TargetEntity = "queue-rehearse-1",
+            SignatureHashSnapshot = "sig-rehearse-1",
+        });
+
+        var result = await _controller.Rehearse(entry.Value.Id);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<RecoveryRehearsalResponse>().Subject;
+        response.EntryId.Should().Be(entry.Value.Id);
+        response.ActorKindEvaluated.Should().Be(nameof(RecoveryActorKind.Automation));
+        response.Verdict.Should().Be(nameof(EligibilityVerdict.Escalate));
+        response.ReasonCode.Should().Be("AUTONOMY_GRANT_INSUFFICIENT");
+    }
+
+    [Fact]
+    public async Task Rehearse_ExplicitUserActorKind_AllowsWithNoAutonomyLookup()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var entry = await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerA,
+            Actor = new RecoveryActor("test-actor", RecoveryActorKind.User),
+            BodyHash = "hash-rehearse-2",
+            TargetEntity = "queue-rehearse-2",
+        });
+
+        var result = await _controller.Rehearse(entry.Value.Id, RecoveryActorKind.User);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var response = ok.Value.Should().BeOfType<RecoveryRehearsalResponse>().Subject;
+        response.ActorKindEvaluated.Should().Be(nameof(RecoveryActorKind.User));
+        response.Verdict.Should().Be(nameof(EligibilityVerdict.Allow));
+    }
+
+    [Fact]
+    public async Task Rehearse_DifferentOwnersEntry_ReturnsNotFound()
+    {
+        var operationB = await OpenOperationAsync(OwnerB);
+        var entryB = await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operationB.Id,
+            OwnerId = OwnerB,
+            Actor = new RecoveryActor("test-actor", RecoveryActorKind.User),
+            BodyHash = "hash-rehearse-cross-owner",
+            TargetEntity = "queue-rehearse-cross-owner",
+        });
+
+        // _controller is authenticated as OwnerA attempting to rehearse OwnerB's entry.
+        var result = await _controller.Rehearse(entryB.Value.Id);
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
+    public async Task Rehearse_EntryNotFound_ReturnsNotFound()
+    {
+        var result = await _controller.Rehearse(Guid.NewGuid());
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
+    public async Task Rehearse_NeverMutatesTheLedger()
+    {
+        var operation = await OpenOperationAsync(OwnerA);
+        var entry = await _recoveryLedger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerA,
+            Actor = new RecoveryActor("test-actor", RecoveryActorKind.User),
+            BodyHash = "hash-rehearse-no-mutate",
+            TargetEntity = "queue-rehearse-no-mutate",
+            SignatureHashSnapshot = "sig-rehearse-no-mutate",
+        });
+        var eventsBefore = await _recoveryLedger.GetEventsForOperationAsync(operation.Id, OwnerA);
+
+        await _controller.Rehearse(entry.Value.Id, RecoveryActorKind.Automation);
+        await _controller.Rehearse(entry.Value.Id, RecoveryActorKind.User);
+
+        var eventsAfter = await _recoveryLedger.GetEventsForOperationAsync(operation.Id, OwnerA);
+        eventsAfter.Count.Should().Be(eventsBefore.Count);
+    }
+
     // ── Emergency Stop endpoints (§9.4.2, §15.2) ─────────────────────────────
 
     [Fact]
@@ -700,5 +933,92 @@ public sealed class RecoveryControllerTests : IDisposable
         response.CanAutoReplay.Should().BeFalse();
         response.CanProveDlqAbsence.Should().BeFalse();
         response.BlockedReason.Should().Contain("Aws");
+    }
+
+    [Fact]
+    public async Task GetAutonomyDashboard_NoDataForOwner_ReturnsEmptySnapshot()
+    {
+        var result = await _controller.GetAutonomyDashboard();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var overview = ok.Value.Should().BeOfType<AutonomyDashboardOverview>().Subject;
+        overview.TotalSignatures.Should().Be(0);
+        overview.Grants.Should().BeEmpty();
+        overview.EmergencyStopActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetAutonomyDashboard_ScopesToCallerOwner()
+    {
+        await _recoveryLedger.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-dashboard-a", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "owner A earned it", null);
+        await _recoveryLedger.RecordAutonomyGrantTransitionAsync(
+            OwnerB, "sig-dashboard-b", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "owner B earned it", null);
+
+        var result = await _controller.GetAutonomyDashboard();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var overview = ok.Value.Should().BeOfType<AutonomyDashboardOverview>().Subject;
+        overview.Grants.Should().ContainSingle().Which.SignatureHash.Should().Be("sig-dashboard-a");
+    }
+
+    [Fact]
+    public async Task GetOutcomes_NoDataForOwner_ReturnsZeroedSnapshot()
+    {
+        var result = await _controller.GetOutcomes();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var overview = ok.Value.Should().BeOfType<OutcomeMetricsOverview>().Subject;
+        overview.MessagesRecovered.Should().Be(0);
+        overview.MessagesAbandoned.Should().Be(0);
+        overview.GateRefusals.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(365, 90)]
+    public async Task GetOutcomes_ClampsDaysToOneThroughNinety(int requestedDays, int expectedClampedDays)
+    {
+        var result = await _controller.GetOutcomes(requestedDays);
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var overview = ok.Value.Should().BeOfType<OutcomeMetricsOverview>().Subject;
+        (overview.WindowEndUtc - overview.WindowStartUtc).TotalDays.Should().BeApproximately(expectedClampedDays, 0.01);
+    }
+
+    // ── Epoch sealing (roadmap next-chapter M5.2) ────────────────────────────
+
+    [Fact]
+    public void SealEpoch_RequiresAdminScope()
+    {
+        typeof(RecoveryController)
+            .GetMethod(nameof(RecoveryController.SealEpoch))!
+            .GetCustomAttributes(typeof(RequireScopeAttribute), inherit: true)
+            .Cast<RequireScopeAttribute>()
+            .Single().Scope.Should().Be(ApiKeyScopes.Admin);
+    }
+
+    [Fact]
+    public async Task SealEpoch_NothingToSeal_ReturnsConflict()
+    {
+        var result = await _controller.SealEpoch();
+
+        result.Result.Should().BeOfType<ConflictObjectResult>();
+    }
+
+    [Fact]
+    public async Task SealEpoch_ArchivesPriorEventsAndReturnsSummary()
+    {
+        await OpenOperationAsync(OwnerA);
+
+        var result = await _controller.SealEpoch();
+
+        var ok = result.Result.Should().BeOfType<OkObjectResult>().Subject;
+        var summary = ok.Value.Should().BeOfType<RecoveryEpochSealSummary>().Subject;
+        summary.EpochNumber.Should().Be(1);
+        summary.ArchivedEventCount.Should().BeGreaterThan(0);
+        File.Exists(summary.ArchiveFilePath).Should().BeTrue();
     }
 }

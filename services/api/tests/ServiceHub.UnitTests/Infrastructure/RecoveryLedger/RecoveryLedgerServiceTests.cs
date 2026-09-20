@@ -1,7 +1,10 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Moq;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
+using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.RecoveryLedger;
@@ -37,11 +40,21 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
 
     private static RecoveryActor Actor(string identity = "test-actor") => new(identity, RecoveryActorKind.User);
 
+    private RecoveryLedgerService BuildService(double? observationWindowHours)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(observationWindowHours is { } hours
+                ? new Dictionary<string, string?> { ["RecoveryEvidence:ObservationWindowHours"] = hours.ToString(System.Globalization.CultureInfo.InvariantCulture) }
+                : new Dictionary<string, string?>())
+            .Build();
+        return new RecoveryLedgerService(_dbContext, configuration);
+    }
+
     private async Task<RecoveryOperation> OpenOperationAsync(
         string ownerId = OwnerA, RecoveryOperationKind kind = RecoveryOperationKind.Replay, string? reason = null,
-        long? sourceRuleId = null)
+        long? sourceRuleId = null, RecoveryLedgerService? service = null)
     {
-        var result = await _service.OpenOperationAsync(new OpenRecoveryOperationRequest
+        var result = await (service ?? _service).OpenOperationAsync(new OpenRecoveryOperationRequest
         {
             OwnerId = ownerId,
             Kind = kind,
@@ -57,9 +70,9 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
         return result.Value;
     }
 
-    private async Task<RecoveryLedgerEntry> BeginEntryAsync(RecoveryOperation operation)
+    private async Task<RecoveryLedgerEntry> BeginEntryAsync(RecoveryOperation operation, RecoveryLedgerService? service = null)
     {
-        var result = await _service.BeginEntryAsync(new BeginRecoveryEntryRequest
+        var result = await (service ?? _service).BeginEntryAsync(new BeginRecoveryEntryRequest
         {
             OperationId = operation.Id,
             OwnerId = operation.OwnerId,
@@ -147,6 +160,97 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
         events.Should().ContainSingle(e => e.EventType == RecoveryEventType.OperationOpened);
         events[0].Seq.Should().Be(1);
         events[0].PrevHash.Should().Be(RecoveryHashChain.GenesisHash);
+    }
+
+    // ── Configurable observation window (roadmap W1.1) ─────────────────────
+
+    [Fact]
+    public async Task RecordExecutionAsync_NoConfigurationSupplied_UsesTwentyFourHourDefault_NoAuditEvent()
+    {
+        var (_, entry) = await OpenAndBeginAsync();
+
+        var executed = await _service.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = entry.Id,
+            OwnerId = OwnerA,
+            Actor = Actor(),
+            Outcome = RecoveryExecutionOutcome.Accepted,
+        });
+
+        executed.IsSuccess.Should().BeTrue();
+        executed.Value.ObservationWindowEndsAt.Should().BeCloseTo(
+            DateTimeOffset.UtcNow.AddHours(RecoveryLedgerService.DefaultObservationWindowHours), TimeSpan.FromMinutes(1));
+
+        var events = await _dbContext.RecoveryEvents.Where(e => e.EntryId == entry.Id).ToListAsync();
+        events.Should().ContainSingle(e => e.EventType == RecoveryEventType.ObservationWindowOpened);
+        events.Should().NotContain(e => e.EventType == RecoveryEventType.NonDefaultObservationWindowApplied);
+        events.Single(e => e.EventType == RecoveryEventType.ObservationWindowOpened).DetailJson
+            .Should().Contain("\"appliedObservationWindowHours\":24");
+    }
+
+    [Fact]
+    public async Task RecordExecutionAsync_NonDefaultConfiguredWindow_UsesConfiguredValue_AppendsAuditEvent()
+    {
+        var service = BuildService(observationWindowHours: 2);
+        var operation = await OpenOperationAsync(service: service);
+        var entry = await BeginEntryAsync(operation, service);
+
+        var executed = await service.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = entry.Id,
+            OwnerId = OwnerA,
+            Actor = Actor(),
+            Outcome = RecoveryExecutionOutcome.Accepted,
+        });
+
+        executed.IsSuccess.Should().BeTrue();
+        executed.Value.ObservationWindowEndsAt.Should().BeCloseTo(
+            DateTimeOffset.UtcNow.AddHours(2), TimeSpan.FromMinutes(1));
+
+        var events = await _dbContext.RecoveryEvents.Where(e => e.EntryId == entry.Id).ToListAsync();
+        events.Should().ContainSingle(e => e.EventType == RecoveryEventType.ObservationWindowOpened);
+        var auditEvent = events.Should().ContainSingle(e => e.EventType == RecoveryEventType.NonDefaultObservationWindowApplied)
+            .Which;
+        auditEvent.DetailJson.Should().Contain("\"appliedObservationWindowHours\":2")
+            .And.Contain("\"defaultObservationWindowHours\":24");
+    }
+
+    [Fact]
+    public async Task RecordExecutionAsync_ConfiguredWindowBelowFloor_ClampsToMinimum()
+    {
+        var service = BuildService(observationWindowHours: 0);
+        var operation = await OpenOperationAsync(service: service);
+        var entry = await BeginEntryAsync(operation, service);
+
+        var executed = await service.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = entry.Id,
+            OwnerId = OwnerA,
+            Actor = Actor(),
+            Outcome = RecoveryExecutionOutcome.Accepted,
+        });
+
+        executed.Value.ObservationWindowEndsAt.Should().BeCloseTo(
+            DateTimeOffset.UtcNow.AddHours(0.1), TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
+    public async Task RecordExecutionAsync_ConfiguredWindowAboveCeiling_ClampsToMaximum()
+    {
+        var service = BuildService(observationWindowHours: 100_000);
+        var operation = await OpenOperationAsync(service: service);
+        var entry = await BeginEntryAsync(operation, service);
+
+        var executed = await service.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = entry.Id,
+            OwnerId = OwnerA,
+            Actor = Actor(),
+            Outcome = RecoveryExecutionOutcome.Accepted,
+        });
+
+        executed.Value.ObservationWindowEndsAt.Should().BeCloseTo(
+            DateTimeOffset.UtcNow.AddHours(720), TimeSpan.FromMinutes(1));
     }
 
     // ── Full lifecycle happy paths ──────────────────────────────────────────
@@ -656,6 +760,147 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
 
         matches.Select(m => m.Id).Should().BeEquivalentTo(new[] { withinWindow.Id });
         matches.Select(m => m.Id).Should().NotContain(new[] { outsideWindow.Id, otherOwner.Id, otherHash.Id });
+    }
+
+    [Fact]
+    public async Task FindEntriesForEntitySinceAsync_ReturnsOwnerNamespaceEntityAndSinceScopedSetOldestFirst()
+    {
+        var operation = await OpenOperationAsync();
+        var now = DateTimeOffset.UtcNow;
+
+        RecoveryLedgerEntry Seed(
+            DateTimeOffset begunAt, string ownerId = OwnerA, Guid? namespaceId = null, string entityName = "orders-dlq")
+        {
+            var entry = new RecoveryLedgerEntry
+            {
+                OperationId = operation.Id,
+                OwnerId = ownerId,
+                NamespaceId = namespaceId ?? operation.NamespaceId,
+                EntityNameSnapshot = entityName,
+                BodyHash = "irrelevant-hash",
+                TargetEntity = entityName,
+                BegunAt = begunAt,
+                State = RecoveryEntryState.Observing,
+            };
+            _dbContext.RecoveryLedgerEntries.Add(entry);
+            return entry;
+        }
+
+        var earlier = Seed(now.AddMinutes(-5));
+        var later = Seed(now.AddMinutes(5));
+        var beforeSince = Seed(now.AddMinutes(-10));
+        var otherOwner = Seed(now, ownerId: OwnerB);
+        var otherEntity = Seed(now, entityName: "payments-dlq");
+        var otherNamespace = Seed(now, namespaceId: Guid.NewGuid());
+        await _dbContext.SaveChangesAsync();
+
+        var matches = await _service.FindEntriesForEntitySinceAsync(
+            OwnerA, operation.NamespaceId, "orders-dlq", now.AddMinutes(-6));
+
+        matches.Select(m => m.Id).Should().Equal(earlier.Id, later.Id);
+        matches.Select(m => m.Id).Should().NotContain(new[] { beforeSince.Id, otherOwner.Id, otherEntity.Id, otherNamespace.Id });
+    }
+
+    [Fact]
+    public async Task FindEntriesForEntitySinceAsync_RespectsLimit()
+    {
+        var operation = await OpenOperationAsync();
+        var now = DateTimeOffset.UtcNow;
+
+        for (var i = 0; i < 3; i++)
+        {
+            _dbContext.RecoveryLedgerEntries.Add(new RecoveryLedgerEntry
+            {
+                OperationId = operation.Id,
+                OwnerId = OwnerA,
+                NamespaceId = operation.NamespaceId,
+                EntityNameSnapshot = "orders-dlq",
+                BodyHash = "irrelevant-hash",
+                TargetEntity = "orders-dlq",
+                BegunAt = now.AddMinutes(i),
+                State = RecoveryEntryState.Observing,
+            });
+        }
+        await _dbContext.SaveChangesAsync();
+
+        var matches = await _service.FindEntriesForEntitySinceAsync(
+            OwnerA, operation.NamespaceId, "orders-dlq", now.AddMinutes(-1), limit: 2);
+
+        matches.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task FindEntriesForSignatureSinceAsync_ReturnsOwnerSignatureAndSinceScopedSetOldestFirst()
+    {
+        var operation = await OpenOperationAsync();
+        var now = DateTimeOffset.UtcNow;
+        const string signatureHash = "sig-abc123";
+
+        RecoveryLedgerEntry Seed(
+            DateTimeOffset begunAt, string ownerId = OwnerA, string? signature = signatureHash, string entityName = "orders-dlq")
+        {
+            var entry = new RecoveryLedgerEntry
+            {
+                OperationId = operation.Id,
+                OwnerId = ownerId,
+                NamespaceId = operation.NamespaceId,
+                EntityNameSnapshot = entityName,
+                SignatureHashSnapshot = signature,
+                BodyHash = "irrelevant-hash",
+                TargetEntity = entityName,
+                BegunAt = begunAt,
+                State = RecoveryEntryState.Observing,
+            };
+            _dbContext.RecoveryLedgerEntries.Add(entry);
+            return entry;
+        }
+
+        var earlier = Seed(now.AddMinutes(-5));
+        var later = Seed(now.AddMinutes(5));
+        var beforeSince = Seed(now.AddMinutes(-10));
+        var otherOwner = Seed(now, ownerId: OwnerB);
+        var otherSignature = Seed(now, signature: "sig-different");
+        // Different entity, same signature: still expected to match — the signature-scoped join
+        // is deliberately not narrowed by entity (see IRecoveryLedger's doc comment).
+        var differentEntitySameSignature = Seed(now, entityName: "other-entity");
+        var noSignature = Seed(now, signature: null);
+        await _dbContext.SaveChangesAsync();
+
+        var matches = await _service.FindEntriesForSignatureSinceAsync(
+            OwnerA, signatureHash, now.AddMinutes(-6));
+
+        matches.Select(m => m.Id).Should().Equal(earlier.Id, differentEntitySameSignature.Id, later.Id);
+        matches.Select(m => m.Id).Should().NotContain(new[] { beforeSince.Id, otherOwner.Id, otherSignature.Id, noSignature.Id });
+    }
+
+    [Fact]
+    public async Task FindEntriesForSignatureSinceAsync_RespectsLimit()
+    {
+        var operation = await OpenOperationAsync();
+        var now = DateTimeOffset.UtcNow;
+        const string signatureHash = "sig-abc123";
+
+        for (var i = 0; i < 3; i++)
+        {
+            _dbContext.RecoveryLedgerEntries.Add(new RecoveryLedgerEntry
+            {
+                OperationId = operation.Id,
+                OwnerId = OwnerA,
+                NamespaceId = operation.NamespaceId,
+                EntityNameSnapshot = "orders-dlq",
+                SignatureHashSnapshot = signatureHash,
+                BodyHash = "irrelevant-hash",
+                TargetEntity = "orders-dlq",
+                BegunAt = now.AddMinutes(i),
+                State = RecoveryEntryState.Observing,
+            });
+        }
+        await _dbContext.SaveChangesAsync();
+
+        var matches = await _service.FindEntriesForSignatureSinceAsync(
+            OwnerA, signatureHash, now.AddMinutes(-1), limit: 2);
+
+        matches.Should().HaveCount(2);
     }
 
     // ── Illegal transitions ─────────────────────────────────────────────────
@@ -1270,6 +1515,99 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
 
         (await _service.GetAutonomyGrantAsync(OwnerB, "sig-8", RecoveryOperationKind.Replay))
             .Should().BeNull("a grant is scoped to its owner — owner isolation must hold on the read side too");
+    }
+
+    // ── GetAutonomyGrantsAsync / GetRecentAutonomyTransitionsAsync (fleet-wide autonomy dashboard, roadmap §11 item 5) ──
+
+    [Fact]
+    public async Task GetAutonomyGrantsAsync_NoGrantsForOwner_ReturnsEmpty()
+    {
+        (await _service.GetAutonomyGrantsAsync(OwnerA)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetAutonomyGrantsAsync_ReturnsOnlyCallerOwnedGrants()
+    {
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-dash-1", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "owner A's grant", null);
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerB, "sig-dash-2", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "owner B's grant", null);
+
+        var grants = await _service.GetAutonomyGrantsAsync(OwnerA);
+
+        grants.Should().ContainSingle().Which.SignatureHash.Should().Be("sig-dash-1");
+    }
+
+    [Fact]
+    public async Task GetAutonomyGrantsAsync_AfterDemotion_ReflectsCurrentProjectionNotHistory()
+    {
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-dash-3", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "promoted", null);
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-dash-3", RecoveryOperationKind.Replay,
+            AutonomyLevel.Standing, AutonomyLevel.Approve, "demoted back", null);
+
+        var grants = await _service.GetAutonomyGrantsAsync(OwnerA);
+
+        grants.Should().ContainSingle().Which.CurrentLevel.Should().Be(AutonomyLevel.Approve);
+    }
+
+    [Fact]
+    public async Task GetRecentAutonomyTransitionsAsync_NoTransitions_ReturnsEmpty()
+    {
+        (await _service.GetRecentAutonomyTransitionsAsync(OwnerA, 20)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetRecentAutonomyTransitionsAsync_ReturnsNewestFirstDecodedFromDetailJson()
+    {
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-dash-4", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "first promotion", null);
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-dash-4", RecoveryOperationKind.Replay,
+            AutonomyLevel.Standing, AutonomyLevel.Unattended, "second promotion", null);
+
+        var transitions = await _service.GetRecentAutonomyTransitionsAsync(OwnerA, 20);
+
+        transitions.Should().HaveCount(2);
+        transitions[0].Reason.Should().Be("second promotion");
+        transitions[0].PreviousLevel.Should().Be(AutonomyLevel.Standing);
+        transitions[0].NewLevel.Should().Be(AutonomyLevel.Unattended);
+        transitions[1].Reason.Should().Be("first promotion");
+    }
+
+    [Fact]
+    public async Task GetRecentAutonomyTransitionsAsync_DifferentOwner_ExcludesOtherOwnersTransitions()
+    {
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-dash-5", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "owner A's transition", null);
+        await _service.RecordAutonomyGrantTransitionAsync(
+            OwnerB, "sig-dash-6", RecoveryOperationKind.Replay,
+            AutonomyLevel.Approve, AutonomyLevel.Standing, "owner B's transition", null);
+
+        var transitions = await _service.GetRecentAutonomyTransitionsAsync(OwnerA, 20);
+
+        transitions.Should().ContainSingle().Which.SignatureHash.Should().Be("sig-dash-5");
+    }
+
+    [Fact]
+    public async Task GetRecentAutonomyTransitionsAsync_RespectsLimit()
+    {
+        for (var i = 0; i < 5; i++)
+        {
+            await _service.RecordAutonomyGrantTransitionAsync(
+                OwnerA, $"sig-dash-limit-{i}", RecoveryOperationKind.Replay,
+                AutonomyLevel.Approve, AutonomyLevel.Standing, $"promotion {i}", null);
+        }
+
+        var transitions = await _service.GetRecentAutonomyTransitionsAsync(OwnerA, 3);
+
+        transitions.Should().HaveCount(3);
     }
 
     // ── Emergency Stop: IsEmergencyStopActiveAsync / RecordEmergencyControlEventAsync (§9.4.2, §15.2) ──
@@ -1969,7 +2307,8 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
     public async Task RecordAutoReplayCircuitBreakerTripAsync_WritesAutoReplayRuleControlOperationAndEvent()
     {
         var result = await _service.RecordAutoReplayCircuitBreakerTripAsync(
-            OwnerA, ruleId: 42, ruleName: "Poison Message Rule", Actor("system"), sampleSize: 20, verifiedSuccessRate: 0.30);
+            OwnerA, ruleId: 42, ruleName: "Poison Message Rule", Actor("system"), sampleSize: 20,
+            verifiedSuccessRate: 0.30, appliedSuccessRateFloor: 0.50);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Kind.Should().Be(RecoveryOperationKind.AutoReplayRuleControl);
@@ -1982,6 +2321,15 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
         evt.EntryId.Should().BeNull();
         evt.OperationId.Should().Be(result.Value.Id);
         evt.DetailJson.Should().Contain("Poison Message Rule");
+
+        // The floor that was actually in force is recorded alongside the rate, so an auditor
+        // reading the ledger can tell a genuine trip apart from one under a relaxed threshold —
+        // the same reason ObservationWindowOpened records its applied window (roadmap W1.1).
+        evt.DetailJson.Should().Contain("appliedSuccessRateFloor");
+        evt.DetailJson.Should().Contain("defaultSuccessRateFloor");
+        // ICU renders P0 as "50%" or "50 %" depending on platform/runner; assert the digits only,
+        // matching the same workaround used in AutonomyEvaluationWorkerTests.
+        result.Value.Reason.Should().Contain("50");
     }
 
     // ── GetAgeingAsync / GetDistinctSignatureHashesAsync: per-sweep batch limit ─────────────────
@@ -2087,5 +2435,227 @@ public sealed class RecoveryLedgerServiceTests : IDisposable
             AutonomyLevel.Approve, AutonomyLevel.Standing, "first promotion", null);
 
         result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetSignatureProviderAsync_NoLedgerEntry_FallsBackToNamespaceSignatureProvider()
+    {
+        // A signature that has never been replayed/purged has no RecoveryLedgerEntries row at
+        // all, so ProviderSnapshot can't be read from the ledger — this is the everyday case for
+        // a brand-new signature. Without the fallback, callers (RecoveryController's
+        // GetAutonomyStatus, AutonomyEvaluationWorker) treat the unresolved provider as AWS's
+        // stricter capabilities, wrongly telling an operator that a never-yet-replayed Azure
+        // signature "cannot currently provide the deterministic recovery evidence" it actually can.
+        var namespaceId = Guid.NewGuid();
+        _dbContext.NamespaceSignatures.Add(new NamespaceSignature
+        {
+            NamespaceId = namespaceId,
+            OwnerId = OwnerA,
+            SignatureHash = "sig-never-replayed",
+            HashKind = SignatureHashKind.Fingerprint,
+            FirstSeenAt = DateTimeOffset.UtcNow.AddHours(-1),
+            LastSeenAt = DateTimeOffset.UtcNow,
+            OccurrenceCount = 1,
+            DominantDeadletterReason = "MaxDeliveryCountExceeded",
+            TopTermsJson = "[]",
+        });
+        await _dbContext.SaveChangesAsync();
+
+        var azureNamespace = Namespace.Create(
+            "azure-ns", "PROTECTED:encrypted-data", provider: CloudProviderType.Azure).Value;
+        typeof(Namespace).GetProperty(nameof(Namespace.Id))!.SetValue(azureNamespace, namespaceId);
+
+        var namespaceRepository = new Mock<INamespaceRepository>();
+        namespaceRepository.Setup(r => r.GetByIdAsync(namespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<Namespace>.Success(azureNamespace));
+
+        var service = new RecoveryLedgerService(_dbContext, configuration: null, namespaceRepository.Object);
+
+        var provider = await service.GetSignatureProviderAsync(OwnerA, "sig-never-replayed");
+
+        provider.Should().Be(CloudProviderType.Azure);
+    }
+
+    [Fact]
+    public async Task GetSignatureProviderAsync_LedgerEntryExists_PrefersLedgerOverNamespaceFallback()
+    {
+        // Once a real recovery has happened, the ledger's own ProviderSnapshot is the ground
+        // truth and must win — proven here by never wiring a namespace repository into _service
+        // at all, so a wrong answer could only come from the (untouched) fallback path.
+        var operation = await OpenOperationAsync();
+        const string signatureHash = "sig-already-replayed";
+        _dbContext.RecoveryLedgerEntries.Add(new RecoveryLedgerEntry
+        {
+            OperationId = operation.Id,
+            OwnerId = OwnerA,
+            NamespaceId = operation.NamespaceId,
+            EntityNameSnapshot = "orders-dlq",
+            SignatureHashSnapshot = signatureHash,
+            ProviderSnapshot = CloudProviderType.Gcp,
+            BodyHash = "irrelevant-hash",
+            TargetEntity = "orders-dlq",
+            BegunAt = DateTimeOffset.UtcNow,
+            State = RecoveryEntryState.Observing,
+        });
+        await _dbContext.SaveChangesAsync();
+
+        var provider = await _service.GetSignatureProviderAsync(OwnerA, signatureHash);
+
+        provider.Should().Be(CloudProviderType.Gcp);
+    }
+
+    // ── Production elevations (ADR-0010 §Decision phase 2) ──────────────────
+
+    [Fact]
+    public async Task RequestProductionElevationAsync_EmptyReason_Fails()
+    {
+        var result = await _service.RequestProductionElevationAsync(
+            OwnerA, Guid.NewGuid(), "ns", Actor("requester@example.com"), "  ", TimeSpan.FromHours(1));
+
+        result.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RequestProductionElevationAsync_NonPositiveDuration_Fails()
+    {
+        var result = await _service.RequestProductionElevationAsync(
+            OwnerA, Guid.NewGuid(), "ns", Actor("requester@example.com"), "incident 123", TimeSpan.Zero);
+
+        result.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RequestProductionElevationAsync_Valid_IsPendingNotLive()
+    {
+        var namespaceId = Guid.NewGuid();
+        var result = await _service.RequestProductionElevationAsync(
+            OwnerA, namespaceId, "prod-orders", Actor("requester@example.com"), "incident 123", TimeSpan.FromHours(1));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ApprovedAt.Should().BeNull();
+        result.Value.IsLiveAt(DateTimeOffset.UtcNow).Should().BeFalse();
+
+        var live = await _service.GetLiveProductionElevationAsync(OwnerA, namespaceId);
+        live.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ApproveProductionElevationAsync_SelfApproval_IsForbidden()
+    {
+        var requester = Actor("requester@example.com");
+        var requestResult = await _service.RequestProductionElevationAsync(
+            OwnerA, Guid.NewGuid(), "ns", requester, "incident 123", TimeSpan.FromHours(1));
+
+        var approveResult = await _service.ApproveProductionElevationAsync(
+            requestResult.Value.Id, OwnerA, requester, CancellationToken.None);
+
+        approveResult.IsFailure.Should().BeTrue();
+        approveResult.Error.Type.Should().Be(ErrorType.Forbidden);
+    }
+
+    [Fact]
+    public async Task ApproveProductionElevationAsync_DistinctApprover_GoesLive()
+    {
+        var namespaceId = Guid.NewGuid();
+        var requestResult = await _service.RequestProductionElevationAsync(
+            OwnerA, namespaceId, "ns", Actor("requester@example.com"), "incident 123", TimeSpan.FromHours(1));
+
+        var approveResult = await _service.ApproveProductionElevationAsync(
+            requestResult.Value.Id, OwnerA, Actor("approver@example.com"), CancellationToken.None);
+
+        approveResult.IsSuccess.Should().BeTrue();
+        approveResult.Value.ApprovedByIdentity.Should().Be("approver@example.com");
+        approveResult.Value.ExpiresAt.Should().BeCloseTo(DateTimeOffset.UtcNow + TimeSpan.FromHours(1), TimeSpan.FromSeconds(5));
+
+        var live = await _service.GetLiveProductionElevationAsync(OwnerA, namespaceId);
+        live.Should().NotBeNull();
+        live!.Id.Should().Be(requestResult.Value.Id);
+    }
+
+    [Fact]
+    public async Task ApproveProductionElevationAsync_AlreadyApproved_Fails()
+    {
+        var requestResult = await _service.RequestProductionElevationAsync(
+            OwnerA, Guid.NewGuid(), "ns", Actor("requester@example.com"), "incident 123", TimeSpan.FromHours(1));
+        await _service.ApproveProductionElevationAsync(requestResult.Value.Id, OwnerA, Actor("approver@example.com"), CancellationToken.None);
+
+        var secondApprove = await _service.ApproveProductionElevationAsync(
+            requestResult.Value.Id, OwnerA, Actor("second-approver@example.com"), CancellationToken.None);
+
+        secondApprove.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RevokeProductionElevationAsync_LiveElevation_NoLongerLive()
+    {
+        var namespaceId = Guid.NewGuid();
+        var requestResult = await _service.RequestProductionElevationAsync(
+            OwnerA, namespaceId, "ns", Actor("requester@example.com"), "incident 123", TimeSpan.FromHours(1));
+        await _service.ApproveProductionElevationAsync(requestResult.Value.Id, OwnerA, Actor("approver@example.com"), CancellationToken.None);
+
+        var revokeResult = await _service.RevokeProductionElevationAsync(
+            requestResult.Value.Id, OwnerA, Actor("approver@example.com"), "no longer needed", CancellationToken.None);
+
+        revokeResult.IsSuccess.Should().BeTrue();
+        var live = await _service.GetLiveProductionElevationAsync(OwnerA, namespaceId);
+        live.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RevokeProductionElevationAsync_AlreadyRevoked_Fails()
+    {
+        var requestResult = await _service.RequestProductionElevationAsync(
+            OwnerA, Guid.NewGuid(), "ns", Actor("requester@example.com"), "incident 123", TimeSpan.FromHours(1));
+        await _service.RevokeProductionElevationAsync(requestResult.Value.Id, OwnerA, Actor("admin@example.com"), null, CancellationToken.None);
+
+        var secondRevoke = await _service.RevokeProductionElevationAsync(
+            requestResult.Value.Id, OwnerA, Actor("admin@example.com"), null, CancellationToken.None);
+
+        secondRevoke.IsFailure.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ProductionElevation_IsLiveAt_FalseOncePastExpiry()
+    {
+        var elevation = new ProductionElevation
+        {
+            OwnerId = OwnerA,
+            NamespaceId = Guid.NewGuid(),
+            Reason = "incident 123",
+            RequestedByIdentity = "requester@example.com",
+            RequestedAt = DateTimeOffset.UtcNow.AddHours(-2),
+            RequestedDuration = TimeSpan.FromHours(1),
+            ApprovedByIdentity = "approver@example.com",
+            ApprovedAt = DateTimeOffset.UtcNow.AddHours(-2),
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(-1),
+        };
+
+        elevation.IsLiveAt(DateTimeOffset.UtcNow).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetUnrecordedExpiredElevationsAsync_ThenRecordExpiry_IsIdempotent()
+    {
+        var namespaceId = Guid.NewGuid();
+        var requestResult = await _service.RequestProductionElevationAsync(
+            OwnerA, namespaceId, "ns", Actor("requester@example.com"), "incident 123", TimeSpan.FromMilliseconds(1));
+        var approveResult = await _service.ApproveProductionElevationAsync(
+            requestResult.Value.Id, OwnerA, Actor("approver@example.com"), CancellationToken.None);
+        approveResult.IsSuccess.Should().BeTrue();
+
+        // The 1ms duration has already lapsed by the time this runs.
+        var due = await _service.GetUnrecordedExpiredElevationsAsync(OwnerA);
+        due.Should().ContainSingle(e => e.Id == requestResult.Value.Id);
+
+        var firstRecord = await _service.RecordProductionElevationExpiryAsync(requestResult.Value.Id, OwnerA);
+        firstRecord.IsSuccess.Should().BeTrue();
+        firstRecord.Value.ExpiredEventRecorded.Should().BeTrue();
+
+        var dueAfter = await _service.GetUnrecordedExpiredElevationsAsync(OwnerA);
+        dueAfter.Should().BeEmpty();
+
+        // Idempotent: recording again is a no-op, not a duplicate event.
+        var secondRecord = await _service.RecordProductionElevationExpiryAsync(requestResult.Value.Id, OwnerA);
+        secondRecord.IsSuccess.Should().BeTrue();
     }
 }

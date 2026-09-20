@@ -41,10 +41,10 @@ public sealed class ErrorHandlingTests : IClassFixture<TestWebApplicationFactory
         var response = await _client.GetAsync("/api/v1/namespaces/" + Guid.NewGuid());
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        
+
         var problemDetails = await response.Content.ReadFromJsonAsync<JsonDocument>();
         problemDetails.Should().NotBeNull();
-        
+
         var root = problemDetails!.RootElement;
         root.TryGetProperty("type", out _).Should().BeTrue();
         root.TryGetProperty("title", out _).Should().BeTrue();

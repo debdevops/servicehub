@@ -206,6 +206,115 @@ class LoadExportTests(unittest.TestCase):
             os.unlink(path)
 
 
+def make_archive(epoch_number, events):
+    """Builds a well-formed epoch-archive document (roadmap next-chapter M5.2) around a fixture
+    chain from make_chain(), matching exactly what RecoveryEpochArchiveService writes."""
+    return {
+        "ownerId": OWNER_ID,
+        "epochNumber": epoch_number,
+        "startSeq": events[0]["seq"],
+        "startPrevHash": events[0]["prevHash"],
+        "endSeq": events[-1]["seq"],
+        "terminalHash": events[-1]["entryHash"],
+        "sealedAtUtc": "2026-09-06T00:00:00.0000000+00:00",
+        "events": events,
+    }
+
+
+class ArchiveChainTests(unittest.TestCase):
+    def _write_archive(self, directory, epoch_number, events):
+        path = os.path.join(directory, f"epoch-{epoch_number:06d}.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(make_archive(epoch_number, events), f)
+        return path
+
+    def test_single_valid_archive_verifies_alone(self):
+        events = make_chain(3)
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_archive(tmp, 1, events)
+            findings, last_archive = verifier.verify_archive_chain(tmp)
+            self.assertEqual(findings, [])
+            self.assertEqual(last_archive["endSeq"], events[-1]["seq"])
+
+    def test_two_archives_chain_correctly(self):
+        epoch1_events = make_chain(3, start_seq=1)
+        epoch2_events = make_chain(2, start_seq=epoch1_events[-1]["seq"] + 1)
+        epoch2_events[0]["prevHash"] = epoch1_events[-1]["entryHash"]
+        epoch2_events[0]["entryHash"] = verifier.compute_entry_hash(epoch2_events[0])
+        # Re-chain the rest of epoch 2 from the corrected first event.
+        prev_hash = epoch2_events[0]["entryHash"]
+        for evt in epoch2_events[1:]:
+            evt["prevHash"] = prev_hash
+            evt["entryHash"] = verifier.compute_entry_hash(evt)
+            prev_hash = evt["entryHash"]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_archive(tmp, 1, epoch1_events)
+            self._write_archive(tmp, 2, epoch2_events)
+            findings, last_archive = verifier.verify_archive_chain(tmp)
+            self.assertEqual(findings, [])
+            self.assertEqual(last_archive["endSeq"], epoch2_events[-1]["seq"])
+
+    def test_broken_link_between_archives_is_detected(self):
+        epoch1_events = make_chain(3, start_seq=1)
+        epoch2_events = make_chain(2, start_seq=epoch1_events[-1]["seq"] + 1)
+        # Deliberately leave epoch2's startPrevHash NOT matching epoch1's terminal hash.
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_archive(tmp, 1, epoch1_events)
+            self._write_archive(tmp, 2, epoch2_events)
+            findings, _ = verifier.verify_archive_chain(tmp)
+            self.assertTrue(any("do not chain to each other" in f for f in findings))
+
+    def test_no_archive_files_is_a_finding_not_a_crash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            findings, last_archive = verifier.verify_archive_chain(tmp)
+            self.assertTrue(any("No epoch-*.json archive files found" in f for f in findings))
+            self.assertIsNone(last_archive)
+
+    def test_cli_follows_archive_into_live_export(self):
+        epoch1_events = make_chain(3, start_seq=1)
+        live_events = make_chain(2, start_seq=epoch1_events[-1]["seq"] + 1)
+        live_events[0]["prevHash"] = epoch1_events[-1]["entryHash"]
+        live_events[0]["entryHash"] = verifier.compute_entry_hash(live_events[0])
+        prev_hash = live_events[0]["entryHash"]
+        for evt in live_events[1:]:
+            evt["prevHash"] = prev_hash
+            evt["entryHash"] = verifier.compute_entry_hash(evt)
+            prev_hash = evt["entryHash"]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_archive(tmp, 1, epoch1_events)
+            live_path = os.path.join(tmp, "events.json")
+            with open(live_path, "w", encoding="utf-8") as f:
+                json.dump(live_events, f)
+
+            old_argv = sys.argv
+            sys.argv = ["verify-recovery-chain.py", live_path, "--archive-dir", tmp]
+            try:
+                self.assertEqual(verifier.main(), 0)
+            finally:
+                sys.argv = old_argv
+
+    def test_cli_detects_live_export_not_continuing_from_archive(self):
+        epoch1_events = make_chain(3, start_seq=1)
+        # Live export starts fresh at Seq 1 again instead of continuing from the archive.
+        live_events = make_chain(2, start_seq=1)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self._write_archive(tmp, 1, epoch1_events)
+            live_path = os.path.join(tmp, "events.json")
+            with open(live_path, "w", encoding="utf-8") as f:
+                json.dump(live_events, f)
+
+            old_argv = sys.argv
+            sys.argv = ["verify-recovery-chain.py", live_path, "--archive-dir", tmp]
+            try:
+                self.assertEqual(verifier.main(), 1)
+            finally:
+                sys.argv = old_argv
+
+
 class MainCliTests(unittest.TestCase):
     def _run_main(self, path):
         old_argv = sys.argv

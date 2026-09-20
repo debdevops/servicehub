@@ -1,5 +1,339 @@
 # ServiceHub Changelog
 
+## [4.0.0] — 2026-09-20
+
+Everything in this file's "Unreleased" section (through the 2026-09-11 Home/Quick Access/
+Autonomous ServiceHub redesign) plus a governance privilege-escalation fix, two incident-workspace
+correctness fixes, and a namespace-allow-list tenant-isolation fix (all four found and fixed
+during pre-release audits after the 2026-09-06 entry below was first written) ship together as
+this one 4.0.0 release — nothing here is separately "unreleased."
+
+### Added — navigation and Home redesign (2026-09-11)
+
+- **Home redesign: a three-level operational front door, one cloud at a time.** Home no longer
+  blends Azure/AWS/GCP into one cross-cloud dashboard. A cloud picker (Level 0, skipped when only
+  one provider is connected) leads into each cloud's own **Cloud Home** (Level 1 — KPI tiles,
+  this provider's namespace list, a ranked "needs attention" queue scored *within* that provider
+  rather than a client-side filter of the fleet-wide top-3, recent DLQ activity, and
+  capability-gated Quick Actions), which drills into a **Namespace Home** (Level 2 — one
+  namespace's own KPIs, a real 7-day DLQ trend chart, top failure signatures, recent DLQ
+  messages, recent Audit Trail activity, and an honest "Provider limitations" panel sourced
+  directly from `ProviderCapabilities`). The attention-queue and outcome-metrics APIs gained an
+  optional `provider` filter that scores and caps within that provider's own namespaces, rather
+  than post-hoc filtering a global top-3 that could otherwise go empty for a cloud with real,
+  unranked problems. Every level is URL-driven (`?cloud=`, `?namespace=`), so ServiceHub's
+  in-app Back/Forward and a browser refresh both preserve context, and a namespace id from the
+  wrong provider silently falls back to that cloud's Home rather than ever rendering under the
+  wrong heading.
+- **Quick Access regrouped around the operator's loop.** *Overview → Observe → Recover →
+  Autonomous ServiceHub → Platform → Support*. The four autonomy pillars — Autonomy Control
+  Center, Recovery Evidence, Playbook Ledger, Governance — now form their own section, led by the
+  Autonomy Control Center (marked *Start here*, and one of the Icon Rail's five shortcuts in place
+  of Recovery Evidence). **Audit Trail moved to Platform**: it is the accountability record for
+  every action in the product, not part of the autonomy model. Nothing was removed — every
+  destination is still reachable in Quick Access and the command palette.
+- **Autonomous ServiceHub redesign.** The four pillar pages share one visual language (header,
+  stat tiles, filters, list + detail panel) and each answers one question:
+  - **Autonomy Control Center** (`/autonomy`, renamed from *Autonomy*) — outcome tiles, the current
+    level on the real L0–L5 ladder with a *Why this level?* composed from live facts (emergency
+    stop, tripped circuit breakers, provider caps, the evidence bar), safety guardrails, the
+    failure lifecycle tagged Automatic/Human, provider boundaries (an unreported capability shows
+    "Not reported", never "Yes"), pillar summaries, recent autonomy activity linking to the Audit
+    Trail, and next steps. Still no global switch and no way to set a level.
+  - **Recovery Evidence** — headline outcomes with a *verified* recovery rate that never counts
+    unverified messages either way, an on-demand hash-chain check, search and filters, a per-row
+    outcome derived from ledger entries (or "See details" when not all entries are loaded), and a
+    side panel telling each recovery's Detect → Diagnose → Propose → Approve → Execute → Verify
+    story from recorded facts only, with export. Selection is URL-driven (`?op=`).
+  - **Playbook Ledger** — the learning loop with live counts, pillars phrased as questions,
+    plain-language proposal titles instead of raw proposal types, and a detail panel stating what
+    approving that specific proposal does (and doesn't) do. Deep links: `?pillar=`,
+    `?state=awaiting`, `?entry=`.
+  - **Governance** — "Governance does not grant autonomy" up front; people & access grouped by
+    identity with a Can/Cannot breakdown mirroring server enforcement; a role × action matrix;
+    revoke now asks for confirmation; the first grant warns it will switch Governance on; a
+    non-Admin sees their role and the matrix instead of an error.
+
+### Fixed — pre-release audit findings (2026-09-19/20)
+
+- **Governance: a revoked grant could silently restore fleet-wide Admin access.** Revoking an
+  identity's only Governance grant reset its "own grants" count to zero, which made the access
+  evaluator treat it as never-differentiated and fall back to the coarse owner-level grandfather
+  grant again — turning "access revoked" into "access restored, and now unrestricted." Live-
+  reproduced: a Viewer-scoped key, after its grant was revoked, successfully created a new
+  fleet-wide Admin grant for an arbitrary identity. Fixed by tracking grant history (active or
+  revoked), not just current active count, so an identity that was ever individually
+  differentiated never falls back to the owner-level grant again.
+- **Governance: an owner could still lock itself out of Governance after the 2026-09-19 seeder
+  fix.** That fix seeded a grandfather Admin grant per distinct owner rather than only the first
+  owner ever — but its idempotency check still keyed on "does this owner have *any* Governance
+  grant row," not specifically a grant naming the owner itself. An owner who granted someone else
+  access while still in the bootstrap-bypass window (before ever receiving a grant of its own)
+  was treated as already-seeded and skipped forever, permanently locking itself out the moment
+  Governance activated for its partition. Fixed to check specifically for a self-grant.
+- **Security: namespace-restricted API keys could read data outside their allow-list.** An API
+  key configured with a namespace allow-list (a subset of its owner's namespaces) was correctly
+  enforced on per-namespace detail endpoints, but nine fleet-wide/aggregate read endpoints (DLQ
+  History, Audit Trail, Fleet Overview, Attention Queue, DLQ Overview, Bulk Operations job list,
+  Failure Intelligence Center, and single-record lookups on Anomalies/Backlog Forecasts) only
+  filtered by owner, never by the allow-list — letting a namespace-restricted credential read
+  every namespace its owner has, defeating the restriction. Fixed by threading the allow-list into
+  every affected query.
+- **Dashboard: the fleet-wide DLQ spike count and hot-spot list disagreed with individual
+  namespace cards.** The 2026-09-19 fix that made a namespace card's "Healthy" banner agree with
+  its D/F health-grade badge (ratio-based, not just an absolute DLQ count) was applied only to the
+  per-card computation — the fleet-wide spike count and hot-spot list kept using the old
+  absolute-count-only rule, so a card could show "needs attention" while the fleet summary and
+  hot-spot list omitted it. Fixed by extracting one shared `isDlqSpike` rule used everywhere a
+  namespace is judged to be spiking.
+- **Docs: a broken self-referencing link in the Complete Guide, and a stale test fixture** missing
+  a required field, both found during this audit's mechanical link/typecheck sweep — neither
+  affected production code.
+
+### The initial 4.0.0 baseline (originally written 2026-09-06)
+
+Everything since v3.7.0: the four-pillar autonomy loop (Observe → Investigate → Correlate →
+Recover → Prove → Learn → Prevent), the persistence and security work that made its evidence
+durable, incident-centric navigation, per-identity governance, an optional local reasoning
+companion, and the next chapter that addressed the autonomy target's three remaining qualifiers —
+evidence parity across all four pillars, production access earned the same way autonomy was, and
+the multi-cloud trust-root asymmetry (design and code complete; not yet exercised against a real
+deployed AWS/GCP observer — see below) — plus the operator-facing value and longevity work (outcome
+measurement, a smaller top-level nav, epoch sealing, and configuration as code). The headline is
+not a feature — it is that the top of the autonomy ladder stopped being a design claim: an L3→L4
+promotion, an unattended autonomous replay, an L4→L3 demotion and a circuit-breaker trip have each
+now been observed end to end against real Azure Service Bus traffic, with independently verifiable
+evidence exports — and that a v3.7 deployment can now upgrade in place into all of it with its
+hash chain intact, proven in CI rather than asserted.
+
+### Added — the next chapter (evidence parity, production, multi-cloud, value, longevity)
+
+- **Durable evidence for all four pillars, not just Recover.** `Anomaly`, `DriftFinding`,
+  `CorrelationFinding`, `Narration`, `BacklogForecast` and `ExternalSignalCorrelation` — previously
+  six process-local, 24-hour-TTL caches that lost every finding on restart — now persist to SQLite,
+  owner-partitioned, with a configurable retention sweep that never prunes a finding a Playbook
+  Ledger proposal still cites. A new owner-wide `GET /api/v1/playbook/export` and
+  `scripts/verify-playbook-chain.py` let an auditor resolve every cited finding from the export
+  alone, and fail loudly on a dangling citation. `NamespaceSignatures` also gained a `HashKind`
+  discriminator, splitting the trust-fingerprint and cluster-hash vocabularies that previously
+  shared one column with occurrence counts split between them — the pinned fingerprint-identity
+  regression every `AutonomyGrant` depends on stays unmodified and still passes.
+- **Production, earned the same way autonomy was.** A namespace can now be registered as `Prod` —
+  Investigate/Correlate/Prevent run against it fully. Every recovery verb still denies it unless a
+  time-boxed `ProductionElevation` is live: a stated reason, an absolute expiry, and dual control
+  (the requester and approver must be distinct identities; self-approval is refused outright,
+  independent of any role check). Autonomy stays hard-ceilinged at L0/L1 in production under every
+  configuration — no `AutonomyGrant` is ever issued against a Prod namespace, and a pre-existing
+  grant is demoted back to the floor the moment a signature resolves to one.
+- **The multi-cloud trust-root asymmetry, addressed — not yet proven live.** An operator-provisioned,
+  push-based DLQ observer (Terraform modules for AWS Lambda+DynamoDB and GCP Cloud Function+Firestore)
+  is designed to attest DLQ absence for providers that cannot offer repeatable peek — a *different*
+  trust root, not a relaxed one — letting a signature reach Standing (L4) there the same way
+  Azure's provider-native peek does. The attestation path, its failure mode (a stale or missing
+  observer reads `false`, never "assume fine"), and the Terraform modules are code-complete and
+  `terraform validate`-clean, but **no observer has been deployed against a real AWS/GCP account and
+  no signature has actually reached L4/L5 through this path** — see
+  `docs/PROVIDER-CONFORMANCE.md#the-canprovedlqabsence-trust-root-m33`. AWS and GCP remain capped at
+  Approve (L3) in every build run to date. `docs/PROVIDER-CONFORMANCE.md` and
+  `scripts/conformance-suite.py` now name which trust root — provider-native or operator-attested —
+  each capability assertion actually rests on.
+- **Outcome measurement.** `GET /api/v1/recovery/outcomes` and a "This week" strip on Home report
+  what the fleet actually achieved — messages recovered, messages written off, median time to a
+  verified recovery, recoveries that needed no human approval, and gate refusals that stopped a bad
+  replay before any provider was contacted. Every figure is a count or duration traced directly to a
+  `RecoveryLedgerEntry`/`RecoveryEvent` row — never modelled, estimated, or extrapolated.
+- **A smaller top-level nav.** The Icon Rail — previously 23 always-visible icons — now shows the
+  five busiest destinations (Home, Incident Center, Namespace Overview, Approval Queue, Recovery
+  Evidence) plus a More button that opens the command palette. Nothing was removed: Quick Access
+  keeps its full grouped list and the command palette still reaches every destination.
+- **Epoch sealing.** `POST /api/v1/recovery/epochs/seal` closes an owner's current Recovery Evidence
+  Ledger epoch, archives every prior event to an independently-reverified file on disk, and prunes
+  those rows from the live table — bounding its growth for multi-year operation without weakening
+  tamper-evidence, since every pruned row's content survives, byte for byte, in the archive first.
+  `scripts/verify-recovery-chain.py --archive-dir` follows the anchor from a sealed history into the
+  live export, and a sealed epoch verifies from its archive file alone.
+- **Configuration as code.** `GET`/`POST /api/v1/governance/configuration/{export,import}`
+  round-trip `AutoReplayRule`s and active `GovernanceGrant`s as a JSON file meant for git and a pull
+  request — additive/upsert only, nothing is ever deleted by an import. Deliberately excludes a
+  namespace's connection string (a credential, never configuration) and `PreventionRule` (a
+  hash-chained Playbook Ledger claim, not configuration — importing one would fabricate evidence).
+- **A CI-proven upgrade path.** A new test stands up a database at the exact migration that shipped
+  in v3.7.0, seeds a real hash-chained ledger against that old schema, migrates it all the way to
+  HEAD, and asserts no data was lost and the chain still verifies — the gap between the released
+  product and the real one no longer includes an untested upgrade.
+
+### Added
+
+- **The four-pillar loop.** Investigate gained deterministic anomaly detection (replacing a
+  non-functional stub), template narration and unprompted push over the existing webhook/SSE
+  infrastructure. Correlate gained same-provider and cross-cloud proactive correlation,
+  external-signal (deploy/config-change) correlation, and a correlation-accountability report.
+  Prevent gained message-shape baselining, drift detection, a producer-facing contract-violation
+  export, predictive backlog-breach forecasting, and `PreventionRule` — deliberately `ObserveOnly`,
+  the only legal action value, validated server-side on every write.
+- **Playbook Ledger** — a pillar-agnostic, hash-chained, append-only record of every proposal any
+  pillar makes and the human disposition attached to it, with its own verifier endpoint, expiry
+  sweep, and counterfactual backtesting. Recover-side `ReplayPlan` proposals join it on the
+  signature hash, so a proposal's track record is measured per failure signature rather than per
+  entity.
+- **Approval Queue** for rule-escalated replay matches, and a **fleet-wide autonomy dashboard**
+  reporting how autonomous the system actually is, read from the ledgers rather than asserted.
+- **Incident-centric product surface** — an `Incident` read-model projected over existing signature,
+  recovery, anomaly and approval data (no new store); Home as a ranked attention queue; an Incident
+  workspace with Summary / Evidence / Recommended Recovery / Activity at one durable URL; and a
+  single navigation definition consumed by the icon rail, quick-access panel, command palette and
+  workspace toolbar, replacing three hand-maintained copies that had silently drifted apart.
+- **Governance/RBAC enforcement** over the grant schema — Viewer / Operator / Approver / Admin,
+  optionally scoped per namespace and per pillar, evaluated ahead of the explicit-intent gate on
+  every mutating endpoint including bulk and signature-replay job cancellation.
+- **Rehearsal mode** — `POST /api/v1/recovery/entries/{id}/rehearse` runs the six-predicate
+  eligibility gate against an entry's recorded state and reports what it *would* decide and why.
+  The service depends on nothing capable of reaching a broker, so it cannot mutate by construction
+  rather than by configuration.
+- **Configurable recovery observation window** with a hard production floor enforced at startup,
+  the applied value written into the ledger's own `ObservationWindowOpened` event so a shortened
+  window is visible to any auditor forever, and a loud warning outside Development. The previous
+  hardcoded 24-hour constant made autonomy promotion unobservable in any bounded run.
+- **Encryption key rotation** — an `ENC[v2:kid=…]` envelope with the key id bound as AAD, a key
+  registry, and lazy re-encrypt-on-write, so rotating the key no longer renders stored cloud
+  credentials permanently undecryptable. Runbook in `docs/ENCRYPTION-KEY-ROTATION.md`.
+- **SQLite hardening, backup and restore** — WAL, busy-timeout and retry wrapper, a database
+  observability health check, on-demand and scheduled encrypted backup, and a CI test that seeds a
+  real hash-chained ledger, backs it up, restores it into a clean location and re-verifies the chain
+  with a service instance that never saw the original file.
+- **Single-instance invariant enforcement** — an exclusive OS lock on the data directory. The
+  recovery hash chain is sequenced by an in-process semaphore, so a second writer would corrupt it
+  silently; a second instance now fails fast and names that reason.
+- **Reasoning companion (`services/agent`)** — optional, disabled by default, local Ollama only,
+  never an external or cloud LLM API. It reads payload-free evidence (counts, lifecycle state,
+  normalised terms — never a message body) and writes observations into the Playbook Ledger for a
+  human to dispose of. `AIBoundaryArchitectureTests` enforces by IL scan that reasoning-adjacent
+  code can call `IPlaybookLedger.ProposeAsync` and nothing else — no ledger mutation, no broker, not
+  even the disposition methods. Its proposals are badged distinctly in the UI so an AI suggestion is
+  never mistaken for a deterministic finding.
+- **Provider conformance suite** (`scripts/conformance-suite.py`) — the same capability assertions
+  the unit tests make against mocks, run against live Azure/AWS/GCP, including the negative cases
+  (an unsupported operation must be rejected with the documented error, not silently ignored).
+- **Rehearsal in the UI** — the recovery operation's entry table now carries a **Rehearse** action
+  that asks the Eligibility Gate what it would decide about that entry right now and shows the
+  verdict, the actor kind it was evaluated as, and the reason in plain language rather than as a
+  reason code. Offered on closed entries too, because "would this be allowed today" is exactly the
+  question you ask about something that already happened. The panel states that nothing was executed
+  and nothing was written to either ledger, and the service behind the endpoint still depends on
+  nothing capable of reaching a broker. In Demo Mode it declines rather than inventing a verdict.
+
+### Changed
+
+- **The SQLite storage requirement is now documented, not implied.** The data directory must be
+  local block storage; SMB (Azure Files) and NFS (AWS EFS) are unsupported, because WAL mode needs
+  a memory-mapped `-shm` file and both SQLite's locking and the `.instance.lock` single-writer guard
+  rely on POSIX advisory locks that network mounts do not reliably honour. The Azure App Service and
+  Container Apps recipes previously pointed at an Azure Files share without saying so; they now name
+  the constraint, give the two workable alternatives, and say how to confirm the result
+  (`/health/ready` must report `"JournalMode": "wal"`). Recorded as a consequence in
+  [ADR-0003](docs/adr/0003-single-instance-sqlite.md); no code change — the health check already
+  degraded on a non-WAL journal mode, and the instance lock already existed.
+- **`llms.txt` no longer describes AWS and GCP as Preview** — it had not been updated when the
+  labels changed, so the file AI search assistants read was contradicting the README. It now also
+  indexes the Complete Service Guide, provider conformance, self-hosting, backup/restore and the
+  ADR catalogue, which had accumulated since it was written.
+- **AWS SQS and GCP Pub/Sub moved from Preview to Supported.** The label follows published evidence,
+  not the other way round: 20 passed / 0 failed / 0 skipped across all three providers, recorded in
+  `docs/PROVIDER-CONFORMANCE.md`. Capability differences remain real and remain enforced.
+- **The evidence ledger now persists by default.** `docker-compose.yml`'s primary service mounts the
+  named `servicehub-data` volume, the data path is visible in the UI and the health check, and
+  scheduled backup is on by default in the production configuration. Previously the ledger lived in
+  the container's writable layer and `docker compose down` destroyed it.
+- **The Autonomy page tells the truth about the reasoning companion.** It carried a hardcoded
+  "Future AI reasoning — Not available yet" card that stayed there after the companion shipped and
+  started writing real proposals. The card is now driven by the ledger — it counts entries the
+  reasoning companion actually authored — so it reads "Not enabled" when there are none and shows
+  the real count when there are. The Advanced ServiceHub page's matching section, which still called
+  the companion "the one item left on the entire roadmap", was rewritten to what is now true.
+- **Replay screens propose before they act** — scope, sample, risk, policy and stop condition are
+  stated before approval, and post-execution status reports verification honestly rather than
+  "request sent". The eligibility gate's reason codes are rendered as plain language backed by the
+  signature's real trust evidence ("8 of 10 verified recoveries succeeded"), not as reason-code
+  strings.
+
+### Fixed
+
+- **A Viewer credential could replay a real message — twice, by two different root causes.** The
+  seeded fleet-wide Admin grant for an owner was topping up a per-identity Viewer-only grant, so
+  per-identity restriction never restricted anything; and a governance grant submitted with a bare
+  API-key name was not normalised to the identity the evaluator matches on. Both fixed and
+  live-verified; the denial path now has a CI test.
+- **Failure-signature identity was unstable.** The cluster signature hashed a raw mean delivery
+  count, so a signature's identity silently changed every time that mean crossed an integer
+  boundary — orphaning its lifecycle status, operator notes and occurrence history. Delivery count
+  is now bucketed through one shared helper used by both producers.
+- **Every incident's "open full signature investigation" link was dead.** Incidents key on the trust
+  fingerprint; the signature endpoint keys on the cluster hash; the two vocabularies can never
+  collide, so the page always fell through to a historical-record view that reported 0% of the DLQ
+  and disabled replay — on a signature that was 46% of that namespace's live dead-letter queue. The
+  endpoint now re-resolves an unmatched hash onto its live cluster on a single unambiguous match.
+- **Azure list endpoints fabricated entity properties.** The queue/topic/subscription list path fell
+  back to the Azure SDK's own defaults whenever runtime properties were absent — which is always, on
+  that path — reporting plausible, indistinguishable-from-real values including `maxDeliveryCount`.
+  Now returns explicit "not fetched" sentinels, matching what AWS/GCP already did.
+- **AWS replay and purge failed intermittently on a deep dead-letter backlog.** The message scan used
+  a fixed 20-round ceiling, and SQS samples a randomised subset of backend hosts per call. The scan
+  budget now scales with approximate queue depth, with an early exit when rounds stop surfacing
+  anything new.
+- **Scheduled sends were silently ignored on AWS/GCP** — only the listing endpoint checked the
+  capability, not the send paths.
+- **Health readiness was coupled to external broker availability**, so one unreachable namespace
+  could take a container down in an orchestrator.
+- Numerous smaller correctness fixes across DLQ reconciliation, GCP peek safety, scheduled-message
+  timezones, ledger fingerprint stamping on single-message and signature replay, and Quick Access
+  context.
+
+### Security
+
+- **The success-rate circuit breaker can no longer be configured off in production.**
+  `RecoveryEvidence:CircuitBreakerSuccessRateFloor` was clamped to `[0.0, 1.0]`, and `0.0` disabled
+  the breaker outright — a verified success rate is always at least zero — while every log line and
+  dashboard continued to describe it as active. Production now enforces a minimum floor at startup
+  and fails with a message naming the key; a lower floor stays legitimate elsewhere, since a soak
+  run deliberately driving a rule to 0% needs the breaker to fire rather than be tuned away. A
+  non-default floor logs a loud startup warning outside Development, and **the floor actually in
+  force is now recorded on every trip** — in the ledger event, in the operation's reason string, and
+  on the platform-event payload — so an auditor can see the threshold instead of assuming it.
+- **The SPA token is no longer accepted as production authentication.** It is CSRF mitigation — as
+  its own class documentation always said — and a public deployment could previously pass startup
+  validation and be fully operable, replay and purge included, by anyone who could load the page.
+  Startup now fails and names the three real options.
+- Encryption key rotation (above) closes the "rotating the key loses every stored credential" hole.
+- Auto-replay rule evaluation is scoped to the rule owner, and rule-driven replay carries distinct
+  actor provenance (`AutoRule | Automation | Rule:N@…`) from human action in the evidence ledger.
+
+### Evidence
+
+- `docs-private/w1.3-soak-run-2026-09-03/` and `-2026-09-04/` — five `format=package` evidence
+  exports covering the first-ever L3→L4 promotion, one unattended autonomous replay, a second
+  promotion, the first L4→L3 demotion and a circuit-breaker trip, all against real Azure Service Bus
+  traffic. Each re-verified `PASS` by `scripts/verify-recovery-chain.py`, which uses only the Python
+  standard library, never imports ServiceHub code and never contacts a running server. A deliberate
+  single-field tamper was confirmed to fail verification.
+- `docs/PROVIDER-CONFORMANCE.md` — the live provider conformance run behind the Supported label.
+- `docs-private/prevent-drift-observation-2026-09-05/` — the Prevent pillar's first live findings:
+  two real `DriftFinding`s (schema-shape and payload-format, both severity 100) produced by the
+  running service over real accumulated campaign traffic, plus the producer-facing
+  contract-violation export built from the same window. Read-only: no broker contacted, no message
+  sent, no ledger row written.
+- `docs-private/w1.3-soak-run-2026-09-05-l5/` — the first-ever **L4→L5 promotion**, observed against
+  a fresh Azure queue: 30 verified `Recovered` outcomes at a 100% success rate, `Unattended (L5)`
+  reached at 2026-09-05T17:33:52Z. Three per-operation exports, each independently re-verified
+  `PASS` by `scripts/verify-recovery-chain.py`.
+- **Still not observed:** the drift worker's automatic Playbook proposal (drift *detection* is
+  observed above; the worker hop that turns a finding into a human-dispositionable `DriftFinding`
+  proposal has not been witnessed live). Root-caused 2026-09-05:
+  `DlqMonitor:AllowDestructivePeek` defaults to `false` for AWS/GCP, so the background scan that is
+  the sole writer of the `MessageFeatureRecords` this worker reads never runs for those providers
+  without it — no volume of fresh traffic can close this without that override, and a live attempt
+  to set it was correctly refused by the session's own safety sandbox. See
+  `docs-private/prevent-drift-worker-proposal-2026-09-05/RESULTS.md`.
+
 ## [3.7.0] — 2026-08-19
 
 Recovery Evidence Ledger — the headline v3.7.0 feature. ServiceHub's replay/purge decisions were

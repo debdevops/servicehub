@@ -47,6 +47,8 @@ public sealed class PlatformEventStreamBroker
         EventTypes.RuleMatched,
         EventTypes.AutoReplayRuleCircuitBreakerTripped,
         EventTypes.BulkOperationCompleted,
+        EventTypes.AutonomyGrantTransitioned,
+        EventTypes.InsightDetected,
     };
 
     private readonly ConcurrentDictionary<Guid, Connection> _connections = new();

@@ -1,5 +1,9 @@
 # Security Policy
 
+**ServiceHub** is a self-hosted, open-source forensic debugger for cloud message queues (Azure
+Service Bus, AWS SQS/SNS, GCP Pub/Sub). This policy covers how to report a vulnerability, what
+automated scanning runs on this repository, and ServiceHub's threat model.
+
 ## Reporting a Vulnerability
 
 Please **do not** file a public GitHub issue for security vulnerabilities.
@@ -85,14 +89,17 @@ ServiceHub does NOT defend against:
 
 ## Key rotation and credential backup
 
-**Encryption key rotation is not currently supported.** Rotating the `Security:EncryptionKey`
-environment variable will render all stored connection strings unreadable, making it impossible
-to reconnect to any namespace until you restore the previous key or re-add the connections manually.
+**Encryption key rotation is supported** via a multi-key registry
+(`Security:EncryptionKeyRegistry`) — see
+[`docs/ENCRYPTION-KEY-ROTATION.md`](docs/ENCRYPTION-KEY-ROTATION.md) for the full configuration and
+rotation procedure, including the compromise-response workflow. A single-key deployment (the
+default, `Security:EncryptionKey` with no registry configured) does not need to do anything; only
+rotating the plain `Security:EncryptionKey` value directly, without configuring the registry first,
+renders existing stored connection strings unreadable — always migrate to the registry (which
+carries your existing key forward as `legacy-v1`) before introducing a new key.
 
-Do not attempt key rotation in production. Treat the encryption key as a critical secret: back it
-up securely and store it in a secrets manager (Azure Key Vault, Hashicorp Vault, etc.) outside
-the deployment host.
-
-Key rotation is not currently supported and is not on a committed release timeline. If this
-blocks your deployment, [open a feature request](https://github.com/debdevops/servicehub/issues/new)
-describing your use case.
+Treat every encryption key as a critical secret: back it up securely and store it in a secrets
+manager (Azure Key Vault, Hashicorp Vault, etc.) outside the deployment host. Automated bulk
+re-encryption after a suspected key compromise is not yet built — see
+[`docs/ENCRYPTION-KEY-ROTATION.md` §5](docs/ENCRYPTION-KEY-ROTATION.md#5-compromise-response--what-exists-today-and-what-doesnt)
+for the current, operator-driven remediation path.

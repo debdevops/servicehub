@@ -9,14 +9,14 @@ interface HeadersTabProps {
   headers: Record<string, string>;
 }
 
-function HeaderRow({ 
-  name, 
-  value, 
-  isEven 
-}: { 
-  name: string; 
-  value: string; 
-  isEven: boolean 
+function HeaderRow({
+  name,
+  value,
+  isEven
+}: {
+  name: string;
+  value: string;
+  isEven: boolean
 }) {
   const [copied, setCopied] = useState(false);
 

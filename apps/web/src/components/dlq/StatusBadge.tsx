@@ -37,12 +37,30 @@ const categoryStyles: Record<string, { bg: string; text: string }> = {
   Unknown: { bg: 'bg-gray-100', text: 'text-gray-600' },
 };
 
+// Used for both a dead-lettered message's own status and a signature/incident's lifecycle
+// status — the explanations below are written to hold for either context.
+const STATUS_EXPLANATIONS: Record<string, string> = {
+  Active: 'Still occurring, or not yet acted on.',
+  Replayed: 'Resent to the original queue or topic for reprocessing.',
+  Archived: 'Kept for history only — not currently being acted on.',
+  Discarded: 'Deleted outright, not replayed.',
+  ReplayFailed: "A replay attempt didn't stick.",
+  Resolved: 'Fixed and confirmed.',
+  Suppressed: 'Manually muted so it stops surfacing, even though it may still be occurring.',
+  Reopened: 'Was resolved, then happened again.',
+  Replaying: 'In progress — a worker is replaying this right now.',
+  Purging: 'In progress — a worker is deleting this right now.',
+};
+
 export function StatusBadge({ status, size = 'sm' }: StatusBadgeProps) {
   const style = statusStyles[status] || statusStyles.Active;
   const sizeClass = size === 'md' ? 'px-3 py-1 text-sm' : 'px-2 py-0.5 text-xs';
 
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full font-medium ${style.bg} ${style.text} ${sizeClass}`}>
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full font-medium ${style.bg} ${style.text} ${sizeClass}`}
+      title={STATUS_EXPLANATIONS[status]}
+    >
       <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
       {status}
     </span>
@@ -77,12 +95,18 @@ interface TrendBadgeProps {
   size?: 'sm' | 'md';
 }
 
+const TREND_EXPLANATIONS: Record<string, string> = {
+  New: 'First time this pattern has been seen.',
+  Recurring: 'Has reappeared before.',
+  Escalating: 'Happening more often, or affecting more messages, than before.',
+};
+
 export function TrendBadge({ trend, size = 'sm' }: TrendBadgeProps) {
   const style = trendStyles[trend] || trendStyles.Recurring;
   const sizeClass = size === 'md' ? 'px-3 py-1 text-sm' : 'px-2 py-0.5 text-xs';
 
   return (
-    <span className={`inline-flex items-center rounded-full font-medium ${style.bg} ${style.text} ${sizeClass}`}>
+    <span className={`inline-flex items-center rounded-full font-medium ${style.bg} ${style.text} ${sizeClass}`} title={TREND_EXPLANATIONS[trend]}>
       {trend}
     </span>
   );

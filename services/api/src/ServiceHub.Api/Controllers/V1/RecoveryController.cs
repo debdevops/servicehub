@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Filters;
 using ServiceHub.Api.Security;
@@ -35,16 +36,34 @@ public sealed class RecoveryController : ApiControllerBase
     private readonly IRecoveryLedger _recoveryLedger;
     private readonly IRecoveryEvidenceExporter _evidenceExporter;
     private readonly IRecoveryTrustScoringService _trustScoring;
+    private readonly IApprovalQueueService _approvalQueue;
+    private readonly IAutonomyDashboardService _autonomyDashboard;
+    private readonly IOutcomeMetricsService _outcomeMetrics;
+    private readonly IGovernanceAccessEvaluator _governanceAccessEvaluator;
+    private readonly IRecoveryRehearsalService _rehearsalService;
+    private readonly IRecoveryEpochArchiveService _epochArchiveService;
 
     /// <summary>Initializes a new instance of the <see cref="RecoveryController"/> class.</summary>
     public RecoveryController(
         IRecoveryLedger recoveryLedger,
         IRecoveryEvidenceExporter evidenceExporter,
-        IRecoveryTrustScoringService trustScoring)
+        IRecoveryTrustScoringService trustScoring,
+        IApprovalQueueService approvalQueue,
+        IAutonomyDashboardService autonomyDashboard,
+        IOutcomeMetricsService outcomeMetrics,
+        IGovernanceAccessEvaluator governanceAccessEvaluator,
+        IRecoveryRehearsalService rehearsalService,
+        IRecoveryEpochArchiveService epochArchiveService)
     {
         _recoveryLedger = recoveryLedger ?? throw new ArgumentNullException(nameof(recoveryLedger));
         _evidenceExporter = evidenceExporter ?? throw new ArgumentNullException(nameof(evidenceExporter));
         _trustScoring = trustScoring ?? throw new ArgumentNullException(nameof(trustScoring));
+        _approvalQueue = approvalQueue ?? throw new ArgumentNullException(nameof(approvalQueue));
+        _autonomyDashboard = autonomyDashboard ?? throw new ArgumentNullException(nameof(autonomyDashboard));
+        _outcomeMetrics = outcomeMetrics ?? throw new ArgumentNullException(nameof(outcomeMetrics));
+        _governanceAccessEvaluator = governanceAccessEvaluator ?? throw new ArgumentNullException(nameof(governanceAccessEvaluator));
+        _rehearsalService = rehearsalService ?? throw new ArgumentNullException(nameof(rehearsalService));
+        _epochArchiveService = epochArchiveService ?? throw new ArgumentNullException(nameof(epochArchiveService));
     }
 
     /// <summary>
@@ -206,25 +225,153 @@ public sealed class RecoveryController : ApiControllerBase
     }
 
     /// <summary>
+    /// Lists the Approval Queue (roadmap §11 item 1): auto-replay rule matches the Eligibility
+    /// Gate escalated for manual review, whose underlying DLQ message is still <c>Active</c>.
+    /// Purely a read — approving an entry is a normal call to the existing
+    /// <c>POST /api/v1/messages/replay</c> endpoint using the fields this response returns; no new
+    /// execution path is introduced.
+    /// </summary>
+    /// <param name="namespaceId">Optional namespace filter.</param>
+    /// <param name="limit">Maximum number of entries to return (1-500, default 100).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [RequireScope(ApiKeyScopes.RecoveryRead)]
+    [HttpGet("approval-queue")]
+    [ProducesResponseType(typeof(IReadOnlyList<ApprovalQueueEntryResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<ApprovalQueueEntryResponse>>> GetApprovalQueue(
+        [FromQuery] Guid? namespaceId = null,
+        [FromQuery] int limit = DefaultLimit,
+        CancellationToken cancellationToken = default)
+    {
+        var entries = await _approvalQueue.GetPendingApprovalsAsync(
+            OwnerId, namespaceId, ClampLimit(limit), cancellationToken);
+
+        return Ok(entries);
+    }
+
+    /// <summary>
+    /// Rehearsal mode (roadmap §7 W1.2): runs the Eligibility Gate against this entry's recorded
+    /// identity — namespace, entity, body hash, signature hash, provider, environment — and
+    /// reports what it would decide right now, evaluated as <paramref name="actorKind"/>. Purely
+    /// a read: <see cref="IRecoveryRehearsalService"/> depends on nothing capable of executing a
+    /// recovery action, so this can never reach a broker regardless of the verdict. Defaults to
+    /// <see cref="RecoveryActorKind.Automation"/> — the actor kind predicate 5 (autonomy lookup)
+    /// actually applies to, and so the most informative default for "would this ever auto-replay."
+    /// </summary>
+    /// <param name="id">The entry to rehearse.</param>
+    /// <param name="actorKind">Which actor kind to evaluate the gate as. Defaults to <see cref="RecoveryActorKind.Automation"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [RequireScope(ApiKeyScopes.RecoveryRead)]
+    [HttpPost("entries/{id:guid}/rehearse")]
+    [ProducesResponseType(typeof(RecoveryRehearsalResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<RecoveryRehearsalResponse>> Rehearse(
+        Guid id,
+        [FromQuery] RecoveryActorKind actorKind = RecoveryActorKind.Automation,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _rehearsalService.RehearseAsync(id, OwnerId, actorKind, cancellationToken);
+        if (result.IsFailure)
+        {
+            return ToActionResult<RecoveryRehearsalResponse>(result.Error);
+        }
+
+        var rehearsal = result.Value;
+        return Ok(new RecoveryRehearsalResponse(
+            EntryId: rehearsal.EntryId,
+            ActorKindEvaluated: rehearsal.ActorKindEvaluated.ToString(),
+            Verdict: rehearsal.Decision.Verdict.ToString(),
+            ReasonCode: rehearsal.Decision.ReasonCode,
+            MatchedCount: rehearsal.Decision.MatchedCount,
+            EvaluatedAt: rehearsal.EvaluatedAt));
+    }
+
+    /// <summary>
+    /// Gets the fleet-wide autonomy dashboard (roadmap §11 item 5, §15 item 9): how many
+    /// signatures currently stand at each autonomy level, per action kind; every currently
+    /// standing <c>AutonomyGrant</c>; every <see cref="Core.Entities.AutoReplayRule"/> the
+    /// success-rate circuit breaker has tripped; the owner-scoped emergency-stop status; and the
+    /// most recent promotions/demotions. Pure read-side aggregation — no new trust computation,
+    /// no schema change.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [RequireScope(ApiKeyScopes.RecoveryRead)]
+    [HttpGet("autonomy-dashboard")]
+    [ProducesResponseType(typeof(AutonomyDashboardOverview), StatusCodes.Status200OK)]
+    public async Task<ActionResult<AutonomyDashboardOverview>> GetAutonomyDashboard(
+        CancellationToken cancellationToken = default)
+    {
+        var overview = await _autonomyDashboard.GetOverviewAsync(OwnerId, cancellationToken);
+        return Ok(overview);
+    }
+
+    /// <summary>
+    /// Gets what the fleet actually achieved over a trailing window (roadmap next-chapter
+    /// M4.1) — messages recovered, messages an operator wrote off, the median time to a
+    /// verified recovery, how many of those recoveries needed no human approval, and how many
+    /// gate refusals stopped a bad replay before any provider was contacted. Every figure is
+    /// computed directly from <see cref="Core.Entities.RecoveryLedgerEntry"/>/
+    /// <see cref="Core.Entities.RecoveryEvent"/> rows already written — never modelled,
+    /// estimated, or extrapolated.
+    /// </summary>
+    /// <param name="days">Trailing window size in days. Defaults to 7, clamped to [1, 90].</param>
+    /// <param name="provider">When set (a cloud-specific Home), scopes every figure to that
+    /// provider's own ledger rows instead of the caller's whole fleet.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [RequireScope(ApiKeyScopes.RecoveryRead)]
+    [HttpGet("outcomes")]
+    [ProducesResponseType(typeof(OutcomeMetricsOverview), StatusCodes.Status200OK)]
+    public async Task<ActionResult<OutcomeMetricsOverview>> GetOutcomes(
+        [FromQuery] int? days = null,
+        [FromQuery] CloudProviderType? provider = null,
+        CancellationToken cancellationToken = default)
+    {
+        var clampedDays = Math.Clamp(days ?? 7, 1, 90);
+        var overview = await _outcomeMetrics.GetOverviewAsync(
+            OwnerId, TimeSpan.FromDays(clampedDays), provider, cancellationToken);
+        return Ok(overview);
+    }
+
+    /// <summary>
     /// Declares a non-terminal recovery ledger entry unrecoverable. Requires a mandatory reason
     /// and the explicit-intent headers, since this is the one way an operator asserts a terminal
-    /// outcome without ServiceHub having observed it.
+    /// outcome without ServiceHub having observed it. Also requires
+    /// <see cref="GovernanceRole.Operator"/> for the entry's own namespace/<see cref="PillarKind.Recover"/>
+    /// scope — the same role every other Recover-pillar mutation (replay, purge, cancel) already
+    /// requires; a write-off is an operator declaring a terminal outcome on live queue state's
+    /// behalf, not a passive ledger annotation. A declarative <see cref="RequireGovernanceRoleAttribute"/>
+    /// can't express this because the namespace lives on the entry, not the route/query string —
+    /// same reason <see cref="PlaybookController"/>'s disposition endpoints evaluate inline.
     /// </summary>
     /// <param name="id">The entry to write off.</param>
     /// <param name="request">The mandatory reason.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <response code="403">Caller's Governance role does not cover Operator for this entry's namespace/Recover pillar.</response>
     /// <response code="428">Missing explicit-intent headers.</response>
     [RequireScope(ApiKeyScopes.RecoveryWrite)]
     [HttpPost("entries/{id:guid}/write-off")]
     [ProducesResponseType(typeof(RecoveryLedgerEntryResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
     public async Task<ActionResult<RecoveryLedgerEntryResponse>> WriteOff(
         Guid id,
         [FromBody] WriteOffRecoveryEntryRequest request,
         CancellationToken cancellationToken = default)
     {
+        var entry = await _recoveryLedger.GetEntryAsync(id, OwnerId, cancellationToken);
+        if (entry is null)
+        {
+            return ToActionResult<RecoveryLedgerEntryResponse>(Error.NotFound(
+                "RecoveryLedger.EntryNotFound", "Recovery ledger entry not found."));
+        }
+
+        var governanceResult = await EvaluateWriteOffGovernanceAsync(entry, cancellationToken);
+        if (governanceResult.IsFailure)
+        {
+            return ToActionResult<RecoveryLedgerEntryResponse>(governanceResult.Error);
+        }
+
         if (!IntentHeaders.HasExplicitIntent(HttpContext, IntentHeaders.IntentWriteOffRecovery))
         {
             return Problem(
@@ -242,6 +389,199 @@ public sealed class RecoveryController : ApiControllerBase
         }
 
         return Ok(MapToResponse(result.Value));
+    }
+
+    /// <summary>
+    /// Requires <see cref="GovernanceRole.Operator"/>, scoped to the entry's own
+    /// <see cref="RecoveryLedgerEntry.NamespaceId"/> and fixed to <see cref="PillarKind.Recover"/> —
+    /// mirrors <c>BulkOperationsController</c>'s <c>EvaluateBulkOperationGovernanceAsync</c>, the
+    /// established role/pillar pairing for every other Recover-pillar mutation.
+    /// </summary>
+    private async Task<Result> EvaluateWriteOffGovernanceAsync(RecoveryLedgerEntry entry, CancellationToken cancellationToken)
+    {
+        var granteeIdentity = ResolveGovernanceGranteeIdentity();
+        return await _governanceAccessEvaluator.EvaluateAsync(
+            OwnerId, granteeIdentity, GovernanceRole.Operator, entry.NamespaceId, PillarKind.Recover, cancellationToken);
+    }
+
+    /// <summary>
+    /// Requests a time-boxed production elevation for one Prod namespace (ADR-0010 §Decision
+    /// phase 2). Grants nothing by itself — the elevation is not live until a distinct identity
+    /// approves it via <see cref="ApproveProductionElevation"/>. Requires
+    /// <see cref="GovernanceRole.Operator"/> for the target namespace/<see cref="PillarKind.Recover"/>
+    /// scope, mirroring every other Recover-pillar mutation.
+    /// </summary>
+    /// <param name="request">The namespace, stated reason, and requested duration.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <response code="403">Caller's Governance role does not cover Operator for this namespace/Recover pillar.</response>
+    [RequireScope(ApiKeyScopes.RecoveryWrite)]
+    [HttpPost("production-elevations")]
+    [ProducesResponseType(typeof(ProductionElevationResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<ProductionElevationResponse>> RequestProductionElevation(
+        [FromBody] RequestProductionElevationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var namespaceRepository = HttpContext.RequestServices.GetRequiredService<INamespaceRepository>();
+        var namespaceResult = await GetOwnedNamespaceAsync(namespaceRepository, request.NamespaceId, cancellationToken);
+        if (namespaceResult.IsFailure)
+        {
+            return ToActionResult<ProductionElevationResponse>(namespaceResult.Error);
+        }
+
+        var granteeIdentity = ResolveGovernanceGranteeIdentity();
+        var governanceResult = await _governanceAccessEvaluator.EvaluateAsync(
+            OwnerId, granteeIdentity, GovernanceRole.Operator, request.NamespaceId, PillarKind.Recover, cancellationToken);
+        if (governanceResult.IsFailure)
+        {
+            return ToActionResult<ProductionElevationResponse>(governanceResult.Error);
+        }
+
+        var actor = ResolveRecoveryActor();
+        var result = await _recoveryLedger.RequestProductionElevationAsync(
+            OwnerId, request.NamespaceId, namespaceResult.Value.DisplayName ?? namespaceResult.Value.Name,
+            actor, request.Reason, TimeSpan.FromMinutes(request.DurationMinutes), cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return ToActionResult<ProductionElevationResponse>(result.Error);
+        }
+
+        return Ok(MapToResponse(result.Value));
+    }
+
+    /// <summary>
+    /// Approves a pending production elevation, opening its live window. Requires
+    /// <see cref="GovernanceRole.Approver"/> (or <see cref="GovernanceRole.Admin"/>) for the
+    /// elevation's namespace/<see cref="PillarKind.Recover"/> scope, explicit-intent headers, and
+    /// an identity distinct from the requester — dual control admits no self-approval, including
+    /// for Admin (ADR-0010 §Decision), enforced independently by <see cref="IRecoveryLedger"/>
+    /// regardless of what this governance check finds.
+    /// </summary>
+    /// <param name="id">The elevation to approve.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <response code="403">Caller's Governance role does not cover Approver for this namespace/Recover pillar, or the caller is the requester.</response>
+    /// <response code="428">Missing explicit-intent headers.</response>
+    [RequireScope(ApiKeyScopes.RecoveryWrite)]
+    [HttpPost("production-elevations/{id:guid}/approve")]
+    [ProducesResponseType(typeof(ProductionElevationResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
+    public async Task<ActionResult<ProductionElevationResponse>> ApproveProductionElevation(
+        Guid id,
+        CancellationToken cancellationToken = default)
+    {
+        var elevation = await FindOwnedElevationAsync(id, cancellationToken);
+        if (elevation is null)
+        {
+            return ToActionResult<ProductionElevationResponse>(Error.NotFound(
+                "RecoveryLedger.ProductionElevationNotFound", "Production elevation not found."));
+        }
+
+        var granteeIdentity = ResolveGovernanceGranteeIdentity();
+        var governanceResult = await _governanceAccessEvaluator.EvaluateAsync(
+            OwnerId, granteeIdentity, GovernanceRole.Approver, elevation.NamespaceId, PillarKind.Recover, cancellationToken);
+        if (governanceResult.IsFailure)
+        {
+            return ToActionResult<ProductionElevationResponse>(governanceResult.Error);
+        }
+
+        if (!IntentHeaders.HasExplicitIntent(HttpContext, IntentHeaders.IntentApproveProductionElevation))
+        {
+            return Problem(
+                statusCode: StatusCodes.Status428PreconditionRequired,
+                title: "Explicit Intent Required",
+                detail: IntentHeaders.BuildIntentRequiredDetail("approving a production elevation"));
+        }
+
+        var actor = ResolveRecoveryActor();
+        var result = await _recoveryLedger.ApproveProductionElevationAsync(id, OwnerId, actor, cancellationToken);
+        if (result.IsFailure)
+        {
+            return ToActionResult<ProductionElevationResponse>(result.Error);
+        }
+
+        return Ok(MapToResponse(result.Value));
+    }
+
+    /// <summary>
+    /// Revokes a live or pending production elevation early. Requires
+    /// <see cref="GovernanceRole.Operator"/> for the elevation's namespace/<see cref="PillarKind.Recover"/>
+    /// scope — the same floor every other Recover-pillar mutation requires; unlike approval, revoking
+    /// early is a safety action, not itself a production-access grant, so no dual-control or intent
+    /// requirement applies.
+    /// </summary>
+    /// <param name="id">The elevation to revoke.</param>
+    /// <param name="request">Optional reason for the early revocation.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [RequireScope(ApiKeyScopes.RecoveryWrite)]
+    [HttpPost("production-elevations/{id:guid}/revoke")]
+    [ProducesResponseType(typeof(ProductionElevationResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<ProductionElevationResponse>> RevokeProductionElevation(
+        Guid id,
+        [FromBody] RevokeProductionElevationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var elevation = await FindOwnedElevationAsync(id, cancellationToken);
+        if (elevation is null)
+        {
+            return ToActionResult<ProductionElevationResponse>(Error.NotFound(
+                "RecoveryLedger.ProductionElevationNotFound", "Production elevation not found."));
+        }
+
+        var granteeIdentity = ResolveGovernanceGranteeIdentity();
+        var governanceResult = await _governanceAccessEvaluator.EvaluateAsync(
+            OwnerId, granteeIdentity, GovernanceRole.Operator, elevation.NamespaceId, PillarKind.Recover, cancellationToken);
+        if (governanceResult.IsFailure)
+        {
+            return ToActionResult<ProductionElevationResponse>(governanceResult.Error);
+        }
+
+        var actor = ResolveRecoveryActor();
+        var result = await _recoveryLedger.RevokeProductionElevationAsync(id, OwnerId, actor, request.Reason, cancellationToken);
+        if (result.IsFailure)
+        {
+            return ToActionResult<ProductionElevationResponse>(result.Error);
+        }
+
+        return Ok(MapToResponse(result.Value));
+    }
+
+    /// <summary>
+    /// Lists production elevations for the caller, most recently requested first — the elevation
+    /// history view an auditor or approver reads before acting.
+    /// </summary>
+    /// <param name="namespaceId">Optional namespace filter.</param>
+    /// <param name="limit">Maximum number of elevations to return (1-500, default 100).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [RequireScope(ApiKeyScopes.RecoveryRead)]
+    [HttpGet("production-elevations")]
+    [ProducesResponseType(typeof(IReadOnlyList<ProductionElevationResponse>), StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<ProductionElevationResponse>>> GetProductionElevations(
+        [FromQuery] Guid? namespaceId,
+        [FromQuery] int limit = DefaultLimit,
+        CancellationToken cancellationToken = default)
+    {
+        var clampedLimit = Math.Clamp(limit, 1, MaxLimit);
+        var elevations = await _recoveryLedger.QueryProductionElevationsAsync(
+            OwnerId, namespaceId, clampedLimit, cancellationToken);
+        return Ok(elevations.Select(MapToResponse).ToList());
+    }
+
+    private async Task<ProductionElevation?> FindOwnedElevationAsync(Guid id, CancellationToken cancellationToken)
+    {
+        // No single-elevation lookup exists on IRecoveryLedger — elevations are few and short-lived
+        // per owner, so the unbounded owner-scoped query (mirroring GetAgeingAsync's "never
+        // silently truncate" convention) is cheap and avoids adding a lookup method used nowhere else.
+        var elevations = await _recoveryLedger.QueryProductionElevationsAsync(
+            OwnerId, namespaceId: null, limit: int.MaxValue, cancellationToken);
+        return elevations.FirstOrDefault(e => e.Id == id);
     }
 
     /// <summary>
@@ -407,6 +747,7 @@ public sealed class RecoveryController : ApiControllerBase
     /// <param name="request">Optional administrator justification.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     [RequireScope(ApiKeyScopes.Admin)]
+    [RequireGovernanceRole(GovernanceRole.Admin)]
     [HttpPost("emergency-stop/activate")]
     [ProducesResponseType(typeof(EmergencyStopStatusResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<EmergencyStopStatusResponse>> ActivateEmergencyStop(
@@ -434,6 +775,7 @@ public sealed class RecoveryController : ApiControllerBase
     /// <param name="request">Optional administrator justification.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     [RequireScope(ApiKeyScopes.Admin)]
+    [RequireGovernanceRole(GovernanceRole.Admin)]
     [HttpPost("emergency-stop/clear")]
     [ProducesResponseType(typeof(EmergencyStopStatusResponse), StatusCodes.Status200OK)]
     public async Task<ActionResult<EmergencyStopStatusResponse>> ClearEmergencyStop(
@@ -450,6 +792,28 @@ public sealed class RecoveryController : ApiControllerBase
         }
 
         return Ok(new EmergencyStopStatusResponse(Active: false));
+    }
+
+    /// <summary>
+    /// Seals the caller's current Recovery Evidence Ledger epoch and archives every event before
+    /// it to a verified file on disk, pruning those rows from the live table (roadmap
+    /// next-chapter M5.2). Bounds the live table's growth for multi-year operation without
+    /// weakening tamper-evidence — every pruned row's full content survives, byte for byte, in
+    /// the archive. Requires the <c>admin</c> scope, given its instance-wide, irreversible-once-
+    /// pruned effect on where evidence physically lives.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <response code="409">Nothing new has been recorded since the last seal, or the range to be archived does not verify.</response>
+    [RequireScope(ApiKeyScopes.Admin)]
+    [RequireGovernanceRole(GovernanceRole.Admin)]
+    [HttpPost("epochs/seal")]
+    [ProducesResponseType(typeof(RecoveryEpochSealSummary), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<RecoveryEpochSealSummary>> SealEpoch(CancellationToken cancellationToken = default)
+    {
+        var actor = ResolveRecoveryActor();
+        var result = await _epochArchiveService.SealAndArchiveEpochAsync(OwnerId, actor, cancellationToken);
+        return ToActionResult<RecoveryEpochSealSummary>(result);
     }
 
     private static int ClampLimit(int limit) => Math.Clamp(limit, 1, MaxLimit);
@@ -525,6 +889,21 @@ public sealed class RecoveryController : ApiControllerBase
         VerificationConfidence: entry.VerificationConfidence?.ToString(),
         ObservationWindowEndsAt: entry.ObservationWindowEndsAt,
         ClosedAt: entry.ClosedAt);
+
+    private static ProductionElevationResponse MapToResponse(ProductionElevation elevation) => new(
+        Id: elevation.Id,
+        NamespaceId: elevation.NamespaceId,
+        NamespaceNameSnapshot: elevation.NamespaceNameSnapshot,
+        Reason: elevation.Reason,
+        RequestedByIdentity: elevation.RequestedByIdentity,
+        RequestedAt: elevation.RequestedAt,
+        RequestedDuration: elevation.RequestedDuration,
+        ApprovedByIdentity: elevation.ApprovedByIdentity,
+        ApprovedAt: elevation.ApprovedAt,
+        ExpiresAt: elevation.ExpiresAt,
+        RevokedAt: elevation.RevokedAt,
+        RevokedByIdentity: elevation.RevokedByIdentity,
+        IsLive: elevation.IsLiveAt(DateTimeOffset.UtcNow));
 
     private static SignatureTrustEvidenceResponse MapToResponse(SignatureTrustEvidence evidence) => new(
         SignatureHash: evidence.SignatureHash,

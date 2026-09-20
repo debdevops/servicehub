@@ -2,19 +2,19 @@
 
 # ServiceHub
 
-### The Forensic Debugger for Cloud Messaging — Azure Service Bus (Supported) · AWS SQS/SNS & GCP Pub/Sub (Preview)
+### The Forensic Debugger for Cloud Messaging — Azure Service Bus (GA) · AWS SQS/SNS & GCP Pub/Sub (Supported)
 
-![ServiceHub Banner](docs/screenshots/servicehub-cover-v3.7.0.png)
+![ServiceHub: Investigate, Recover, and Prove It Happened — self-hosted forensic debugger for Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub, shown with live dead-letter investigation, AI-generated auto-replay rules, and the Recovery Evidence Ledger](docs/screenshots/servicehub-cover-v3.7.0.png)
 
 [![CI](https://github.com/debdevops/servicehub/actions/workflows/servicehub.yml/badge.svg)](https://github.com/debdevops/servicehub/actions/workflows/servicehub.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![.NET 10](https://img.shields.io/badge/.NET-10-purple.svg)](https://dotnet.microsoft.com/)
 [![React 19](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6.svg)](https://www.typescriptlang.org/)
-[![Version](https://img.shields.io/badge/version-3.7.0-brightgreen.svg)](.version)
+[![Version](https://img.shields.io/badge/version-4.0.0-brightgreen.svg)](.version)
 [![Self-Hosted](https://img.shields.io/badge/Deployment-Self--Hosted-0078D4.svg)](#quick-start)
 
-[⚡ Quick Start](#quick-start) · [🖥️ Run It Locally (Plain-Language Guide)](LOCAL-DEPLOYMENT.md) · [📚 User Guides](#user-guides) · [✨ Core Capabilities](#core-capabilities) · [🌐 Multi-Cloud](#multi-cloud-bridge) · [🏗️ Architecture](#architecture) · [🛡️ Security](#security) · [🚀 Self-Hosting](self-hosting/README.md) · [📋 Changelog](CHANGELOG.md)
+[📖 **The Complete Guide**](docs/SERVICEHUB-COMPLETE-GUIDE.md) · [🆕 What's New](#whats-new-in-v400) · [⚡ Quick Start](#quick-start) · [🖥️ Run It Locally (Plain-Language Guide)](LOCAL-DEPLOYMENT.md) · [📚 User Guides](#user-guides) · [✨ Core Capabilities](#core-capabilities) · [🌐 Multi-Cloud](#multi-cloud-bridge) · [🏗️ Architecture](#architecture) · [🛡️ Security](#security) · [🚀 Self-Hosting](self-hosting/README.md) · [📋 Changelog](CHANGELOG.md)
 
 </div>
 
@@ -27,7 +27,16 @@ it at Azure Service Bus, AWS SQS/SNS, or GCP Pub/Sub and it gives you what the c
 won't: full message bodies, real-time search, AI-assisted dead-letter pattern detection, one-click
 replay, and a permanent, tamper-evident record of every recovery decision it makes — all running
 in a single process you control, with no message data ever leaving your network. Azure Service Bus
-is fully supported (GA); AWS and GCP are in preview.
+is fully supported (GA); AWS and GCP are Supported, conformance-tested against live infrastructure
+but capability-gated relative to Azure (see [Provider Conformance](docs/PROVIDER-CONFORMANCE.md)).
+
+> [!NOTE]
+> **v4.0.0** closes out the autonomy chapter and opens the next one: durable evidence for all
+> four pillars (not just Recover), Production namespaces observable end-to-end with recovery
+> gated behind a two-person elevation, an operator-attested route to the top of the autonomy
+> ladder on AWS/GCP, outcome metrics that trace to ledger rows, a five-destination top nav, and
+> a tested in-place upgrade path from v3.7. See [What's new in v4.0.0](#whats-new-in-v400) and
+> the [Changelog](CHANGELOG.md) for the full list.
 
 ---
 
@@ -43,10 +52,12 @@ Production breaks at 2 AM. Your cloud portal shows **5,000 messages in the Dead-
 > [!TIP]
 > **No credentials?** The Welcome page's **"Try a live demo"** buttons open a fully client-side demo walkthrough per cloud — no backend, no cloud account needed.
 
-<p align="center">
-  <a href="docs/screenshots/showcase/01-dlq-populated.jpg"><img src="docs/screenshots/showcase/01-dlq-populated.jpg" width="85%"/></a>
-  <br/><sub>A real Dead-Letter Queue in ServiceHub — 168 AWS SQS failures, honest about what SQS does and doesn't tell you about them.</sub>
-</p>
+<table>
+<tr>
+<td width="50%"><a href="docs/screenshots/showcase/10-investigate-message-forensics.jpg"><img src="docs/screenshots/showcase/10-investigate-message-forensics.jpg" width="100%" alt="ServiceHub message browser showing a dead-lettered Azure Service Bus order message with a Critical assessment badge, MaxDeliveryCountExceeded reason, and an AI-detected DLQ pattern with 88% confidence across 15 affected messages"/></a><br/><sub>Live capture — the Dead-Letter tab: full message list on the left, AI-clustered failure pattern (confidence + affected-message count) on the right.</sub></td>
+<td width="50%"><a href="docs/screenshots/showcase/11-investigate-message-body.jpg"><img src="docs/screenshots/showcase/11-investigate-message-body.jpg" width="100%" alt="ServiceHub message body view showing full syntax-highlighted JSON for a dead-lettered order message, with copy-to-clipboard and content-type detection"/></a><br/><sub>Live capture — the Body tab: full JSON with syntax highlighting, not the truncated preview a cloud console gives you.</sub></td>
+</tr>
+</table>
 
 | Capability | Standard Cloud Portals | ServiceHub |
 |---|---|---|
@@ -63,6 +74,48 @@ Production breaks at 2 AM. Your cloud portal shows **5,000 messages in the Dead-
 
 ---
 
+## What's new in v4.0.0
+
+Everything since v3.7.0 — full detail in [CHANGELOG.md](CHANGELOG.md). The headline: the top of
+the autonomy ladder stopped being a design claim (an L3→L4 promotion, an unattended autonomous
+replay, an L4→L3 demotion, and a circuit-breaker trip have each been observed end to end against
+real Azure Service Bus traffic, with independently verifiable evidence exports), and this release
+closes the three qualifiers that claim still carried:
+
+- **Durable evidence for all four pillars, not just Recover.** Anomaly, drift, correlation,
+  narration, backlog-forecast and external-signal findings — previously six process-local,
+  24-hour caches that lost everything on restart — now persist to SQLite with a retention sweep
+  that never prunes a finding a Playbook Ledger proposal still cites. A new owner-wide
+  `GET /api/v1/playbook/export` plus `scripts/verify-playbook-chain.py` let an auditor resolve
+  every cited finding from an export alone.
+- **Production, earned the same way autonomy was.** A namespace can now be registered as `Prod` —
+  Investigate/Correlate/Prevent run against it fully. Every recovery verb still denies it unless a
+  time-boxed [production elevation](#production-namespaces-and-elevation) is live, with dual control
+  and a hard L0/L1 autonomy ceiling that no configuration raises. See
+  [ADR-0010](docs/adr/0010-production-namespace-elevation.md).
+- **A named trust root for AWS/GCP's DLQ-absence gap.** An operator-provisioned, push-based DLQ
+  observer (Terraform for AWS Lambda+DynamoDB / GCP Cloud Function+Firestore) can attest DLQ
+  absence where the provider API can't prove it — a different trust root, not a relaxed one, named
+  explicitly in [Provider Conformance](docs/PROVIDER-CONFORMANCE.md). Fails closed on a stale or
+  missing observer. **Code-complete; not yet exercised against real cloud infrastructure** — the
+  Terraform modules haven't been applied in this build. See [Multi-Cloud Bridge](#multi-cloud-bridge).
+- **Outcome measurement.** A "This week" strip on Home and `GET /api/v1/recovery/outcomes` report
+  what the fleet actually achieved — messages recovered, written off, median time to a verified
+  recovery, recoveries no human had to approve, and gate refusals that stopped a bad replay. Every
+  figure traces to a `RecoveryLedgerEntry`/`RecoveryEvent` row — never modelled or estimated.
+- **A smaller top-level nav.** The Icon Rail now shows five destinations (Home, Incident Center,
+  Namespace Overview, Approval Queue, Recovery Evidence) plus a **More** button that opens the
+  command palette. Nothing was removed — Quick Access and the command palette still reach every
+  page.
+- **Configuration as code and epoch sealing** — see
+  [Configuration Export/Import](#configuration-as-code) and
+  [Evidence Archive and Epoch Sealing](#evidence-archive-and-epoch-sealing) below.
+- **A CI-proven upgrade path from v3.7.** `UpgradeInPlaceTests` stands up a real v3.7-era SQLite
+  file, seeds a hash-chained ledger against it, migrates to HEAD, and asserts no data loss and an
+  intact chain — see [Release & Upgrade Model](#release--upgrade-model).
+
+---
+
 ## 🛡️ Investigate → Recover → Prove It Happened
 
 That's the whole product, in three words. **Investigate** a failure with full message bodies and
@@ -72,20 +125,25 @@ Ledger, a permanent, append-only, hash-chained record of exactly what ServiceHub
 provider to do and what it subsequently observed — so replay isn't a black box you have to trust
 blindly.
 
-Every screenshot below is a real capture — live Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub
-namespaces connected to ServiceHub simultaneously, not mocked data. Click any image to open it
-full-size.
+Every screenshot below is a live capture from this build — real Azure Service Bus, AWS SQS/SNS,
+and GCP Pub/Sub dev namespaces connected to ServiceHub simultaneously, not mocked data or a
+staged demo. Click any image to open it full-size.
 
 <table>
 <tr>
-<td width="33%"><a href="docs/screenshots/showcase/01-dlq-populated.jpg"><img src="docs/screenshots/showcase/01-dlq-populated.jpg" width="100%"/></a><br/><sub><b>1. Investigate</b> — Dead-Letter Queue, 168 real AWS failures, AI-tagged</sub></td>
-<td width="33%"><a href="docs/screenshots/showcase/02-ai-findings.jpg"><img src="docs/screenshots/showcase/02-ai-findings.jpg" width="100%"/></a><br/><sub><b>2. Investigate</b> — AI Findings clusters the pattern, confidence scored, never hidden</sub></td>
-<td width="33%"><a href="docs/screenshots/showcase/03-multi-cloud-connected.jpg"><img src="docs/screenshots/showcase/03-multi-cloud-connected.jpg" width="100%"/></a><br/><sub><b>3. Investigate</b> — Azure, AWS, and GCP connected side by side, one UI</sub></td>
+<td width="33%"><a href="docs/screenshots/showcase/01-investigate-dashboard.jpg"><img src="docs/screenshots/showcase/01-investigate-dashboard.jpg" width="100%" alt="ServiceHub Namespace Overview dashboard showing Azure, AWS, and GCP namespaces side by side with live active-message, dead-letter, and health-grade counts, and a DLQ Hot Spots panel ranking the worst namespaces"/></a><br/><sub><b>1. Investigate</b> — Azure, AWS, and GCP namespaces side by side, sorted by DLQ severity</sub></td>
+<td width="33%"><a href="docs/screenshots/showcase/02-investigate-ai-insights.jpg"><img src="docs/screenshots/showcase/02-investigate-ai-insights.jpg" width="100%" alt="A dead-lettered AWS SQS message open in ServiceHub with its full body and an AI Insights tab showing a named DLQ failure pattern, confidence score, and recommended remediation"/></a><br/><sub><b>2. Investigate</b> — full message body plus AI Insights, confidence-scored and never hidden</sub></td>
+<td width="33%"><a href="docs/screenshots/showcase/03-investigate-fleet-operations.jpg"><img src="docs/screenshots/showcase/03-investigate-fleet-operations.jpg" width="100%" alt="ServiceHub Fleet Operations dashboard aggregating dead-letter health across every connected namespace, with a 7-day trend chart, top failure categories, and a worst-first namespace table"/></a><br/><sub><b>3. Investigate</b> — Fleet Operations: what died overnight, across every namespace at once</sub></td>
 </tr>
 <tr>
-<td width="33%"><a href="docs/screenshots/showcase/04-auto-replay-circuit-breaker.jpg"><img src="docs/screenshots/showcase/04-auto-replay-circuit-breaker.jpg" width="100%"/></a><br/><sub><b>4. Recover</b> — Auto-Replay Rules, with a real circuit breaker that self-disables on low success</sub></td>
-<td width="33%"><a href="docs/screenshots/showcase/05-recovery-evidence-ledger.jpg"><img src="docs/screenshots/showcase/05-recovery-evidence-ledger.jpg" width="100%"/></a><br/><sub><b>5. Prove it happened</b> — the Recovery Evidence Ledger, one row per recovery decision</sub></td>
-<td width="33%"><a href="docs/screenshots/showcase/06-recovery-evidence-detail.jpg"><img src="docs/screenshots/showcase/06-recovery-evidence-detail.jpg" width="100%"/></a><br/><sub><b>6. Prove it happened</b> — one operation's hash chain, verifiable and exportable as evidence</sub></td>
+<td width="33%"><a href="docs/screenshots/showcase/04-recover-attention-queue.jpg"><img src="docs/screenshots/showcase/04-recover-attention-queue.jpg" width="100%" alt="ServiceHub AWS Home showing real KPI tiles, this cloud's connected namespaces, and three critical dead-letter findings ranked within AWS, each with a pending-decision count and a recommended action"/></a><br/><sub><b>4. Recover</b> — Home ranks what needs a decision first, one cloud at a time — never a blended Azure+AWS+GCP dashboard</sub></td>
+<td width="33%"><a href="docs/screenshots/showcase/05-recover-auto-replay-rules.jpg"><img src="docs/screenshots/showcase/05-recover-auto-replay-rules.jpg" width="100%" alt="ServiceHub Auto-Replay Rules page showing AI-generated rules grouped by DLQ reason, each with live pending, replayed, and success-rate counts and a rate limit"/></a><br/><sub><b>5. Recover</b> — AI-generated Auto-Replay Rules, with a circuit breaker that self-disables on low success</sub></td>
+<td width="33%"><a href="docs/screenshots/showcase/06-recover-incident-center.jpg"><img src="docs/screenshots/showcase/06-recover-incident-center.jpg" width="100%" alt="ServiceHub Incident Center showing total, active, resolved, and suppressed Failure Signatures, and a Fleet Health list of critical namespaces with their top failure category"/></a><br/><sub><b>6. Recover</b> — Incident Center: the operational command center for failure remediation</sub></td>
+</tr>
+<tr>
+<td width="33%"><a href="docs/screenshots/showcase/07-prove-recovery-evidence-ledger.jpg"><img src="docs/screenshots/showcase/07-prove-recovery-evidence-ledger.jpg" width="100%" alt="ServiceHub Recovery Evidence Ledger listing replay operations with timestamp, actor, kind, scope, cloud/environment, and target count — one row per recovery decision"/></a><br/><sub><b>7. Prove it happened</b> — the Recovery Evidence Ledger, one row per recovery decision, hash-chained</sub></td>
+<td width="33%"><a href="docs/screenshots/showcase/08-prove-playbook-ledger.jpg"><img src="docs/screenshots/showcase/08-prove-playbook-ledger.jpg" width="100%" alt="ServiceHub Playbook Ledger listing proposed correlation and anomaly findings per namespace with their pillar, state, and disposition, none of them auto-executed"/></a><br/><sub><b>8. Prove it happened</b> — the Playbook Ledger: every AI proposal on record, nothing auto-executed</sub></td>
+<td width="33%"><a href="docs/screenshots/showcase/09-prove-autonomy.jpg"><img src="docs/screenshots/showcase/09-prove-autonomy.jpg" width="100%" alt="ServiceHub Autonomy page showing how autonomous the system currently is per pillar (Recover, Investigate, Correlate, Prevent), with counts of decisions awaiting a human versus earned unattended execution"/></a><br/><sub><b>9. Prove it happened</b> — Autonomy: exactly how much runs unattended today, read from the evidence itself</sub></td>
 </tr>
 </table>
 
@@ -103,14 +161,28 @@ ServiceHub extends beyond Azure Service Bus to support **AWS SQS/SNS** and **GCP
 | Provider | Status | Browse & Search | Dead-Letter | Replay | Purge | Send & Test Tools³ | Cross-Cloud Trace |
 |----------|--------|-----------------|-------------|--------|-------|--------------------|-------------------|
 | **Azure Service Bus** | ✅ GA | ✅ | ✅ | ✅ | — (SDK limitation) | ✅ | ✅ |
-| **AWS SQS / SNS** | 🔶 Preview | ✅ | ✅ (redrive DLQ) | ✅ | ✅ | ✅ | ✅¹ |
-| **GCP Pub/Sub** | 🔶 Preview | ✅ | ✅ peek (nack/ack deadline)² | ✅ | ✅ | ✅ | ✅¹ |
+| **AWS SQS / SNS** | 🟦 Supported | ✅ | ✅ (redrive DLQ) | ✅ | ✅ | ✅ | ✅¹ |
+| **GCP Pub/Sub** | 🟦 Supported | ✅ | ✅ peek (nack/ack deadline)² | ✅ | ✅ | ✅ | ✅¹ |
 
 ¹ Cross-Cloud Trace searches any namespace whose provider is registered in the API's dependency-injection container. Azure is always registered; AWS/GCP registration is disabled by default in this build — register the provider to exercise AWS/GCP trace search.
 ² GCP Pub/Sub dead-lettering is policy-driven via `MaxDeliveryAttempts`; ServiceHub reads the DLQ through the subscription's configured dead-letter topic, and its test tooling moves messages there by republishing through the subscription's dead-letter policy. Message counts are unavailable via the Pub/Sub API and are reported as `0`.
 ³ Test tools (send a message, generate realistic test data, push messages to the DLQ) are available only on **DEV** namespaces with a Manage-level connection — never in UAT or production.
 
-**Preview** means: implemented and unit-tested, not validated against live AWS/GCP services in this project's own CI, capability-gated, no parity guarantee with Azure.
+**Supported** means: conformance-tested against live AWS/GCP services, including the negative
+capability assertions (an unsupported operation is rejected with the documented error, not
+silently ignored) — see [Provider Conformance](docs/PROVIDER-CONFORMANCE.md) for the reproducible
+evidence. Still capability-gated, still no parity guarantee with Azure — those are real, permanent
+differences in what each cloud API exposes, not evidence gaps.
+
+**Why autonomous replay stops at L3 on AWS/GCP:** neither provider's API can prove a message
+stayed out of the dead-letter queue without risking dead-lettering it, so `CanProveDlqAbsence` is
+`false` by default there — a provider fact, never relaxed into a confidence score. An operator can
+close that gap with a *different* trust root instead: a self-provisioned, push-based DLQ observer
+(Terraform modules for AWS Lambda+DynamoDB and GCP Cloud Function+Firestore) that attests DLQ
+absence from infrastructure the operator controls, fails closed the moment it goes stale or
+missing, and is named explicitly — never blended with provider-native proof — in
+[Provider Conformance](docs/PROVIDER-CONFORMANCE.md). This is implemented and unit-tested as of
+v4.0.0; it has not yet been run against a real deployed observer in this build.
 
 ### 🌐 Cross-Cloud Trace
 Connect namespaces from two or more cloud providers and use **Multi-Cloud Trace** to trace a single Correlation ID or message GUID as it routes from Azure $\rightarrow$ AWS $\rightarrow$ GCP (or any combination). The result is a visual routing path diagram, a chronological hop timeline, and a namespace search-coverage panel.
@@ -179,6 +251,52 @@ Every critical operation — send, replay, purge, dead-letter, rule changes — 
 ### 🛡️ Security & Privacy Page
 An in-app page that answers the trust question before anyone has to ask it: a diagram of exactly how data moves from browser → ServiceHub server → cloud SDK, what's encrypted (connection strings, AES-256-GCM), what's redacted from logs, and what's never stored (message bodies, plaintext secrets) — with links to verify each claim directly in the open-source code.
 
+### 📈 Outcome Measurement — "This week"
+Home shows a five-tile strip of what the fleet actually achieved in the trailing window (default
+7 days, `?days=` up to 90): messages recovered, messages written off, median time from
+dead-letter to verified recovery, recoveries that needed no human approval, and gate refusals
+that stopped a bad replay before any provider was contacted. Every figure is a count, average, or
+duration read directly from a `RecoveryLedgerEntry`/`RecoveryEvent` row — never modelled,
+estimated, or extrapolated. The strip renders nothing at all (not a zero-state) until the fleet
+has actually recovered or abandoned something, so a fresh install doesn't read as broken.
+`GET /api/v1/recovery/outcomes`.
+
+### 🔓 Production Namespaces and Elevation
+A namespace can be registered as `Prod`. Investigate, Correlate, and Prevent run against it
+without restriction — full scanning, peeking, clustering, and forecasting. Every recovery verb
+(replay, purge, bulk operations, auto-replay rules) stays denied unconditionally unless a
+`ProductionElevation` is live: a stated reason, an absolute expiry, and **dual control** — the
+identity that requests it and the identity that approves it must be different people, and
+self-approval is refused even for Admin. Every step (`ProductionElevationRequested/Approved/
+Expired/Revoked`) is a Recovery Evidence Ledger event, so an auditor can reconstruct who elevated
+which namespace, on whose approval, for how long — from the export alone, no server access
+needed. Autonomy is hard-ceilinged at L0/L1 in production under every configuration; no
+`AutonomyGrant` is ever issued against a `Prod` namespace. API only today — no dedicated UI for
+requesting or approving an elevation yet, by product decision, not a gap in the safety model. See
+[ADR-0010](docs/adr/0010-production-namespace-elevation.md).
+`POST/GET /api/v1/recovery/production-elevations{,/{id}/approve,/{id}/revoke}`.
+
+### 📦 Configuration as Code
+`GET`/`POST /api/v1/governance/configuration/{export,import}` round-trip a deployment's
+Auto-Replay Rules and active governance grants as one JSON file meant for git and a pull request.
+Import is additive/upsert only — a rule already present (matched by name) is updated in place, an
+already-active grant is left alone, and nothing live but absent from the import is ever deleted
+or revoked. Deliberately excludes a namespace's connection string (a credential, never
+configuration — namespaces appear only as a read-only id/name/environment/provider reference so
+an exported rule's target is human-readable) and `PreventionRule` (a hash-chained Playbook Ledger
+claim, not mutable configuration). API only today; no export/import UI.
+
+### 🗄️ Evidence Archive and Epoch Sealing
+`POST /api/v1/recovery/epochs/seal` closes an owner's current Recovery Evidence Ledger epoch:
+every prior event is independently re-verified, written to an archive file on disk
+(`<DataDirectory>/recovery-archive/<ownerId>/epoch-<N>.json`), read back and re-verified from
+disk again, and only then pruned from the live table — bounding growth for multi-year operation
+without weakening tamper-evidence, since the pruned rows survive byte-for-byte in the archive
+first. The seal marker itself becomes the next epoch's anchor, so the chain never breaks across
+the seam. `scripts/verify-recovery-chain.py --archive-dir` follows an anchor from a sealed
+history into the live export, and a sealed epoch verifies from its archive file alone, with no
+server access. Admin-scoped.
+
 ---
 
 ## Real-World Scenarios
@@ -211,16 +329,22 @@ An in-app page that answers the trust question before anyone has to ask it: a di
 
 ## User Guides
 
-Already connected and want to know what to actually *do* with ServiceHub? This is the official
-ServiceHub user handbook — plain language, screenshot-illustrated, no code or scripting required.
-Each guide below walks the full message-debugging journey — browsing, DLQ investigation, AI
-Insights, replay, and the Recovery Evidence Ledger — verified live against a real namespace, with
-an honest, explicit list of what's supported and what isn't for that cloud:
+**Start here: [📖 The Complete ServiceHub Guide](docs/SERVICEHUB-COMPLETE-GUIDE.md)** — the single,
+definitive, end-to-end reference. Why ServiceHub exists, the vocabulary you need, and every page
+in the product explained — what it's for, what every button does, and how it behaves differently
+per cloud — illustrated with real screenshots captured live against real, connected Azure, AWS,
+and GCP infrastructure. If you only read one document, read this one.
+
+Prefer a narrower, provider-specific walkthrough instead? These are the official per-cloud
+handbooks — plain language, screenshot-illustrated, no code or scripting required. Each walks the
+full message-debugging journey — browsing, DLQ investigation, AI Insights, replay, and the
+Recovery Evidence Ledger — verified live against a real namespace, with an honest, explicit list
+of what's supported and what isn't for that cloud:
 
 - **[🧭 Quick Access Guide](docs/guides/quick-access-guide.md)** — every navigation shortcut explained, with a full navigation map
 - **[☁️ Azure Service Bus Guide](docs/guides/azure-guide.md)** — the fully supported (GA) provider
-- **[🟧 AWS SQS/SNS Guide](docs/guides/aws-guide.md)** — Preview, with SQS's own limitations explained
-- **[🟩 GCP Pub/Sub Guide](docs/guides/gcp-guide.md)** — Preview, with Pub/Sub's own limitations explained
+- **[🟧 AWS SQS/SNS Guide](docs/guides/aws-guide.md)** — Supported, with SQS's own limitations explained
+- **[🟩 GCP Pub/Sub Guide](docs/guides/gcp-guide.md)** — Supported, with Pub/Sub's own limitations explained
 
 New to ServiceHub and haven't connected a cloud account yet? Start with
 [LOCAL-DEPLOYMENT.md](LOCAL-DEPLOYMENT.md) instead — it covers installing ServiceHub and
@@ -234,7 +358,7 @@ Follow this path before connecting to a production namespace. This protects your
 
 1. **DEV**: Connect your development namespace. Explore message browsing, DLQ inspection, and auto-replay rules in a safe environment.
 2. **UAT**: Validate replay targets, confirm rule logic, and review AI findings with realistic data.
-3. **PROD**: Connect only after DEV and UAT validation. Production namespaces enforce read-only browsing by default — Quick Actions (replay, send, generate) are disabled to prevent accidental data modification.
+3. **PROD**: Connect only after DEV and UAT validation. Production namespaces are fully observable (Investigate, Correlate, Prevent all run normally), but every recovery action — replay, purge, bulk operations, auto-replay rules — stays denied unless a time-boxed, dual-control [production elevation](#production-namespaces-and-elevation) is live. There is no autonomy in production at any trust level.
 
 > [!WARNING]
 > While ServiceHub is read-only by default, replay and send operations are destructive. Validate your replay rules and message targets in lower environments first.
@@ -322,7 +446,7 @@ Official images are published to GitHub Container Registry on every tagged relea
 
 ```bash
 docker pull ghcr.io/debdevops/servicehub:latest
-# or pin a version: ghcr.io/debdevops/servicehub:3.7.0
+# or pin a version: ghcr.io/debdevops/servicehub:4.0.0
 ```
 
 Run it the same way as the locally built image — same required secrets, same volume, same
@@ -387,6 +511,31 @@ provide.
 
 ---
 
+## Release & Upgrade Model
+
+ServiceHub is versioned (`.version`, currently `4.0.0`) and released as a single tagged container
+image (`ghcr.io/debdevops/servicehub:X.Y.Z`) — see [Container Image](#container-image). Upgrading
+in place means pulling a newer tag against the same persistent volume; EF Core migrations run
+automatically at startup against the mounted SQLite data directory.
+
+Upgrading from v3.7.0 (or any earlier tagged release) to v4.0.0 is covered by an automated test,
+not just a claim: `UpgradeInPlaceTests` stands up a database at the exact migration that shipped
+in v3.7.0, seeds a real hash-chained Recovery Evidence Ledger against that schema, migrates it all
+the way to the current `HEAD`, and asserts zero data loss, an intact hash chain, and that every
+table this release added is genuinely queryable — not just present in the migrations history.
+
+The Recovery Evidence Ledger's hash chain is designed to survive a version boundary by
+construction: every event carries its own `SchemaVersion` as a canonical hashed field, and
+`RecoveryChainVerifier` is proven (via a dedicated fixture test) to validate a chain that spans two
+schema versions in one continuous run. **Evidence you cannot verify after upgrading is not
+evidence** — this is why that guarantee is tested rather than assumed.
+
+**Before upgrading a real deployment:** back up the data directory (or use the built-in
+`POST /api/v1/admin/backup`, see [`docs/BACKUP-RESTORE.md`](docs/BACKUP-RESTORE.md)) first. A
+downgrade path is not supported — migrations are forward-only.
+
+---
+
 ## Self-Host on Azure
 
 Both options run the same GHCR image (`ghcr.io/debdevops/servicehub:latest`) as a single,
@@ -419,11 +568,19 @@ az webapp config appsettings set --name <app-name> --resource-group rg-servicehu
 az webapp restart --name <app-name> --resource-group rg-servicehub
 ```
 
-Then mount **persistent** storage — App Service's local container disk is not guaranteed to
-survive a restart or scale event. Attach an Azure Files share via `az webapp config storage-account add`
-and point both `DlqDatabase__DataDirectory` and `NamespaceRepository__DataDirectory` at the
-same mounted path (see [Self-Hosting → Persistent storage](self-hosting/README.md#persistent-storage-two-stores-two-config-keys) —
-this is the single most common misconfiguration).
+Then decide where the data directory lives, and read
+[Self-Hosting → Storage requirement](self-hosting/README.md#storage-requirement-local-block-storage-not-a-network-share)
+**before** you do. App Service's local container disk is not guaranteed to survive a restart,
+but its documented alternative — an Azure Files share — is SMB, and **SQLite is not supported
+on a network filesystem**: WAL mode silently degrades and the advisory locks that stop a second
+writer stop being reliable. The two workable options are to accept the container's local disk
+and back up off-box ([docs/BACKUP-RESTORE.md](docs/BACKUP-RESTORE.md)), or to host ServiceHub
+somewhere with real block storage instead. Whichever you choose, point both
+`DlqDatabase__DataDirectory` and `NamespaceRepository__DataDirectory` at the same path (see
+[Self-Hosting → Persistent storage](self-hosting/README.md#persistent-storage-two-stores-two-config-keys) —
+this is the single most common misconfiguration). Confirm the result with
+`curl https://<app-name>.azurewebsites.net/health/ready` and check that the `sqlite` entry
+reports `"JournalMode": "wal"`.
 
 Verify: `curl https://<app-name>.azurewebsites.net/health/live`, then open the URL in a
 browser. **Pin the App Service Plan to a single instance** — do not enable auto-scale-out;
@@ -459,8 +616,10 @@ az containerapp create --name servicehub --resource-group rg-servicehub \
 ```
 
 `--min-replicas 1 --max-replicas 1` is not optional — it's what makes this safe to run at
-all. Attach Azure Files storage the same way as App Service, mounted at both
-`DataDirectory` paths, then verify against `/health/live` as above.
+all. Storage carries the same constraint as App Service above: **no network file share for the
+data directory**, for the reasons in
+[Self-Hosting → Storage requirement](self-hosting/README.md#storage-requirement-local-block-storage-not-a-network-share).
+Verify against `/health/ready` and confirm the `sqlite` entry reports journal mode `wal`.
 
 ---
 
@@ -474,6 +633,14 @@ all. Attach Azure Files storage the same way as App Service, mounted at both
 | `/health/live` fails after deploy | Container isn't listening on the platform's expected port, or hasn't finished startup config validation | Confirm `WEBSITES_PORT`/`--target-port` is `8080`; check container logs for the startup config validator's specific missing-variable error |
 | `docker pull ghcr.io/debdevops/servicehub` fails with "denied" | GHCR package visibility is private, or the tag doesn't exist yet | Confirm the tag (`:latest` or a released `:X.Y.Z`) exists under the repo's Packages tab |
 | Namespace credentials are gone after a restart, but DLQ history is intact | Only `DlqDatabase__DataDirectory` was persisted, not `NamespaceRepository__DataDirectory` | Mount **both** `DataDirectory` paths to the same persistent volume — see [Self-Hosting → Persistent storage](self-hosting/README.md#persistent-storage-two-stores-two-config-keys) |
+| A namespace that worked yesterday now returns `502` / `Queue.List.Failed` | The provider rotated the access key behind the stored connection string — the API log shows the real cause, e.g. Azure `401 InvalidSignature` | Re-register the namespace on the Connect page with a current connection string |
+| Every request suddenly returns `429 "Too many failed authentication attempts"` | `AuthFailureThrottle` trips at 10 credential-less/invalid requests in 5 minutes and is keyed on **client IP**, so one unauthenticated script locks out your browser too | Wait out the 5-minute window; find the offender via `Authentication failed: No valid credential for …` in the API log |
+| A second instance exits with "Another ServiceHub instance already holds the data directory" | Working as designed — the evidence ledger's hash chain assumes a single writer | Stop the other instance, or give this one its own `DlqDatabase:DataDirectory`. Don't delete `.instance.lock` |
+
+For operational (rather than deployment) errors — permission denials, replay verification, circuit
+breakers, evidence-chain failures — see
+[Troubleshooting: real errors and what they mean](docs/SERVICEHUB-COMPLETE-GUIDE.md#troubleshooting-real-errors-and-what-they-mean)
+in the Complete Guide.
 
 ---
 
@@ -520,8 +687,8 @@ graph TB
 
     subgraph Providers["☁️ CLOUD PROVIDERS — same ICloudMessagingProvider contract"]
         AZ["Azure Service Bus<br/>GA"]
-        AWS["AWS SQS / SNS<br/>Preview"]
-        GCP["GCP Pub/Sub<br/>Preview"]
+        AWS["AWS SQS / SNS<br/>Supported"]
+        GCP["GCP Pub/Sub<br/>Supported"]
     end
 
     subgraph Storage["💾 PERSISTENCE — two stores, by design"]
@@ -590,6 +757,12 @@ No. ServiceHub only uses `PeekMessagesAsync`. Your consumers continue processing
 **Is it safe to point at production?**
 Yes. Listen-only mode is fully read-only. Deploy ServiceHub inside your private network for extra safety.
 
+**Can ServiceHub replay or purge messages on a namespace labelled `Prod`?**
+Only under a live, time-boxed [production elevation](#production-namespaces-and-elevation) approved
+by a second identity — never by the requester alone, and never automatically. Investigate,
+Correlate, and Prevent run against a `Prod` namespace unrestricted; every recovery verb stays
+denied without a live elevation, and autonomy never runs there at all.
+
 **How does AI analysis work without an API key?**
 The primary AI Findings surface is client-side heuristic pattern detection — pure JavaScript in your browser, no API key needed. A deeper, optional backend path (Failure Signature clustering) can call a self-hosted companion container you run yourself, disabled by default — never GPT or any other third-party/cloud service, and no data exfiltration either way.
 
@@ -597,7 +770,7 @@ The primary AI Findings surface is client-side heuristic pattern detection — p
 On AWS (delete by receipt handle) and GCP (acknowledge), yes — the Purge action, guarded by explicit-intent headers and blocked on production namespaces. Azure Service Bus has no reliable single-message delete in the SDK, so ServiceHub disables the action there instead of faking it.
 
 **How is this different from Service Bus Explorer?**
-Service Bus Explorer is a well-established, Azure-only desktop tool for browsing and managing Service Bus entities. ServiceHub also covers Azure Service Bus, but adds full-text message search, batch DLQ analysis with client-side AI pattern detection, auto-replay rules, a persistent multi-namespace fleet dashboard, cross-cloud correlation tracing, and the hash-chained Recovery Evidence Ledger — plus preview support for AWS SQS/SNS and GCP Pub/Sub in the same tool. Both are free and self-hosted; the difference is investigation/recovery depth and multi-cloud scope.
+Service Bus Explorer is a well-established, Azure-only desktop tool for browsing and managing Service Bus entities. ServiceHub also covers Azure Service Bus, but adds full-text message search, batch DLQ analysis with client-side AI pattern detection, auto-replay rules, a persistent multi-namespace fleet dashboard, cross-cloud correlation tracing, and the hash-chained Recovery Evidence Ledger — plus conformance-tested support for AWS SQS/SNS and GCP Pub/Sub in the same tool. Both are free and self-hosted; the difference is investigation/recovery depth and multi-cloud scope.
 
 ---
 
@@ -624,33 +797,67 @@ npm run -w apps/web test:e2e
 ## Roadmap
 
 ServiceHub is built depth-first: make one workflow excellent before adding the next surface. Here's
-where it stands and where it's headed.
+where it stands.
 
 | | Stage | Focus | Status |
 |---|---|---|---|
-| 🟢 | **Now** | Investigate → Recover → Prove | Shipped |
-| 🔵 | **Next** | Team & Governance | Planned |
-| 🟣 | **Later** | AI-Guided → Bounded Autonomous Operations | Strategic direction |
+| 🟢 | **Investigate → Recover → Prove** | The forensic core | Shipped |
+| 🟢 | **Team & Governance** | Approval queue, per-identity roles | Shipped |
+| 🟢 | **Bounded autonomous recovery** | Earned, per-signature, evidence-gated | Shipped — Azure only, by provider capability |
+| 🔵 | **Reasoning companion** | Local, opt-in, proposes only | Shipped, off by default |
+| 🟢 | **Evidence parity, production, multi-cloud trust root, outcomes, longevity** | v4.0.0 — closes the three qualifiers the autonomy chapter carried | Shipped; see status by unit below |
 
-**🟢 Now — Investigate → Recover → Prove.** The forensic core, live today across Azure Service Bus
-(GA) and AWS SQS/SNS + GCP Pub/Sub (preview): full message inspection, real-time search, client-side
-AI pattern detection, one-click and rule-based replay, purge, bulk operations with dry-run preview,
-a fleet dashboard, DLQ triage, Live Tail (Azure/GCP), Failure Signature Intelligence, and the
-Recovery Evidence Ledger — a hash-chained, tamper-evident record of every recovery. Also shipped:
-Slack/Teams alerts, OIDC SSO, role-based scopes (Viewer/Operator/Auditor), an exportable audit
-trail, and namespace sharing for live operations (Preview).
+**🟢 Investigate → Recover → Prove.** The forensic core, live across Azure Service Bus (GA) and
+AWS SQS/SNS + GCP Pub/Sub (Supported — see
+[provider conformance evidence](docs/PROVIDER-CONFORMANCE.md)): full message inspection, real-time
+search, client-side AI pattern detection, one-click and rule-based replay, purge, bulk operations
+with dry-run preview, a fleet dashboard, DLQ triage, Live Tail (Azure/GCP), Failure Signature
+Intelligence, an incident workspace, and the Recovery Evidence Ledger — a hash-chained,
+tamper-evident record of every recovery that a third party can verify from an export alone, with no
+server access. Also shipped: Slack/Teams alerts, OIDC SSO, an exportable audit trail, and namespace
+sharing for live operations (Preview).
 
-**🔵 Next — Team & Governance.** Approval workflows for destructive operations, and extending
-namespace sharing so a collaborator also sees shared DLQ history and audit visibility — not just
-live namespace access.
+**🟢 Team & Governance.** An approval queue for escalated recovery decisions, and per-identity
+governance grants (Viewer / Operator / Approver / Admin, optionally scoped per namespace and per
+pillar) enforced ahead of every mutating operation. Two credentials on one deployment can hold two
+different roles over the same data, and the denial path is covered by a CI test.
 
-**🟣 Later — AI-Guided → Bounded Autonomous Operations** *(strategic direction, not a committed
-feature or date)*. Today's building blocks — named Failure Signatures, rule-based Auto-Replay under
-a circuit breaker, and the Recovery Evidence Ledger's proof of what was done — are the foundation
-for closing the loop: AI-guided recovery recommendations with reasoning attached, and, only where an
-operator opts in, bounded automation for known, high-confidence cases. Every safeguard in place
-today — operator control, production write-protection, rate limits, circuit breakers, permanent
-provable evidence — carries forward unchanged; no autonomous or agentic behavior ships without it.
+**🟢 Bounded autonomous recovery.** Trust is earned per `(owner, failure signature, action)` from
+verified outcomes an independent worker observed *after the fact* — never from a confidence score,
+and there is deliberately no "turn autonomy on" switch anywhere in the product. A signature reaches
+unattended replay only after ≥10 verified recoveries at ≥95% success (L4) or ≥30 at ≥99% (L5), and
+drops back on two consecutive verified failures. A per-rule circuit breaker disables a rule whose
+recent verified success rate falls through the floor, and an owner-scoped emergency stop halts all
+automation. Promotion, unattended execution, demotion and a circuit-breaker trip have each been
+observed end to end against real Azure traffic, with independently verified evidence exports.
+
+Two real limits, stated rather than buried: **AWS and GCP are permanently capped at human-approved
+replay (L3)**, because neither API can prove a message stayed out of the dead-letter queue without
+risking dead-lettering it — a provider fact, not a maturity gap. And **all recovery, manual or
+autonomous, runs against namespaces marked Dev or UAT**; ServiceHub refuses to connect to a
+namespace marked Production at all.
+
+**🔵 Reasoning companion** *(optional, off by default)*. `services/agent` is a local, self-hosted
+container that reads payload-free evidence — counts, lifecycle state, normalised error terms, never
+a message body — and writes plain-language observations into the Playbook Ledger for a human to
+approve or reject. It cannot execute, approve or promote anything: the boundary is enforced by an
+IL scan over the compiled assemblies, not by review. It never calls an external or cloud LLM; a
+local Ollama instance is the only backend it knows.
+
+**🟢 v4.0.0 — evidence parity, production, multi-cloud trust root, outcomes, longevity.** Named
+"Shipped" and "Observed" deliberately as two separate claims, because a shipped feature this
+session hasn't been driven live yet is a real, different thing from one that has:
+
+| Unit | Shipped | Observed live |
+|---|---|---|
+| Durable evidence, all 4 pillars | ✅ | ✅ Full test suite green; `verify-playbook-chain.py` run against a real generated export, including a deliberately tampered event and a dangling citation, both caught |
+| Production namespaces + elevation | ✅ | ✅ Registering a `Prod` namespace, a denied replay, a pending elevation, a refused self-approval, and a revoke were all driven against the running app. **Not yet observed:** an approval by two distinct identities (local dev has one authenticated identity), and a real production recovery execution |
+| Multi-cloud DLQ observer attestation | ✅ (code) | ⏳ Terraform modules `validate`-clean, never `apply`-ed — the attestation path has only ever run against a test double, never a real DynamoDB/Firestore observer |
+| Outcome metrics ("This week" on Home) | ✅ | ✅ Rendered against real, currently-connected namespaces |
+| Five-destination nav + More | ✅ | ✅ Verified live — five icons plus a More button that opens the full command palette |
+| Epoch sealing, config export/import, upgrade-in-place | ✅ | ⏳ Unit/integration-tested only; not yet run against a real production-sized ledger or an actual git-reviewed configuration bundle |
+
+Full detail, including exactly which files changed and why, in [CHANGELOG.md](CHANGELOG.md).
 
 Have a use-case that should shape this? [Open a feature request](https://github.com/debdevops/servicehub/issues/new) — describe the problem, not just the solution.
 

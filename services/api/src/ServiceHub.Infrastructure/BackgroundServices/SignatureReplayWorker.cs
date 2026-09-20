@@ -19,6 +19,7 @@ public sealed class SignatureReplayWorker : BackgroundService
     private readonly IServiceProvider _serviceProvider;
     private readonly ISignatureReplayQueue _queue;
     private readonly ILogger<SignatureReplayWorker> _logger;
+    private readonly IWorkerHeartbeatStore? _heartbeatStore;
 
     /// <summary>Initializes a new instance of the <see cref="SignatureReplayWorker"/> class.</summary>
     public SignatureReplayWorker(
@@ -29,6 +30,10 @@ public sealed class SignatureReplayWorker : BackgroundService
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _queue = queue ?? throw new ArgumentNullException(nameof(queue));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+        // Optional: GetService (not GetRequiredService) so tests that build a root provider
+        // without registering it keep working — heartbeat recording degrades to a no-op instead.
+        _heartbeatStore = serviceProvider.GetService<IWorkerHeartbeatStore>();
     }
 
     /// <inheritdoc />
@@ -36,11 +41,17 @@ public sealed class SignatureReplayWorker : BackgroundService
     {
         await RecoverInterruptedJobsAsync(stoppingToken);
 
+        // Queue-driven, not timer-driven: no expected cadence between jobs, so no
+        // staleness check applies once this proves the worker actually started and entered
+        // its dequeue loop (see IWorkerHeartbeatStore's docs on event-driven workers).
+        _heartbeatStore?.RecordHeartbeat(nameof(SignatureReplayWorker), expectedInterval: null);
+
         await foreach (var jobId in _queue.DequeueAllAsync(stoppingToken))
         {
             try
             {
                 await ProcessJobAsync(jobId, stoppingToken);
+                _heartbeatStore?.RecordHeartbeat(nameof(SignatureReplayWorker), expectedInterval: null);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

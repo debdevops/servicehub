@@ -12,6 +12,16 @@ import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
 import { ProviderBadge, getProviderStyle, getProviderServiceName } from '@servicehub/ui-shared/lib/providerStyles';
 import { EmptyState } from '@/components/EmptyState';
 import type { Message as APIMessage, Namespace } from '@servicehub/ui-shared/lib/api/types';
+import { HelpTooltip } from '@/components/help';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
+
+const STATUS_EXPLANATION: Record<LiveTailStatus, string> = {
+  idle: 'Not currently watching this queue or subscription.',
+  connecting: 'Establishing the live connection…',
+  connected: 'Receiving new messages as they arrive.',
+  disconnected: 'The live connection dropped — click Start to reconnect.',
+  unsupported: 'This provider has no non-destructive peek, so it cannot be tailed safely.',
+};
 
 // ============================================================================
 // LiveTailPage — dedicated Quick Access workspace for watching one queue,
@@ -76,7 +86,10 @@ function MessageRow({ message, isExpanded, onToggle }: MessageRowProps) {
               {message.messageId || `seq-${message.sequenceNumber}`}
             </span>
             {message.deliveryCount > 1 && (
-              <span className="inline-block px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-50 text-amber-700 border border-amber-200 shrink-0">
+              <span
+                className="inline-block px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-50 text-amber-700 border border-amber-200 shrink-0"
+                title={tooltips.liveTail.deliveryCount.detail}
+              >
                 Delivery #{message.deliveryCount}
               </span>
             )}
@@ -291,7 +304,10 @@ export function LiveTailPage() {
           <div className="flex items-center gap-3">
             <Radio className="w-6 h-6 text-white/80" />
             <div>
-              <h1 className="text-xl font-semibold text-white">Live Tail</h1>
+              <h1 className="text-xl font-semibold text-white flex items-center gap-1.5">
+                Live Tail
+                <HelpTooltip {...tooltips.liveTail.overview} position="bottom" />
+              </h1>
               <p className="text-sm text-emerald-100">Watch new messages arrive on one queue or subscription in real time</p>
             </div>
           </div>
@@ -315,7 +331,10 @@ export function LiveTailPage() {
         <div className="flex items-center gap-3">
           <Radio className="w-6 h-6 text-white/80 shrink-0" />
           <div className="min-w-0">
-            <h1 className="text-xl font-semibold text-white">Live Tail</h1>
+            <h1 className="text-xl font-semibold text-white flex items-center gap-1.5">
+              Live Tail
+              <HelpTooltip {...tooltips.liveTail.overview} position="bottom" />
+            </h1>
             <p className="text-sm text-emerald-100 truncate">
               {providerLabel} · {namespace?.displayName || namespace?.name || namespaceId} · {serviceKind} ·{' '}
               {entityType === 'topic' ? `${topicName} / ${subscriptionName}` : queueName}
@@ -328,7 +347,7 @@ export function LiveTailPage() {
       <div className="flex items-center justify-between gap-3 px-6 py-2.5 border-b border-gray-200 bg-white shrink-0 flex-wrap">
         <div className="flex items-center gap-2 text-sm">
           <span className={`w-2 h-2 rounded-full ${STATUS_DOT[status]}`} />
-          <span className="text-gray-700 font-medium">
+          <span className="text-gray-700 font-medium" title={status === 'idle' && pausedByUser ? 'Live tail is paused — click Start to resume.' : STATUS_EXPLANATION[status]}>
             {status === 'idle' && pausedByUser ? 'Paused' : STATUS_LABEL[status]}
           </span>
           <span className="text-gray-400">· {messages.length} received</span>

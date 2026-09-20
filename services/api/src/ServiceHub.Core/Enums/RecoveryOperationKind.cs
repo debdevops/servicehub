@@ -24,5 +24,15 @@ public enum RecoveryOperationKind
     /// <summary>The operation automatically disabled an <see cref="Entities.AutoReplayRule"/> —
     /// the success-rate circuit breaker. Never represents a replay/purge and never touches an
     /// <see cref="Entities.AutonomyGrant"/>.</summary>
-    AutoReplayRuleControl = 4
+    AutoReplayRuleControl = 4,
+
+    /// <summary>The operation requested, approved, or revoked a
+    /// <see cref="Entities.ProductionElevation"/> (ADR-0010 §Decision phase 2). Never represents a
+    /// replay/purge and never touches an <see cref="Entities.AutonomyGrant"/>.</summary>
+    ProductionElevationControl = 5,
+
+    /// <summary>The operation sealed an epoch of the Recovery Evidence Ledger (roadmap
+    /// next-chapter M5.2). Never represents a replay/purge and never touches an
+    /// <see cref="Entities.AutonomyGrant"/>.</summary>
+    EpochControl = 6
 }

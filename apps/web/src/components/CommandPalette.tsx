@@ -1,12 +1,10 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Search, LayoutDashboard, MessageSquare, Clock, GitMerge,
-  AlertCircle, RefreshCw, BarChart2, HelpCircle, Plug,
-  Database, ChevronRight, X, Layers, Cloud, Shield
-} from 'lucide-react';
+import { Search, Clock, AlertCircle, Database, ChevronRight, X } from 'lucide-react';
 import { useNamespaces } from '@servicehub/ui-shared/hooks/useNamespaces';
 import { useFocusTrap } from '@servicehub/ui-shared/hooks/useFocusTrap';
+import { useDemoContext } from '@servicehub/ui-shared/lib/demo/DemoContext';
+import { NAV_ENTRIES } from '@/nav/navigation';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -20,130 +18,12 @@ interface PaletteItem {
   keywords?: string;
 }
 
-// ── Static Page Items ─────────────────────────────────────────────────────────
-
-const PAGE_ITEMS: Omit<PaletteItem, 'action'>[] = [
-  {
-    id: 'page-dashboard',
-    label: 'Namespace Overview',
-    description: 'Multi-namespace overview',
-    group: 'Pages',
-    icon: <LayoutDashboard className="w-4 h-4" />,
-    keywords: 'home overview dashboard',
-  },
-  {
-    id: 'page-fleet',
-    label: 'Fleet Health',
-    description: 'Dead-letter health across every namespace',
-    group: 'Pages',
-    icon: <Layers className="w-4 h-4" />,
-    keywords: 'fleet operations overnight',
-  },
-  {
-    id: 'page-messages',
-    label: 'Messages',
-    description: 'Browse and send messages',
-    group: 'Pages',
-    icon: <MessageSquare className="w-4 h-4" />,
-    keywords: 'queue browse send',
-  },
-  {
-    id: 'page-scheduled',
-    label: 'Scheduled Messages',
-    description: 'View and cancel scheduled deliveries',
-    group: 'Pages',
-    icon: <Clock className="w-4 h-4" />,
-    keywords: 'future timed deliver',
-  },
-  {
-    id: 'page-trace',
-    label: 'Multi-Cloud Trace',
-    description: 'Trace messages by correlation ID',
-    group: 'Pages',
-    icon: <GitMerge className="w-4 h-4" />,
-    keywords: 'trace journey timeline correlation cross cloud',
-  },
-  {
-    id: 'page-cloud-bridge',
-    label: 'Cloud Bridge',
-    description: 'Browse queues, topics and subscriptions across clouds',
-    group: 'Pages',
-    icon: <Cloud className="w-4 h-4" />,
-    keywords: 'provider status multi cloud',
-  },
-  {
-    id: 'page-dlq',
-    label: 'DLQ History',
-    description: 'Dead-letter queue audit trail',
-    group: 'Pages',
-    icon: <AlertCircle className="w-4 h-4" />,
-    keywords: 'dead letter poisoned failed',
-  },
-  {
-    id: 'page-rules',
-    label: 'Auto-Replay Rules',
-    description: 'Manage auto-replay configuration',
-    group: 'Pages',
-    icon: <RefreshCw className="w-4 h-4" />,
-    keywords: 'replay retry automation',
-  },
-  {
-    id: 'page-health',
-    label: 'System Health',
-    description: 'API and service health status',
-    group: 'Pages',
-    icon: <BarChart2 className="w-4 h-4" />,
-    keywords: 'status ping uptime',
-  },
-  {
-    id: 'page-audit',
-    label: 'Audit Trail',
-    description: 'Persistent record of critical operations and access events',
-    group: 'Pages',
-    icon: <Shield className="w-4 h-4" />,
-    keywords: 'logs history compliance',
-  },
-  {
-    id: 'page-security',
-    label: 'Security & Privacy',
-    description: 'Encryption and data-handling overview',
-    group: 'Pages',
-    icon: <Shield className="w-4 h-4" />,
-    keywords: 'encryption privacy compliance',
-  },
-  {
-    id: 'page-connect',
-    label: 'Connect',
-    description: 'Add or manage cloud namespaces',
-    group: 'Pages',
-    icon: <Plug className="w-4 h-4" />,
-    keywords: 'namespace add connection string',
-  },
-  {
-    id: 'page-help',
-    label: 'Help & Guide',
-    description: 'Quick reference and shortcuts',
-    group: 'Pages',
-    icon: <HelpCircle className="w-4 h-4" />,
-    keywords: 'docs guide keyboard',
-  },
-];
-
-const PAGE_ROUTES: Record<string, string> = {
-  'page-dashboard': '/dashboard',
-  'page-fleet': '/fleet',
-  'page-messages': '/messages',
-  'page-scheduled': '/scheduled',
-  'page-trace': '/cross-cloud-trace',
-  'page-cloud-bridge': '/cloud-bridge',
-  'page-dlq': '/dlq-history',
-  'page-rules': '/rules',
-  'page-health': '/health',
-  'page-audit': '/audit',
-  'page-security': '/security',
-  'page-connect': '/connect',
-  'page-help': '/help',
-};
+// Every command-palette-eligible page, sourced from the shared nav definition
+// (`@/nav/navigation`) rather than a second, independently-maintained list — the
+// pre-unification version of this file had drifted from Icon Rail/Quick Access on both
+// content (missing Incident Center and Live Tail entirely) and icon choice (four destinations
+// rendered a different icon here than everywhere else).
+const PAGE_COMMAND_ENTRIES = NAV_ENTRIES.filter((entry) => entry.commandPalette);
 
 // ── Fuzzy Match ───────────────────────────────────────────────────────────────
 
@@ -209,6 +89,8 @@ interface CommandPaletteProps {
 export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const navigate = useNavigate();
   const { data: namespaces = [] } = useNamespaces();
+  const { isDemoMode, cloudProvider } = useDemoContext();
+  const navPrefix = isDemoMode && cloudProvider ? `/demo/${cloudProvider}` : '';
   const [query, setQuery] = useState('');
   const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -225,9 +107,14 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
   // Build full item list
   const allItems = useMemo<PaletteItem[]>(() => {
-    const pageItems: PaletteItem[] = PAGE_ITEMS.map(p => ({
-      ...p,
-      action: () => { navigate(PAGE_ROUTES[p.id]); onClose(); },
+    const pageItems: PaletteItem[] = PAGE_COMMAND_ENTRIES.map(entry => ({
+      id: `page-${entry.id}`,
+      label: entry.label,
+      description: entry.commandPalette!.description,
+      group: 'Pages' as const,
+      icon: <entry.icon className="w-4 h-4" />,
+      keywords: entry.commandPalette!.keywords,
+      action: () => { navigate(entry.to({ navPrefix })); onClose(); },
     }));
 
     const nsItems: PaletteItem[] = namespaces.map(ns => ({
@@ -252,10 +139,12 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         icon: <AlertCircle className="w-4 h-4 text-red-500" />,
         keywords: 'dead letter queue',
         action: () => {
-          // MessagesOverviewPage lists dead-letter messages across every namespace (no
-          // per-namespace URL scoping) — the same destination the sidebar's own
-          // "Dead-Letter" quick-access link uses.
-          navigate('/messages-overview?tab=deadletter');
+          // DLQ Message History is the one DLQ surface that's actually namespace-scoped via the
+          // URL (`?namespace=`) — matches the nav registry's own 'dlq-history' entry. Previously
+          // this navigated to the unscoped `/messages-overview?tab=deadletter`, so every
+          // namespace's "Browse DLQ" entry did the exact same thing regardless of which
+          // namespace was clicked.
+          navigate(`${navPrefix}/dlq-history?namespace=${ns.id}`);
           onClose();
         },
       },
@@ -274,7 +163,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     ]);
 
     return [...pageItems, ...nsItems, ...actionItems];
-  }, [namespaces, navigate, onClose]);
+  }, [namespaces, navigate, onClose, navPrefix]);
 
   // Filter + score
   const filtered = useMemo(() => {
@@ -325,10 +214,20 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     } else if (e.key === 'Enter') {
       e.preventDefault();
       flatItems[activeIdx]?.action();
-    } else if (e.key === 'Escape') {
-      onClose();
     }
-  }, [flatItems, activeIdx, onClose]);
+    // Escape is handled by the window-level listener below, not here — it must close the palette
+    // even when focus isn't on this input, so it can't live only in this handler.
+  }, [flatItems, activeIdx]);
+
+  // Escape must close the palette even when focus has left the search input — clicking a
+  // non-interactive area inside the panel (a group header, an item's description text) blurs
+  // the input to <body>, and an input-scoped keydown handler would never see the keystroke.
+  useEffect(() => {
+    if (!open) return;
+    const handleEscape = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [open, onClose]);
 
   // Declared before the early return — hooks must run on every render.
   const dialogRef = useFocusTrap<HTMLDivElement>(open);

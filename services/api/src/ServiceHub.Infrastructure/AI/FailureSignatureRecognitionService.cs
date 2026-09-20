@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Shared.Helpers;
@@ -72,7 +73,7 @@ public sealed class FailureSignatureRecognitionService : IFailureSignatureRecogn
 
         // Look up and record signatures.
         var lookupResult = await _lookupService.LookupAndRecordAsync(
-            ownerId, namespaceId, observations, cancellationToken)
+            ownerId, namespaceId, observations, SignatureHashKind.Fingerprint, cancellationToken)
             .ConfigureAwait(false);
 
         // Transform to FailureSignature domain objects.

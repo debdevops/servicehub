@@ -1,5 +1,8 @@
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Hosting;
+using ServiceHub.Infrastructure.BackgroundServices;
+using ServiceHub.Infrastructure.RecoveryLedger;
+using ServiceHub.Infrastructure.Security;
 
 namespace ServiceHub.Api.Configuration;
 
@@ -11,6 +14,42 @@ public static class ProductionConfigurationValidator
             return;
 
         var errors = new List<string>();
+
+        // Validate RecoveryEvidence:ObservationWindowHours — the post-replay recurrence-
+        // observation floor (roadmap W1.1, fixes F4). A near-zero window would let auto-replay
+        // declare "no recurrence" before a re-dead-lettered message could plausibly reappear,
+        // silently defeating the safety property the window exists to prove. This floor cannot
+        // be configured below in production, regardless of what value is present.
+        var observationWindowHours = configuration.GetValue(
+            "RecoveryEvidence:ObservationWindowHours", RecoveryLedgerService.DefaultObservationWindowHours);
+        if (observationWindowHours < RecoveryLedgerService.MinimumProductionObservationWindowHours)
+        {
+            errors.Add(
+                $"RecoveryEvidence:ObservationWindowHours is {observationWindowHours}h, below the " +
+                $"{RecoveryLedgerService.MinimumProductionObservationWindowHours}h production floor " +
+                "(set via RecoveryEvidence__ObservationWindowHours environment variable) — a shorter " +
+                "window in production would let auto-replay declare a message recovered before a " +
+                "re-dead-lettered duplicate could plausibly reappear.");
+        }
+
+        // Validate RecoveryEvidence:CircuitBreakerSuccessRateFloor — the per-rule success-rate
+        // circuit breaker (master roadmap §4, which states it is non-configurable-off). Without
+        // this floor it was configurable-off in practice: a verified success rate is always >= 0,
+        // so a configured 0.0 disabled the breaker outright while every log line and dashboard
+        // still described it as active. A lower floor stays legitimate outside Production, where a
+        // soak run deliberately driving a rule to 0% needs the breaker to fire.
+        var circuitBreakerFloor = configuration.GetValue(
+            "RecoveryEvidence:CircuitBreakerSuccessRateFloor",
+            AutonomyEvaluationWorker.DefaultCircuitBreakerSuccessRateFloor);
+        if (circuitBreakerFloor < AutonomyEvaluationWorker.MinimumProductionCircuitBreakerSuccessRateFloor)
+        {
+            errors.Add(
+                $"RecoveryEvidence:CircuitBreakerSuccessRateFloor is {circuitBreakerFloor}, below the " +
+                $"{AutonomyEvaluationWorker.MinimumProductionCircuitBreakerSuccessRateFloor} production floor " +
+                "(set via RecoveryEvidence__CircuitBreakerSuccessRateFloor environment variable) — a lower " +
+                "floor in production would let an auto-replay rule keep running while most of its replays " +
+                "verifiably fail, and 0 disables the circuit breaker entirely.");
+        }
 
         // Validate AllowedHosts
         var allowedHosts = configuration["AllowedHosts"];
@@ -27,19 +66,36 @@ public static class ProductionConfigurationValidator
             errors.Add("AllowedHosts cannot be '*' in production — this disables host-header filtering and opens the app to cache poisoning attacks");
         }
 
-        // Validate EncryptionKey
-        var encryptionKey = configuration["Security:EncryptionKey"];
-        if (string.IsNullOrWhiteSpace(encryptionKey))
+        // Validate EncryptionKey / EncryptionKeyRegistry — a registry, when present, takes
+        // precedence over the single key (see EncryptionKeyRegistry.Load), so the single-key
+        // format checks below only apply when no registry is configured.
+        var encryptionKeyRegistry = configuration["Security:EncryptionKeyRegistry"];
+        if (!string.IsNullOrWhiteSpace(encryptionKeyRegistry))
         {
-            errors.Add("Security:EncryptionKey is required in production (set via SECURITY__ENCRYPTIONKEY environment variable)");
+            try
+            {
+                EncryptionKeyRegistry.Load(configuration);
+            }
+            catch (InvalidOperationException ex)
+            {
+                errors.Add($"Security:EncryptionKeyRegistry is invalid: {ex.Message}");
+            }
         }
-        else if (IsPlaceholderValue(encryptionKey))
+        else
         {
-            errors.Add("Security:EncryptionKey has placeholder value — generate a random 32-byte key via: openssl rand -hex 32");
-        }
-        else if (!IsValidHexString(encryptionKey, 64))
-        {
-            errors.Add("Security:EncryptionKey must be a 64-character hexadecimal string (32 bytes). Generate via: openssl rand -hex 32");
+            var encryptionKey = configuration["Security:EncryptionKey"];
+            if (string.IsNullOrWhiteSpace(encryptionKey))
+            {
+                errors.Add("Security:EncryptionKey is required in production (set via SECURITY__ENCRYPTIONKEY environment variable, or configure SECURITY__ENCRYPTIONKEYREGISTRY for multi-key rotation)");
+            }
+            else if (IsPlaceholderValue(encryptionKey))
+            {
+                errors.Add("Security:EncryptionKey has placeholder value — generate a random 32-byte key via: openssl rand -hex 32");
+            }
+            else if (!IsValidHexString(encryptionKey, 64))
+            {
+                errors.Add("Security:EncryptionKey must be a 64-character hexadecimal string (32 bytes). Generate via: openssl rand -hex 32");
+            }
         }
 
         // Validate SiteUrl
@@ -76,7 +132,6 @@ public static class ProductionConfigurationValidator
         var authenticationEnabled = configuration.GetValue<bool>("Security:Authentication:Enabled");
         if (authenticationEnabled)
         {
-            var spaTokenEnabled = configuration.GetValue<bool>("Security:SpaToken:Enabled");
             var easyAuthEnabled = configuration.GetValue<bool>("Security:EasyAuth:Enabled");
             var oidcEnabled = configuration.GetValue<bool>("Security:Oidc:Enabled");
 
@@ -85,13 +140,18 @@ public static class ProductionConfigurationValidator
                 && !string.IsNullOrWhiteSpace(configuration["Security:Oidc:Authority"])
                 && !string.IsNullOrWhiteSpace(configuration["Security:Oidc:Audience"]);
 
-            if (!hasApiKeys && !spaTokenEnabled && !easyAuthEnabled && !hasOidcConfig)
+            // Security:SpaToken:Enabled is deliberately NOT treated as a satisfying condition here:
+            // per SpaTokenProvider's own doc comment, the SPA token confirms same-origin HTML
+            // delivery (CSRF mitigation) but does not identify or authenticate a user — anyone who
+            // can fetch the index page can read and replay it. Accepting it as production auth would
+            // let an unauthenticated caller pass validation and operate replay/purge against live data.
+            if (!hasApiKeys && !easyAuthEnabled && !hasOidcConfig)
             {
                 errors.Add(
                     "Security:Authentication:Enabled is true in production but no usable authentication method is configured. " +
-                    "Configure at least one of: " +
+                    "Security:SpaToken:Enabled does not count — it is CSRF mitigation, not authentication " +
+                    "(see SpaTokenProvider's doc comment). Configure at least one of: " +
                     "Security:Authentication:ApiKeys/ScopedApiKeys, " +
-                    "Security:SpaToken:Enabled=true, " +
                     "Security:EasyAuth:Enabled=true, " +
                     "or Security:Oidc:Enabled=true with Authority and Audience.");
             }
@@ -107,6 +167,65 @@ public static class ProductionConfigurationValidator
         }
 
         logger.LogInformation("✅ Production configuration validation passed");
+    }
+
+    /// <summary>
+    /// Logs a loud warning whenever <c>RecoveryEvidence:ObservationWindowHours</c> is configured
+    /// away from the default outside Development (roadmap W1.1, fixes F4) — Staging included, not
+    /// only Production, unlike <see cref="ValidateProduction"/> above. A shortened window is safe
+    /// and legitimate (a soak run, roadmap W1.3, cannot finish in any bounded time at 24h), but it
+    /// is also the single easiest way to make an autonomy promotion look real when it isn't, so an
+    /// operator reading startup logs outside Development must not be able to miss it. Never
+    /// throws: Production's own hard floor is enforced separately, by <see cref="ValidateProduction"/>.
+    /// </summary>
+    public static void WarnIfObservationWindowNonDefault(IConfiguration configuration, IHostEnvironment environment, ILogger logger)
+    {
+        if (environment.IsDevelopment())
+            return;
+
+        var observationWindowHours = configuration.GetValue(
+            "RecoveryEvidence:ObservationWindowHours", RecoveryLedgerService.DefaultObservationWindowHours);
+        if (observationWindowHours == RecoveryLedgerService.DefaultObservationWindowHours)
+            return;
+
+        logger.LogWarning(
+            "⚠️  RecoveryEvidence:ObservationWindowHours is {ConfiguredHours}h, overriding the " +
+            "{DefaultHours}h default outside Development ({EnvironmentName}). Every recovery entry " +
+            "opened under this value records the applied window in the evidence ledger " +
+            "(RecoveryEventType.NonDefaultObservationWindowApplied), so this is visible to any " +
+            "auditor regardless of this log line. In Production this can never go below " +
+            "{FloorHours}h — enforced at startup.",
+            observationWindowHours, RecoveryLedgerService.DefaultObservationWindowHours,
+            environment.EnvironmentName, RecoveryLedgerService.MinimumProductionObservationWindowHours);
+    }
+
+    /// <summary>
+    /// Logs a loud warning outside Development when
+    /// <c>RecoveryEvidence:CircuitBreakerSuccessRateFloor</c> is not the default — the sibling of
+    /// <see cref="WarnIfObservationWindowNonDefault"/>, for the same reason. A lowered floor is
+    /// legitimate in a soak run, and is also the easiest way to leave a rule running while its
+    /// replays verifiably fail. Never throws: Production's hard floor is enforced separately, by
+    /// <see cref="ValidateProduction"/>.
+    /// </summary>
+    public static void WarnIfCircuitBreakerFloorNonDefault(IConfiguration configuration, IHostEnvironment environment, ILogger logger)
+    {
+        if (environment.IsDevelopment())
+            return;
+
+        var floor = configuration.GetValue(
+            "RecoveryEvidence:CircuitBreakerSuccessRateFloor",
+            AutonomyEvaluationWorker.DefaultCircuitBreakerSuccessRateFloor);
+        if (floor == AutonomyEvaluationWorker.DefaultCircuitBreakerSuccessRateFloor)
+            return;
+
+        logger.LogWarning(
+            "⚠️  RecoveryEvidence:CircuitBreakerSuccessRateFloor is {ConfiguredFloor}, overriding the " +
+            "{DefaultFloor} default outside Development ({EnvironmentName}). Every circuit-breaker trip " +
+            "records the applied floor in the evidence ledger, so this is visible to any auditor " +
+            "regardless of this log line. In Production this can never go below {MinimumFloor} — " +
+            "enforced at startup. A floor of 0 would disable the circuit breaker entirely.",
+            floor, AutonomyEvaluationWorker.DefaultCircuitBreakerSuccessRateFloor,
+            environment.EnvironmentName, AutonomyEvaluationWorker.MinimumProductionCircuitBreakerSuccessRateFloor);
     }
 
     private static bool IsValidHexString(string value, int expectedLength)
@@ -131,16 +250,16 @@ public static class ProductionConfigurationValidator
 
     private static bool HasConfiguredApiKeys(IConfiguration configuration)
     {
-        // Check simple ApiKeys array
-        var simpleKeys = configuration.GetSection("Security:Authentication:ApiKeys").Get<string[]>();
-        if (simpleKeys is { Length: > 0 })
+        // Check ApiKeys entries — either a plain string or a named object
+        // ({ "Key": ..., "Description": ... }), mirroring
+        // ApiKeyAuthenticationMiddleware.LoadApiKeys. A plain Get<string[]>() would silently
+        // miss named entries, since a complex child node has no bindable string value.
+        foreach (var child in configuration.GetSection("Security:Authentication:ApiKeys").GetChildren())
         {
-            foreach (var key in simpleKeys)
+            var keyValue = child.GetChildren().Any() ? child.GetValue<string>("Key") : child.Value;
+            if (!string.IsNullOrWhiteSpace(keyValue) && !IsPlaceholderKey(keyValue))
             {
-                if (!string.IsNullOrWhiteSpace(key) && !IsPlaceholderKey(key))
-                {
-                    return true;
-                }
+                return true;
             }
         }
 

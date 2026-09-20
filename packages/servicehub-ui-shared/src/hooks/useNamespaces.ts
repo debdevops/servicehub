@@ -54,12 +54,12 @@ export function useCreateNamespace() {
     },
     onError: (error: ApiError) => {
       // Extract the specific error message from the API response
-      const errorMessage = 
-        error?.response?.data?.detail || 
-        error?.response?.data?.message || 
-        error?.message || 
+      const errorMessage =
+        error?.response?.data?.detail ||
+        error?.response?.data?.message ||
+        error?.message ||
         'Failed to connect namespace. Verify the connection string format and permissions.';
-      
+
       // Log error name only in dev; never log the full error object (may contain response data)
       if (import.meta.env.DEV) {
         console.error('Namespace creation error:', error?.message ?? 'unknown');

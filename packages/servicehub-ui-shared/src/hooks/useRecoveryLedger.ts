@@ -1,19 +1,24 @@
-import { useQuery, UseQueryOptions } from '@tanstack/react-query';
+import { useQueries, useQuery, UseQueryOptions } from '@tanstack/react-query';
 import {
   recoveryApi,
   type RecoveryOperation,
   type RecoveryLedgerEntry,
   type RecoveryEntriesParams,
   type SignatureAutonomyStatus,
+  type ApprovalQueueEntry,
+  type AutonomyDashboardOverview,
+  type OutcomeMetricsOverview,
+  type SignatureTrustEvidence,
 } from '../lib/api/recovery';
 import { useDemoContext } from '../lib/demo/DemoContext';
 import { getMockRecoveryOperations, getMockRecoveryOperationDetail } from '../lib/demo/mockProviders';
+import type { CloudProviderType } from '../lib/api/types';
 
 /**
  * Hook for fetching recovery operations, most recently opened first. The Recovery Ledger page's
  * primary list.
  */
-export function useRecoveryOperations(namespaceId?: string, enabled = true) {
+export function useRecoveryOperations(namespaceId?: string, enabled = true, limit = 100) {
   const { isDemoMode, cloudProvider } = useDemoContext();
 
   const options: UseQueryOptions<RecoveryOperation[]> =
@@ -23,8 +28,8 @@ export function useRecoveryOperations(namespaceId?: string, enabled = true) {
           queryFn: (): Promise<RecoveryOperation[]> => Promise.resolve(getMockRecoveryOperations()),
         }
       : {
-          queryKey: ['recovery-operations', namespaceId],
-          queryFn: () => recoveryApi.getOperations(namespaceId),
+          queryKey: ['recovery-operations', namespaceId, limit],
+          queryFn: () => recoveryApi.getOperations(namespaceId, limit),
           enabled: !isDemoMode && enabled,
           staleTime: 30_000,
           refetchInterval: 60_000,
@@ -81,6 +86,157 @@ export function useSignatureAutonomyStatus(signatureHash?: string, actionKind: '
         };
 
   return useQuery(options);
+}
+
+/**
+ * Hook for fetching the Approval Queue (roadmap §11 item 1): auto-replay rule matches the
+ * Eligibility Gate escalated for manual review, still `Active` and so still approvable. Demo mode
+ * has no synthetic Declined ledger fixture — rather than fabricate one, it honestly reports an
+ * empty queue.
+ */
+export function useApprovalQueue(namespaceId?: string, limit = 100) {
+  const { isDemoMode } = useDemoContext();
+
+  const options: UseQueryOptions<ApprovalQueueEntry[]> = isDemoMode
+    ? {
+        queryKey: ['recovery-approval-queue', 'demo'],
+        queryFn: (): Promise<ApprovalQueueEntry[]> => Promise.resolve([]),
+      }
+    : {
+        queryKey: ['recovery-approval-queue', namespaceId, limit],
+        queryFn: () => recoveryApi.getApprovalQueue(namespaceId, limit),
+        enabled: !isDemoMode,
+        staleTime: 15_000,
+        refetchInterval: 30_000,
+        refetchIntervalInBackground: false,
+        retry: (failureCount, error: unknown) => {
+          const err = error as { response?: { status?: number } };
+          if (err?.response?.status === 404) return false;
+          if (err?.response?.status === 403) return false;
+          return failureCount < 2;
+        },
+      };
+
+  return useQuery(options);
+}
+
+/**
+ * Hook for fetching the fleet-wide autonomy dashboard (roadmap §11 item 5, §15 item 9): how many
+ * signatures currently stand at each autonomy level, every currently standing grant, every
+ * circuit-breaker-tripped rule, the emergency-stop status, and recent promotions/demotions. Demo
+ * mode has no synthetic `AutonomyGrant`/`RecoveryEvent` fixture set spanning multiple signatures
+ * — rather than fabricate one, it honestly reports an empty, non-active snapshot, matching
+ * {@link useApprovalQueue}'s reasoning.
+ */
+export function useAutonomyDashboard() {
+  const { isDemoMode } = useDemoContext();
+
+  const options: UseQueryOptions<AutonomyDashboardOverview> = isDemoMode
+    ? {
+        queryKey: ['recovery-autonomy-dashboard', 'demo'],
+        queryFn: (): Promise<AutonomyDashboardOverview> =>
+          Promise.resolve({
+            generatedAt: new Date().toISOString(),
+            emergencyStopActive: false,
+            totalSignatures: 0,
+            levelCounts: [],
+            grants: [],
+            circuitBreakerTrips: [],
+            recentTransitions: [],
+          }),
+      }
+    : {
+        queryKey: ['recovery-autonomy-dashboard'],
+        queryFn: () => recoveryApi.getAutonomyDashboard(),
+        enabled: !isDemoMode,
+        staleTime: 30_000,
+        refetchInterval: 60_000,
+        refetchIntervalInBackground: false,
+        retry: (failureCount, error: unknown) => {
+          const err = error as { response?: { status?: number } };
+          if (err?.response?.status === 404) return false;
+          if (err?.response?.status === 403) return false;
+          return failureCount < 2;
+        },
+      };
+
+  return useQuery(options);
+}
+
+/**
+ * What the fleet actually achieved over a trailing window (roadmap next-chapter M4.1) — messages
+ * recovered, messages written off, median time to a verified recovery, autonomous recoveries, and
+ * gate refusals. Every figure traces to a ledger row; none is modelled or estimated. `provider`,
+ * when passed, scopes every figure to that cloud's own ledger rows (a cloud-specific Home) — has
+ * no effect in Demo Mode, which has no real ledger rows to scope in the first place.
+ */
+export function useOutcomeMetrics(days = 7, provider?: CloudProviderType) {
+  const { isDemoMode } = useDemoContext();
+
+  const options: UseQueryOptions<OutcomeMetricsOverview> = isDemoMode
+    ? {
+        queryKey: ['recovery-outcomes', 'demo', days],
+        queryFn: (): Promise<OutcomeMetricsOverview> => {
+          const now = new Date();
+          const windowStart = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+          return Promise.resolve({
+            generatedAt: now.toISOString(),
+            windowStartUtc: windowStart.toISOString(),
+            windowEndUtc: now.toISOString(),
+            messagesRecovered: 0,
+            messagesAbandoned: 0,
+            medianSecondsToVerifiedRecovery: null,
+            autonomousRecoveries: 0,
+            gateRefusals: 0,
+          });
+        },
+      }
+    : {
+        queryKey: ['recovery-outcomes', days, provider ?? 'all'],
+        queryFn: () => recoveryApi.getOutcomes(days, provider),
+        enabled: !isDemoMode,
+        staleTime: 60_000,
+        refetchInterval: 120_000,
+        refetchIntervalInBackground: false,
+        retry: (failureCount, error: unknown) => {
+          const err = error as { response?: { status?: number } };
+          if (err?.response?.status === 404) return false;
+          if (err?.response?.status === 403) return false;
+          return failureCount < 2;
+        },
+      };
+
+  return useQuery(options);
+}
+
+/**
+ * Batch-fetches Evidence-Derived Trust Scoring for however many distinct failure signatures the
+ * Approval Queue's current page holds — the proposal panel enriches each `AUTONOMY_GRANT_INSUFFICIENT`
+ * entry's static label with its signature's real evidence (roadmap W2.5, §5.2). `useQueries`
+ * instead of one call per row: entries with the same signature share one fetch, and demo mode
+ * (where there is never a real Declined ledger to evaluate) simply returns nothing rather than
+ * fabricate evidence.
+ */
+export function useSignatureTrustEvidenceBatch(signatureHashes: string[]) {
+  const { isDemoMode } = useDemoContext();
+  const unique = Array.from(new Set(signatureHashes));
+
+  const results = useQueries({
+    queries: unique.map((hash) => ({
+      queryKey: ['recovery-trust-evidence', hash],
+      queryFn: () => recoveryApi.getTrustEvidence(hash),
+      enabled: !isDemoMode,
+      staleTime: 30_000,
+      retry: false,
+    })),
+  });
+
+  const byHash = new Map<string, SignatureTrustEvidence>();
+  unique.forEach((hash, i) => {
+    const data = results[i]?.data;
+    if (data) byHash.set(hash, data);
+  });
+  return byHash;
 }
 
 /**

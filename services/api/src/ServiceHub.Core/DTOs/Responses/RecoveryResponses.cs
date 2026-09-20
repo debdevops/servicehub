@@ -141,3 +141,67 @@ public sealed record SignatureAutonomyStatusResponse(
     bool CanAutoReplay,
     bool CanProveDlqAbsence,
     string? BlockedReason);
+
+/// <summary>
+/// Response DTO for <c>GET /api/v1/recovery/approval-queue</c> (roadmap §11 item 1) — one
+/// auto-replay rule match the Eligibility Gate escalated for manual review, whose underlying DLQ
+/// message is still <c>Active</c> (approvable). Carries everything the existing single-message
+/// replay endpoint (<c>POST /api/v1/messages/replay</c>) needs, so "approve" is a plain call to
+/// that already-gated, already-audited path — this queue adds no new execution path.
+/// </summary>
+/// <param name="EntryId">The <see cref="Entities.RecoveryLedgerEntry"/> that recorded the decline.</param>
+/// <param name="NamespaceId">Namespace to replay into.</param>
+/// <param name="NamespaceName">Namespace display name, for the panel.</param>
+/// <param name="Provider">Cloud provider snapshot.</param>
+/// <param name="Environment">Deployment environment snapshot.</param>
+/// <param name="EntityName">Queue name, or topic name when <paramref name="SubscriptionName"/> is set — the exact value the replay endpoint's <c>entityName</c> parameter expects.</param>
+/// <param name="SubscriptionName">Subscription name, when the entity is a topic subscription; null for a queue.</param>
+/// <param name="SequenceNumber">The provider sequence number to replay — the replay endpoint's <c>sequenceNumber</c> parameter.</param>
+/// <param name="FailureCategory">Heuristic failure category, snapshotted.</param>
+/// <param name="RuleId">The <see cref="Entities.AutoReplayRule"/> whose match was escalated.</param>
+/// <param name="RuleName">The rule's name at match time.</param>
+/// <param name="ReasonCode">The Eligibility Gate predicate that escalated this attempt (e.g. <c>AUTONOMY_GRANT_INSUFFICIENT</c>).</param>
+/// <param name="MatchedCount">Recurrence-lineage match count carried on the decline, when the reason relates to the recurrence cap; null otherwise.</param>
+/// <param name="DeclinedAt">When the Eligibility Gate escalated this attempt.</param>
+/// <param name="SignatureHash">
+/// The failure signature this entry belongs to, when one was computed (see W1.5). Lets the
+/// frontend enrich a static reason label (e.g. <c>AUTONOMY_GRANT_INSUFFICIENT</c>) with this
+/// signature's actual trust evidence — "8 of 10 verified recoveries" instead of a generic
+/// sentence — via <c>GET recovery/trust/{signatureHash}</c> (roadmap W2.5, §5.2).
+/// </param>
+public sealed record ApprovalQueueEntryResponse(
+    Guid EntryId,
+    Guid NamespaceId,
+    string? NamespaceName,
+    string? Provider,
+    string? Environment,
+    string EntityName,
+    string? SubscriptionName,
+    long SequenceNumber,
+    string? FailureCategory,
+    long RuleId,
+    string RuleName,
+    string? ReasonCode,
+    int? MatchedCount,
+    DateTimeOffset DeclinedAt,
+    string? SignatureHash);
+
+/// <summary>
+/// Response DTO for rehearsal mode (roadmap §7 W1.2, <c>POST /api/v1/recovery/entries/{id}/rehearse</c>) —
+/// what <see cref="Interfaces.IRecoveryEligibilityGate"/> would decide for this entry's recorded
+/// identity, evaluated as of now. A read: nothing was executed, and nothing was recorded to the
+/// ledger by this call.
+/// </summary>
+/// <param name="EntryId">The rehearsed <see cref="Entities.RecoveryLedgerEntry"/>.</param>
+/// <param name="ActorKindEvaluated">Which <see cref="Enums.RecoveryActorKind"/> the gate was evaluated as.</param>
+/// <param name="Verdict">The gate's verdict: <c>Allow</c>, <c>Escalate</c>, or <c>Deny</c>.</param>
+/// <param name="ReasonCode">Which predicate produced the verdict, or carried recurrence-cap context on an <c>Allow</c>; null when no predicate fired.</param>
+/// <param name="MatchedCount">Predicate 3 only: how many prior lineage-matched entries were found.</param>
+/// <param name="EvaluatedAt">When this rehearsal ran.</param>
+public sealed record RecoveryRehearsalResponse(
+    Guid EntryId,
+    string ActorKindEvaluated,
+    string Verdict,
+    string? ReasonCode,
+    int MatchedCount,
+    DateTimeOffset EvaluatedAt);

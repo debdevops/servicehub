@@ -342,8 +342,8 @@ public sealed class QueuesController : ApiControllerBase
         }
 
         // Create a request with the queue name and namespace ID
-        var sendRequest = request with 
-        { 
+        var sendRequest = request with
+        {
             EntityName = queueName,
             NamespaceId = namespaceId
         };
@@ -521,7 +521,7 @@ public sealed class QueuesController : ApiControllerBase
         }
 
         var ns = namespaceResult.Value;
-        
+
         // Check if namespace has Send permission (required to dead-letter messages)
         if (!ns.HasSendPermission)
         {

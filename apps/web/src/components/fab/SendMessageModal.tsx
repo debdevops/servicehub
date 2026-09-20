@@ -39,7 +39,7 @@ export interface MessagePayload {
   messageCount: number;
 }
 
-export function SendMessageModal({ 
+export function SendMessageModal({
   isOpen,
   onClose,
   onSend,
@@ -83,7 +83,7 @@ export function SendMessageModal({
         onClose();
       }
     };
-    
+
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
   }, [isOpen, onClose]);
@@ -122,7 +122,7 @@ export function SendMessageModal({
     try {
       // Send messages (supports multiple copies)
       const count = sendMultiple ? messageCount : 1;
-      
+
       for (let i = 0; i < count; i++) {
         await sendMessage.mutateAsync({
           namespaceId: selectedNamespace,
@@ -261,7 +261,7 @@ export function SendMessageModal({
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-300 disabled:bg-gray-50 disabled:cursor-not-allowed"
             >
               <option value="">Select {entityType}...</option>
-              {entityType === 'queue' 
+              {entityType === 'queue'
                 ? queues?.map((q) => (
                     <option key={q.name} value={q.name}>
                       📥 {q.name}

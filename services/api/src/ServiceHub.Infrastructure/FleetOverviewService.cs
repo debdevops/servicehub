@@ -51,7 +51,8 @@ public sealed class FleetOverviewService : IFleetOverviewService
     public async Task<Result<FleetOverview>> GetOverviewAsync(
         string ownerId,
         int windowHours = 24,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
         if (string.IsNullOrWhiteSpace(ownerId))
         {
@@ -67,17 +68,23 @@ public sealed class FleetOverviewService : IFleetOverviewService
             var trendCutoff = new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero).AddDays(-(TrendDays - 1));
             var relevantCutoff = windowCutoff < trendCutoff ? windowCutoff : trendCutoff;
 
-            // Known limitation: fleet aggregation is not yet allow-list-aware — a
-            // namespace-restricted key still sees cross-namespace category/trend aggregates for
-            // its full owner pool here. See docs/KNOWN-LIMITATIONS.md.
-            var namespacesResult = await _namespaceRepository.GetByOwnerAsync(ownerId, allowedNamespaceIds: null, cancellationToken);
+            var namespacesResult = await _namespaceRepository.GetByOwnerAsync(ownerId, allowedNamespaceIds, cancellationToken);
             var namespaces = namespacesResult.IsSuccess
                 ? namespacesResult.Value
                 : [];
 
             // Bounded projection: only rows that can affect the overview.
-            var rows = await _dbContext.DlqMessages.AsNoTracking()
-                .Where(m => m.OwnerId == ownerId)
+            var dlqMessagesQuery = _dbContext.DlqMessages.AsNoTracking()
+                .Where(m => m.OwnerId == ownerId);
+
+            // NAMESPACE ALLOW-LIST: narrow every aggregate below (including the cross-namespace
+            // TopCategories/DailyTrend rollups, not just the per-namespace health rows) to the
+            // caller's credential's namespace allow-list, when one is present — null means
+            // unrestricted (today's behaviour).
+            if (allowedNamespaceIds is not null)
+                dlqMessagesQuery = dlqMessagesQuery.Where(m => allowedNamespaceIds.Contains(m.NamespaceId));
+
+            var rows = await dlqMessagesQuery
                 .Where(m => m.Status == DlqMessageStatus.Active
                     || m.DetectedAtUtc >= relevantCutoff
                     || (m.ReplayedAt != null && m.ReplayedAt >= relevantCutoff)
@@ -93,8 +100,7 @@ public sealed class FleetOverviewService : IFleetOverviewService
                 .ToListAsync(cancellationToken);
 
             // All-time total per namespace (one small grouped query).
-            var totalsByNamespace = await _dbContext.DlqMessages.AsNoTracking()
-                .Where(m => m.OwnerId == ownerId)
+            var totalsByNamespace = await dlqMessagesQuery
                 .GroupBy(m => m.NamespaceId)
                 .Select(g => new { NamespaceId = g.Key, Count = g.Count() })
                 .ToDictionaryAsync(x => x.NamespaceId, x => x.Count, cancellationToken);

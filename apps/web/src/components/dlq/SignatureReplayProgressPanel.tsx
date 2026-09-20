@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { CheckCircle2, ChevronDown, ChevronUp, Loader2, StopCircle, X, XCircle } from 'lucide-react';
 import { useCancelSignatureReplayJob, useSignatureReplayJob } from '@servicehub/ui-shared/hooks/useSignatureReplay';
 import { isTerminalBulkOperationStatus } from '@servicehub/ui-shared/lib/api/bulkOperations';
+import { RECOVERY_LIMITATION_SENTENCE } from '@servicehub/ui-shared/lib/api/recovery';
 
 interface SignatureReplayProgressPanelProps {
   jobId: string;
@@ -17,6 +19,17 @@ const STATUS_LABEL: Record<string, string> = {
   CompletedWithErrors: 'Completed with errors',
   Failed: 'Failed',
   Cancelled: 'Cancelled',
+};
+
+// Mirrors the backend's ReplayFailureReason — see ReplayFailureClassifier. "Not found" covers
+// consumed/replayed/expired alike: none of Azure/AWS/GCP's APIs report which one actually
+// happened, so pretending otherwise here would be fabricating a distinction, not reporting one.
+const FAILURE_REASON_LABEL: Record<string, string> = {
+  NotFound: 'Not found in DLQ',
+  AmbiguousOutcome: 'Outcome uncertain — do not retry blindly',
+  Retryable: 'Retryable',
+  ProviderError: 'Provider error',
+  Other: 'Other',
 };
 
 /**
@@ -68,6 +81,14 @@ export function SignatureReplayProgressPanel({
 
       <p className="text-xs text-gray-500 mb-2 truncate">{job.namespaceDisplayName}</p>
 
+      {job.status === 'Pending' && job.queueAheadCount != null && (
+        <p className="text-xs text-gray-500 mb-2">
+          {job.queueAheadCount === 0
+            ? 'Next up — the worker will pick this up as soon as it is free.'
+            : `Waiting behind ${job.queueAheadCount} other replay job${job.queueAheadCount === 1 ? '' : 's'}.`}
+        </p>
+      )}
+
       <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-2">
         <div
           className={`h-full transition-all duration-300 ${
@@ -113,14 +134,34 @@ export function SignatureReplayProgressPanel({
             <ul className="mt-2 max-h-32 overflow-y-auto space-y-1.5 border-t border-gray-100 pt-2">
               {job.failureSample.map((failure, index) => (
                 <li key={`${failure.messageId}-${index}`} className="text-xs">
-                  <p className="font-medium text-gray-700 truncate">
+                  <p className="font-medium text-gray-700 truncate flex items-center gap-1.5">
                     {failure.entityName} · {failure.messageId}
+                    {failure.reasonCategory && (
+                      <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-100 text-gray-600 border border-gray-200">
+                        {FAILURE_REASON_LABEL[failure.reasonCategory] ?? failure.reasonCategory}
+                      </span>
+                    )}
                   </p>
                   <p className="text-red-600 break-words">{failure.reason}</p>
                 </li>
               ))}
             </ul>
           )}
+        </div>
+      )}
+
+      {terminal && (job.status === 'Completed' || job.status === 'CompletedWithErrors') && (
+        <div className="mb-3 px-2.5 py-2 rounded-lg bg-sky-50 border border-sky-100 text-xs text-sky-800">
+          <p className="mb-1">
+            This is what the provider accepted, not confirmation the messages stayed off the
+            dead-letter queue. {RECOVERY_LIMITATION_SENTENCE}
+          </p>
+          <Link
+            to={`/incidents/${signatureHash}?namespace=${namespaceId}&tab=recovery`}
+            className="font-medium underline hover:no-underline"
+          >
+            Check verification status
+          </Link>
         </div>
       )}
 

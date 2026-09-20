@@ -27,4 +27,12 @@ public interface IConnectionStringProtector
     /// <param name="connectionString">The connection string to mask.</param>
     /// <returns>A masked version of the connection string safe for display.</returns>
     string Mask(string connectionString);
+
+    /// <summary>
+    /// Returns a non-reversible fingerprint of the currently active encryption key — never the
+    /// key material itself. Used to let an operator verify, e.g. before restoring a backup, that
+    /// two environments share the same encryption key without ever exposing it.
+    /// </summary>
+    /// <returns>A short, stable identifier derived from the key (e.g. "sha256:ab12cd34...").</returns>
+    string GetKeyFingerprint();
 }

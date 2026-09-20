@@ -229,6 +229,111 @@ public static class ApiRoutes
     }
 
     /// <summary>
+    /// Routes for message-shape drift detection endpoints.
+    /// </summary>
+    public static class DriftFindings
+    {
+        /// <summary>
+        /// Base route for drift finding operations.
+        /// </summary>
+        public const string Base = $"{VersionedBase}/drift-findings";
+
+        /// <summary>
+        /// Route for a specific drift finding by ID.
+        /// </summary>
+        public const string ById = $"{Base}/{{id:guid}}";
+
+        /// <summary>
+        /// Route for triggering drift detection.
+        /// </summary>
+        public const string Detect = $"{Base}/detect";
+
+        /// <summary>
+        /// Route for generating a producer-facing contract-violation export.
+        /// </summary>
+        public const string Export = $"{Base}/export";
+    }
+
+    /// <summary>
+    /// Routes for proactive correlation endpoints (same-provider and cross-cloud).
+    /// </summary>
+    public static class CorrelationFindings
+    {
+        /// <summary>
+        /// Base route for correlation finding operations.
+        /// </summary>
+        public const string Base = $"{VersionedBase}/correlation-findings";
+
+        /// <summary>
+        /// Route for a specific correlation finding by ID.
+        /// </summary>
+        public const string ById = $"{Base}/{{id:guid}}";
+
+        /// <summary>
+        /// Route for triggering correlation detection.
+        /// </summary>
+        public const string Detect = $"{Base}/detect";
+    }
+
+    /// <summary>
+    /// Routes for external-signal ingestion and correlation (roadmap §5.D, C3 — M5, ADR-0008).
+    /// </summary>
+    public static class ExternalSignals
+    {
+        /// <summary>Base route for recording/listing external signals.</summary>
+        public const string Base = $"{VersionedBase}/external-signals";
+
+        /// <summary>Route for triggering external-signal correlation detection.</summary>
+        public const string Detect = $"{Base}/detect";
+
+        /// <summary>Route for a specific external-signal correlation by ID.</summary>
+        public const string CorrelationById = $"{Base}/correlations/{{id:guid}}";
+    }
+
+    /// <summary>
+    /// Routes for deterministic narration endpoints (roadmap §5.B, I4 — "Narrate").
+    /// </summary>
+    public static class Narrations
+    {
+        /// <summary>
+        /// Base route for narration operations.
+        /// </summary>
+        public const string Base = $"{VersionedBase}/narrations";
+
+        /// <summary>
+        /// Route for a specific narration by ID.
+        /// </summary>
+        public const string ById = $"{Base}/{{id:guid}}";
+
+        /// <summary>
+        /// Route for triggering narration generation.
+        /// </summary>
+        public const string Generate = $"{Base}/generate";
+    }
+
+    /// <summary>
+    /// Routes for predictive backlog forecasting endpoints (roadmap §5.E, P4 — "Predictive
+    /// backlog signal").
+    /// </summary>
+    public static class BacklogForecasts
+    {
+        /// <summary>
+        /// Base route for backlog forecast operations.
+        /// </summary>
+        public const string Base = $"{VersionedBase}/backlog-forecasts";
+
+        /// <summary>
+        /// Route for a specific backlog forecast by ID.
+        /// </summary>
+        public const string ById = $"{Base}/{{id:guid}}";
+
+        /// <summary>
+        /// Route for triggering backlog forecast computation.
+        /// </summary>
+        public const string Forecast = $"{Base}/forecast";
+    }
+
+    /// <summary>
     /// Routes for DLQ Intelligence endpoints.
     /// </summary>
     public static class Dlq
@@ -272,6 +377,11 @@ public static class ApiRoutes
         /// Route for DLQ summary statistics.
         /// </summary>
         public const string Summary = $"{Base}/summary";
+
+        /// <summary>
+        /// Route for the cross-cloud, provider-grouped DLQ overview.
+        /// </summary>
+        public const string Overview = $"{Base}/overview";
 
         /// <summary>
         /// Route for a namespace's DLQ error-cluster signatures. Namespace-scoped (route
@@ -357,6 +467,20 @@ public static class ApiRoutes
     }
 
     /// <summary>
+    /// Routes for the Incident read-model (roadmap W2.1) — namespace-scoped, mirroring
+    /// <see cref="Dlq.SignatureById"/>: an incident's durable identity is the same
+    /// (namespace, signature hash) key the DLQ signature tables already use.
+    /// </summary>
+    public static class Incidents
+    {
+        /// <summary>Base route for a namespace's incidents.</summary>
+        public const string Base = $"{VersionedBase}/namespaces/{{namespaceId:guid}}/incidents";
+
+        /// <summary>Route for a single incident, by its signature's stable hash.</summary>
+        public const string ById = $"{Base}/{{signatureHash}}";
+    }
+
+    /// <summary>
     /// Routes for polling/cancelling an in-flight signature-replay job. Not namespace-scoped
     /// (like <see cref="Dlq.SignatureReplay"/>) — a job ID is already owner-scoped, matching the
     /// shape of the bulk-operations job routes.
@@ -416,6 +540,13 @@ public static class ApiRoutes
         public const string Summary = $"{Base}/summary";
     }
 
+    /// <summary>Routes for on-demand and scheduled backups (roadmap F2).</summary>
+    public static class Backup
+    {
+        /// <summary>Base route for backup operations: POST to create, GET to list.</summary>
+        public const string Base = $"{VersionedBase}/admin/backup";
+    }
+
     /// <summary>Route for the caller-identity ("whoami") endpoint.</summary>
     public static class Me
     {
@@ -447,11 +578,79 @@ public static class ApiRoutes
         /// <summary>Route for writing off a single recovery ledger entry.</summary>
         public const string EntryWriteOff = $"{Entries}/{{id:guid}}/write-off";
 
+        /// <summary>Route for rehearsing the Eligibility Gate against one recovery ledger entry (roadmap §7 W1.2).</summary>
+        public const string EntryRehearse = $"{Entries}/{{id:guid}}/rehearse";
+
         /// <summary>Route for the ageing report of open (non-terminal) entries.</summary>
         public const string Ageing = $"{Base}/ageing";
 
         /// <summary>Route for one signature's Evidence-Derived Trust Scoring report (roadmap §8.10).</summary>
         public const string Trust = $"{Base}/trust/{{signatureHash}}";
+
+        /// <summary>Route for the Approval Queue — auto-replay rule matches escalated for manual review (roadmap §11 item 1).</summary>
+        public const string ApprovalQueue = $"{Base}/approval-queue";
+
+        /// <summary>Route for the fleet-wide autonomy dashboard (roadmap §11 item 5, §15 item 9).</summary>
+        public const string AutonomyDashboard = $"{Base}/autonomy-dashboard";
+    }
+
+    /// <summary>Routes for the Playbook Ledger (M4 of the persistence wave, roadmap item 10).</summary>
+    public static class Playbook
+    {
+        /// <summary>Base route for the Playbook Ledger.</summary>
+        public const string Base = $"{VersionedBase}/playbook";
+
+        /// <summary>Route for listing/creating Playbook Ledger entries.</summary>
+        public const string Entries = $"{Base}/entries";
+
+        /// <summary>Route for one Playbook Ledger entry by ID, plus its event chain.</summary>
+        public const string EntryById = $"{Entries}/{{id:guid}}";
+
+        /// <summary>Route for marking an entry under review.</summary>
+        public const string EntryReview = $"{EntryById}/review";
+
+        /// <summary>Route for a human's terminal disposition (approve/reject) of an entry.</summary>
+        public const string EntryDisposition = $"{EntryById}/disposition";
+
+        /// <summary>Route for verifying the caller's Playbook hash chain.</summary>
+        public const string Verify = $"{Base}/verify";
+
+        /// <summary>Route for the correlation accountability report (roadmap §5.D C4, §11 item 17).</summary>
+        public const string CorrelationAccountability = $"{Base}/correlation-accountability";
+    }
+
+    /// <summary>Routes for P5 <c>PreventionRule</c> proposal/revocation (roadmap §5.C, staged
+    /// Option B — <c>PREVENTION-RULE-DESIGN-2026-08-29.md</c>). Review/approve/reject of a
+    /// proposed rule stays on the generic <see cref="Playbook"/> routes — this class only adds the
+    /// two actions the generic Playbook Ledger surface can't express: proposing a
+    /// rule-shaped payload from structured fields, and revoking an already-promoted one.</summary>
+    public static class PreventionRules
+    {
+        /// <summary>Base route for P5 PreventionRule actions.</summary>
+        public const string Base = $"{VersionedBase}/prevention-rules";
+
+        /// <summary>Route for proposing a new rule, or a new version of an existing one.</summary>
+        public const string Propose = Base;
+
+        /// <summary>Route for the currently active (promoted) rules, optionally filtered by namespace.</summary>
+        public const string Active = $"{Base}/active";
+
+        /// <summary>Route for revoking a promoted rule.</summary>
+        public const string Revoke = $"{Base}/{{id:guid}}/revoke";
+    }
+
+    /// <summary>Routes for Governance/RBAC grant management (M3 of the persistence wave, roadmap
+    /// item 10's enforcement layer).</summary>
+    public static class Governance
+    {
+        /// <summary>Base route for Governance grants.</summary>
+        public const string Base = $"{VersionedBase}/governance";
+
+        /// <summary>Route for listing/creating grants.</summary>
+        public const string Grants = $"{Base}/grants";
+
+        /// <summary>Route for revoking one grant by ID.</summary>
+        public const string GrantRevoke = $"{Grants}/{{id:guid}}/revoke";
     }
 
     /// <summary>Routes for the Investigation Center — incident command for failure investigation.</summary>
@@ -462,5 +661,27 @@ public static class ApiRoutes
 
         /// <summary>Route for the investigation center aggregated data.</summary>
         public const string InvestigationCenter = $"{Base}/investigation-center";
+
+        /// <summary>Route for the Incident Center's fleet-wide incident list (roadmap: Incident
+        /// Center redesign) — every signature, plus trend and category rollups.</summary>
+        public const string IncidentsList = $"{Base}/incidents";
+    }
+
+    /// <summary>
+    /// Route for the Home attention queue (roadmap W2.2) — owner-scoped, mirroring
+    /// <see cref="FailureIntelligence"/>: a ranked, capped view across every namespace the
+    /// caller owns, not one namespace's data.
+    /// </summary>
+    public static class AttentionQueue
+    {
+        /// <summary>Route for the ranked attention queue.</summary>
+        public const string Base = $"{VersionedBase}/attention-queue";
+    }
+
+    /// <summary>Routes for the DLQ observer attestation config (ADR-004; ADR-0011).</summary>
+    public static class DlqObserverAttestation
+    {
+        /// <summary>Base route for one namespace's attestation configuration/status.</summary>
+        public const string Base = $"{VersionedBase}/namespaces/{{namespaceId:guid}}/dlq-observer-attestation";
     }
 }

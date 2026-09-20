@@ -9,14 +9,14 @@ const DEFAULT_TAB: DetailTab = 'properties';
 /**
  * Hook to persist the active detail panel tab across message selections.
  * Stores the selected tab in localStorage and restores it on mount.
- * 
+ *
  * @returns [activeTab, setActiveTab] tuple
  */
 export function useTabPersistence(): [DetailTab, (tab: DetailTab) => void] {
   const [activeTab, setActiveTabState] = useState<DetailTab>(() => {
     // Initialize from localStorage if available
     if (typeof window === 'undefined') return DEFAULT_TAB;
-    
+
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored && VALID_TABS.includes(stored as DetailTab)) {
@@ -26,7 +26,7 @@ export function useTabPersistence(): [DetailTab, (tab: DetailTab) => void] {
       // localStorage might be unavailable or throw
       if (import.meta.env.DEV) console.warn('Failed to read tab persistence from localStorage');
     }
-    
+
     return DEFAULT_TAB;
   });
 
@@ -36,9 +36,9 @@ export function useTabPersistence(): [DetailTab, (tab: DetailTab) => void] {
       if (import.meta.env.DEV) console.warn(`Invalid tab "${tab}", falling back to "${DEFAULT_TAB}"`);
       tab = DEFAULT_TAB;
     }
-    
+
     setActiveTabState(tab);
-    
+
     try {
       localStorage.setItem(STORAGE_KEY, tab);
     } catch {

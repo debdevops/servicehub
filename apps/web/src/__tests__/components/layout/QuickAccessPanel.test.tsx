@@ -56,8 +56,8 @@ describe('QuickAccessPanel', () => {
     expect(screen.getByText('Live Tail')).toBeInTheDocument();
     expect(screen.getByText('Dead-Letter')).toBeInTheDocument();
     expect(screen.getByText('Namespace Overview')).toBeInTheDocument();
-    expect(screen.getByText('Fleet Health')).toBeInTheDocument();
-    expect(screen.getByText('DLQ Intelligence')).toBeInTheDocument();
+    expect(screen.getByText('Fleet Overview')).toBeInTheDocument();
+    expect(screen.getByText('DLQ Message History')).toBeInTheDocument();
     expect(screen.getByText('Auto-Replay Rules')).toBeInTheDocument();
     expect(screen.getByText('Scheduled Messages')).toBeInTheDocument();
     expect(screen.getByText('Multi-Cloud Trace')).toBeInTheDocument();
@@ -84,8 +84,9 @@ describe('QuickAccessPanel', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><QuickAccessPanel /></Wrapper>);
     expect(screen.getByText('Overview')).toBeInTheDocument();
-    expect(screen.getByText('Browse across clouds')).toBeInTheDocument();
-    expect(screen.getByText('Diagnose & automate')).toBeInTheDocument();
+    expect(screen.getByText('Observe')).toBeInTheDocument();
+    expect(screen.getByText('Recover')).toBeInTheDocument();
+    expect(screen.getByText('Autonomous ServiceHub')).toBeInTheDocument();
     expect(screen.getByText('Platform')).toBeInTheDocument();
     expect(screen.getByText('Support')).toBeInTheDocument();
   });
@@ -102,7 +103,7 @@ describe('QuickAccessPanel', () => {
     expect(screen.getByText('Active Messages')).toBeInTheDocument();
   });
 
-  it('labels "browse across clouds" shortcuts "All Namespaces" (not "All Clouds") on a single-provider installation', () => {
+  it('labels the Observe section\'s shortcuts "All Namespaces" (not "All Clouds") on a single-provider installation', () => {
     mockUseNamespaces.mockReturnValue({
       data: [{ id: 'ns1', name: 'my-namespace', isActive: true, cloudProvider: 'aws' }],
       isLoading: false,
@@ -118,7 +119,7 @@ describe('QuickAccessPanel', () => {
     );
   });
 
-  it('labels "browse across clouds" shortcuts "All Clouds" once ≥2 providers are configured', () => {
+  it('labels the Observe section\'s shortcuts "All Clouds" once ≥2 providers are configured', () => {
     mockUseNamespaces.mockReturnValue({
       data: [
         { id: 'ns1', name: 'azure-ns', isActive: true, cloudProvider: 'azure' },
@@ -134,7 +135,7 @@ describe('QuickAccessPanel', () => {
     expect(screen.getByText('Multi-Cloud Trace').closest('a')).not.toHaveAttribute('title');
   });
 
-  // ── F1 regression: Live Tail / DLQ Intelligence must preserve the operator's
+  // ── F1 regression: Live Tail / DLQ Message History must preserve the operator's
   // current namespace, not silently substitute whichever namespace happens to be
   // `isActive` (a connection-enabled flag every namespace has, unrelated to selection).
   describe('namespace context preservation (F1)', () => {
@@ -148,25 +149,25 @@ describe('QuickAccessPanel', () => {
       mockUseNamespaces.mockReturnValue({ data: multiCloudNamespaces, isLoading: false, refetch: vi.fn() });
     });
 
-    it('keeps Live Tail and DLQ Intelligence on AWS when the operator is currently on the AWS namespace', () => {
+    it('keeps Live Tail and DLQ Message History on AWS when the operator is currently on the AWS namespace', () => {
       const Wrapper = createWrapper(['/messages?namespace=aws-dev&queue=orders']);
       render(<Wrapper><QuickAccessPanel /></Wrapper>);
       expect(screen.getByText('Live Tail').closest('a')).toHaveAttribute('href', expect.stringContaining('namespace=aws-dev'));
-      expect(screen.getByText('DLQ Intelligence').closest('a')).toHaveAttribute('href', expect.stringContaining('namespace=aws-dev'));
+      expect(screen.getByText('DLQ Message History').closest('a')).toHaveAttribute('href', expect.stringContaining('namespace=aws-dev'));
     });
 
-    it('keeps Live Tail and DLQ Intelligence on GCP when the operator is currently on the GCP namespace', () => {
+    it('keeps Live Tail and DLQ Message History on GCP when the operator is currently on the GCP namespace', () => {
       const Wrapper = createWrapper(['/messages?namespace=gcp-dev&queue=orders']);
       render(<Wrapper><QuickAccessPanel /></Wrapper>);
       expect(screen.getByText('Live Tail').closest('a')).toHaveAttribute('href', expect.stringContaining('namespace=gcp-dev'));
-      expect(screen.getByText('DLQ Intelligence').closest('a')).toHaveAttribute('href', expect.stringContaining('namespace=gcp-dev'));
+      expect(screen.getByText('DLQ Message History').closest('a')).toHaveAttribute('href', expect.stringContaining('namespace=gcp-dev'));
     });
 
-    it('keeps Live Tail and DLQ Intelligence on Azure when the operator is currently on the Azure namespace', () => {
+    it('keeps Live Tail and DLQ Message History on Azure when the operator is currently on the Azure namespace', () => {
       const Wrapper = createWrapper(['/messages?namespace=azure-dev&queue=payments']);
       render(<Wrapper><QuickAccessPanel /></Wrapper>);
       expect(screen.getByText('Live Tail').closest('a')).toHaveAttribute('href', expect.stringContaining('namespace=azure-dev'));
-      expect(screen.getByText('DLQ Intelligence').closest('a')).toHaveAttribute('href', expect.stringContaining('namespace=azure-dev'));
+      expect(screen.getByText('DLQ Message History').closest('a')).toHaveAttribute('href', expect.stringContaining('namespace=azure-dev'));
     });
 
     it('follows a namespace switch instead of sticking to whichever namespace was current on first render', () => {
@@ -188,7 +189,7 @@ describe('QuickAccessPanel', () => {
       const Wrapper = createWrapper(['/dashboard']);
       render(<Wrapper><QuickAccessPanel /></Wrapper>);
       expect(screen.getByText('Live Tail').closest('a')).toHaveAttribute('href', expect.not.stringContaining('namespace='));
-      expect(screen.getByText('DLQ Intelligence').closest('a')).toHaveAttribute('href', expect.not.stringContaining('namespace='));
+      expect(screen.getByText('DLQ Message History').closest('a')).toHaveAttribute('href', expect.not.stringContaining('namespace='));
     });
   });
 
@@ -210,18 +211,18 @@ describe('QuickAccessPanel', () => {
       expect(screen.getByText('Dead-Letter').closest('a')).not.toHaveClass('bg-red-50');
     });
 
-    it('highlights only Dead-Letter, not Active Messages, on the deadletter tab', () => {
-      window.history.pushState({}, '', '/messages-overview?tab=deadletter');
-      const Wrapper = createWrapper(['/messages-overview?tab=deadletter']);
+    it('highlights only Dead-Letter, not Active Messages, on /dlq-overview', () => {
+      window.history.pushState({}, '', '/dlq-overview');
+      const Wrapper = createWrapper(['/dlq-overview']);
       render(<Wrapper><QuickAccessPanel /></Wrapper>);
       expect(screen.getByText('Dead-Letter').closest('a')).toHaveClass('bg-red-50');
       expect(screen.getByText('Active Messages').closest('a')).not.toHaveClass('bg-sky-50');
     });
 
-    it('highlights DLQ Intelligence when on /dlq-history', () => {
+    it('highlights DLQ Message History when on /dlq-history', () => {
       const Wrapper = createWrapper(['/dlq-history']);
       render(<Wrapper><QuickAccessPanel /></Wrapper>);
-      expect(screen.getByText('DLQ Intelligence').closest('a')).toHaveClass('bg-purple-50');
+      expect(screen.getByText('DLQ Message History').closest('a')).toHaveClass('bg-purple-50');
     });
 
     it('highlights Auto-Replay Rules when on /rules', () => {
@@ -246,7 +247,7 @@ describe('QuickAccessPanel', () => {
       const Wrapper = createWrapper(['/dashboard']);
       render(<Wrapper><QuickAccessPanel /></Wrapper>);
       expect(screen.getByText('Namespace Overview').closest('a')).toHaveClass('bg-indigo-50');
-      expect(screen.getByText('DLQ Intelligence').closest('a')).not.toHaveClass('bg-purple-50');
+      expect(screen.getByText('DLQ Message History').closest('a')).not.toHaveClass('bg-purple-50');
     });
   });
 

@@ -10,6 +10,8 @@ import { ProviderIcon } from '@servicehub/ui-shared/components/ProviderIcon';
 import { EmptyState } from '@/components/EmptyState';
 import { getProviderCapabilities, type CloudEntity, type ProviderCapabilitiesMap } from '@servicehub/ui-shared/lib/api/cloudBridge';
 import type { CloudProviderType } from '@servicehub/ui-shared/lib/api/types';
+import { HelpTooltip } from '@/components/help';
+import { tooltips } from '@servicehub/ui-shared/lib/helpContent';
 
 const PROVIDER_LABELS: Record<string, string> = {
   Azure: 'Azure Service Bus',
@@ -287,7 +289,7 @@ function ProviderStatusCard({
           ) : supportsCounts ? (
             <span className="text-gray-400">No backlog</span>
           ) : (
-            <span className="text-gray-400">No live count available</span>
+            <span className="text-gray-400" title={tooltips.cloudBridge.noLiveCount.detail}>No live count available</span>
           )}
         </div>
       )}
@@ -336,7 +338,10 @@ export function CloudBridgePage() {
             <Cloud className="w-6 h-6 text-primary-600" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-gray-900">Cloud Bridge</h1>
+            <h1 className="text-xl font-bold text-gray-900 flex items-center gap-1.5">
+              Cloud Bridge
+              <HelpTooltip {...tooltips.cloudBridge.overview} position="bottom" />
+            </h1>
             <p className="text-sm text-gray-500">
               Browse queues, topics and subscriptions across Azure Service Bus, AWS SQS / SNS, and GCP Pub/Sub.
             </p>

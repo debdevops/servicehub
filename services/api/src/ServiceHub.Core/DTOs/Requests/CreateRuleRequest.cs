@@ -32,4 +32,10 @@ public sealed record CreateRuleRequest
     /// <summary>Maximum replays per hour (rate limiting). Default 100.</summary>
     [Range(1, 10000)]
     public int MaxReplaysPerHour { get; init; } = 100;
+
+    /// <summary>
+    /// Namespace this rule is scoped to, or <c>null</c>/omitted for Global (matches every
+    /// namespace) — unchanged default behavior for old clients that don't send this field.
+    /// </summary>
+    public Guid? NamespaceId { get; init; }
 }

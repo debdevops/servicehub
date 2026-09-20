@@ -21,6 +21,7 @@ public static class IntentHeaders
     public const string IntentSignatureReplay = "signature:replay";
     public const string IntentPurgeAuditLogs = "audit:purge";
     public const string IntentWriteOffRecovery = "recovery:write-off";
+    public const string IntentApproveProductionElevation = "recovery:production-elevation-approve";
 
     /// <summary>
     /// Validates that the caller supplied explicit intent headers for a risky operation.

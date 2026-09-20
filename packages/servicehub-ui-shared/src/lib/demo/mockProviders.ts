@@ -36,6 +36,17 @@ import type {
 } from '../api/recovery';
 import type { AuditLogItem, AuditPageResponse } from '../api/audit';
 import type { FleetOverview, FleetNamespaceHealth, FleetHealthSeverity } from '../api/fleet';
+import type {
+  DlqOverview,
+  DlqProviderOverview,
+  DlqOverviewNamespace,
+  DlqOverviewTrendPoint,
+  DlqReasonBreakdown,
+  DlqFailureCategory,
+  DlqOverviewEnvironment,
+  DlqRecurringPattern,
+  DlqReplaySafety,
+} from '../api/dlqOverview';
 import type { RuleResponse } from '../api/rules';
 import type {
   InvestigationCenterResponse,
@@ -45,6 +56,9 @@ import type {
   KnowledgeReviewItem,
   NewSignatureItem,
 } from '../../hooks/useInvestigationQueue';
+import type { AttentionQueueResponse, AttentionQueueItem } from '../api/attentionQueue';
+import type { IncidentDetailResponse } from '../api/incidents';
+import type { IncidentListResponse, IncidentListItem, IncidentListMetrics, IncidentSeverity } from '../api/incidentsList';
 
 // ─── Namespace IDs ──────────────────────────────────────────────────────────
 // Stable IDs used in URL query params and as namespace identifiers in demo mode
@@ -959,6 +973,182 @@ export function getMockFleetOverview(provider: CloudProviderType): FleetOverview
   };
 }
 
+/**
+ * Get the mock cross-cloud DLQ overview for the standalone DLQ Overview page. Demo Mode is
+ * single-provider (one namespace per cloud), so this always returns exactly one provider
+ * section, built from the same curated cluster fixtures as Fleet/DLQ Intelligence so the three
+ * surfaces never disagree in demo mode.
+ */
+export function getMockDlqOverview(provider: CloudProviderType): DlqOverview {
+  const clusters = getDemoClusters();
+  const activeClusters = clusters.filter((c) => c.status === 'Active' || c.status === 'Reopened');
+  const activeCount = activeClusters.reduce((sum, c) => sum + c.size, 0);
+  const namespace = getMockNamespaces(provider)[0];
+  const days = 7;
+
+  // Group by the mapped FailureCategory (not the raw fixture string) — several demo reasons
+  // (e.g. PoisonMessage and DuplicateMessage) map to the same real category and must merge into
+  // one bar, not render as duplicate rows under the same label.
+  const reasonCounts = activeClusters.reduce<Partial<Record<DlqFailureCategory, number>>>((acc, c) => {
+    const category = demoReasonToDlqCategory(c.dominantDeadletterReason);
+    acc[category] = (acc[category] ?? 0) + c.size;
+    return acc;
+  }, {});
+  const topReasons: DlqReasonBreakdown[] = Object.entries(reasonCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([category, count]) => ({
+      category: category as DlqFailureCategory,
+      count,
+      percent: activeCount > 0 ? Math.round((count / activeCount) * 1000) / 10 : 0,
+    }));
+
+  // Cluster fixtures don't distinguish queue vs. topic entities — demo mode attributes every
+  // affected entity to "queues" for simplicity; this only affects the illustrative counts shown
+  // in Demo Mode, never the live-cloud page.
+  const affectedQueues = new Set(activeClusters.map((c) => c.dominantEntity)).size;
+
+  const oldestActive = [...activeClusters].sort(
+    (a, b) => new Date(a.firstSeenAt).getTime() - new Date(b.firstSeenAt).getTime(),
+  )[0];
+
+  // No real day-by-day history in demo fixtures — simulate a steady ramp into the current total
+  // so the trend line reads naturally instead of a flat/empty line.
+  const dailyTrend: DlqOverviewTrendPoint[] = Array.from({ length: days }, (_, i) => {
+    const date = new Date();
+    date.setUTCDate(date.getUTCDate() - (days - 1 - i));
+    date.setUTCHours(0, 0, 0, 0);
+    return {
+      date: date.toISOString(),
+      count: Math.round((activeCount * (i + 1)) / days),
+    };
+  });
+
+  const namespaceRow: DlqOverviewNamespace = {
+    namespaceId: namespace.id,
+    namespaceName: namespace.displayName ?? namespace.name,
+    environment: (namespace.environment ?? 'prod') as DlqOverviewEnvironment,
+    queuesWithDlq: affectedQueues,
+    topicsWithDlq: 0,
+    dlqCount: activeCount,
+    oldestDetectedAt: oldestActive?.firstSeenAt ?? null,
+  };
+
+  const providerOverview: DlqProviderOverview = {
+    provider,
+    totalDeadLettered: activeCount,
+    changePercent: null,
+    namespacesWithDlq: activeCount > 0 ? 1 : 0,
+    namespacesTotal: 1,
+    affectedQueues,
+    affectedTopics: 0,
+    dailyTrend,
+    topReasons,
+    namespaces: activeCount > 0 ? [namespaceRow] : [],
+  };
+
+  // One pattern per curated demo signature — unlike the live query (which groups raw messages
+  // by category + root cause), demo fixtures already are distinct, named signatures, so no
+  // re-grouping is needed. Demo Mode is single-provider/single-namespace, so AffectedProviders
+  // and NamespaceCount are always trivially [provider] / 1 here — a real fleet's cross-provider
+  // spread only ever appears against live data.
+  const recurringPatterns: DlqRecurringPattern[] = activeClusters
+    .map((c) => {
+      const category = demoReasonToDlqCategory(c.dominantDeadletterReason);
+      const replaySafety = DEMO_CATEGORY_TO_REPLAY_SAFETY[category];
+      return {
+        patternKey: c.signatureHash,
+        rootCauseSummary: c.explanation,
+        category,
+        occurrences: c.size,
+        percentOfTotal: activeCount > 0 ? Math.round((c.size / activeCount) * 1000) / 10 : 0,
+        affectedProviders: [provider],
+        namespaceCount: 1,
+        firstSeenAt: c.firstSeenAt,
+        lastSeenAt: c.windowEnd,
+        confidence: 'High' as const,
+        averageConfidence: 0.9,
+        replaySafety,
+        suggestedAction: demoSuggestedAction(replaySafety),
+        representativeNamespaceId: namespace.id,
+        representativeEntityName: c.dominantEntity,
+      };
+    })
+    .sort((a, b) => b.occurrences - a.occurrences);
+
+  const replayedCount = clusters.filter((c) => c.status === 'Resolved').reduce((sum, c) => sum + c.size, 0);
+  const archivedCount = clusters.filter((c) => c.status === 'Archived').reduce((sum, c) => sum + c.size, 0);
+  const totalObserved = clusters.reduce((sum, c) => sum + c.size, 0);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    windowDays: days,
+    totals: {
+      totalDeadLettered: activeCount,
+      changePercent: null,
+      namespacesWithDlq: providerOverview.namespacesWithDlq,
+      namespacesTotal: 1,
+      namespacesWithDlqChangePercent: null,
+      affectedQueues,
+      affectedQueuesChangePercent: null,
+      affectedTopics: 0,
+      affectedTopicsChangePercent: null,
+      oldestMessageDetectedAt: oldestActive?.firstSeenAt ?? null,
+      replayedCount,
+      replayedChangePercent: null,
+      archivedCount,
+      totalObserved,
+      recurringPatternCount: recurringPatterns.filter((p) => p.occurrences >= 2).length,
+      needsInvestigationCount: recurringPatterns.filter((p) => p.replaySafety !== 'Safe').length,
+    },
+    providers: [providerOverview],
+    recurringPatterns,
+  };
+}
+
+/**
+ * Maps a demo cluster's free-form `dominantDeadletterReason` (DEMO_SIGNATURE_DEFS' human-readable
+ * strings, e.g. "PoisonMessage") to the real backend's FailureCategory taxonomy, so the DLQ
+ * Overview page's reason breakdown reads the same way in Demo Mode as it does against live data.
+ */
+const DEMO_REASON_TO_CATEGORY: Record<string, DlqFailureCategory> = {
+  MaxDeliveryCountExceeded: 'maxDelivery',
+  PoisonMessage: 'processingError',
+  DeserializationError: 'dataQuality',
+  AuthenticationFailure: 'authorization',
+  DuplicateMessage: 'processingError',
+};
+
+function demoReasonToDlqCategory(value: string): DlqFailureCategory {
+  return DEMO_REASON_TO_CATEGORY[value] ?? 'unknown';
+}
+
+// Mirrors ReplaySafetyClassifier's category-level rules (backend, ReplaySafetyClassifier.cs) —
+// the delivery-count nuance on Transient/MaxDelivery doesn't apply at this fleet-wide, per-
+// category granularity, so this takes each rule's non-discounted branch.
+const DEMO_CATEGORY_TO_REPLAY_SAFETY: Record<DlqFailureCategory, DlqReplaySafety> = {
+  unknown: 'RequiresReview',
+  transient: 'Safe',
+  maxDelivery: 'RequiresReview',
+  expired: 'Unsafe',
+  dataQuality: 'Unsafe',
+  authorization: 'Unsafe',
+  processingError: 'RequiresReview',
+  resourceNotFound: 'RequiresReview',
+  quotaExceeded: 'RequiresReview',
+};
+
+function demoSuggestedAction(safety: DlqReplaySafety): string {
+  switch (safety) {
+    case 'Safe':
+      return 'Safe to auto-replay';
+    case 'Unsafe':
+      return 'Fix the root cause before replaying';
+    default:
+      return 'Review a sample before replaying';
+  }
+}
+
 // ─── Investigation Center (Incident Center) ─────────────────────────────────
 
 /**
@@ -1070,6 +1260,194 @@ export function getMockInvestigationQueue(provider: CloudProviderType): Investig
       totalResolvedInWindow: nsHealth.resolvedInWindow,
       topUnhealthyNamespaces: nsHealth.severity === 'healthy' ? [] : [nsHealth],
     },
+  };
+}
+
+/** Mirrors the backend's severity thresholds (FailureIntelligenceCenterService.ComputeSeverityScore/Level). */
+function demoSeverity(cluster: DlqClusterSignature): IncidentSeverity {
+  let score = 0;
+  if (cluster.trend === 'Escalating') score += 10;
+  if (!cluster.knowledge) score += 5;
+  if (cluster.occurrenceCount > 10) score += 3;
+  if (Date.now() - new Date(cluster.firstSeenAt).getTime() < 24 * 60 * 60 * 1000) score += 2;
+  if (score >= 15) return 'Critical';
+  if (score >= 10) return 'High';
+  if (score >= 5) return 'Medium';
+  return 'Low';
+}
+
+/**
+ * Get the mock Incident Center list payload — same curated `DEMO_SIGNATURE_DEFS` fixtures as
+ * `getMockInvestigationQueue`, but including every lifecycle status (not just Active/Reopened),
+ * since the Incident Center's status tabs need to count and list Resolved/Suppressed/Archived
+ * signatures too.
+ */
+export function getMockIncidentsList(provider: CloudProviderType, days: number): IncidentListResponse {
+  const namespaceId = DEMO_NAMESPACE_IDS[provider];
+  const clusters = getDemoClusters();
+  const nsHealth = buildDemoFleetNamespaceHealth(provider);
+
+  const metrics: IncidentListMetrics = {
+    totalSignatures: clusters.length,
+    // Mirrors the backend's ComputeMetrics exactly: Active and Reopened both count toward
+    // requiresAction, but only Active counts as activeSignatures.
+    activeSignatures: clusters.filter((c) => c.status === 'Active').length,
+    resolvedSignatures: clusters.filter((c) => c.status === 'Resolved').length,
+    suppressedSignatures: clusters.filter((c) => c.status === 'Suppressed').length,
+    archivedSignatures: clusters.filter((c) => c.status === 'Archived').length,
+    requiresAction: clusters.filter((c) => c.status === 'Active' || c.status === 'Reopened').length,
+  };
+
+  const items: IncidentListItem[] = clusters.map((c) => {
+    const isActionable = c.status === 'Active' || c.status === 'Reopened';
+    const isEscalating = c.trend === 'Escalating';
+    return {
+      signatureHash: c.signatureHash,
+      namespaceId,
+      namespaceName: nsHealth.namespaceName,
+      cloudProvider: provider,
+      environment: nsHealth.environment,
+      displayName: `${c.dominantDeadletterReason} (ID: ${c.signatureHash.slice(0, 8)})`,
+      category: c.dominantDeadletterReason,
+      severity: demoSeverity(c),
+      status: c.status,
+      isEscalating,
+      messageCount: c.size,
+      firstSeenAt: c.firstSeenAt,
+      lastSeenAt: c.windowEnd,
+      hasKnowledge: c.knowledge != null,
+      owner: c.knowledge?.owner ?? null,
+      recommendedNextAction: !isActionable
+        ? null
+        : isEscalating
+          ? 'Review Escalation'
+          : c.knowledge == null
+            ? 'Add Knowledge'
+            : 'Investigate',
+    };
+  });
+
+  const totalOccurrences = clusters.reduce((sum, c) => sum + c.occurrenceCount, 0);
+  const byCategory = new Map<string, number>();
+  for (const c of clusters) {
+    byCategory.set(c.dominantDeadletterReason, (byCategory.get(c.dominantDeadletterReason) ?? 0) + c.occurrenceCount);
+  }
+  const topCategories = [...byCategory.entries()]
+    .sort(([, a], [, b]) => b - a)
+    .map(([category, count]) => ({
+      category,
+      count,
+      percent: totalOccurrences > 0 ? Math.round((count / totalOccurrences) * 1000) / 10 : 0,
+    }));
+
+  // A small, honest trend derived from the curated fixtures' own real timestamps — bucketed the
+  // same way the backend does (hourly for a 1-day window, daily otherwise).
+  const hourly = days <= 1;
+  const bucketCount = hourly ? 24 : Math.min(days, 30);
+  const bucketSpanMs = (hourly ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000);
+  const windowStart = Date.now() - bucketSpanMs * bucketCount;
+  const trend = Array.from({ length: bucketCount }, (_, i) => {
+    const bucketStart = windowStart + bucketSpanMs * i;
+    const bucketEnd = bucketStart + bucketSpanMs;
+    const inBucket = (iso: string) => {
+      const t = new Date(iso).getTime();
+      return t >= bucketStart && t < bucketEnd;
+    };
+    return {
+      bucketStart: new Date(bucketStart).toISOString(),
+      active: clusters.filter((c) => inBucket(c.windowEnd) && (c.status === 'Active' || c.status === 'Reopened')).length,
+      resolved: clusters.filter((c) => c.status === 'Resolved' && inBucket(c.windowEnd)).length,
+      new: clusters.filter((c) => inBucket(c.firstSeenAt)).length,
+    };
+  });
+
+  return {
+    metrics,
+    trend,
+    topCategories,
+    items,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+// ─── Home Attention Queue (W2.2) ─────────────────────────────────────────────
+// Demo mode has no recovery/playbook ledger to draw pendingDecisionCount from, so every demo
+// item reports 0 — the real ranking axes still exercised here are severity, blast radius, and
+// recurrence, sourced from the same curated fixtures as the Incident Center.
+
+/** Get the mock Home attention queue payload — top 3 of the same curated clusters, by the same
+ * severity/blast-radius/recurrence axes the real endpoint ranks by. */
+export function getMockAttentionQueue(provider: CloudProviderType): AttentionQueueResponse {
+  const namespaceId = DEMO_NAMESPACE_IDS[provider];
+  const clusters = getDemoClusters();
+  const nsHealth = buildDemoFleetNamespaceHealth(provider);
+  const severity = (nsHealth.severity.charAt(0).toUpperCase() + nsHealth.severity.slice(1)) as AttentionQueueItem['severity'];
+
+  const items: AttentionQueueItem[] = clusters
+    .filter((c) => c.status === 'Active' || c.status === 'Reopened')
+    .map((c) => {
+      const isRecurring = c.trend === 'Escalating';
+      return {
+        signatureHash: c.signatureHash,
+        namespaceId,
+        namespaceName: nsHealth.namespaceName,
+        displayName: `${c.dominantDeadletterReason} · ${c.dominantEntity}`,
+        lifecycleStatus: c.status,
+        severity,
+        blastRadius: c.size,
+        isRecurring,
+        pendingDecisionCount: 0,
+        score: (isRecurring ? 40 : 0) + Math.min(c.size, 100),
+        recommendedAction: isRecurring ? 'Review escalation' : 'Investigate',
+        lastSeenAt: c.windowEnd,
+      };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+
+  return { items, isEmpty: items.length === 0 };
+}
+
+// ─── Incident read-model (W2.1/W2.3) ─────────────────────────────────────────
+// Same curated clusters as the Incident Center and the attention queue give identity and
+// lifecycle status. Recovery and playbook entries stay an honest empty list, same reasoning as
+// `usePlaybookEntries`/`useCorrelationAccountability` above: demo mode's curated recovery-ledger
+// fixture (`buildDemoRecoveryEntries`) never sets `signatureHashSnapshot`, and no playbook
+// fixture exists at all, so there is nothing signature-precise to join — fabricating one here
+// would present invented evidence as real (roadmap §13.4).
+
+/** Get the mock Incident workspace payload for one demo signature, or undefined if the hash
+ * doesn't match one of the curated demo signatures. */
+export function getMockIncidentDetail(
+  provider: CloudProviderType,
+  signatureHash: string,
+): IncidentDetailResponse | undefined {
+  const cluster = getDemoClusters().find((c) => c.signatureHash === signatureHash);
+  if (!cluster) return undefined;
+  const nsHealth = buildDemoFleetNamespaceHealth(provider);
+
+  return {
+    signatureHash: cluster.signatureHash,
+    namespaceId: DEMO_NAMESPACE_IDS[provider],
+    namespaceName: nsHealth.namespaceName,
+    lifecycleStatus: cluster.status,
+    firstSeenAt: cluster.firstSeenAt,
+    lastSeenAt: cluster.windowEnd,
+    occurrenceCount: cluster.occurrenceCount,
+    dominantDeadletterReason: cluster.dominantDeadletterReason,
+    topTerms: cluster.topTerms,
+    summary: {
+      recoveryEntryCount: 0,
+      openRecoveryEntryCount: 0,
+      pendingDecisionCount: 0,
+      anomalyFlagCount: 0,
+      driftFindingCount: 0,
+      correlationHypothesisCount: 0,
+      preventionTriggerCount: 0,
+      replayPlanCount: 0,
+    },
+    recoveryEntries: [],
+    playbookEntries: [],
   };
 }
 

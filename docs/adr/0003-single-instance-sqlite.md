@@ -57,3 +57,16 @@ system requiring a database server, a cache tier, and a message broker before it
 - Two persistence stores exist today (the SQLite database and a separate JSON file for namespace
   credentials) for historical reasons, not because of this decision — unifying them is a known,
   deliberately deferred simplification, tracked but not scheduled.
+- **The data directory must be local block storage.** SQLite's WAL mode needs a memory-mapped
+  `-shm` file, and both SQLite's own locking and the `SqliteInstanceLock` guard below rely on POSIX
+  advisory locks; neither is dependable on SMB (Azure Files) or NFS (AWS EFS). This constrains where
+  ServiceHub can be hosted — notably it rules out the file-share persistence that Azure App Service
+  for Linux documents as its standard answer — and the constraint is a consequence of this decision
+  rather than an independent one. A network mount is not made safe by configuration, so none is
+  offered; the operator-facing form of this is in
+  [self-hosting/README.md](../../self-hosting/README.md#storage-requirement-local-block-storage-not-a-network-share).
+- The single-writer assumption is enforced at runtime, not only documented: `SqliteInstanceLock`
+  takes an exclusive OS lock on `.instance.lock` in the data directory at startup, so a second
+  process against the same directory fails fast instead of corrupting the Recovery Evidence
+  Ledger's hash chain. On local block storage this makes the constraint an invariant; the previous
+  bullet is why it degrades to an assumption on a network mount.

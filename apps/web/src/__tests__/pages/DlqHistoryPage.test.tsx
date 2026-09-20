@@ -113,7 +113,7 @@ describe('DlqHistoryPage', () => {
   it('renders page title', () => {
     const Wrapper = createWrapper();
     render(<Wrapper><DlqHistoryPage /></Wrapper>);
-    expect(screen.getByText('DLQ Intelligence')).toBeInTheDocument();
+    expect(screen.getByText('DLQ Message History')).toBeInTheDocument();
   });
 
   it('renders page subtitle', () => {

@@ -52,13 +52,19 @@ public interface IBulkOperationService
         Guid jobId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Lists jobs for the owner, most recent first, optionally filtered by namespace.</summary>
+    /// <summary>
+    /// Lists jobs for the owner, most recent first, optionally filtered by namespace. When
+    /// <paramref name="allowedNamespaceIds"/> is non-null (a namespace-restricted API key),
+    /// results are further restricted to jobs whose namespace ID appears in this set — null
+    /// means unrestricted (today's behaviour).
+    /// </summary>
     Task<Result<DTOs.Responses.PaginatedResponse<BulkOperationJobResponse>>> ListJobsAsync(
         string ownerId,
         Guid? namespaceId,
         int page,
         int pageSize,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null);
 
     /// <summary>
     /// Requests cancellation of a running or pending job. Idempotent — cancelling an already

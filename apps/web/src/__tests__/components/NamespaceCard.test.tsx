@@ -86,7 +86,15 @@ describe('NamespaceCard', () => {
     expect(await screen.findByText('5')).toBeInTheDocument();
   });
 
-  it('shows Healthy status when DLQ count is within threshold', async () => {
+  it('shows Healthy status when DLQ count is within threshold and the DLQ ratio is good', async () => {
+    // The default fixture (8 active / 2 DLQ = 20% ratio) is a D health grade, not actually
+    // healthy — use a fixture with a genuinely good ratio so this test doesn't rely on the same
+    // absolute-count-vs-ratio contradiction the fix in DashboardPage.tsx (isDlqSpike) closed.
+    mockUseQueues.mockReturnValue({
+      data: [{ ...mockQueues[0], activeMessageCount: 98, deadLetterMessageCount: 2 }],
+      isLoading: false,
+      isError: false,
+    });
     render(<NamespaceCard namespace={mockNamespace} />, { wrapper: createWrapper() });
     expect(await screen.findByText('Healthy')).toBeInTheDocument();
   });

@@ -9,6 +9,7 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Infrastructure.Security;
 using ServiceHub.Shared.Helpers;
@@ -58,7 +59,7 @@ public sealed class SignatureReplayService : ISignatureReplayService
         if (nsResult.IsFailure)
             return Result.Failure<BulkOperationPreviewResponse>(nsResult.Error);
 
-        var (warnings, canExecute) = EvaluateGuards(nsResult.Value);
+        var (warnings, canExecute) = await EvaluateGuardsAsync(ownerId, nsResult.Value, cancellationToken);
 
         var messagesResult = await ResolveSignatureMessagesAsync(
             ownerId, request.Filter, cancellationToken);
@@ -98,11 +99,28 @@ public sealed class SignatureReplayService : ISignatureReplayService
             return Result.Failure<BulkOperationJobResponse>(nsResult.Error);
 
         var ns = nsResult.Value;
-        var (warnings, canExecute) = EvaluateGuards(ns);
+        var (warnings, canExecute) = await EvaluateGuardsAsync(ownerId, ns, cancellationToken);
         if (!canExecute)
         {
             return Result.Failure<BulkOperationJobResponse>(Error.Validation(
                 "SignatureReplay.NotAllowed", string.Join(' ', warnings)));
+        }
+
+        // Reject a second concurrent replay for the same namespace+signature rather than
+        // silently racing two jobs that can each claim disjoint messages and both report
+        // "success" — this is a server-side guard, not just a disabled button in the UI,
+        // per the intended single-active-replay-per-signature concurrency model.
+        var alreadyRunning = await _dbContext.SignatureReplayJobs.AsNoTracking().AnyAsync(j =>
+            j.OwnerId == ownerId &&
+            j.NamespaceId == ns.Id &&
+            j.SignatureHash == request.Filter.SignatureHash &&
+            (j.Status == BulkOperationStatus.Pending || j.Status == BulkOperationStatus.Running),
+            cancellationToken);
+        if (alreadyRunning)
+        {
+            return Result.Failure<BulkOperationJobResponse>(Error.Conflict(
+                "SignatureReplay.AlreadyRunning",
+                "A replay for this signature is already queued or running. Wait for it to finish, or cancel it, before starting another."));
         }
 
         var messagesResult = await ResolveSignatureMessagesAsync(ownerId, request.Filter, cancellationToken);
@@ -142,7 +160,7 @@ public sealed class SignatureReplayService : ISignatureReplayService
             "Signature replay job {JobId} created for namespace {NamespaceId}, signature {SignatureHash}: {TotalMatched} message(s) matched",
             job.Id, job.NamespaceId, LogRedactor.SanitiseForLog(job.SignatureHash), job.TotalMatched);
 
-        return ToResponse(job);
+        return await ToResponseAsync(job, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -156,7 +174,7 @@ public sealed class SignatureReplayService : ISignatureReplayService
         return job is null
             ? Result.Failure<BulkOperationJobResponse>(Error.NotFound(
                 "SignatureReplay.NotFound", $"Signature replay job {jobId} was not found"))
-            : ToResponse(job);
+            : await ToResponseAsync(job, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -177,8 +195,12 @@ public sealed class SignatureReplayService : ISignatureReplayService
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
+        var responses = new List<BulkOperationJobResponse>(items.Count);
+        foreach (var item in items)
+            responses.Add(await ToResponseAsync(item, cancellationToken));
+
         return new PaginatedResponse<BulkOperationJobResponse>(
-            Items: items.Select(ToResponse).ToList(),
+            Items: responses,
             TotalCount: totalCount,
             Page: page,
             PageSize: pageSize,
@@ -213,7 +235,7 @@ public sealed class SignatureReplayService : ISignatureReplayService
             _logger.LogInformation("Cancellation requested for signature replay job {JobId}", jobId);
         }
 
-        return ToResponse(job);
+        return await ToResponseAsync(job, cancellationToken);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -240,17 +262,20 @@ public sealed class SignatureReplayService : ISignatureReplayService
 
     /// <summary>
     /// Same safety-by-default guards single-message replay and bulk replay already enforce
-    /// (<c>MessagesController.ReplayMessage</c>, <c>BulkOperationService.EvaluateGuards</c>) —
-    /// production block and Send permission.
+    /// (<c>MessagesController.ReplayMessage</c>, <c>BulkOperationService.EvaluateGuardsAsync</c>) —
+    /// production elevation and Send permission.
     /// </summary>
-    private (List<string> Warnings, bool CanExecute) EvaluateGuards(Namespace ns)
+    private async Task<(List<string> Warnings, bool CanExecute)> EvaluateGuardsAsync(
+        string ownerId, Namespace ns, CancellationToken cancellationToken)
     {
         var warnings = new List<string>();
         var canExecute = true;
 
-        if (ns.Environment == EnvironmentType.Prod)
+        if (ns.Environment == EnvironmentType.Prod
+            && await ProductionElevationQueries.GetLiveAsync(_dbContext, ownerId, ns.Id, cancellationToken) is null)
         {
-            warnings.Add("This namespace is Production — signature replay is blocked. Validate in DEV or UAT first.");
+            warnings.Add("This namespace is Production and has no live elevation — signature replay is blocked. " +
+                "Request a production elevation, or validate in DEV/UAT first.");
             canExecute = false;
         }
 
@@ -305,28 +330,50 @@ public sealed class SignatureReplayService : ISignatureReplayService
         return Result.Success<IReadOnlyList<DlqMessage>>(filtered.ToList());
     }
 
-    private static BulkOperationJobResponse ToResponse(SignatureReplayJob job) => new(
-        Id: job.Id,
-        OperationType: "Replay",
-        Status: job.Status.ToString(),
-        NamespaceId: job.NamespaceId,
-        NamespaceDisplayName: job.NamespaceDisplayName,
-        EntityNameFilter: null,
-        StatusFilter: job.StatusFilter?.ToString(),
-        CategoryFilter: null,
-        From: job.FromFilter,
-        To: job.ToFilter,
-        TotalMatched: job.TotalMatched,
-        ProcessedCount: job.ProcessedCount,
-        SuccessCount: job.SuccessCount,
-        FailureCount: job.FailureCount,
-        SkippedCount: job.SkippedCount,
-        FailureSample: DeserializeFailureSample(job.FailureSampleJson),
-        ErrorSummary: job.ErrorSummary,
-        CreatedAt: job.CreatedAt,
-        StartedAt: job.StartedAt,
-        CompletedAt: job.CompletedAt,
-        IsCancellable: job.Status is BulkOperationStatus.Pending or BulkOperationStatus.Running);
+    /// <summary>
+    /// Maps a job row to its response shape, including — for a still-Pending job — how many
+    /// other jobs are ahead of it on the shared single-concurrency worker (see
+    /// <see cref="BulkOperationJobResponse.QueueAheadCount"/>). The queue is a plain FIFO
+    /// channel fed in <see cref="StartAsync"/> immediately after the row commits, so enqueue
+    /// order and <c>CreatedAt</c> order are equivalent — "ahead" can be computed straight from
+    /// the table without reaching into the in-memory channel.
+    /// </summary>
+    private async Task<BulkOperationJobResponse> ToResponseAsync(SignatureReplayJob job, CancellationToken cancellationToken)
+    {
+        int? queueAheadCount = null;
+        if (job.Status == BulkOperationStatus.Pending)
+        {
+            var runningCount = await _dbContext.SignatureReplayJobs.AsNoTracking()
+                .CountAsync(j => j.Status == BulkOperationStatus.Running, cancellationToken);
+            var pendingAheadCount = await _dbContext.SignatureReplayJobs.AsNoTracking()
+                .CountAsync(j => j.Status == BulkOperationStatus.Pending && j.CreatedAt < job.CreatedAt, cancellationToken);
+            queueAheadCount = runningCount + pendingAheadCount;
+        }
+
+        return new(
+            Id: job.Id,
+            OperationType: "Replay",
+            Status: job.Status.ToString(),
+            NamespaceId: job.NamespaceId,
+            NamespaceDisplayName: job.NamespaceDisplayName,
+            EntityNameFilter: null,
+            StatusFilter: job.StatusFilter?.ToString(),
+            CategoryFilter: null,
+            From: job.FromFilter,
+            To: job.ToFilter,
+            TotalMatched: job.TotalMatched,
+            ProcessedCount: job.ProcessedCount,
+            SuccessCount: job.SuccessCount,
+            FailureCount: job.FailureCount,
+            SkippedCount: job.SkippedCount,
+            FailureSample: DeserializeFailureSample(job.FailureSampleJson),
+            ErrorSummary: job.ErrorSummary,
+            CreatedAt: job.CreatedAt,
+            StartedAt: job.StartedAt,
+            CompletedAt: job.CompletedAt,
+            IsCancellable: job.Status is BulkOperationStatus.Pending or BulkOperationStatus.Running,
+            QueueAheadCount: queueAheadCount);
+    }
 
     private static IReadOnlyList<BulkOperationFailureSample>? DeserializeFailureSample(string? json)
     {

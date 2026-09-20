@@ -204,36 +204,6 @@ public sealed class AIServiceClient : IAIServiceClient
         }
     }
 
-    /// <inheritdoc/>
-    public Task<Result<IReadOnlyList<Anomaly>>> DetectAnomaliesAsync(
-        Guid namespaceId,
-        DateTimeOffset startTime,
-        DateTimeOffset endTime,
-        CancellationToken cancellationToken = default)
-    {
-        _logger.LogWarning(
-            "AI service is not yet implemented. DetectAnomaliesAsync called for namespace {NamespaceId} from {StartTime} to {EndTime}",
-            namespaceId,
-            startTime,
-            endTime);
-
-        return Task.FromResult(Result.Failure<IReadOnlyList<Anomaly>>(Error.Internal(
-            ErrorCodes.General.ServiceUnavailable,
-            "AI anomaly detection service is not yet implemented. This feature will be available in a future release.")));
-    }
-
-    /// <inheritdoc/>
-    public Task<Result<Anomaly>> GetAnomalyByIdAsync(
-        Guid anomalyId,
-        CancellationToken cancellationToken = default)
-    {
-        _logger.LogWarning("AI service is not yet implemented. GetAnomalyByIdAsync called for anomaly {AnomalyId}", anomalyId);
-
-        return Task.FromResult(Result.Failure<Anomaly>(Error.Internal(
-            ErrorCodes.General.ServiceUnavailable,
-            "AI anomaly detection service is not yet implemented. This feature will be available in a future release.")));
-    }
-
     private async Task<bool> CheckHealthAsync(CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(_options.ServiceUrl))

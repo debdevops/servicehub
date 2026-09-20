@@ -286,31 +286,6 @@ public sealed class AIServiceClientTests
     }
 
     [Fact]
-    public async Task DetectAnomaliesAsync_ReturnsFailure()
-    {
-        var sut = CreateSut();
-
-        var result = await sut.DetectAnomaliesAsync(
-            Guid.NewGuid(),
-            DateTimeOffset.UtcNow.AddHours(-1),
-            DateTimeOffset.UtcNow);
-
-        result.IsFailure.Should().BeTrue();
-        result.Error.Message.Should().Contain("not yet implemented");
-    }
-
-    [Fact]
-    public async Task GetAnomalyByIdAsync_ReturnsFailure()
-    {
-        var sut = CreateSut();
-
-        var result = await sut.GetAnomalyByIdAsync(Guid.NewGuid());
-
-        result.IsFailure.Should().BeTrue();
-        result.Error.Message.Should().Contain("not yet implemented");
-    }
-
-    [Fact]
     public async Task IsAvailableAsync_Disabled_ReturnsFalseWithoutCallingHttp()
     {
         var called = false;

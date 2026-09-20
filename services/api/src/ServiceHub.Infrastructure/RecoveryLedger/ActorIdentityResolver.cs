@@ -14,6 +14,14 @@ namespace ServiceHub.Infrastructure.RecoveryLedger;
 public static class ActorIdentityResolver
 {
     /// <summary>
+    /// Prefix every API-key-authenticated actor identity carries. Governance grants for a
+    /// <see cref="GranteeKind.ApiKey"/> grantee must be stored with this same prefix (see
+    /// <c>GovernanceGrantService.GrantAsync</c>) or they silently never match the identity this
+    /// resolver produces at request time — never applying instead of failing loudly.
+    /// </summary>
+    public const string ApiKeyIdentityPrefix = "ApiKey:";
+
+    /// <summary>
     /// Resolves an HTTP-originated actor using the same precedence as
     /// <c>SecurityAuditLogger.ResolveUserIdentity</c>: API key name, then claims identity name,
     /// then owner ID, then "Unknown". Only a resolved API key name yields
@@ -29,7 +37,7 @@ public static class ActorIdentityResolver
     {
         if (!string.IsNullOrEmpty(apiKeyName))
         {
-            return new RecoveryActor($"ApiKey:{apiKeyName}", RecoveryActorKind.ApiKey, scopes);
+            return new RecoveryActor($"{ApiKeyIdentityPrefix}{apiKeyName}", RecoveryActorKind.ApiKey, scopes);
         }
 
         if (!string.IsNullOrEmpty(claimsIdentityName))

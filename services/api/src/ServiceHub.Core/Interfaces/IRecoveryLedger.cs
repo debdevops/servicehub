@@ -111,6 +111,16 @@ public interface IRecoveryLedger
         int limit,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Gets one ledger entry by ID, scoped to its owner. Returns null if it doesn't
+    /// exist or belongs to a different owner. Read-only lookup — e.g. so a caller can resolve an
+    /// entry's <see cref="Entities.RecoveryLedgerEntry.NamespaceId"/> for a per-namespace
+    /// Governance check before invoking a mutating method such as
+    /// <see cref="SetDispositionAsync"/>.</summary>
+    Task<RecoveryLedgerEntry?> GetEntryAsync(
+        Guid entryId,
+        string ownerId,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Queries ledger entries for one owner, optionally filtered by operation,
     /// namespace, and/or state.</summary>
     Task<IReadOnlyList<RecoveryLedgerEntry>> QueryEntriesAsync(
@@ -228,6 +238,43 @@ public interface IRecoveryLedger
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Every <see cref="RecoveryLedgerEntry"/> sharing (<paramref name="ownerId"/>,
+    /// <paramref name="namespaceId"/>, <paramref name="entityName"/>) begun on or after
+    /// <paramref name="since"/>, oldest first — counterfactual backtesting's (roadmap §11 item 14)
+    /// "what actually happened to this entity afterward" read. Mirrors
+    /// <see cref="FindLineageMatchesAsync"/>'s shape without the <c>bodyHash</c> constraint, since
+    /// a Playbook Ledger proposal (e.g. <c>AnomalyFlag</c>/<c>DriftFinding</c>) names an entity,
+    /// never a specific message body.
+    /// </summary>
+    Task<IReadOnlyList<RecoveryLedgerEntry>> FindEntriesForEntitySinceAsync(
+        string ownerId,
+        Guid? namespaceId,
+        string entityName,
+        DateTimeOffset since,
+        int limit = 100,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Every <see cref="RecoveryLedgerEntry"/> sharing (<paramref name="ownerId"/>,
+    /// <paramref name="signatureHash"/>) begun on or after <paramref name="since"/>, oldest first —
+    /// counterfactual backtesting's (roadmap §11 item 14, W1.5) signature-precise sibling of
+    /// <see cref="FindEntriesForEntitySinceAsync"/>. Unscoped by <c>namespaceId</c>/<c>entityName</c>
+    /// deliberately: a <c>SignatureHashSnapshot</c> is already provider- and identity-specific by
+    /// construction (<c>FailureFingerprintBuilder</c> hashes the message's namespace/provider into
+    /// the canonical string — see <see cref="GetSignatureProviderAsync"/>'s doc), so adding those
+    /// as extra filter columns here would only narrow a join that is already precise. Used only for
+    /// a <see cref="Entities.PlaybookEntry"/> whose own <c>SignatureHashSnapshot</c> is non-null
+    /// (today, only <c>ReplayPlan</c>); every other backtestable <c>ProposalKind</c> still falls
+    /// back to <see cref="FindEntriesForEntitySinceAsync"/>, since it never carries a signature.
+    /// </summary>
+    Task<IReadOnlyList<RecoveryLedgerEntry>> FindEntriesForSignatureSinceAsync(
+        string ownerId,
+        string signatureHash,
+        DateTimeOffset since,
+        int limit = 100,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Writes a new <see cref="RecoveryLedgerEntry"/> already in terminal
     /// <see cref="Enums.RecoveryEntryState.Declined"/> state, plus its
     /// <see cref="Enums.RecoveryEventType.EligibilityDeclined"/> event, atomically in one
@@ -294,6 +341,32 @@ public interface IRecoveryLedger
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// The <see cref="RecoveryLedgerEntry.EnvironmentSnapshot"/> shared by every entry recorded
+    /// against <paramref name="signatureHash"/> for <paramref name="ownerId"/>, falling back to
+    /// the namespace the signature was last observed in when no ledger entry exists yet — the
+    /// environment-resolution sibling of <see cref="GetSignatureProviderAsync"/>. ADR-0010
+    /// §Decision's M2.4 hard ceiling read: <c>AutonomyEvaluationWorker</c> must never run a
+    /// promotion evaluation for a signature resolving to <see cref="Enums.EnvironmentType.Prod"/>.
+    /// </summary>
+    Task<EnvironmentType?> GetSignatureEnvironmentAsync(
+        string ownerId,
+        string signatureHash,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The namespace ID a signature was last (or most recently) observed in — the namespace
+    /// identity sibling of <see cref="GetSignatureProviderAsync"/>/<see cref="GetSignatureEnvironmentAsync"/>,
+    /// same resolution order (ledger entry first, <c>NamespaceSignatures</c> fallback). ADR-004/
+    /// ADR-0011's promotion-side read: <c>AutonomyEvaluationWorker</c> uses this to look up whether
+    /// the signature's namespace has a live DLQ observer attestation before trusting a non-Azure
+    /// provider's <c>CanProveDlqAbsence</c> override.
+    /// </summary>
+    Task<Guid?> GetSignatureNamespaceIdAsync(
+        string ownerId,
+        string signatureHash,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// The most recent <paramref name="count"/> terminal outcomes carrying real verification
     /// signal for one signature — <see cref="Enums.RecoveryDisposition.Recovered"/> or
     /// <see cref="Enums.RecoveryDisposition.Returned"/> only — ordered by
@@ -336,6 +409,15 @@ public interface IRecoveryLedger
     /// operation level, atomically, mirroring <see cref="RecordEmergencyControlEventAsync"/>'s
     /// pattern. Does not itself flip <see cref="Entities.AutoReplayRule.Enabled"/> — the caller
     /// is expected to have already done so in the same save, or immediately after.
+    /// <para>
+    /// <c>appliedSuccessRateFloor</c> is the floor that was actually in force when this trip fired.
+    /// It is written into the event's detail so an auditor reading the ledger sees the threshold
+    /// rather than having to trust that the default applied — the same reason
+    /// <c>ObservationWindowOpened</c> records its applied window (roadmap W1.1). A deployment may
+    /// legitimately run a non-default floor outside Production; inside Production it cannot go
+    /// below <c>AutonomyEvaluationWorker.MinimumProductionCircuitBreakerSuccessRateFloor</c>,
+    /// enforced at startup.
+    /// </para>
     /// </summary>
     Task<Result<RecoveryOperation>> RecordAutoReplayCircuitBreakerTripAsync(
         string ownerId,
@@ -344,6 +426,7 @@ public interface IRecoveryLedger
         RecoveryActor actor,
         int sampleSize,
         double verifiedSuccessRate,
+        double appliedSuccessRateFloor,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -472,5 +555,139 @@ public interface IRecoveryLedger
     Task<bool> HasDuplicateAssociationAsync(
         string ownerId,
         string signatureHash,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Every <see cref="AutonomyGrant"/> currently on record for <paramref name="ownerId"/>,
+    /// across every signature and <see cref="Enums.RecoveryOperationKind"/> — the fleet-wide
+    /// autonomy dashboard's source query (roadmap §11 item 5, §15 item 9). A signature that has
+    /// never been promoted past L3 has no row here (see <see cref="GetAutonomyGrantAsync"/>'s doc
+    /// comment); this is the current-projection table as-is, no new aggregation or trust logic.
+    /// </summary>
+    Task<IReadOnlyList<AutonomyGrant>> GetAutonomyGrantsAsync(
+        string ownerId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The most recent <paramref name="limit"/> <see cref="Enums.RecoveryEventType.AutonomyGrantPromoted"/>/
+    /// <see cref="Enums.RecoveryEventType.AutonomyGrantDemoted"/> events for
+    /// <paramref name="ownerId"/>, newest first, decoded from each event's <c>DetailJson</c> (the
+    /// same structured payload <see cref="RecordAutonomyGrantTransitionAsync"/> writes) into a
+    /// <see cref="AutonomyTransitionRecord"/> — the fleet-wide autonomy dashboard's "recent
+    /// activity" feed. An event whose <c>DetailJson</c> cannot be decoded is skipped rather than
+    /// surfaced malformed.
+    /// </summary>
+    Task<IReadOnlyList<AutonomyTransitionRecord>> GetRecentAutonomyTransitionsAsync(
+        string ownerId,
+        int limit,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Requests a <see cref="ProductionElevation"/> (ADR-0010 §Decision phase 2) — inserts the
+    /// pending row and appends a <see cref="RecoveryEventType.ProductionElevationRequested"/>
+    /// event atomically. Grants nothing by itself: <see cref="ProductionElevation.ApprovedAt"/> is
+    /// null until a distinct identity approves it. Fails validation if <paramref name="reason"/>
+    /// is empty or <paramref name="duration"/> is not positive. Governance role checks (the
+    /// requester must hold <see cref="Enums.GovernanceRole.Operator"/> on
+    /// <paramref name="namespaceId"/>) are the caller's responsibility, exactly as every other
+    /// Recover-pillar mutation delegates that check to its controller.
+    /// </summary>
+    Task<Result<ProductionElevation>> RequestProductionElevationAsync(
+        string ownerId,
+        Guid namespaceId,
+        string? namespaceNameSnapshot,
+        RecoveryActor actor,
+        string reason,
+        TimeSpan duration,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Approves a pending <see cref="ProductionElevation"/> — sets
+    /// <see cref="ProductionElevation.ApprovedByIdentity"/>/<see cref="ProductionElevation.ApprovedAt"/>/
+    /// <see cref="ProductionElevation.ExpiresAt"/> and appends a
+    /// <see cref="RecoveryEventType.ProductionElevationApproved"/> event atomically. Fails with a
+    /// <see cref="Shared.Results.ErrorType.Forbidden"/> error if <paramref name="actor"/>'s
+    /// identity equals the elevation's <see cref="ProductionElevation.RequestedByIdentity"/> —
+    /// dual control admits no self-approval, including for <see cref="Enums.GovernanceRole.Admin"/>,
+    /// enforced here regardless of what the caller's own governance check already found. Fails
+    /// with a not-found error if the elevation does not exist, belongs to a different owner, is
+    /// already approved, or already revoked.
+    /// </summary>
+    Task<Result<ProductionElevation>> ApproveProductionElevationAsync(
+        Guid elevationId,
+        string ownerId,
+        RecoveryActor actor,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Revokes a live or pending <see cref="ProductionElevation"/> early — sets
+    /// <see cref="ProductionElevation.RevokedByIdentity"/>/<see cref="ProductionElevation.RevokedAt"/>
+    /// and appends a <see cref="RecoveryEventType.ProductionElevationRevoked"/> event atomically.
+    /// An elevation cannot be extended, only revoked or left to lapse; there is deliberately no
+    /// "renew" operation.
+    /// </summary>
+    Task<Result<ProductionElevation>> RevokeProductionElevationAsync(
+        Guid elevationId,
+        string ownerId,
+        RecoveryActor actor,
+        string? reason,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The live (approved, unrevoked, unexpired — see <see cref="ProductionElevation.IsLiveAt"/>)
+    /// elevation covering <paramref name="namespaceId"/>, if any. The Recovery Eligibility Gate's
+    /// predicate 2 read for a <c>User</c>/<c>ApiKey</c> actor attempting recovery in Prod. A purely
+    /// read-only query with no side effects — natural expiry is recorded separately by
+    /// <see cref="RecordProductionElevationExpiryAsync"/>, never inline here.
+    /// </summary>
+    Task<ProductionElevation?> GetLiveProductionElevationAsync(
+        string ownerId,
+        Guid namespaceId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Every naturally-lapsed (past <see cref="ProductionElevation.ExpiresAt"/>, approved, not
+    /// revoked) elevation for <paramref name="ownerId"/> that has not yet had its
+    /// <see cref="RecoveryEventType.ProductionElevationExpired"/> event recorded — the sweep set
+    /// for <c>ProductionElevationExpiryWorker</c>.
+    /// </summary>
+    Task<IReadOnlyList<ProductionElevation>> GetUnrecordedExpiredElevationsAsync(
+        string ownerId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Idempotently records that <paramref name="elevationId"/> lapsed past its natural expiry —
+    /// sets <see cref="ProductionElevation.ExpiredEventRecorded"/> and appends one
+    /// <see cref="RecoveryEventType.ProductionElevationExpired"/> event. A no-op returning the
+    /// elevation unchanged if the flag is already set, so an overlapping or restarted sweep cannot
+    /// double-record it.
+    /// </summary>
+    Task<Result<ProductionElevation>> RecordProductionElevationExpiryAsync(
+        Guid elevationId,
+        string ownerId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Queries <see cref="ProductionElevation"/> rows for one owner, optionally filtered by
+    /// namespace, most recently requested first — the elevation history view.
+    /// </summary>
+    Task<IReadOnlyList<ProductionElevation>> QueryProductionElevationsAsync(
+        string ownerId,
+        Guid? namespaceId,
+        int limit,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Appends an <see cref="Enums.RecoveryEventType.EpochSealed"/> marker event closing the
+    /// current epoch for <paramref name="ownerId"/> (roadmap next-chapter M5.2) — the durable,
+    /// hash-chained boundary a subsequent archival prune anchors to. Fails if there is no event
+    /// for this owner, or if the most recent event is itself already an unsuperseded seal marker
+    /// (nothing new has happened since the last seal). Does not itself archive or delete
+    /// anything — see <c>Infrastructure.RecoveryLedger.RecoveryEpochArchiveService</c>, which
+    /// calls this as its first step.
+    /// </summary>
+    Task<Result<RecoveryEvent>> SealEpochAsync(
+        string ownerId,
+        RecoveryActor actor,
         CancellationToken cancellationToken = default);
 }

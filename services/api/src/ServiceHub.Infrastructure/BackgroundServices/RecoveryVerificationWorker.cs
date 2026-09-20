@@ -45,6 +45,7 @@ public sealed class RecoveryVerificationWorker : BackgroundService
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<RecoveryVerificationWorker> _logger;
     private readonly Telemetry.ServiceHubMetrics? _metrics;
+    private readonly IWorkerHeartbeatStore? _heartbeatStore;
 
     private static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(15);
     private const int DefaultSweepIntervalSeconds = 60;
@@ -76,6 +77,10 @@ public sealed class RecoveryVerificationWorker : BackgroundService
         // Optional: GetService (not GetRequiredService) so tests that build a root provider
         // without registering it keep working — metrics recording degrades to a no-op instead.
         _metrics = serviceProvider.GetService<Telemetry.ServiceHubMetrics>();
+
+        // Same optional-resolution convention as _metrics above — heartbeat recording degrades
+        // to a no-op instead of failing tests that don't register it.
+        _heartbeatStore = serviceProvider.GetService<IWorkerHeartbeatStore>();
 
         _sweepInterval = TimeSpan.FromSeconds(Math.Clamp(
             configuration.GetValue("RecoveryEvidence:VerificationSweepIntervalSeconds", DefaultSweepIntervalSeconds),
@@ -130,6 +135,8 @@ public sealed class RecoveryVerificationWorker : BackgroundService
                         "Recovery Verification Worker could not list active namespaces: {Error}",
                         namespacesResult.Error.Message);
                 }
+
+                _heartbeatStore?.RecordHeartbeat(nameof(RecoveryVerificationWorker), _sweepInterval);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

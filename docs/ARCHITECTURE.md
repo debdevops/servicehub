@@ -1,18 +1,30 @@
 # ServiceHub Architecture
 
+> **In this article:** how ServiceHub's pieces fit together under the hood — the frontend/backend
+> split, how it talks to Azure/AWS/GCP, how it proves what it did (the evidence ledger), and its
+> safety/autonomy model.
+>
+> **Who this is for:** engineers about to make a change to ServiceHub itself, or anyone evaluating
+> it who wants to understand the system design rather than just the product features. If you're
+> looking for how to *use* ServiceHub day to day, see the
+> [Complete Guide](SERVICEHUB-COMPLETE-GUIDE.md) instead — that one is written for every audience
+> and is full of real screenshots of the product; this one is source-code-level and has none,
+> because architecture is described faithfully in diagrams and text, not screenshots of a UI.
+
 This document describes the system as it exists today, grounded in the source tree — not a
-5-year vision (see [`docs/architecture/ARCHITECTURE_VISION.md`](architecture/ARCHITECTURE_VISION.md)
-for that) and not a decision log (see [`docs/adr/`](adr/) for that). Read this to understand how
-the pieces fit together before making a change.
+long-range roadmap (see [Roadmap in README.md](../README.md#roadmap) for that) and not a decision
+log (see [`docs/adr/`](adr/) for that). Read this to understand how the pieces fit together before
+making a change.
 
 ---
 
 ## 1. What ServiceHub is
 
-ServiceHub is a self-hosted forensic debugger for cloud message queues — Azure Service Bus (GA),
-AWS SQS/SNS (preview), GCP Pub/Sub (preview). It answers the question a cloud portal can't: *what
-is actually inside these 5,000 dead-lettered messages, why did they fail, and what happens if I
-replay them?*
+ServiceHub is a self-hosted, open-source forensic debugger for cloud message queues — Azure
+Service Bus (GA), AWS SQS/SNS and GCP Pub/Sub (Supported, conformance-tested against live
+infrastructure — see [Provider Conformance](PROVIDER-CONFORMANCE.md)). It answers the question a
+cloud portal can't: *what is actually inside these 5,000 dead-lettered messages, why did they
+fail, and what happens if I replay them?*
 
 It is read-only by default. Every mutating operation (replay, purge, send) is explicit, capability-
 gated per provider, and disabled entirely against namespaces marked `Production`. It is a single
@@ -108,10 +120,11 @@ Azure, AWS, and GCP registration is independent and flag-gated: Azure is always 
 `CloudProviders:Aws:Enabled` / `CloudProviders:Gcp:Enabled` both default `false` in
 `appsettings.json`. Enabling a flag registers that provider's `ICloudMessagingProvider`, its
 client factory, and a connectivity health check; registration is inert until a namespace for that
-provider actually exists. This is why AWS/GCP are labeled **preview**, not GA: the flows are
-implemented and unit-tested end-to-end, but not exercised against live AWS/GCP infrastructure in
-this project's own CI, and are provably asymmetric in capability (below) — not because anything is
-half-built.
+provider actually exists. This is why AWS/GCP are labeled **Supported**, not GA: the flows are
+implemented, unit-tested end-to-end, and conformance-tested against live AWS/GCP infrastructure
+(see [Provider Conformance](PROVIDER-CONFORMANCE.md)), but remain provably asymmetric in
+capability relative to Azure (below) — a permanent difference in what each cloud API exposes, not
+a gap in test coverage.
 
 ### ProviderCapabilities: the mechanism for honest asymmetry
 
@@ -204,11 +217,25 @@ current provider reality.
 
 `RecoveryEligibilityGate` is the single ordered-predicate authority for every replay/purge
 attempt, automated or manual: emergency stop first, purge-by-automation unconditionally denied,
-production namespaces require explicit elevation, a fleet-wide replay-velocity cap, a per-rule
+production namespaces denied unconditionally, a fleet-wide replay-velocity cap, a per-rule
 success-rate circuit breaker (last 20 verified dispositions, floor configurable, default 50%), and
-the provider-capability re-check above. Every query in the chain fails closed. Demotion — dropping
-a signature back down the ladder after a verified `Returned` — fires synchronously on the 2nd
-consecutive verified recurrence and cannot be disabled by configuration.
+the provider-capability re-check above. Every query in the chain fails closed.
+
+The production predicate deserves saying plainly, because everything else here inherits it.
+`CreateNamespaceRequest.Validate` no longer refuses a namespace marked `Prod` at registration
+(roadmap next-chapter M2, [ADR-0010](adr/0010-production-namespace-elevation.md)): Investigate,
+Correlate and Prevent run against a Prod namespace exactly as they do against Dev/UAT. Every
+recovery verb still denies it — now *conditionally*, on a live, time-boxed `ProductionElevation`
+rather than unconditionally. An elevation requires a stated reason, an absolute expiry, and dual
+control (the identity that requests it and the identity that approves it must be distinct —
+self-approval is refused outright, independent of any role check). Autonomy stays hard-ceilinged at
+L0/L1 in production under every configuration — `AutonomyEvaluationWorker` skips promotion
+evaluation entirely for a Prod-resolved signature, and `RecoveryEligibilityGate` predicate 2 denies
+`Automation`/`System` actors unconditionally regardless of any elevation. **All *autonomous*
+recovery still operates only on namespaces labelled Dev or UAT; a Prod recovery is always a human
+act, twice.** Demotion — dropping a signature back down the ladder after a verified `Returned` —
+fires synchronously on the 2nd consecutive verified recurrence and cannot be disabled by
+configuration.
 
 ## 6a. The AI capability boundary
 
@@ -227,6 +254,28 @@ forbidden-member set automatically, so a future write method added to `IRecovery
 without anyone remembering to update an exclusion list. AI touches nouns (classification,
 explanation), never verbs (execution) — see [ADR-0005](adr/0005-ai-capability-boundary.md).
 
+## 6b. The reasoning companion (roadmap §7, W5)
+
+A second, independent AI-adjacent surface: `services/agent/` — local-only,
+self-hosted, disabled-by-default, and gated separately from `services/ai/` (its
+own `ReasoningAgent:Enabled` switch, its own container, its own `OLLAMA_HOST`).
+`ReasoningCompanionWorker` (`ServiceHub.Infrastructure.BackgroundServices`)
+periodically takes the same ranked candidates `IAttentionQueueService` already
+surfaces on Home (W2.2), builds payload-free evidence via
+`IIncidentReadModelService`/`ReasoningEvidenceMapper` — counts, lifecycle
+status, already-normalised terms, never a message body — and sends it to
+`IReasoningAgentClient`. Every proposal that comes back becomes one
+`IPlaybookLedger.ProposeAsync` call with actor kind `PlaybookActorKind.ReasoningAgent`
+and nothing else: no `IRecoveryLedger`/`IMessageOperationsService` mutation,
+and no other `IPlaybookLedger` member (never `DispositionAsync`, `RevokeAsync`,
+etc. — a human decides those). `AIBoundaryArchitectureTests` enforces both
+restrictions by the same dependency-based IL-scan technique §6a describes,
+extended with a second forbidden set scoped to reasoning-agent-adjacent code
+only. See [`services/agent/README.md`](../services/agent/README.md) and the
+master roadmap's §7 for the full non-negotiable list (no autonomy transition
+ever driven by a model's stated confidence, no external LLM API call without a
+real ADR-0004 amendment, IL-boundary-enforced from day one).
+
 ## 7. Persistence and single-instance architecture
 
 ServiceHub is one process per deployment: one SQLite database, one in-process event bus, both
@@ -238,13 +287,37 @@ Two stores, for historical reasons:
 
 | Store | Backing | Contents |
 |---|---|---|
-| SQLite (`DlqDbContext`, EF Core) | `DlqDatabase:DataDirectory` | DLQ history, replay history, auto-replay rules, audit log, bulk-operation jobs, failure signatures, the Recovery Evidence Ledger |
-| Namespace credential store | `NamespaceRepository:DataDirectory` (JSON file, crash-safe temp-file-then-atomic-rename) | Encrypted connection strings / auth config per namespace |
+| SQLite (`DlqDbContext`, EF Core) | `DlqDatabase:DataDirectory` | DLQ history, replay history, auto-replay rules, audit log, bulk-operation jobs, failure signatures, namespaces and their encrypted connection strings, governance grants, the Recovery Evidence Ledger, the Playbook Ledger, the four pillars' findings (`Anomaly`/`DriftFinding`/`CorrelationFinding`/`Narration`/`BacklogForecast`/`ExternalSignalCorrelation`, roadmap next-chapter M1), `ProductionElevation`s, `DlqObserverAttestation`s |
+| Legacy namespace JSON file | `NamespaceRepository:DataDirectory` | **Import source only.** Superseded by the `Namespaces` / `NamespaceSharedOwners` tables. |
+| Recovery epoch archive files | `RecoveryEpochArchive:ArchiveDirectory` (default: `<DataDirectory>/recovery-archive/<ownerId>/epoch-<N>.json`) | **Write-once, read-only after creation.** Sealed-off Recovery Evidence Ledger history pruned from the live SQLite table (roadmap next-chapter M5.2, §3.3c of [`docs/RECOVERY-EVIDENCE.md`](RECOVERY-EVIDENCE.md)) — never mutated once verified and written; the live table is the only writable copy of anything. |
 
-Schema changes to the SQLite store ship as real EF Core migrations under
-`Infrastructure/Persistence/Migrations/`. The namespace store predates the SQLite database and was
-never migrated into it — unifying them is a known, deliberately deferred simplification, not an
-active defect (see the "Frozen" list in [`CLAUDE.md`](../CLAUDE.md)).
+There is **one** live store. `SqliteNamespaceRepository` is the namespace repository;
+`NamespaceStoreImporter` performs a one-shot, forward-only cutover from the legacy
+`servicehub-namespaces.json` at startup immediately after `Database.MigrateAsync()`, behind a hard
+row-count parity gate, then renames the file to `.migrated` (never deletes it). There is no
+dual-write and no read-through fallback. A fresh install skips the importer entirely.
+
+Schema changes ship as real EF Core migrations under `Infrastructure/Persistence/Migrations/`.
+Migrations are **frozen** — no migration may be authored or applied without explicit, dated user
+sign-off ([ADR-0006](adr/0006-rc1-migration-freeze.md)). Four scoped lifts have been granted:
+[ADR-0007](adr/0007-persistence-wave-m1-m4-authorized.md) (persistence wave M1–M4),
+[ADR-0008](adr/0008-m5-external-signal-events-authorized.md) (`ExternalSignalEvents`), and
+[ADR-0009](adr/0009-next-chapter-migrations-authorized.md) (the pillar-evidence tables, the
+`NamespaceSignatures.HashKind` discriminator, and the production elevation record whose shape
+[ADR-0010](adr/0010-production-namespace-elevation.md) fixes), and
+[ADR-0011](adr/0011-dlq-observer-attestation-table-authorized.md) (`DlqObserverAttestations`).
+Everything outside those named units is still frozen — epoch sealing (§3.3c above) and
+configuration-as-code (below) both needed no schema change and so needed no ADR of their own.
+
+**Configuration as code** (roadmap next-chapter M5.4): `GET /api/v1/governance/configuration/export`
+and `POST /api/v1/governance/configuration/import` round-trip `AutoReplayRule`s and active
+`GovernanceGrant`s only — genuinely mutable configuration, the same tier as a rule's `Enabled` flag
+or a role assignment. Deliberately excludes two things that look like configuration but aren't:
+a namespace's connection string (a credential — exporting it into a file meant for git review would
+be a real secret leak, so namespaces appear only as a read-only reference list) and a
+`PreventionRule` (structurally a hash-chained `PlaybookEntry`, not configuration — importing one
+would fabricate ledger evidence that was never actually disposed). Import is additive/upsert only:
+nothing present live but absent from the imported file is ever deleted or revoked.
 
 ## 8. Authentication and security boundaries
 
@@ -259,10 +332,16 @@ configures real identity.
 
 Connection strings are AES-GCM-256 encrypted at rest (`ENC[v1]:` prefix; legacy `ENC:V2:` values
 are transparently decrypted and re-encrypted on read), with the encryption key derived via
-HKDF/PBKDF2 from an operator-supplied master key — never generated or stored by ServiceHub itself,
-and **not rotatable**: losing it, or changing it after namespaces are saved, makes every stored
-connection string permanently undecryptable. There is no default; a placeholder value is rejected
-outright outside `Development`. Any user-controlled value written to a log line is routed through
+HKDF/PBKDF2 from an operator-supplied master key — never generated or stored by ServiceHub itself.
+Single-key deployments use the `ENC[v1]:` envelope, unrotatable, exactly as before. Configuring
+`Security:EncryptionKeyRegistry` opts a deployment into the `ENC[v2:kid=<id>]:` envelope instead —
+a multi-key registry with an AAD-bound key ID, so old and new keys coexist and the key protecting
+new writes can be rotated without losing access to connection strings encrypted under a retired one.
+See [`docs/ENCRYPTION-KEY-ROTATION.md`](ENCRYPTION-KEY-ROTATION.md) for the full procedure and its
+current scope (lazy re-encryption on write; no proactive bulk re-encryption yet). There is no
+default key; a placeholder value is rejected outright outside `Development`.
+
+Any user-controlled value written to a log line is routed through
 `LogRedactor.SanitiseForLog()`, enforced in CI by CodeQL (`cs/log-forging`). Message *bodies* are
 never persisted in full — only a SHA-256 hash plus a capped preview — so investigation never
 requires retaining the sensitive payload itself.
@@ -294,5 +373,3 @@ beyond `localhost`.
 - [`docs/RECOVERY-EVIDENCE.md`](RECOVERY-EVIDENCE.md) — the ledger's evidence model and export
   format, for auditors and integrators.
 - [`CONTRIBUTING.md`](../CONTRIBUTING.md) — development setup, tests, PR process.
-- [`CLAUDE.md`](../CLAUDE.md) — the file governing AI-assisted development in this repository;
-  useful as a dense summary of invariants even if you're not using an AI assistant.

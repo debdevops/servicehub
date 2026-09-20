@@ -19,8 +19,10 @@ can and cannot prove.
 """
 
 import argparse
+import glob
 import hashlib
 import json
+import os
 import re
 import sys
 import zipfile
@@ -203,9 +205,82 @@ def verify(events, manifest=None):
     return findings
 
 
+def load_archive(path: str):
+    """Returns the parsed epoch-archive document (roadmap next-chapter M5.2) written by
+    RecoveryEpochArchiveService: epochNumber/startSeq/startPrevHash/endSeq/terminalHash plus its
+    own events list. Raises VerificationError if the file isn't shaped like one."""
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    for key in ("epochNumber", "startSeq", "startPrevHash", "endSeq", "terminalHash", "events"):
+        if key not in data:
+            raise VerificationError(f"{path}: missing required archive field {key!r}.")
+    return data
+
+
+def verify_archive_chain(archive_dir: str):
+    """Verifies every epoch-*.json archive under archive_dir, in epoch order: each file's own
+    internal hash chain (via verify()), plus the cross-file continuity a single archive alone
+    cannot prove — that each archive's declared startSeq/startPrevHash matches its own first
+    event and that consecutive archives chain terminalHash-to-startPrevHash with no seq gap.
+    Returns (findings, last_archive_or_None) — the last archive lets the caller check the live
+    export's own first event links to where the archived history left off."""
+    findings = []
+    paths = sorted(glob.glob(os.path.join(archive_dir, "epoch-*.json")))
+    if not paths:
+        return [f"No epoch-*.json archive files found under {archive_dir}."], None
+
+    archives = []
+    for path in paths:
+        try:
+            archives.append((path, load_archive(path)))
+        except (OSError, json.JSONDecodeError, VerificationError) as exc:
+            findings.append(f"{path}: {exc}")
+
+    archives.sort(key=lambda pair: pair[1]["epochNumber"])
+
+    previous = None
+    for path, archive in archives:
+        for finding in verify(archive["events"], manifest=None):
+            findings.append(f"{path}: {finding}")
+
+        if archive["events"]:
+            first, last = archive["events"][0], archive["events"][-1]
+            if first["seq"] != archive["startSeq"]:
+                findings.append(
+                    f"{path}: declared startSeq={archive['startSeq']} but the first event's Seq "
+                    f"is {first['seq']}."
+                )
+            if first["prevHash"] != archive["startPrevHash"]:
+                findings.append(f"{path}: declared startPrevHash does not match the first event's actual PrevHash.")
+            if last["entryHash"] != archive["terminalHash"]:
+                findings.append(f"{path}: declared terminalHash does not match the last event's actual EntryHash.")
+
+        if previous is not None:
+            prev_path, prev_archive = previous
+            if archive["startPrevHash"] != prev_archive["terminalHash"]:
+                findings.append(
+                    f"{path}: startPrevHash does not match {prev_path}'s terminalHash — these two "
+                    "epochs do not chain to each other."
+                )
+            if archive["startSeq"] != prev_archive["endSeq"] + 1:
+                findings.append(
+                    f"{path}: startSeq={archive['startSeq']} does not immediately follow "
+                    f"{prev_path}'s endSeq={prev_archive['endSeq']}."
+                )
+        previous = (path, archive)
+
+    return findings, (previous[1] if previous else None)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("path", help="Path to events.json, a format=json bundle, or a format=package zip.")
+    parser.add_argument(
+        "--archive-dir",
+        help="Directory of epoch-*.json archives (roadmap next-chapter M5.2) to verify and chain "
+        "into 'path' — follows the anchor from the sealed, pruned-from-the-live-table history "
+        "into the current export, rather than assuming 'path' starts at genesis.",
+    )
     args = parser.parse_args()
 
     try:
@@ -215,16 +290,41 @@ def main() -> int:
         return 2
 
     findings = verify(events, manifest)
+    last_archive = None
+
+    if args.archive_dir:
+        archive_findings, last_archive = verify_archive_chain(args.archive_dir)
+        findings = archive_findings + findings
+
+        if last_archive is not None and events:
+            live_first = min(events, key=lambda e: e["seq"])
+            if live_first["prevHash"] != last_archive["terminalHash"]:
+                findings.append(
+                    f"{args.path}: first event (Seq {live_first['seq']})'s PrevHash does not match "
+                    "the archived history's terminalHash — the live table does not continue from "
+                    "where sealing left off."
+                )
+            if live_first["seq"] != last_archive["endSeq"] + 1:
+                findings.append(
+                    f"{args.path}: first event's Seq ({live_first['seq']}) does not immediately "
+                    f"follow the archived history's endSeq ({last_archive['endSeq']})."
+                )
 
     if not findings:
         seqs = [e["seq"] for e in events]
         owner = events[0]["ownerId"]
         print(f"PASS — {len(events)} event(s) verified, owner={owner!r}, Seq {min(seqs)}-{max(seqs)}.")
+        if last_archive is not None:
+            print(
+                f"Archived history under {args.archive_dir} verified too, and chains continuously "
+                f"into this export from Seq 1 through {max(seqs)}."
+            )
         print("This confirms: no event was altered after being appended, no event in this export")
         print("is missing/duplicated/reordered, and adjacent-Seq events chain correctly.")
-        print("This does NOT confirm continuity with other operations' events in the owner's")
-        print("global chain — see docs/RECOVERY-EVIDENCE.md for what an offline, per-operation")
-        print("export cannot prove.")
+        if not args.archive_dir:
+            print("This does NOT confirm continuity with other operations' events in the owner's")
+            print("global chain — see docs/RECOVERY-EVIDENCE.md for what an offline, per-operation")
+            print("export cannot prove.")
         return 0
 
     print(f"FAIL — {len(findings)} finding(s):")

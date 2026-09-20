@@ -129,6 +129,64 @@ describe('useMessages', () => {
     // 401 errors do not retry (custom retry function returns false for 401)
     await waitFor(() => expect(result.current.isError).toBe(true));
   });
+
+  // Regression: a message sent via the FAB was showing twice in the list — the real
+  // message (from the fetch) plus a stale "optimistic" entry that never got cleared.
+  // The broker (e.g. Azure Service Bus) stamps its own extra applicationProperties
+  // (a W3C "Diagnostic-Id" trace-context property) onto the sent message, so the real
+  // message's properties are a superset of what the client sent, not an exact match —
+  // the old exact-equality check never matched and the optimistic entry lingered forever.
+  it('clears the optimistic "just sent" entry once the real message is fetched, even when the broker added extra properties', async () => {
+    const { Wrapper, queryClient } = createWrapperWithClient();
+    const optimisticKey = ['messages-optimistic', 'ns-1', 'queue', 'my-queue'];
+    const sentAt = Date.now();
+    queryClient.setQueryData(optimisticKey, [
+      {
+        message: {
+          messageId: 'optimistic-123',
+          sequenceNumber: 0,
+          enqueuedTime: new Date(sentAt).toISOString(),
+          deliveryCount: 0,
+          state: 'Active',
+          contentType: 'application/json',
+          body: 'hello',
+          correlationId: null,
+          sessionId: null,
+          timeToLive: null,
+          applicationProperties: { source: 'ServiceHub' },
+          isFromDeadLetter: false,
+        },
+        sentAt,
+      },
+    ]);
+
+    vi.mocked(messagesApi.list).mockResolvedValueOnce({
+      items: [
+        {
+          messageId: 'real-456',
+          body: 'hello',
+          correlationId: null,
+          sessionId: null,
+          enqueuedTime: new Date(sentAt + 50).toISOString(),
+          // Broker-added property beyond what the client sent.
+          applicationProperties: { source: 'ServiceHub', 'Diagnostic-Id': '00-abc-def-00' },
+        },
+      ],
+      totalCount: 1,
+      page: 1,
+      pageSize: 50,
+      hasNextPage: false,
+      hasPreviousPage: false,
+    } as any);
+
+    const { result } = renderHook(
+      () => useMessages({ namespaceId: 'ns-1', queueOrTopicName: 'my-queue', entityType: 'queue' }),
+      { wrapper: Wrapper }
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => expect(queryClient.getQueryData(optimisticKey)).toEqual([]));
+  });
 });
 
 // ─── useMessage (single) ─────────────────────────────────────────────────────

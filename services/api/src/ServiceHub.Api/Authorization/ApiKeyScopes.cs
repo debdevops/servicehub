@@ -26,6 +26,22 @@ public static class ApiKeyScopes
     // Anomaly detection scopes
     public const string AnomaliesRead = "anomalies:read";
 
+    // Message-shape drift detection scopes
+    public const string DriftFindingsRead = "drift-findings:read";
+
+    // Same-provider proactive correlation scopes
+    public const string CorrelationFindingsRead = "correlation-findings:read";
+
+    // External-signal correlation scopes (roadmap §5.D, C3 — M5, ADR-0008)
+    public const string ExternalSignalsRead = "external-signals:read";
+    public const string ExternalSignalsWrite = "external-signals:write";
+
+    // Deterministic narration scopes (roadmap §5.B, I4)
+    public const string NarrationsRead = "narrations:read";
+
+    // Predictive backlog forecast scopes (roadmap §5.E, P4)
+    public const string BacklogForecastsRead = "backlog-forecasts:read";
+
     // DLQ Intelligence scopes
     public const string DlqRead = "dlq:read";
     public const string DlqWrite = "dlq:write";
@@ -36,6 +52,10 @@ public static class ApiKeyScopes
     // Recovery Evidence Ledger scopes
     public const string RecoveryRead = "recovery:read";
     public const string RecoveryWrite = "recovery:write";
+
+    // Playbook Ledger scopes (M4 of the persistence wave)
+    public const string PlaybookRead = "playbook:read";
+    public const string PlaybookWrite = "playbook:write";
 
     // Administrative access (all operations)
     public const string Admin = "admin";

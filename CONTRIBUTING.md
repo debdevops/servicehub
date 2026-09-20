@@ -1,6 +1,8 @@
 # Contributing to ServiceHub
 
-Thank you for your interest in contributing to ServiceHub! This document explains how to get started, what to expect, and how to report issues.
+**ServiceHub** is a self-hosted, open-source forensic debugger for cloud message queues (Azure
+Service Bus, AWS SQS/SNS, GCP Pub/Sub). Thank you for your interest in contributing! This document
+explains how to get started, what to expect, and how to report issues.
 
 ---
 

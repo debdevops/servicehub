@@ -51,18 +51,18 @@ const SEVERITY_EXPLANATIONS = {
 function getDLQSeverity(message: Message): 'test' | 'warning' | 'critical' {
   const reason = (message.deadLetterReason || '').toLowerCase();
   const description = (message.deadLetterSource || '').toLowerCase();
-  
+
   // Test/manual scenarios
   if (reason.includes('test') || reason.includes('demo') || reason.includes('manual') ||
       description.includes('servicehub') || description.includes('testing')) {
     return 'test';
   }
-  
+
   // High delivery count = critical
   if (message.deliveryCount > 5) {
     return 'critical';
   }
-  
+
   // Default to warning for real DLQ messages
   return 'warning';
 }
@@ -102,7 +102,7 @@ function extractDLQDetails(message: Message, provider?: CloudProviderType): {
     guidance.push('Consider checking application logs for the original failure context');
     return { reason, description, interpretation, guidance, severity: 'warning', hasIncompleteData };
   }
-  
+
   // Generate interpretation based on reason pattern
   if (severity === 'test') {
     interpretation = 'This appears to be a test or manually dead-lettered message, likely used for inspection or system validation.';
@@ -122,7 +122,7 @@ function extractDLQDetails(message: Message, provider?: CloudProviderType): {
     guidance.push('Review the message body for validation or schema errors');
     guidance.push('Check application logs for the original processing failure');
   }
-  
+
   return { reason, description, interpretation, guidance, severity, hasIncompleteData };
 }
 
@@ -133,7 +133,7 @@ export function PropertiesTab({ message, provider }: PropertiesTabProps) {
   const dlqDetails = extractDLQDetails(message, provider);
   const severityInfo = dlqDetails ? SEVERITY_EXPLANATIONS[dlqDetails.severity] : null;
   const serviceName = getProviderServiceName(provider);
-  
+
   return (
     <div className="p-4 space-y-4">
       {/* DLQ Information Panel - shown prominently at top */}
@@ -151,8 +151,8 @@ export function PropertiesTab({ message, provider }: PropertiesTabProps) {
           </div>
         )}
         <div className={`mb-4 rounded-lg overflow-hidden border-2 ${
-          dlqDetails.severity === 'test' 
-            ? 'bg-gray-50 border-gray-200' 
+          dlqDetails.severity === 'test'
+            ? 'bg-gray-50 border-gray-200'
             : dlqDetails.severity === 'critical'
             ? 'bg-red-50 border-red-300'
             : 'bg-amber-50 border-amber-300'
@@ -179,9 +179,9 @@ export function PropertiesTab({ message, provider }: PropertiesTabProps) {
                 ? 'text-red-800'
                 : 'text-amber-800'
             }`}>Dead-Letter Queue Message</span>
-            
+
             {/* Severity Badge with Tooltip - Clearly labeled as ServiceHub assessment */}
-            <span 
+            <span
               className={`ml-auto text-xs px-2 py-1 rounded-full font-medium cursor-help flex items-center gap-1 ${
                 dlqDetails.severity === 'test'
                   ? 'bg-gray-200 text-gray-700'
@@ -195,7 +195,7 @@ export function PropertiesTab({ message, provider }: PropertiesTabProps) {
               <HelpCircle className="w-3 h-3 opacity-70" />
             </span>
           </div>
-          
+
           <div className="p-4 space-y-4">
             {/* Section 1: Azure Service Bus Properties (FACTS) */}
             <div>
@@ -218,22 +218,22 @@ export function PropertiesTab({ message, provider }: PropertiesTabProps) {
                 </div>
               </div>
             </div>
-            
+
             {/* Visual Separator */}
             <div className="border-t-2 border-dashed border-gray-300 my-4" />
-            
+
             {/* Section 2: ServiceHub Interpretation (INFERENCE) - Clearly marked */}
             <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
               <div className="text-xs font-semibold uppercase tracking-wide mb-2 flex items-center gap-1 text-gray-600">
                 <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[10px] font-bold">ASSESSMENT</span>
-                <Info className="w-3 h-3" /> 
+                <Info className="w-3 h-3" />
                 ServiceHub Interpretation
               </div>
               <div className="text-sm text-gray-700 leading-relaxed">
                 {dlqDetails.interpretation}
               </div>
             </div>
-            
+
             {/* Section 3: Suggested Actions (GUIDANCE) */}
             <details className="group bg-gray-50 rounded-lg border border-gray-200 overflow-hidden" open={dlqDetails.severity !== 'test'}>
               <summary className="px-3 py-2 text-xs font-semibold uppercase tracking-wide cursor-pointer select-none list-none text-gray-600 bg-gray-100 hover:bg-gray-150">
@@ -256,53 +256,53 @@ export function PropertiesTab({ message, provider }: PropertiesTabProps) {
         </div>
         </>
       )}
-      
+
       {/* Detailed Properties */}
       <div className="bg-white rounded-xl border-2 border-sky-100 shadow-sm overflow-hidden">
         <div className="bg-gradient-to-r from-sky-500 to-sky-600 px-4 py-2.5">
           <h3 className="text-sm font-semibold text-white">Complete Message Properties</h3>
         </div>
         <dl className="p-4">
-        <PropertyRow 
-          label="Message ID" 
-          value={message.id} 
-          mono 
+        <PropertyRow
+          label="Message ID"
+          value={message.id}
+          mono
         />
-        <PropertyRow 
-          label="Enqueued Time" 
-          value={message.enqueuedTime.toISOString()} 
-          mono 
+        <PropertyRow
+          label="Enqueued Time"
+          value={message.enqueuedTime.toISOString()}
+          mono
         />
-        <PropertyRow 
-          label="Delivery Count" 
-          value={`${message.deliveryCount} (current session)`} 
+        <PropertyRow
+          label="Delivery Count"
+          value={`${message.deliveryCount} (current session)`}
         />
         <div className="py-2 px-3 bg-gray-50 rounded border-l-2 border-gray-300 my-2">
           <p className="text-xs text-gray-600 leading-relaxed">
-            <span className="font-medium">Note:</span> Delivery count reflects attempts in the current session. 
+            <span className="font-medium">Note:</span> Delivery count reflects attempts in the current session.
             This value resets when messages move between queues, sessions expire, or manual intervention occurs.
             Total historical delivery attempts may be higher.
           </p>
         </div>
-        <PropertyRow 
-          label="Time To Live" 
-          value={message.timeToLive} 
+        <PropertyRow
+          label="Time To Live"
+          value={message.timeToLive}
         />
-        <PropertyRow 
-          label="Sequence Number" 
-          value={message.sequenceNumber.toLocaleString()} 
-          mono 
+        <PropertyRow
+          label="Sequence Number"
+          value={message.sequenceNumber.toLocaleString()}
+          mono
         />
-        <PropertyRow 
-          label="Content Type" 
-          value={message.contentType} 
+        <PropertyRow
+          label="Content Type"
+          value={message.contentType}
         />
-        <PropertyRow 
-          label="Lock Token" 
-          value={message.lockToken} 
-          mono 
+        <PropertyRow
+          label="Lock Token"
+          value={message.lockToken}
+          mono
         />
-        
+
         {/* Dead-letter specific fields */}
         {message.queueType === 'deadletter' && (
           <>
@@ -312,15 +312,15 @@ export function PropertiesTab({ message, provider }: PropertiesTabProps) {
               </span>
             </div>
             {message.deadLetterReason && (
-              <PropertyRow 
-                label="Dead-Letter Reason" 
-                value={message.deadLetterReason} 
+              <PropertyRow
+                label="Dead-Letter Reason"
+                value={message.deadLetterReason}
               />
             )}
             {message.deadLetterSource && (
-              <PropertyRow 
-                label="Dead-Letter Source" 
-                value={message.deadLetterSource} 
+              <PropertyRow
+                label="Dead-Letter Source"
+                value={message.deadLetterSource}
               />
             )}
           </>
@@ -337,11 +337,11 @@ export function PropertiesTab({ message, provider }: PropertiesTabProps) {
           </div>
           <dl className="p-4">
             {Object.entries(message.properties).map(([key, value]) => (
-              <PropertyRow 
+              <PropertyRow
                 key={key}
-                label={key} 
-                value={String(value)} 
-                mono 
+                label={key}
+                value={String(value)}
+                mono
               />
             ))}
           </dl>
