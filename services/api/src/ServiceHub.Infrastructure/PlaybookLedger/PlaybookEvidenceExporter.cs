@@ -66,16 +66,29 @@ public sealed class PlaybookEvidenceExporter : IPlaybookEvidenceExporter
 
     /// <inheritdoc />
     public async Task<PlaybookEvidenceExport> ExportAsync(
-        string ownerId, string exportedBy, CancellationToken cancellationToken = default)
+        string ownerId,
+        string exportedBy,
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(ownerId);
 
-        var entriesResult = await _playbookLedger.QueryEntriesAsync(ownerId, cancellationToken: cancellationToken)
+        var entriesResult = await _playbookLedger
+            .QueryEntriesAsync(ownerId, cancellationToken: cancellationToken, allowedNamespaceIds: allowedNamespaceIds)
             .ConfigureAwait(false);
         var entries = entriesResult.IsSuccess ? entriesResult.Value : [];
 
-        var events = await _playbookLedger.GetAllEventsAsync(ownerId, cancellationToken).ConfigureAwait(false);
+        // Chain verification stays owner-wide — it discloses only whether the whole chain is
+        // tamper-evident, never entry content. The bundle's own event log is narrowed below to the
+        // entries the caller may see, since PlaybookEvent.DetailJson can carry entry-specific
+        // content (e.g. a rejection reason) for a namespace outside the caller's allow-list.
+        var allEvents = await _playbookLedger.GetAllEventsAsync(ownerId, cancellationToken).ConfigureAwait(false);
         var chainResult = await _playbookLedger.VerifyChainAsync(ownerId, cancellationToken).ConfigureAwait(false);
+
+        var visibleEntryIds = entries.Select(e => e.Id).ToHashSet();
+        var events = allowedNamespaceIds is null
+            ? allEvents
+            : allEvents.Where(e => visibleEntryIds.Contains(e.EntryId)).ToList();
 
         var citations = entries
             .Select(e => (Entry: e, Citation: ExtractCitation(e.EvidenceRefJson)))

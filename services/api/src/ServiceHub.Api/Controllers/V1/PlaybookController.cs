@@ -70,7 +70,7 @@ public sealed class PlaybookController : ApiControllerBase
         CancellationToken cancellationToken = default)
     {
         var result = await _playbookLedger.QueryEntriesAsync(
-            OwnerId, pillarKind, namespaceId, state, cancellationToken);
+            OwnerId, pillarKind, namespaceId, state, cancellationToken, AllowedNamespaceIds);
 
         if (result.IsFailure)
         {
@@ -94,7 +94,7 @@ public sealed class PlaybookController : ApiControllerBase
         Guid id, CancellationToken cancellationToken = default)
     {
         var entry = await _playbookLedger.GetEntryAsync(id, OwnerId, cancellationToken);
-        if (entry is null)
+        if (entry is null || !IsWithinAllowedNamespaces(entry))
         {
             return NotFound();
         }
@@ -224,7 +224,7 @@ public sealed class PlaybookController : ApiControllerBase
     public async Task<IActionResult> Export(CancellationToken cancellationToken = default)
     {
         var actor = ResolvePlaybookActor();
-        var export = await _evidenceExporter.ExportAsync(OwnerId, actor.Identity, cancellationToken);
+        var export = await _evidenceExporter.ExportAsync(OwnerId, actor.Identity, cancellationToken, AllowedNamespaceIds);
 
         var timestamp = DateTimeOffset.UtcNow.ToString("yyyyMMddTHHmmssZ");
         return File(
@@ -246,7 +246,7 @@ public sealed class PlaybookController : ApiControllerBase
     public async Task<ActionResult<CorrelationAccountabilityReport>> GetCorrelationAccountability(
         CancellationToken cancellationToken = default)
     {
-        var report = await _correlationAccountability.GetReportAsync(OwnerId, cancellationToken);
+        var report = await _correlationAccountability.GetReportAsync(OwnerId, cancellationToken, AllowedNamespaceIds);
         return Ok(report);
     }
 
@@ -270,7 +270,8 @@ public sealed class PlaybookController : ApiControllerBase
         [FromQuery] int limit = 50,
         CancellationToken cancellationToken = default)
     {
-        var report = await _backtestService.GetReportAsync(OwnerId, pillarKind, limit, cancellationToken);
+        var report = await _backtestService.GetReportAsync(
+            OwnerId, pillarKind, limit, cancellationToken, AllowedNamespaceIds);
         return Ok(report);
     }
 
@@ -288,6 +289,19 @@ public sealed class PlaybookController : ApiControllerBase
         return await _governanceAccessEvaluator.EvaluateAsync(
             OwnerId, granteeIdentity, GovernanceRole.Approver, entry.NamespaceId, entry.PillarKind, cancellationToken);
     }
+
+    /// <summary>
+    /// True unless the caller's credential carries a namespace allow-list (<see
+    /// cref="ApiControllerBase.AllowedNamespaceIds"/>) that excludes this entry — mirroring
+    /// <see cref="IPlaybookLedger.QueryEntriesAsync"/>'s own policy: a fleet-wide entry with no
+    /// <see cref="PlaybookEntry.NamespaceId"/> is excluded rather than assumed visible, since a
+    /// namespace-scoped credential cannot be proven to cover every namespace it touches. Used to
+    /// keep single-entry reads (<see cref="GetEntryById"/>) from leaking fleet-wide data that the
+    /// list endpoint already filters out.
+    /// </summary>
+    private bool IsWithinAllowedNamespaces(PlaybookEntry entry) =>
+        AllowedNamespaceIds is null
+        || (entry.NamespaceId is { } namespaceId && AllowedNamespaceIds.Contains(namespaceId));
 
     private static int ClampLimit(int limit) => Math.Clamp(limit, 1, MaxLimit);
 

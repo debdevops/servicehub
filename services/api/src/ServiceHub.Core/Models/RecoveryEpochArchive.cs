@@ -19,7 +19,10 @@ public sealed class RecoveryEpochArchive
 
     /// <summary>1-based, monotonically increasing per owner. Epoch 1 always starts at Seq 1 with
     /// <see cref="StartPrevHash"/> equal to the genesis hash; every later epoch's
-    /// <see cref="StartPrevHash"/> equals the previous epoch's <see cref="TerminalHash"/>.</summary>
+    /// <see cref="StartPrevHash"/>/<see cref="StartSeq"/> equal the previous epoch's
+    /// <see cref="SealEventHash"/>/<see cref="SealEventSeq"/> plus one — not
+    /// <see cref="TerminalHash"/>/<see cref="EndSeq"/> directly, since the live seal marker
+    /// between them is never archived.</summary>
     public required int EpochNumber { get; init; }
 
     /// <summary>The lowest <c>Seq</c> archived in this epoch — always matches
@@ -36,9 +39,29 @@ public sealed class RecoveryEpochArchive
     /// live rather than being archived.</summary>
     public required long EndSeq { get; init; }
 
-    /// <summary>The <c>EntryHash</c> of <see cref="Events"/>'s last element — the value the next
-    /// epoch (or, for the most recent epoch, the live table's surviving seal marker) anchors to.</summary>
+    /// <summary>The <c>EntryHash</c> of <see cref="Events"/>'s last element — the value the
+    /// epoch's own <see cref="Enums.RecoveryEventType.EpochSealed"/> marker (<see cref="SealEventHash"/>)
+    /// chains from.</summary>
     public required string TerminalHash { get; init; }
+
+    /// <summary>
+    /// The <c>Seq</c> of the <see cref="Enums.RecoveryEventType.EpochSealed"/> marker that closes
+    /// this epoch — one greater than <see cref="EndSeq"/>. The marker itself is deliberately never
+    /// archived (it stays live as the next epoch's anchor — see
+    /// <c>Infrastructure.RecoveryLedger.RecoveryEpochArchiveService</c>'s remarks), so a later
+    /// epoch's <see cref="StartSeq"/> equals <em>this</em> value plus one, not
+    /// <see cref="EndSeq"/> plus one — there is a one-row gap in the live table between them that
+    /// both the live-chain verifier and <c>scripts/verify-recovery-chain.py</c>'s
+    /// <c>--archive-dir</c> mode must account for.
+    /// </summary>
+    public required long SealEventSeq { get; init; }
+
+    /// <summary>The <see cref="Enums.RecoveryEventType.EpochSealed"/> marker's own <c>EntryHash</c>
+    /// — what a later epoch's <see cref="StartPrevHash"/> actually chains from (see
+    /// <see cref="SealEventSeq"/>). Duplicated here, alongside the live row itself, purely so an
+    /// offline verifier reading archive files alone (no DB access) can bridge two archives, or an
+    /// archive and the live export, without needing to know this row survived pruning.</summary>
+    public required string SealEventHash { get; init; }
 
     /// <summary>When this epoch was sealed.</summary>
     public required DateTimeOffset SealedAtUtc { get; init; }

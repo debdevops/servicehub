@@ -243,7 +243,7 @@ public sealed class RecoveryController : ApiControllerBase
         CancellationToken cancellationToken = default)
     {
         var entries = await _approvalQueue.GetPendingApprovalsAsync(
-            OwnerId, namespaceId, ClampLimit(limit), cancellationToken);
+            OwnerId, namespaceId, ClampLimit(limit), cancellationToken, AllowedNamespaceIds);
 
         return Ok(entries);
     }

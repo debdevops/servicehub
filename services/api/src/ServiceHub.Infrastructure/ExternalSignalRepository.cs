@@ -55,7 +55,8 @@ public sealed class ExternalSignalRepository : IExternalSignalRepository
         DateTimeOffset start,
         DateTimeOffset end,
         int limit,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
         var query = _dbContext.ExternalSignalEvents
             .AsNoTracking()
@@ -64,6 +65,15 @@ public sealed class ExternalSignalRepository : IExternalSignalRepository
         if (namespaceId is { } id)
         {
             query = query.Where(s => s.NamespaceId == id);
+        }
+
+        // NAMESPACE ALLOW-LIST: further narrow to the caller's credential's namespace allow-list,
+        // when one is present — null means unrestricted (today's behaviour). Applies even when
+        // namespaceId is omitted, so a restricted key can't read every namespace's signals by
+        // simply not filtering.
+        if (allowedNamespaceIds is not null)
+        {
+            query = query.Where(s => s.NamespaceId != null && allowedNamespaceIds.Contains(s.NamespaceId.Value));
         }
 
         return await query

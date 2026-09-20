@@ -78,6 +78,46 @@ def test_propose_rejects_duplicate_refs():
     assert response.status_code == 422
 
 
+def test_resolve_ollama_host_rejects_public_endpoint():
+    assert main_module._resolve_approved_endpoint("example.com") is None
+
+
+def test_resolve_ollama_host_accepts_loopback():
+    assert (
+        main_module._resolve_approved_endpoint("http://127.0.0.1:11434")
+        == "http://127.0.0.1:11434"
+    )
+
+
+def test_resolve_ollama_host_accepts_private_ip():
+    assert (
+        main_module._resolve_approved_endpoint("http://192.168.1.50:11434")
+        == "http://192.168.1.50:11434"
+    )
+
+
+def test_resolve_ollama_host_rejects_public_ip():
+    assert main_module._resolve_approved_endpoint("http://8.8.8.8:11434") is None
+
+
+def test_resolve_ollama_host_pins_literal_ip_for_hostname():
+    # The literal IP the DNS name resolved to during approval must be what
+    # the outbound request actually connects to — never the hostname again —
+    # or a rebound name could point at a public host by request time.
+    pinned = main_module._resolve_approved_endpoint("http://localhost:11434")
+    assert pinned in ("http://127.0.0.1:11434", "http://[::1]:11434")
+
+
+def test_resolve_ollama_host_rejects_cloud_metadata_endpoint():
+    assert main_module._resolve_approved_endpoint("http://169.254.169.254/") is None
+
+
+def test_resolve_ollama_host_disables_on_unapproved_override(monkeypatch):
+    monkeypatch.setenv("OLLAMA_HOST", "http://8.8.8.8:11434")
+
+    assert main_module._resolve_ollama_host() is None
+
+
 def test_evidence_record_has_no_body_field():
     from app.models import EvidenceRecord
 

@@ -90,8 +90,15 @@ public interface IRecoveryLedger
         int matchedCount,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Recomputes and compares one owner's hash chain, returning the first divergent
-    /// <see cref="RecoveryEvent.Seq"/> if any is found. Tamper-EVIDENT, not tamper-PROOF.</summary>
+    /// <summary>Recomputes and compares one owner's <em>live</em> hash chain, returning the first
+    /// divergent <see cref="RecoveryEvent.Seq"/> if any is found. Tamper-EVIDENT, not
+    /// tamper-PROOF. Archive-aware (roadmap next-chapter M5.2): if the owner has ever sealed an
+    /// epoch, verification starts at the most recent surviving
+    /// <see cref="Enums.RecoveryEventType.EpochSealed"/> marker's own <c>Seq</c>/<c>EntryHash</c>
+    /// rather than assuming the live table itself begins at Seq 1/genesis — everything before
+    /// that marker was already pruned and independently verified at archive time (see
+    /// <c>Infrastructure.RecoveryLedger.RecoveryEpochArchiveService</c>), so this only re-checks
+    /// what could still change: the currently open epoch.</summary>
     Task<ChainVerificationResult> VerifyChainAsync(
         string ownerId,
         CancellationToken cancellationToken = default);

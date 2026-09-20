@@ -204,9 +204,11 @@ public sealed class CorrelationDetectionWorker : BackgroundService
     // infrastructure (WebhookInsightDetectedHandler / PlatformEventStreamBroker).
     private async Task PublishInsightDetectedAsync(Core.Entities.CorrelationFinding finding, CancellationToken cancellationToken)
     {
-        // Owner-scoped, no NamespaceId (a correlation spans multiple namespaces) — Actor must be
-        // the raw OwnerId for PlatformEventStreamBroker's visibility check to resolve it to the
-        // right SSE connections, same as AutonomyEvaluationWorker's circuit-breaker event.
+        // Owner-scoped, no single NamespaceId (a correlation spans multiple namespaces) — Actor
+        // must be the raw OwnerId for PlatformEventStreamBroker's visibility check to resolve it
+        // to the right SSE connections, same as AutonomyEvaluationWorker's circuit-breaker event.
+        // NamespaceIds carries every member namespace so a namespace-restricted connection whose
+        // allow-list doesn't cover all of them is excluded — the description can name any member.
         var evt = new PlatformEvent
         {
             Source = "ServiceHub.Infrastructure.BackgroundServices.CorrelationDetectionWorker",
@@ -214,6 +216,7 @@ public sealed class CorrelationDetectionWorker : BackgroundService
             EventType = EventTypes.InsightDetected,
             Severity = EventSeverity.Warning,
             Actor = finding.OwnerId,
+            NamespaceIds = finding.Members.Select(m => m.NamespaceId).ToHashSet(),
             Payload = new InsightDetectedPayload
             {
                 Kind = InsightKind.Correlation,

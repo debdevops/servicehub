@@ -4,7 +4,7 @@
 
 ### The Forensic Debugger for Cloud Messaging — Azure Service Bus (GA) · AWS SQS/SNS & GCP Pub/Sub (Supported)
 
-![ServiceHub: Investigate, Recover, and Prove It Happened — self-hosted forensic debugger for Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub, shown with live dead-letter investigation, AI-generated auto-replay rules, and the Recovery Evidence Ledger](docs/screenshots/servicehub-cover-v3.7.0.png)
+![ServiceHub: Investigate, Recover, and Prove It Happened — self-hosted forensic debugger for Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub, shown with DLQ Intelligence, the Autonomy Control Center, and the Recovery Evidence Ledger](docs/screenshots/servicehub-cover-v4.0.0.png)
 
 [![CI](https://github.com/debdevops/servicehub/actions/workflows/servicehub.yml/badge.svg)](https://github.com/debdevops/servicehub/actions/workflows/servicehub.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)

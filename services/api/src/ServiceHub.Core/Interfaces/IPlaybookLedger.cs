@@ -74,9 +74,30 @@ public interface IPlaybookLedger
     /// </summary>
     Task<Result<PlaybookEntry>> RevokeAsync(Guid entryId, string ownerId, PlaybookActor actor, string reason, CancellationToken cancellationToken = default);
 
-    /// <summary>Queries entries for an owner, optionally narrowed by pillar, namespace, and/or state.</summary>
+    /// <summary>
+    /// Queries entries for an owner, optionally narrowed by pillar, namespace, and/or state.
+    /// </summary>
+    /// <param name="ownerId">Tenant-isolation filter — only this owner's entries are returned.</param>
+    /// <param name="pillarKind">Optional pillar filter.</param>
+    /// <param name="namespaceId">Optional namespace filter.</param>
+    /// <param name="state">Optional lifecycle-state filter.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="allowedNamespaceIds">
+    /// The caller's credential's namespace allow-list, when one is present — null means
+    /// unrestricted. When set, an entry is only returned if its own
+    /// <see cref="PlaybookEntry.NamespaceId"/> is in this set; an entry with no NamespaceId (a
+    /// fleet-wide proposal spanning multiple namespaces, e.g. a cross-namespace
+    /// <c>CorrelationHypothesis</c>) is excluded rather than assumed visible, since a
+    /// namespace-scoped credential cannot be proven to cover every namespace such a proposal
+    /// touches.
+    /// </param>
     Task<Result<IReadOnlyList<PlaybookEntry>>> QueryEntriesAsync(
-        string ownerId, PillarKind? pillarKind = null, Guid? namespaceId = null, PlaybookEntryState? state = null, CancellationToken cancellationToken = default);
+        string ownerId,
+        PillarKind? pillarKind = null,
+        Guid? namespaceId = null,
+        PlaybookEntryState? state = null,
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null);
 
     /// <summary>Gets one entry by ID, scoped to its owner. Returns null if it doesn't exist or
     /// belongs to a different owner — mirrors <c>IRecoveryLedger.GetOperationAsync</c>.</summary>

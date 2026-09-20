@@ -249,12 +249,14 @@ other (§3.2), with `DetailJson` carrying `{"epochNumber": N, "sealedThroughSeq"
 **Archiving.** Immediately after sealing, every event **strictly before** the new marker — which
 naturally includes any earlier seal marker too, now superseded — is:
 
-1. Verified in memory (§3.3), anchored at that range's own first event's actual `Seq`/`PrevHash`
-   rather than assuming genesis.
+1. Verified in memory (§3.3), anchored at the *previous* seal marker's own `EntryHash` (or
+   `RecoveryHashChain.GenesisHash` for the first epoch) — never at a value read off the range being
+   verified itself, or a tampered first event could supply its own fabricated "previous" hash and
+   verify against nothing but itself.
 2. Written to `<DlqDatabase:DataDirectory>/recovery-archive/<ownerId>/epoch-<N>.json` (configurable
    via `RecoveryEpochArchive:ArchiveDirectory`) — a JSON document carrying `ownerId`, `epochNumber`,
-   `startSeq`, `startPrevHash`, `endSeq`, `terminalHash`, and the full `events` array in the same
-   shape `GET /api/v1/recovery/operations/{id}/export` uses.
+   `startSeq`, `startPrevHash`, `endSeq`, `terminalHash`, `sealEventSeq`, `sealEventHash`, and the
+   full `events` array in the same shape `GET /api/v1/recovery/operations/{id}/export` uses.
 3. **Read back from disk and re-verified independently** before anything live is touched — a
    written-but-corrupt archive aborts the whole operation with nothing deleted.
 4. Only then pruned from the live `RecoveryEvents` table via a raw parameterized `DELETE` — the one
@@ -264,17 +266,38 @@ naturally includes any earlier seal marker too, now superseded — is:
 **The seal marker itself is never archived** — it stays the sole live row for that owner until the
 *next* seal, so the live table's `GetNextSeqAndPrevHashAsync` continuation logic needs no special
 case: the next real event simply continues from the marker's own `Seq`/`EntryHash`, exactly as it
-would from any other event. Seal marker N+1's own `PrevHash` is therefore always the terminal hash
-of whatever was archived to make room for it — the anchor the roadmap calls "sealing, publishing
-the terminal hash, and anchoring the next epoch's genesis to it."
+would from any other event. Because the marker survives, there is always a one-`Seq` gap between an
+epoch's own `endSeq` and the *next* epoch's `startSeq` — the marker itself occupies that `Seq`.
+`sealEventSeq`/`sealEventHash` record the marker's own `Seq`/`EntryHash` in the archive file, so a
+later epoch's `startSeq`/`startPrevHash` actually equal *this* epoch's `sealEventSeq + 1`/
+`sealEventHash`, not `endSeq + 1`/`terminalHash` directly — an offline verifier reading archive
+files alone (no DB access) needs the marker's value duplicated here to bridge two archives, since
+the marker row itself was never written to either one.
+
+**Live-chain verification is archive-aware.** `VerifyChainAsync` (the `/verify` endpoint) does not
+assume the live table starts at `Seq` 1: it anchors at the *most recent* live
+`EpochSealed` marker's own `Seq`/`EntryHash` (or genesis, if the owner has never sealed an epoch),
+since everything before that marker was already pruned and independently verified at archive time.
+`SealAndArchiveEpochAsync` also re-runs this same check immediately after every prune, purely as a
+defence-in-depth self-check — it cannot undo an already-committed prune, but a failure there means
+the archive/prune logic itself has a bug, logged as `LogCritical`.
 
 **Verifying a sealed history.** `scripts/verify-recovery-chain.py --archive-dir <owner-dir>
 <current-export>` verifies every `epoch-*.json` archive in the directory (in epoch order), confirms
-each declares the correct `startSeq`/`startPrevHash`/`terminalHash` for its own first/last event, confirms
-consecutive archives chain `terminalHash` → `startPrevHash` with no `Seq` gap, and finally confirms
-the live export's own first event continues from the last archive's `terminalHash`. A single archive
-file also verifies standalone (it is a valid input to the plain, no-flag form of the script) — "a
-sealed epoch verifies from its archive alone."
+each declares the correct `startSeq`/`startPrevHash`/`terminalHash` for its own first/last event,
+confirms consecutive archives chain `sealEventHash` → `startPrevHash` (with `startSeq` exactly
+`sealEventSeq + 1`) — bridging through the live marker between them rather than assuming no gap —
+and finally confirms the live export's own first event continues the same way from the last
+archive's `sealEventSeq`/`sealEventHash`. A single archive file also verifies standalone (it is a
+valid input to the plain, no-flag form of the script) — "a sealed epoch verifies from its archive
+alone."
+
+> **Verified live on 2026-09-20.** Two real epochs were sealed back-to-back against a live,
+> actively-growing owner chain (92,051 events, then 22 more): both seal markers stayed live as
+> chain anchors, both archive files carried the new `sealEventSeq`/`sealEventHash` fields, the
+> live `/verify` endpoint reported `isValid: true` immediately after each seal (no false-fail),
+> and `verify-recovery-chain.py --archive-dir` independently confirmed continuity across both
+> archives plus the live tail, Seq 1 through 92,092, with zero findings.
 
 ## 4. What ServiceHub can and cannot prove
 

@@ -329,7 +329,12 @@ public sealed class PlaybookLedgerService : IPlaybookLedger
 
     /// <inheritdoc/>
     public async Task<Result<IReadOnlyList<PlaybookEntry>>> QueryEntriesAsync(
-        string ownerId, PillarKind? pillarKind = null, Guid? namespaceId = null, PlaybookEntryState? state = null, CancellationToken cancellationToken = default)
+        string ownerId,
+        PillarKind? pillarKind = null,
+        Guid? namespaceId = null,
+        PlaybookEntryState? state = null,
+        CancellationToken cancellationToken = default,
+        IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
         var query = _dbContext.PlaybookEntries.AsNoTracking().Where(e => e.OwnerId == ownerId);
 
@@ -346,6 +351,16 @@ public sealed class PlaybookLedgerService : IPlaybookLedger
         if (state is not null)
         {
             query = query.Where(e => e.State == state);
+        }
+
+        // NAMESPACE ALLOW-LIST: further narrow to the caller's credential's namespace allow-list,
+        // when one is present — null means unrestricted (today's behaviour). An entry with no
+        // NamespaceId (a fleet-wide proposal spanning multiple namespaces) is excluded rather than
+        // let through, since a namespace-scoped credential cannot be proven to cover every
+        // namespace such a proposal touches.
+        if (allowedNamespaceIds is not null)
+        {
+            query = query.Where(e => e.NamespaceId != null && allowedNamespaceIds.Contains(e.NamespaceId.Value));
         }
 
         var entries = await query.OrderByDescending(e => e.ProposedAt).ToListAsync(cancellationToken);

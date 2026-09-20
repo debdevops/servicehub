@@ -63,7 +63,7 @@ public sealed class BacktestService : IBacktestService
     /// <inheritdoc/>
     public async Task<BacktestReport> GetReportAsync(
         string ownerId, PillarKind? pillarKind = null, int limit = DefaultLimit,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, IReadOnlySet<Guid>? allowedNamespaceIds = null)
     {
         if (string.IsNullOrWhiteSpace(ownerId))
         {
@@ -71,7 +71,7 @@ public sealed class BacktestService : IBacktestService
         }
 
         var result = await _playbookLedger.QueryEntriesAsync(
-            ownerId, pillarKind, cancellationToken: cancellationToken);
+            ownerId, pillarKind, cancellationToken: cancellationToken, allowedNamespaceIds: allowedNamespaceIds);
 
         // A query failure reports zero rather than throwing — this is a dashboard, not a
         // correctness-critical read, same reasoning as CorrelationAccountabilityService.
