@@ -938,7 +938,7 @@ export function ConnectPage() {
                 >
                   <option value="dev">DEV — Development</option>
                   <option value="uat">UAT — User Acceptance Testing</option>
-                  <option value="prod" disabled>PROD — Production (disabled)</option>
+                  <option value="prod">PROD — Production</option>
                 </select>
                 <p className="text-xs text-gray-500 mt-1">
                   {environment === 'uat' ? (
@@ -946,15 +946,20 @@ export function ConnectPage() {
                       <span className="text-amber-700 font-medium">UAT namespace:</span>
                       {' '}Validate replay rules and DLQ behaviour here.
                     </>
+                  ) : environment === 'prod' ? (
+                    <>
+                      <span className="text-red-700 font-medium">Production namespace:</span>
+                      {' '}Fully observed (scanning, signatures, drift, correlation, forecasting) with no
+                      restriction. Replay, purge, and direct send/dead-letter stay denied until a
+                      two-person-approved Production Elevation covers this namespace — request and
+                      approve elevations via the Recovery API (no UI yet). Autonomy never runs here.
+                    </>
                   ) : (
                     <>
                       <span className="text-green-700 font-medium">Recommended: start with a DEV namespace.</span>
                       {' '}Test DLQ inspection, replay rules, and message operations safely.
                     </>
                   )}
-                </p>
-                <p className="text-xs text-amber-600 mt-1">
-                  ⚠️ Production connectivity is disabled. Connect namespaces in Dev or UAT.
                 </p>
               </div>
 
