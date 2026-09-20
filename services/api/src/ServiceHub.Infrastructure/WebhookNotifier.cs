@@ -19,10 +19,12 @@ namespace ServiceHub.Infrastructure;
 public sealed class WebhookNotifier : IWebhookNotifier
 {
     /// <summary>
-    /// A webhook URL that passed the SSRF guard, together with the exact address to connect to
-    /// when the host was a hostname (not an IP literal) — see <see cref="TryGetSafeWebhookTargetAsync"/>.
+    /// A webhook URL that passed the SSRF guard, together with every validated address to try
+    /// connecting to (in order) when the host was a hostname (not an IP literal) — see
+    /// <see cref="TryGetSafeWebhookTargetAsync"/>. Empty for an IP-literal host, where the "hostname"
+    /// already is the connect target.
     /// </summary>
-    private sealed record SafeWebhookTarget(Uri Uri, System.Net.IPAddress? PinnedAddress);
+    private sealed record SafeWebhookTarget(Uri Uri, IReadOnlyList<System.Net.IPAddress> PinnedAddresses);
 
     private readonly HttpClient _httpClient;
     private readonly WebhookOptions _options;
@@ -370,12 +372,13 @@ public sealed class WebhookNotifier : IWebhookNotifier
                 Content = JsonContent.Create(payload),
             };
 
-            if (target.PinnedAddress is { } pinnedAddress)
+            if (target.PinnedAddresses.Count > 0)
             {
-                // Connects the TCP layer to exactly the address TryGetSafeWebhookTargetAsync
-                // already validated — see WebhookConnectCallback for why a second, unpinned
-                // DNS lookup at connect time would reopen the rebinding gap this closes.
-                request.Options.Set(Security.WebhookConnectCallback.PinnedAddressKey, pinnedAddress);
+                // Connects the TCP layer to one of the exact addresses TryGetSafeWebhookTargetAsync
+                // already validated — see WebhookConnectCallback for why a second, unpinned DNS
+                // lookup at connect time would reopen the rebinding gap this closes, and for why
+                // every validated address (not just the first) is offered for failover.
+                request.Options.Set(Security.WebhookConnectCallback.PinnedAddressesKey, target.PinnedAddresses);
             }
 
             using var response = await _httpClient.SendAsync(request, cancellationToken);
@@ -406,18 +409,21 @@ public sealed class WebhookNotifier : IWebhookNotifier
 
     /// <summary>
     /// Validates the webhook URL is safe to call (SSRF guard).
-    /// Returns the URL only for HTTPS URLs that resolve to a non-loopback, non-private-IP host,
-    /// together with the exact address to pin the TCP connection to when the host was a hostname
-    /// (see <see cref="Security.WebhookConnectCallback"/> — connecting via the framework's own,
-    /// separate DNS lookup would let a DNS-controlled webhook answer differently the second time).
-    /// A hostname (as opposed to an IP literal) is DNS-resolved and every returned address is
-    /// checked — an IP-literal-only check lets a hostname that resolves to a loopback, RFC-1918,
-    /// or link-local/cloud-metadata address (e.g. 169.254.169.254) straight through, since
-    /// <c>IPAddress.TryParse</c> only ever succeeds for a literal. Every address is also normalized
-    /// out of its IPv4-mapped-IPv6 form (e.g. <c>::ffff:127.0.0.1</c>) before classification —
-    /// unnormalized, neither <see cref="System.Net.IPAddress.IsLoopback"/> nor the IPv4 branch of
-    /// <see cref="IsRfc1918OrLinkLocal"/> recognizes it, letting it pass as a "public" IPv6 address
-    /// while actually routing to a local/private IPv4 target.
+    /// Returns the URL only for HTTPS URLs that resolve to a non-loopback, non-private-IP,
+    /// non-unspecified host, together with every address to pin the TCP connection to when the
+    /// host was a hostname (see <see cref="Security.WebhookConnectCallback"/> — connecting via the
+    /// framework's own, separate DNS lookup would let a DNS-controlled webhook answer differently
+    /// the second time). A hostname (as opposed to an IP literal) is DNS-resolved and every
+    /// returned address is checked — an IP-literal-only check lets a hostname that resolves to a
+    /// loopback, RFC-1918, or link-local/cloud-metadata address (e.g. 169.254.169.254) straight
+    /// through, since <c>IPAddress.TryParse</c> only ever succeeds for a literal. Every address is
+    /// also normalized out of its IPv4-mapped-IPv6 form (e.g. <c>::ffff:127.0.0.1</c>) before
+    /// classification — unnormalized, neither <see cref="System.Net.IPAddress.IsLoopback"/> nor the
+    /// IPv4 branch of <see cref="IsRfc1918OrLinkLocal"/> recognizes it, letting it pass as a
+    /// "public" IPv6 address while actually routing to a local/private IPv4 target. The same
+    /// <see cref="IsDisallowedWebhookAddress"/> classification guard (loopback, RFC-1918/link-local,
+    /// and unspecified) is applied to both the IP-literal path and every DNS-resolved address, so
+    /// neither path can drift out of sync with the other.
     /// </summary>
     private async Task<SafeWebhookTarget?> TryGetSafeWebhookTargetAsync(string rawUrl, CancellationToken cancellationToken)
     {
@@ -440,10 +446,10 @@ public sealed class WebhookNotifier : IWebhookNotifier
             // IP-literal host — validate it directly, no DNS involved, and no second resolution
             // at connect time to diverge from this one, so no pinning is needed either.
             literalIp = NormalizeForClassification(literalIp);
-            if (System.Net.IPAddress.IsLoopback(literalIp) || IsRfc1918OrLinkLocal(literalIp))
+            if (IsDisallowedWebhookAddress(literalIp))
                 return null;
 
-            return new SafeWebhookTarget(uri, PinnedAddress: null);
+            return new SafeWebhookTarget(uri, PinnedAddresses: Array.Empty<System.Net.IPAddress>());
         }
 
         // Hostname host — resolve and validate every returned address. Fail closed (reject)
@@ -466,13 +472,14 @@ public sealed class WebhookNotifier : IWebhookNotifier
             return null;
 
         var normalized = Array.ConvertAll(resolved, NormalizeForClassification);
-        if (normalized.Any(a => System.Net.IPAddress.IsLoopback(a) || IsRfc1918OrLinkLocal(a)))
+        if (normalized.Any(IsDisallowedWebhookAddress))
             return null;
 
-        // Pin the connection to the first validated address — every returned address was just
-        // proven safe above, and picking one deterministically (rather than letting the
-        // framework re-resolve and pick its own) is exactly what closes the rebinding gap.
-        return new SafeWebhookTarget(uri, PinnedAddress: normalized[0]);
+        // Pin the connection to every validated address, in the order DNS returned them — every
+        // one was just proven safe above, and offering them all (rather than only the first) lets
+        // WebhookConnectCallback fail over to the next address if one turns out to be unreachable,
+        // instead of failing the whole notification over a single bad route.
+        return new SafeWebhookTarget(uri, PinnedAddresses: normalized);
     }
 
     /// <summary>
@@ -483,6 +490,25 @@ public sealed class WebhookNotifier : IWebhookNotifier
     /// </summary>
     private static System.Net.IPAddress NormalizeForClassification(System.Net.IPAddress ip) =>
         ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4() : ip;
+
+    /// <summary>
+    /// The single classification guard used for both the IP-literal path and every DNS-resolved
+    /// address in <see cref="TryGetSafeWebhookTargetAsync"/>, so the two paths can't drift out of
+    /// sync with each other. Rejects loopback, RFC-1918/link-local, and unspecified addresses.
+    /// Callers must normalize via <see cref="NormalizeForClassification"/> first (see that method's
+    /// remarks, and <see cref="IsRfc1918OrLinkLocal"/>'s, for why).
+    /// </summary>
+    private static bool IsDisallowedWebhookAddress(System.Net.IPAddress ip) =>
+        System.Net.IPAddress.IsLoopback(ip) || IsRfc1918OrLinkLocal(ip) || IsUnspecified(ip);
+
+    /// <summary>
+    /// Returns true for the IPv4 and IPv6 unspecified addresses (<c>0.0.0.0</c> and <c>::</c>).
+    /// Neither is loopback nor RFC-1918/link-local, but both are still SSRF destinations: on most
+    /// platforms, connecting a socket to <c>0.0.0.0</c>/<c>::</c> is treated as connecting to the
+    /// local host, reaching a listener on 127.0.0.1 exactly as <c>localhost</c> would.
+    /// </summary>
+    private static bool IsUnspecified(System.Net.IPAddress ip) =>
+        ip.Equals(System.Net.IPAddress.Any) || ip.Equals(System.Net.IPAddress.IPv6Any);
 
     /// <summary>
     /// Returns true for RFC-1918 private ranges and link-local addresses:

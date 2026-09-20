@@ -4,7 +4,7 @@ namespace ServiceHub.Infrastructure.Security;
 
 /// <summary>
 /// Thin wrapper over <see cref="Dns"/> so SSRF guards that must resolve a hostname before
-/// validating it (see <c>WebhookNotifier.TryGetSafeWebhookUriAsync</c>) can be unit-tested
+/// validating it (see <c>WebhookNotifier.TryGetSafeWebhookTargetAsync</c>) can be unit-tested
 /// without depending on real DNS.
 /// </summary>
 public interface IDnsResolver

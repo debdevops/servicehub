@@ -129,6 +129,19 @@ live-verified against real infrastructure (see `docs-private/SERVICEHUB-FULL-E2E
   loopback or link-local/metadata address (e.g. a DNS name pointed at `169.254.169.254`) bypassed
   it entirely. Fixed by resolving hostname webhook URLs via DNS and checking every returned
   address, failing closed on a resolution failure.
+- **Security: webhook redirects and unspecified-address DNS results could still bypass the SSRF
+  guard, and pinning to a single validated address had silently dropped failover.** Three more
+  Copilot-flagged gaps in the same webhook notifier hardening: the webhook `HttpClient` still
+  followed HTTP redirects automatically, so a webhook response could redirect straight past the
+  guard to a `Location` that was never itself validated against `WebhookOptions.Url`'s checks; the
+  address-classification guard recognized loopback and RFC-1918/link-local ranges but not the
+  unspecified addresses `0.0.0.0`/`::`, which most platforms treat as connecting to the local host
+  exactly as `localhost` would; and pinning the TCP connection to only the first DNS-resolved
+  address (closing the earlier rebinding gap) meant a hostname with more than one valid address had
+  no failover left if that one address happened to be unreachable. Fixed by disabling automatic
+  redirects on the webhook `HttpClient`, folding unspecified addresses into the one classification
+  guard already shared by the IP-literal and DNS-resolved paths, and pinning every validated
+  address (not just the first) so `WebhookConnectCallback` can fail over between them in order.
 
 ### The initial 4.0.0 baseline (originally written 2026-09-06)
 
