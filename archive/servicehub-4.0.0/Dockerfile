@@ -15,23 +15,23 @@ WORKDIR /repo
 # Copy root package files for monorepo workspace setup
 COPY package.json package-lock.json ./
 
-# Copy workspace package.json for archive/servicehub-web-4.0.0 and its ui-shared workspace dependency
-COPY archive/servicehub-web-4.0.0/package.json ./archive/servicehub-web-4.0.0/
+# Copy workspace package.json for apps/web and its ui-shared workspace dependency
+COPY apps/web/package.json ./apps/web/
 COPY packages/servicehub-ui-shared/package.json ./packages/servicehub-ui-shared/
 
 # Install dependencies via npm workspaces (installs all workspace dependencies)
 RUN npm ci --include=optional
 
-# The .version file (read by vite.config.ts) must sit at the repo root relative to archive/servicehub-web-4.0.0.
+# The .version file (read by vite.config.ts) must sit at the repo root relative to apps/web.
 COPY .version ./.version
-COPY archive/servicehub-web-4.0.0/ ./archive/servicehub-web-4.0.0/
-# archive/servicehub-web-4.0.0 resolves @servicehub/ui-shared/* via tsconfig paths / vite alias, not node_modules —
+COPY apps/web/ ./apps/web/
+# apps/web resolves @servicehub/ui-shared/* via tsconfig paths / vite alias, not node_modules —
 # the workspace source must be physically present at build time.
 COPY packages/servicehub-ui-shared/ ./packages/servicehub-ui-shared/
 
 # Build the SPA. Vite's configured outDir points into the API's wwwroot; override it to a
 # local dist so this stage is self-contained and the output is easy to copy forward.
-RUN npm run -w archive/servicehub-web-4.0.0 build -- --outDir dist --emptyOutDir
+RUN npm run -w apps/web build -- --outDir dist --emptyOutDir
 
 # ---- Stage 2: publish the .NET API -----------------------------------------------------
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS api
@@ -62,7 +62,7 @@ RUN apt-get update \
 # alongside the fresh build.
 COPY --from=api /app/publish ./
 RUN rm -rf ./wwwroot
-COPY --from=web /repo/archive/servicehub-web-4.0.0/dist ./wwwroot/
+COPY --from=web /repo/apps/web/dist ./wwwroot/
 
 # The namespace store (JSON) and the SQLite DLQ/audit database live under this directory.
 # Pin BOTH data paths here for every environment (not just Production) — otherwise Development

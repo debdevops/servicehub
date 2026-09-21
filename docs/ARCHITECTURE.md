@@ -1,5 +1,9 @@
 # ServiceHub Architecture
 
+> **Where the code lives:** the code this document describes is the ServiceHub 4.0.0 codebase in
+> [`archive/servicehub-4.0.0/`](../archive/servicehub-4.0.0/) (frozen; ADR-0012, ADR-0013). Paths below that start with `apps/`, `services/`
+> or `packages/` (in the diagrams) are relative to that directory.
+
 > **In this article:** how ServiceHub's pieces fit together under the hood — the frontend/backend
 > split, how it talks to Azure/AWS/GCP, how it proves what it did (the evidence ledger), and its
 > safety/autonomy model.
@@ -70,11 +74,11 @@ The frontend is a monorepo of npm workspaces:
 
 | Workspace | Role |
 |---|---|
-| `apps/web` | The production SPA. One page component per route (`pages/`), registered in `router.tsx`. |
-| `packages/servicehub-ui-shared` | Every TanStack Query hook, the Axios API client (`lib/api/`), the client-side AI heuristics (`lib/ai/`), and the Demo Mode fixtures (`lib/demo/`, `lib/*MockData.ts`). `apps/web` and the experimental apps below all consume this as `@servicehub/ui-shared`. |
-| `apps/demo`, `apps/sandbox` | Experimental, standalone exploratory surfaces — see [`apps/demo/README.md`](../apps/demo/README.md) / [`apps/sandbox/README.md`](../apps/sandbox/README.md). Not part of the supported product surface. |
+| `archive/servicehub-4.0.0/apps/web` | The production SPA. One page component per route (`pages/`), registered in `router.tsx`. |
+| `archive/servicehub-4.0.0/packages/servicehub-ui-shared` | Every TanStack Query hook, the Axios API client (`lib/api/`), the client-side AI heuristics (`lib/ai/`), and the Demo Mode fixtures (`lib/demo/`, `lib/*MockData.ts`). `archive/servicehub-4.0.0/apps/web` and the experimental apps below all consume this as `@servicehub/ui-shared`. |
+| `archive/servicehub-4.0.0/apps/demo`, `archive/servicehub-4.0.0/apps/sandbox` | Experimental, standalone exploratory surfaces — see [`archive/servicehub-4.0.0/apps/demo/README.md`](../archive/servicehub-4.0.0/apps/demo/README.md) / [`archive/servicehub-4.0.0/apps/sandbox/README.md`](../archive/servicehub-4.0.0/apps/sandbox/README.md). Not part of the supported product surface. |
 
-A component never calls the API directly — it goes through a hook in `packages/servicehub-ui-shared/src/hooks/`, which wraps `lib/api/`'s Axios client. This is the only place API calls originate, which is what makes the client-side Demo Mode (`/demo/azure`, `/demo/aws`, `/demo/gcp` — fixture data, zero backend calls) and the real mode swappable at the hook layer.
+A component never calls the API directly — it goes through a hook in `archive/servicehub-4.0.0/packages/servicehub-ui-shared/src/hooks/`, which wraps `lib/api/`'s Axios client. This is the only place API calls originate, which is what makes the client-side Demo Mode (`/demo/azure`, `/demo/aws`, `/demo/gcp` — fixture data, zero backend calls) and the real mode swappable at the hook layer.
 
 Requests cross a Vite dev-server proxy in development and are same-origin in production (the API
 serves the built SPA's static assets directly — one container, one process, one port).
@@ -191,7 +195,7 @@ absence — so AWS and GCP replays close `Unverified` with a recorded reason
 (`AWS_NO_ABSENCE_PROOF`, `GCP_NO_ABSENCE_PROOF`, or an operational reason like
 `NAMESPACE_DEREGISTERED`), rather than a fabricated `Recovered`. See
 [`docs/RECOVERY-EVIDENCE.md`](RECOVERY-EVIDENCE.md) for the full model, the export format, and
-[`scripts/verify-recovery-chain.py`](../scripts/verify-recovery-chain.py) for independently
+[`archive/servicehub-4.0.0/scripts/verify-recovery-chain.py`](../archive/servicehub-4.0.0/scripts/verify-recovery-chain.py) for independently
 verifying an exported chain without trusting the ServiceHub server that produced it.
 
 ## 6. Autonomy and safety model
@@ -241,12 +245,12 @@ configuration.
 
 AI/DLQ pattern detection is heuristic — no calls to any third-party or cloud AI API, in either
 direction. The primary pattern-detection surface (the Messages page's "AI Findings" panel) runs as
-client-side heuristics in the browser (`packages/servicehub-ui-shared/src/lib/ai/`). A backend
+client-side heuristics in the browser (`archive/servicehub-4.0.0/packages/servicehub-ui-shared/src/lib/ai/`). A backend
 AI-adjacent path also exists for richer failure-signature clustering and (stubbed) anomaly
-detection: it can optionally call `services/ai/` — a local, self-hosted, disabled-by-default
+detection: it can optionally call `archive/servicehub-4.0.0/services/ai/` — a local, self-hosted, disabled-by-default
 companion container the operator runs on their own network, never an external service — and always
 falls back to a purely local, in-process deterministic strategy when that container is disabled,
-absent, or unreachable (see [`services/ai/README.md`](../services/ai/README.md)). Every AI-adjacent
+absent, or unreachable (see [`archive/servicehub-4.0.0/services/ai/README.md`](../archive/servicehub-4.0.0/services/ai/README.md)). Every AI-adjacent
 backend component, this clustering path and anomaly detection alike, is architecturally forbidden
 from calling any mutating method on `IRecoveryLedger` or the replay/purge paths:
 `AIBoundaryArchitectureTests` reflects over each relevant interface's own method list to derive the
@@ -256,8 +260,8 @@ explanation), never verbs (execution) — see [ADR-0005](adr/0005-ai-capability-
 
 ## 6b. The reasoning companion (roadmap §7, W5)
 
-A second, independent AI-adjacent surface: `services/agent/` — local-only,
-self-hosted, disabled-by-default, and gated separately from `services/ai/` (its
+A second, independent AI-adjacent surface: `archive/servicehub-4.0.0/services/agent/` — local-only,
+self-hosted, disabled-by-default, and gated separately from `archive/servicehub-4.0.0/services/ai/` (its
 own `ReasoningAgent:Enabled` switch, its own container, its own `OLLAMA_HOST`).
 `ReasoningCompanionWorker` (`ServiceHub.Infrastructure.BackgroundServices`)
 periodically takes the same ranked candidates `IAttentionQueueService` already
@@ -271,7 +275,7 @@ and no other `IPlaybookLedger` member (never `DispositionAsync`, `RevokeAsync`,
 etc. — a human decides those). `AIBoundaryArchitectureTests` enforces both
 restrictions by the same dependency-based IL-scan technique §6a describes,
 extended with a second forbidden set scoped to reasoning-agent-adjacent code
-only. See [`services/agent/README.md`](../services/agent/README.md) and the
+only. See [`archive/servicehub-4.0.0/services/agent/README.md`](../archive/servicehub-4.0.0/services/agent/README.md) and the
 master roadmap's §7 for the full non-negotiable list (no autonomy transition
 ever driven by a model's stated confidence, no external LLM API call without a
 real ADR-0004 amendment, IL-boundary-enforced from day one).

@@ -141,7 +141,7 @@ This is exactly what `RecoveryChainVerifier.Verify` (server-side) and the eviden
 
 ### 3.3a Independent offline verification
 
-`scripts/verify-recovery-chain.py` is a dependency-free (Python 3 standard library only) tool
+`archive/servicehub-4.0.0/scripts/verify-recovery-chain.py` is a dependency-free (Python 3 standard library only) tool
 that recomputes the checks above **without running ServiceHub and without trusting its API to
 say "valid."** It never contacts a server, never touches a database, and never modifies its
 input.
@@ -152,7 +152,7 @@ input.
 **2. Run the verifier:**
 
 ```
-python3 scripts/verify-recovery-chain.py recovery-evidence-<id>-<timestamp>.zip
+python3 archive/servicehub-4.0.0/scripts/verify-recovery-chain.py recovery-evidence-<id>-<timestamp>.zip
 ```
 
 **3. What it verifies**, for every event in the export:
@@ -184,7 +184,7 @@ offline reader can and cannot check.
 **6. Example: a valid export**
 
 ```
-$ python3 scripts/verify-recovery-chain.py recovery-evidence-<id>-<timestamp>.zip
+$ python3 archive/servicehub-4.0.0/scripts/verify-recovery-chain.py recovery-evidence-<id>-<timestamp>.zip
 PASS — 3 event(s) verified, owner='acme-owner', Seq 1-3.
 This confirms: no event was altered after being appended, no event in this export
 is missing/duplicated/reordered, and adjacent-Seq events chain correctly.
@@ -196,7 +196,7 @@ export cannot prove.
 **7. Example: a tampered export** (one field of one event edited after export)
 
 ```
-$ python3 scripts/verify-recovery-chain.py recovery-evidence-<id>-<timestamp>-tampered.zip
+$ python3 archive/servicehub-4.0.0/scripts/verify-recovery-chain.py recovery-evidence-<id>-<timestamp>-tampered.zip
 FAIL — 1 finding(s):
   - Seq 2: EntryHash mismatch — stored=21132ab... recomputed=791606b... This event's fields
     were altered after being appended.
@@ -207,7 +207,7 @@ couldn't be parsed at all.
 
 ### 3.3b The Playbook Ledger's independent chain and verifier
 
-The Recovery Evidence Ledger only ever covers the Recover pillar. `scripts/verify-playbook-chain.py`
+The Recovery Evidence Ledger only ever covers the Recover pillar. `archive/servicehub-4.0.0/scripts/verify-playbook-chain.py`
 is the sibling verifier for the Playbook Ledger (roadmap next-chapter M1.3, ADR-0009) —
 Investigate, Correlate and Prevent's proposal-and-disposition record, a fully independent
 hash chain from the one this document describes (own `Seq` space, own genesis, own
@@ -226,7 +226,7 @@ detection workers and `PreventionRuleEvaluationService` write) must resolve insi
 holding only the export would independently catch it if that exception were ever removed or broken.
 
 ```
-python3 scripts/verify-playbook-chain.py playbook-evidence-<timestamp>.json
+python3 archive/servicehub-4.0.0/scripts/verify-playbook-chain.py playbook-evidence-<timestamp>.json
 ```
 
 A healthy export reads:
@@ -282,7 +282,7 @@ since everything before that marker was already pruned and independently verifie
 defence-in-depth self-check — it cannot undo an already-committed prune, but a failure there means
 the archive/prune logic itself has a bug, logged as `LogCritical`.
 
-**Verifying a sealed history.** `scripts/verify-recovery-chain.py --archive-dir <owner-dir>
+**Verifying a sealed history.** `archive/servicehub-4.0.0/scripts/verify-recovery-chain.py --archive-dir <owner-dir>
 <current-export>` verifies every `epoch-*.json` archive in the directory (in epoch order), confirms
 each declares the correct `startSeq`/`startPrevHash`/`terminalHash` for its own first/last event,
 confirms consecutive archives chain `sealEventHash` → `startPrevHash` (with `startSeq` exactly

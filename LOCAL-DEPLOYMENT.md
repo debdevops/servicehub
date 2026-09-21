@@ -61,10 +61,11 @@ same thing.)*
 
 ### Step 3: Open a Terminal in that folder
 
-- **Mac**: open the unzipped `servicehub` folder in Finder, right-click inside it, choose
+- **Mac**: open the unzipped `servicehub` folder, then the `archive` folder inside it, then the
+  `servicehub-4.0.0` folder inside that (this is the ServiceHub 4.0.0 application). In Finder, right-click inside it, choose
   **New Terminal at Folder**. (If you don't see that option, open Terminal normally and type
   `cd ` followed by dragging the folder into the window, then press Enter.)
-- **Windows**: open the unzipped `servicehub` folder in File Explorer, click into the address
+- **Windows**: open the unzipped `servicehub` folder, then `archive`, then `servicehub-4.0.0` inside it. In File Explorer, click into the address
   bar at the top, type `cmd`, and press Enter — a Command Prompt opens already inside that
   folder.
 
@@ -180,8 +181,8 @@ them — you may be asked to enter your computer's password to allow the install
 several minutes the first time; later runs are fast.
 
 You don't need to create any keys yourself for this path — `run.sh` generates a fresh encryption
-key and SPA token secret for you on first run (via `scripts/generate-keys.sh`) and writes them to
-a git-ignored `services/api/src/ServiceHub.Api/appsettings.Local.json`, reusing the same file (and
+key and SPA token secret for you on first run (via `archive/servicehub-4.0.0/scripts/generate-keys.sh`) and writes them to
+a git-ignored `archive/servicehub-4.0.0/services/api/src/ServiceHub.Api/appsettings.Local.json`, reusing the same file (and
 the same keys) on every later run rather than regenerating them.
 
 ### Step 4: Open it in your browser

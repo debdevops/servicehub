@@ -9,7 +9,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 API_DIR="$SCRIPT_DIR/services/api"
-WEB_DIR="$SCRIPT_DIR/archive/servicehub-web-4.0.0"
+WEB_DIR="$SCRIPT_DIR/apps/web"
 DEMO_DIR="$SCRIPT_DIR/apps/demo"
 SANDBOX_DIR="$SCRIPT_DIR/apps/sandbox"
 API_HTTP_URL="http://localhost:5153"
@@ -951,7 +951,7 @@ fi
 # Start Web UI if requested
 if [ "$START_WEB" = true ]; then
     start_service "Web UI" "3000" "" \
-        "cd $SCRIPT_DIR && export VITE_PROXY_TARGET=$API_HTTP_URL && npm run -w archive/servicehub-web-4.0.0 dev -- --port 3000 --host 0.0.0.0 --strictPort" \
+        "cd $SCRIPT_DIR && export VITE_PROXY_TARGET=$API_HTTP_URL && npm run -w apps/web dev -- --port 3000 --host 0.0.0.0 --strictPort" \
         "/tmp/servicehub_ui_startup.log"
 fi
 

@@ -19,7 +19,12 @@ the way they were.
 | [0009](0009-next-chapter-migrations-authorized.md) | Next-chapter migrations authorized: pillar-evidence tables and the `HashKind` discriminator (M1), production elevation record (M2, conditional on 0010) |
 | [0010](0010-production-namespace-elevation.md) | Production namespaces: observed by default, recovered only under a time-boxed two-person elevation, never autonomously |
 | [0011](0011-dlq-observer-attestation-table-authorized.md) | DLQ observer attestation table authorized (M3.2): durable per-namespace liveness-canary state |
-| [0012](0012-single-servicehub-application.md) | ServiceHub is one application: the 4.0.0 frontend is archived and frozen, the new app is built beside it |
+| [0012](0012-single-servicehub-application.md) | ServiceHub is one application: the 4.0.0 frontend is archived and frozen, the new app is built beside it *(partially superseded by 0013)* |
+| [0013](0013-archive-the-entire-4-0-0-codebase.md) | The entire 4.0.0 codebase (API, web, AI services, shared package, run/Docker files) is archived as one buildable, frozen folder, `archive/servicehub-4.0.0/`; the new ServiceHub is rebuilt beside it |
+
+> **Paths in ADRs 0001–0012 are as they were when written.** Since [ADR-0013](0013-archive-the-entire-4-0-0-codebase.md)
+> the code they cite lives under `archive/servicehub-4.0.0/` — prefix `apps/`, `services/`, `packages/`
+> and `scripts/` paths accordingly. The decisions themselves are unaffected.
 
 Each ADR states its Status. An ADR marked `Accepted` is currently in force — do not propose
 reversing it without the same level of justification the ADR itself required. An ADR marked

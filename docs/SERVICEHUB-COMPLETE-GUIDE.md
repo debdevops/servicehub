@@ -1225,7 +1225,7 @@ they don't exist just because Quick Access doesn't link to them.
 - **Why it matters for long-running deployments:** an append-only ledger with no legal way to prune
   eventually becomes an operational problem on its own; epoch sealing bounds growth without
   weakening tamper-evidence, because every pruned row survives byte-for-byte in the archive first.
-- **Verifying a sealed epoch:** `scripts/verify-recovery-chain.py --archive-dir <path>` follows the
+- **Verifying a sealed epoch:** `archive/servicehub-4.0.0/scripts/verify-recovery-chain.py --archive-dir <path>` follows the
   anchor from an archived epoch into the live export — a sealed epoch verifies from its archive
   file alone, no server access needed.
 

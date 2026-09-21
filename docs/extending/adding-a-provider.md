@@ -121,9 +121,9 @@ fabricated answer — later. See [ADR-0001](../adr/0001-provider-abstraction-and
 the reasoning behind this requirement.
 
 The frontend consumes your capabilities via `useProviderCapabilities()`
-(`packages/servicehub-ui-shared/src/hooks/useCloudBridge.ts`) and
+(`archive/servicehub-4.0.0/packages/servicehub-ui-shared/src/hooks/useCloudBridge.ts`) and
 `getProviderCapabilities(map, provider)`
-(`packages/servicehub-ui-shared/src/lib/api/cloudBridge.ts`). Wire your provider into any UI that
+(`archive/servicehub-4.0.0/packages/servicehub-ui-shared/src/lib/api/cloudBridge.ts`). Wire your provider into any UI that
 already gates on a capability (purge buttons, scheduling panels, message-count displays) by adding
 your preset — **do not** add another `cloudProvider === 'kafka'` branch next to the ones this
 pattern replaced.

@@ -1,4 +1,4 @@
-# Publishes the production Docker image (see root Dockerfile) to GitHub Container
+# Publishes the production Docker image (see archive/servicehub-4.0.0/Dockerfile) to GitHub Container
 # Registry on every version tag push. This does not change how the image is built —
 # it only adds the registry-publish step that was missing (main CI only builds and
 # smoke-tests the image, it never pushes it anywhere).
@@ -57,8 +57,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: ./Dockerfile
+          context: archive/servicehub-4.0.0
+          file: archive/servicehub-4.0.0/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}

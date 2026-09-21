@@ -29,6 +29,14 @@ on:
     # Run full scan weekly on Sunday at 2 AM IST (8:30 PM UTC Saturday)
     - cron: '30 20 * * 6'
 
+defaults:
+  run:
+    # ADR-0013: the whole 4.0.0 product lives in archive/servicehub-4.0.0/ (the old repo root, unchanged in
+    # structure). Every `run:` step below therefore starts there and uses the same relative
+    # paths it always did. `with:` inputs (cache paths, artifact paths, docker context) are NOT
+    # covered by this default and carry the full path explicitly.
+    working-directory: archive/servicehub-4.0.0
+
 jobs:
   analyze-csharp:
     name: Scan C# (.NET Backend)
@@ -87,7 +95,7 @@ jobs:
         with:
           node-version: '22.x'
           cache: 'npm'
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: archive/servicehub-4.0.0/package-lock.json
 
       - name: Initialize CodeQL for TypeScript
         uses: github/codeql-action/init@v3
@@ -101,7 +109,7 @@ jobs:
 
       - name: Build for CodeQL analysis
         # TypeScript build helps CodeQL resolve types accurately
-        run: npm exec -w archive/servicehub-web-4.0.0 -- tsc -b --noEmit || true
+        run: npm exec -w apps/web -- tsc -b --noEmit || true
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3

@@ -48,7 +48,7 @@ stages:
           # vite.config.ts build.outDir = ../../services/api/src/ServiceHub.Api/wwwroot
           # So the React build populates wwwroot before dotnet publish runs.
           - script: |
-              cd archive/servicehub-web-4.0.0
+              cd archive/servicehub-4.0.0/apps/web
               npm ci
               npm run build
             displayName: 'UI: Install & Build'
@@ -57,13 +57,13 @@ stages:
 
           # ── Backend: Restore, Build, Test ──
           - script: |
-              cd services/api
+              cd archive/servicehub-4.0.0/services/api
               dotnet restore ServiceHub.sln
               dotnet build ServiceHub.sln -c $(buildConfiguration) --no-restore
             displayName: 'API: Restore & Build'
 
           - script: |
-              cd services/api
+              cd archive/servicehub-4.0.0/services/api
               dotnet test ServiceHub.sln -c $(buildConfiguration) --no-build --logger trx --results-directory $(Agent.TempDirectory)/test-results
             displayName: 'API: Run Tests'
 
@@ -76,7 +76,7 @@ stages:
 
           # ── Backend: Publish (wwwroot already populated by the UI build above) ──
           - script: |
-              dotnet publish services/api/src/ServiceHub.Api/ServiceHub.Api.csproj \
+              dotnet publish archive/servicehub-4.0.0/services/api/src/ServiceHub.Api/ServiceHub.Api.csproj \
                 -c $(buildConfiguration) \
                 -o $(Build.ArtifactStagingDirectory)/api \
                 --no-build

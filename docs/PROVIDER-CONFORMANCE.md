@@ -21,12 +21,12 @@ provider-specific action (Purge, Schedule, Live Tail) is offered or correctly gr
 ## What's being proven
 
 Every provider declares what it can and can't do in `ProviderCapabilities.{Azure,Aws,Gcp}`
-(`services/api/src/ServiceHub.Core/Models/ProviderCapabilities.cs`) — things like whether
+(`archive/servicehub-4.0.0/services/api/src/ServiceHub.Core/Models/ProviderCapabilities.cs`) — things like whether
 manual dead-lettering is possible, whether scheduled sends exist, whether a non-destructive DLQ
 peek is available. Per-provider unit tests already prove the *code* behaves correctly against a
 mocked SDK for each of those. What they can't prove is that the mock matches the real service.
 
-`scripts/conformance-suite.py` closes that gap: it runs the same assertions — including the
+`archive/servicehub-4.0.0/scripts/conformance-suite.py` closes that gap: it runs the same assertions — including the
 **negative** ones (an unsupported operation must be rejected with the documented error, not
 silently ignored or a 500) — against a live ServiceHub API talking to a real Azure/AWS/GCP
 namespace. Nothing in the suite is simulated; every assertion is a real HTTP call whose outcome
@@ -117,8 +117,8 @@ operator running `terraform apply`. Until that exists, every AWS/GCP row here re
 ## How to reproduce
 
 ```bash
-python3 scripts/conformance-suite.py preflight
-python3 scripts/conformance-suite.py run \
+python3 archive/servicehub-4.0.0/scripts/conformance-suite.py preflight
+python3 archive/servicehub-4.0.0/scripts/conformance-suite.py run \
     --namespace Azure=<namespace-id>=<queue-name> \
     --namespace Aws=<namespace-id>=<queue-name> \
     --namespace Gcp=<namespace-id>=<topic-name>=<subscription-name>
@@ -126,7 +126,7 @@ python3 scripts/conformance-suite.py run \
 
 Any provider without a `--namespace` argument is reported `SKIPPED`, not `FAILED` — the suite runs
 against whichever providers you have connected, it doesn't require all three. See the script's own
-docstring (`python3 scripts/conformance-suite.py --help`) for namespace-registration prerequisites.
+docstring (`python3 archive/servicehub-4.0.0/scripts/conformance-suite.py --help`) for namespace-registration prerequisites.
 
 ## What changed
 

@@ -1,5 +1,19 @@
 # ServiceHub Changelog
 
+## [Unreleased]
+
+### Changed — repository restructure (ADR-0012, ADR-0013)
+
+- **The complete 4.0.0 codebase moved to `archive/servicehub-4.0.0/`** — `apps/{web,demo,sandbox}`,
+  `services/{api,ai,agent}`, `packages/servicehub-ui-shared`, `scripts/`, and the run/Docker/npm
+  files — as one folder that mirrors the old repository root. **No behaviour change:** all 1,401
+  files are byte-identical to `8844f31f`, it builds, tests and runs unmodified from inside that
+  folder, and CI, the release-image workflow, deploy, CodeQL and Dependabot now build it from there.
+  The folder is frozen; see `archive/README.md`. Every command in the README, CONTRIBUTING and
+  LOCAL-DEPLOYMENT now starts with `cd archive/servicehub-4.0.0`.
+- Paths in the entries below, and in ADRs 0001–0012, are as they were when written: prefix
+  `apps/`, `services/`, `packages/` and `scripts/` with `archive/servicehub-4.0.0/`.
+
 ## [4.0.0] — 2026-09-20
 
 Everything in this file's "Unreleased" section (through the 2026-09-11 Home/Quick Access/

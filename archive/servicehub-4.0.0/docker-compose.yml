@@ -16,7 +16,7 @@
 # `docker compose down -v` discards it.
 #
 # For a zero-credential exploration of the UI without any backend, see Demo Mode
-# (archive/servicehub-web-4.0.0 — no container required). For a LAN-exposed deployment connecting to real cloud
+# (apps/web — no container required). For a LAN-exposed deployment connecting to real cloud
 # messaging, see the "production" example service below and self-hosting/README.md.
 services:
   servicehub:

@@ -13,6 +13,8 @@
 
 ## Checklist
 
+Run these from `archive/servicehub-4.0.0/` (the archived 4.0.0 codebase — ADR-0012/0013).
+
 - [ ] `dotnet build services/api/ServiceHub.sln --configuration Release` passes with zero warnings
 - [ ] `npm run -w apps/web build` passes with zero warnings
 - [ ] Backend unit/integration tests pass (`dotnet test`)

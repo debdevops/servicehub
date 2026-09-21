@@ -273,8 +273,8 @@ How-To-Use.md
 .claude/skills/e2e-verify
 
 # Playwright test artifacts
-archive/servicehub-web-4.0.0/test-results/
-archive/servicehub-web-4.0.0/playwright-report/
+archive/servicehub-4.0.0/apps/web/test-results/
+archive/servicehub-4.0.0/apps/web/playwright-report/
 
 
 MODEL-ROUTING-GUIDE.md

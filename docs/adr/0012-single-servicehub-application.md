@@ -3,6 +3,14 @@
 **Status:** Accepted — 2026-09-21, by explicit owner sign-off, recorded the same way ADR-0006
 through ADR-0011 each were.
 
+> **Partially superseded by [ADR-0013](0013-archive-the-entire-4-0-0-codebase.md)** (same day): the
+> archive now holds the **entire** 4.0.0 codebase — not only the frontend — as one folder,
+> `archive/servicehub-4.0.0/`. That replaces this ADR's **D1** (only the frontend is archived), **D4**
+> (the shared package stays shared), **D4b** (the backend is never rewritten), **D5** and **§5**
+> (serving two surfaces from one process), and withdraws §5.2's two-line archive edit. **D2** (the
+> freeze), **D3** (one application) and **D6** stand. The text below is kept as decided; read it
+> with ADR-0013.
+
 **Relates to:** [ADR-0003](0003-single-instance-sqlite.md) (single-instance),
 [ADR-0004](0004-self-hosted-security-model.md) (self-hosted only),
 [ADR-0005](0005-ai-capability-boundary.md) (AI capability boundary).

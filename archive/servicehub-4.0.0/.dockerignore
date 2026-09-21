@@ -20,7 +20,7 @@ services/api/src/ServiceHub.Api/wwwroot/
 **/*.user
 .env
 .env.*
-!archive/servicehub-web-4.0.0/.env.production
+!apps/web/.env.production
 
 # VCS / tooling / editor
 .git/

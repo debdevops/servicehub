@@ -69,7 +69,7 @@ Open a [GitHub Issue](https://github.com/debdevops/servicehub/issues/new) with t
 ```bash
 # Clone
 git clone https://github.com/debdevops/servicehub.git
-cd servicehub
+cd servicehub/archive/servicehub-4.0.0
 
 # Start everything (API + React dev server + hot reload)
 ./run.sh
@@ -86,7 +86,7 @@ The React UI is served at **http://localhost:3000** and the API at **http://loca
 ### Backend (xUnit + coverage)
 
 ```bash
-cd services/api
+cd archive/servicehub-4.0.0/services/api
 dotnet test tests/ServiceHub.UnitTests --configuration Release
 
 # With coverage report (requires reportgenerator):
@@ -100,6 +100,7 @@ reportgenerator -reports:"TestResults/**/coverage.cobertura.xml" \
 ### Frontend (Vitest + coverage)
 
 ```bash
+cd archive/servicehub-4.0.0
 npm run -w apps/web test:coverage
 
 # The shared hooks/API-client package (packages/servicehub-ui-shared) has its own suite —
@@ -110,6 +111,7 @@ npm run -w packages/servicehub-ui-shared test
 ### Lint and typecheck
 
 ```bash
+cd archive/servicehub-4.0.0
 npm run -w apps/web lint
 npm exec -w apps/web -- tsc -b
 ```
@@ -117,11 +119,11 @@ npm exec -w apps/web -- tsc -b
 ### End-to-End (Playwright)
 
 ```bash
-cd apps/web
+cd archive/servicehub-4.0.0/apps/web
 npm run test:e2e   # starts its own dev server against client-side Demo Mode — no backend needed
 ```
 
-**Coverage threshold:** Both backend and `apps/web` must maintain ≥60% line coverage. CI enforces this automatically.
+**Coverage threshold:** Both backend and `archive/servicehub-4.0.0/apps/web` must maintain ≥60% line coverage. CI enforces this automatically.
 
 ---
 
@@ -158,8 +160,8 @@ npm run test:e2e   # starts its own dev server against client-side Demo Mode —
 ### TypeScript / React (Frontend)
 
 - All exported components must have a JSDoc comment
-- Hooks live in `packages/servicehub-ui-shared/src/hooks/`; API calls live in
-  `packages/servicehub-ui-shared/src/lib/api/` — not under `apps/web/src/`
+- Hooks live in `archive/servicehub-4.0.0/packages/servicehub-ui-shared/src/hooks/`; API calls live in
+  `archive/servicehub-4.0.0/packages/servicehub-ui-shared/src/lib/api/` — not under `archive/servicehub-4.0.0/apps/web/src/`
 - Do not add new `any` types — use proper generics or `unknown`
 - Run `npx tsc -b` before committing to catch type errors
 
@@ -174,31 +176,34 @@ npm run test:e2e   # starts its own dev server against client-side Demo Mode —
 
 ```
 servicehub/
-├── apps/web/                        # React 19 SPA (Vite + TypeScript) — the supported product surface
-│   └── src/
-│       ├── components/              # Reusable UI components
-│       ├── hooks/                   # One app-specific hook (useQuickAccessHistory) — see packages/servicehub-ui-shared below
-│       └── pages/                   # Route-level page components, registered in router.tsx
+├── archive/servicehub-4.0.0/          # the complete 4.0.0 codebase — FROZEN, still builds (ADR-0012/0013)
+│   ├── apps/web/                        # React 19 SPA (Vite + TypeScript) — the supported product surface
+│   │   └── src/
+│   │       ├── components/              # Reusable UI components
+│   │       ├── hooks/                   # One app-specific hook (useQuickAccessHistory) — see packages/servicehub-ui-shared below
+│   │       └── pages/                   # Route-level page components, registered in router.tsx
+│   │
+│   ├── apps/demo/, apps/sandbox/        # Experimental, standalone exploratory apps — not CI-tested beyond
+│   │                                     # lint/typecheck/build. See apps/demo/README.md, apps/sandbox/README.md.
+│   │
+│   ├── packages/servicehub-ui-shared/   # Every TanStack Query hook, the Axios API client (lib/api/),
+│   │   └── src/                         # client-side AI heuristics (lib/ai/), and Demo Mode fixtures
+│   │       ├── hooks/                   # (lib/demo/, lib/*MockData.ts). Consumed by apps/web, apps/demo,
+│   │       ├── lib/api/                 # and apps/sandbox as @servicehub/ui-shared. This is the only place
+│   │       └── lib/demo/, lib/ai/       # API calls should originate from — not apps/web/src.
+│   │
+│   ├── services/api/                    # .NET 10 Web API
+│   │   └── src/
+│   │       ├── ServiceHub.Api/            # Controllers, middleware, DI
+│   │       ├── ServiceHub.Core/           # Domain entities, interfaces, DTOs — no external deps
+│   │       ├── ServiceHub.Infrastructure/ # Azure Service Bus, SQLite persistence, encryption, rule engine
+│   │       ├── ServiceHub.Infrastructure.Aws/  # AWS SQS/SNS
+│   │       ├── ServiceHub.Infrastructure.Gcp/  # GCP Pub/Sub
+│   │       └── ServiceHub.Shared/         # Result<T>, constants, helpers
+│   │
+│   └── run.sh, run.ps1, runtest.sh, Dockerfile, docker-compose.yml, scripts/   # launchers, image build, helper scripts
 │
-├── apps/demo/, apps/sandbox/        # Experimental, standalone exploratory apps — not CI-tested beyond
-│                                     # lint/typecheck/build. See apps/demo/README.md, apps/sandbox/README.md.
-│
-├── packages/servicehub-ui-shared/   # Every TanStack Query hook, the Axios API client (lib/api/),
-│   └── src/                         # client-side AI heuristics (lib/ai/), and Demo Mode fixtures
-│       ├── hooks/                   # (lib/demo/, lib/*MockData.ts). Consumed by apps/web, apps/demo,
-│       ├── lib/api/                 # and apps/sandbox as @servicehub/ui-shared. This is the only place
-│       └── lib/demo/, lib/ai/       # API calls should originate from — not apps/web/src.
-│
-├── services/api/                    # .NET 10 Web API
-│   └── src/
-│       ├── ServiceHub.Api/            # Controllers, middleware, DI
-│       ├── ServiceHub.Core/           # Domain entities, interfaces, DTOs — no external deps
-│       ├── ServiceHub.Infrastructure/ # Azure Service Bus, SQLite persistence, encryption, rule engine
-│       ├── ServiceHub.Infrastructure.Aws/  # AWS SQS/SNS
-│       ├── ServiceHub.Infrastructure.Gcp/  # GCP Pub/Sub
-│       └── ServiceHub.Shared/         # Result<T>, constants, helpers
-│
-└── run.sh / run.ps1       # One-command local dev launcher
+└── docs/, .github/, README.md, …       # repository-level docs and CI (stay at the root)
 ```
 
 The API uses a **Result/Error pattern** (no exceptions for business logic), **AES-256-GCM** for connection string encryption, and owner-scoped isolation via `OwnerId` on every data access. The SPA authenticates via an ephemeral SPA token injected into `<meta>` at page load time.

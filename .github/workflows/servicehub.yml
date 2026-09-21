@@ -1,4 +1,5 @@
 # CI workflow: build + unit tests on every push/PR. See deploy.yml for production deployment.
+# Builds and tests the archived ServiceHub 4.0.0 product under archive/servicehub-4.0.0/ (ADR-0012, ADR-0013).
 name: CI – Build & Unit Tests
 
 on:
@@ -27,10 +28,22 @@ env:
   NODE_VERSION: '22.x'
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+defaults:
+  run:
+    # ADR-0013: the whole 4.0.0 product lives in archive/servicehub-4.0.0/ (the old repo root, unchanged in
+    # structure). Every `run:` step below therefore starts there and uses the same relative
+    # paths it always did. `with:` inputs (cache paths, artifact paths, docker context) are NOT
+    # covered by this default and carry the full path explicitly.
+    working-directory: archive/servicehub-4.0.0
+
 jobs:
   whitespace-check:
     name: Whitespace Check
     runs-on: ubuntu-latest
+    # Scans the WHOLE repository, so it must not inherit the archive working directory.
+    defaults:
+      run:
+        working-directory: .
     # Blocks trailing whitespace repo-wide (not just the current diff) so a stray character
     # left by an editor or generator never lands on main again. git grep, not git diff --check,
     # since --check's line-ending handling treats CRLF as trailing whitespace too — flagging
@@ -212,11 +225,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-backend-${{ github.run_number }}
-          path: services/api/TestResults/CoverageReport/
+          path: archive/servicehub-4.0.0/services/api/TestResults/CoverageReport/
           retention-days: 14
 
-  # Builds and tests the ARCHIVED ServiceHub 4.0 frontend (archive/servicehub-web-4.0.0), which is
-  # frozen (ADR-0012). The job `name:` below is deliberately unchanged: branch protection matches
+  # Builds and tests the ARCHIVED ServiceHub 4.0 frontend (archive/servicehub-4.0.0/apps/web), which is frozen
+  # (ADR-0012/0013). The job `name:` below is deliberately unchanged: branch protection matches
   # required checks by name, so renaming it would silently un-require this check.
   build-and-test-frontend:
     name: Build & Test Frontend (React)
@@ -231,13 +244,13 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: archive/servicehub-4.0.0/package-lock.json
 
       - name: Install dependencies (monorepo workspace)
         run: npm ci --include=optional
 
       - name: Run ESLint
-        run: npm run -w archive/servicehub-web-4.0.0 lint
+        run: npm run -w apps/web lint
 
       - name: Audit npm packages for vulnerabilities
         run: |
@@ -255,7 +268,7 @@ jobs:
           #     react-router-dom v8 (breaking change); tracked separately.
           ACCEPTED_ADVISORIES="GHSA-qwww-vcr4-c8h2"
 
-          AUDIT_JSON=$(npm audit --audit-level=high --omit=dev --workspace=archive/servicehub-web-4.0.0 --json || true)
+          AUDIT_JSON=$(npm audit --audit-level=high --omit=dev --workspace=apps/web --json || true)
           UNACCEPTED=$(echo "$AUDIT_JSON" | jq -r --arg accepted "$ACCEPTED_ADVISORIES" '
             ($accepted | split(",")) as $ignore
             | [.vulnerabilities[]? | select(.severity == "high" or .severity == "critical")
@@ -274,18 +287,18 @@ jobs:
           echo "✅ No unaccepted high/critical npm vulnerabilities in production dependencies"
 
       - name: Run unit tests with coverage
-        run: npm run -w archive/servicehub-web-4.0.0 test:coverage
+        run: npm run -w apps/web test:coverage
 
       - name: Check frontend coverage threshold (60%)
         run: |
-          if [ ! -f "archive/servicehub-web-4.0.0/coverage/coverage-summary.json" ]; then
+          if [ ! -f "apps/web/coverage/coverage-summary.json" ]; then
             echo "⚠ Coverage file not found — skipping threshold check"
             exit 0
           fi
 
           # Extract total line coverage from vitest coverage JSON
           COVERAGE=$(node -e "
-            const c = require('./archive/servicehub-web-4.0.0/coverage/coverage-summary.json');
+            const c = require('./apps/web/coverage/coverage-summary.json');
             const total = c.total || c;
             const pct = total.lines?.pct ?? total.lines?.percent ?? 0;
             console.log(pct);
@@ -304,16 +317,16 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-frontend-${{ github.run_number }}
-          path: archive/servicehub-web-4.0.0/coverage/
+          path: archive/servicehub-4.0.0/apps/web/coverage/
           retention-days: 14
 
       - name: Run shared UI package tests with coverage (@servicehub/ui-shared)
-        # archive/servicehub-web-4.0.0 consumes this workspace package, but its ~500 tests were never executed in
-        # CI — only archive/servicehub-web-4.0.0's own suite was. Same command developers run locally, so a green
+        # apps/web consumes this workspace package, but its ~500 tests were never executed in
+        # CI — only apps/web's own suite was. Same command developers run locally, so a green
         # local run and a green CI run now mean the same thing for the shared package.
         # test:coverage runs vitest --coverage, which enforces the same 60%/60%/50%/60%
         # lines/functions/branches/statements thresholds already configured in this package's
-        # own vite.config.ts (identical to archive/servicehub-web-4.0.0's) — vitest fails the command itself if
+        # own vite.config.ts (identical to apps/web's) — vitest fails the command itself if
         # coverage regresses below them, so no separate bash threshold-check step is needed here.
         run: npm run -w packages/servicehub-ui-shared test:coverage
 
@@ -322,21 +335,21 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-shared-${{ github.run_number }}
-          path: packages/servicehub-ui-shared/coverage/
+          path: archive/servicehub-4.0.0/packages/servicehub-ui-shared/coverage/
           retention-days: 14
 
       - name: Type check with TypeScript
-        run: npm exec -w archive/servicehub-web-4.0.0 -- tsc -b
+        run: npm exec -w apps/web -- tsc -b
 
       - name: Verify production env file exists
         run: |
-          if [ ! -f archive/servicehub-web-4.0.0/.env.production ]; then
-            echo "ERROR: archive/servicehub-web-4.0.0/.env.production is missing. Create it with VITE_API_BASE_URL=/api/v1"
+          if [ ! -f apps/web/.env.production ]; then
+            echo "ERROR: apps/web/.env.production is missing. Create it with VITE_API_BASE_URL=/api/v1"
             exit 1
           fi
 
       - name: Build application
-        run: npm run -w archive/servicehub-web-4.0.0 build
+        run: npm run -w apps/web build
 
   build-experimental-apps:
     name: Build Experimental Apps (apps/demo, apps/sandbox)
@@ -357,7 +370,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: archive/servicehub-4.0.0/package-lock.json
 
       - name: Install dependencies (monorepo workspace)
         run: npm ci --include=optional
@@ -397,23 +410,23 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: archive/servicehub-4.0.0/package-lock.json
 
       - name: Install dependencies (monorepo workspace)
         run: npm ci --include=optional
 
       - name: Install Playwright browsers
-        run: npx --prefix archive/servicehub-web-4.0.0 playwright install --with-deps chromium
+        run: npx --prefix apps/web playwright install --with-deps chromium
 
       - name: Run Playwright E2E tests
-        run: npm run -w archive/servicehub-web-4.0.0 test:e2e
+        run: npm run -w apps/web test:e2e
 
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-${{ github.run_number }}
-          path: archive/servicehub-web-4.0.0/playwright-report/
+          path: archive/servicehub-4.0.0/apps/web/playwright-report/
           retention-days: 14
           if-no-files-found: ignore
 
@@ -643,7 +656,7 @@ jobs:
       - name: Build image (no push)
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: archive/servicehub-4.0.0
           load: true
           push: false
           tags: servicehub:ci

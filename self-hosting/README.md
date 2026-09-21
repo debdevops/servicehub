@@ -50,7 +50,7 @@ ServiceHub writes to two separate locations, controlled by two independent confi
 | SQLite (`DlqDbContext`) | `DlqDatabase:DataDirectory` / `DlqDatabase__DataDirectory` | DLQ history, replay history, auto-replay rules, audit log, bulk-operation jobs, failure signatures, Recovery Evidence Ledger | All investigation history and audit trail lost |
 | Namespace credential store (JSON) | `NamespaceRepository:DataDirectory` / `NamespaceRepository__DataDirectory` | Encrypted connection strings / auth config for every namespace you've connected | Every namespace must be re-added by hand |
 
-The root `Dockerfile` points **both** keys at the same path (`/var/servicehub/data`) by
+The `Dockerfile` (in `archive/servicehub-4.0.0/`) points **both** keys at the same path (`/var/servicehub/data`) by
 default, so the documented Docker Quick Start already gets this right with a single mounted
 volume — nothing extra to do there.
 

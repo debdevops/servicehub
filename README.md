@@ -86,7 +86,7 @@ closes the three qualifiers that claim still carried:
   narration, backlog-forecast and external-signal findings — previously six process-local,
   24-hour caches that lost everything on restart — now persist to SQLite with a retention sweep
   that never prunes a finding a Playbook Ledger proposal still cites. A new owner-wide
-  `GET /api/v1/playbook/export` plus `scripts/verify-playbook-chain.py` let an auditor resolve
+  `GET /api/v1/playbook/export` plus `archive/servicehub-4.0.0/scripts/verify-playbook-chain.py` let an auditor resolve
   every cited finding from an export alone.
 - **Production, earned the same way autonomy was.** A namespace can now be registered as `Prod` —
   Investigate/Correlate/Prevent run against it fully. Every recovery verb still denies it unless a
@@ -293,7 +293,7 @@ every prior event is independently re-verified, written to an archive file on di
 disk again, and only then pruned from the live table — bounding growth for multi-year operation
 without weakening tamper-evidence, since the pruned rows survive byte-for-byte in the archive
 first. The seal marker itself becomes the next epoch's anchor, so the chain never breaks across
-the seam. `scripts/verify-recovery-chain.py --archive-dir` follows an anchor from a sealed
+the seam. `archive/servicehub-4.0.0/scripts/verify-recovery-chain.py --archive-dir` follows an anchor from a sealed
 history into the live export, and a sealed epoch verifies from its archive file alone, with no
 server access. Admin-scoped.
 
@@ -392,6 +392,12 @@ for a non-technical reader with screenshots at every step.
 > calls, no credentials, safe to click around before connecting anything real. This is the
 > supported, tested demo experience and the one worth trying first.
 
+> [!NOTE]
+> **Repository layout.** The complete ServiceHub 4.0.0 codebase — API, web UI, AI/reasoning services,
+> shared packages, and the run/Docker files — lives in [`archive/servicehub-4.0.0/`](archive/servicehub-4.0.0/).
+> It is **frozen** (see [`archive/README.md`](archive/README.md)) and builds and runs exactly as before;
+> every command below runs from that directory.
+
 ### Docker (fastest, with Docker)
 
 ServiceHub encrypts stored connection strings at rest, so it needs two secrets generated on your
@@ -400,7 +406,7 @@ every deployment that never overrode it.
 
 ```bash
 git clone https://github.com/debdevops/servicehub.git
-cd servicehub
+cd servicehub/archive/servicehub-4.0.0
 
 cp .env.example .env
 printf 'SECURITY__ENCRYPTIONKEY=%s\n'    "$(openssl rand -hex 32)" >> .env
@@ -420,7 +426,7 @@ Prefer not to build locally? Pull the official image instead of `--build`:
 If you skip the `.env` step, `docker compose` stops immediately and names the variable that is
 missing rather than starting a container that fails its configuration check.
 
-To point at real cloud messaging with persisted data and production hardening, run the image in Production mode. Every variable below is **required** — the app validates its Production configuration at startup and refuses to start if any is missing or still holds a `SET_VIA_ENV_VAR` placeholder:
+To point at real cloud messaging with persisted data and production hardening, run the image in Production mode (from `archive/servicehub-4.0.0/`, where the `Dockerfile` lives). Every variable below is **required** — the app validates its Production configuration at startup and refuses to start if any is missing or still holds a `SET_VIA_ENV_VAR` placeholder:
 
 ```bash
 docker build -t servicehub .
@@ -457,7 +463,7 @@ credentials or a non-loopback address.
 
 ```bash
 git clone https://github.com/debdevops/servicehub.git
-cd servicehub
+cd servicehub/archive/servicehub-4.0.0
 ./run.sh
 ```
 
@@ -483,13 +489,13 @@ Quick "create a resource, connect it, verify it, tear it down" walkthroughs for 
 clouds are in [Self-Hosting → Quick end-to-end test](self-hosting/README.md#quick-end-to-end-test).
 
 <details>
-<summary>Two additional, experimental standalone apps exist in this repo (<code>apps/demo</code>, <code>apps/sandbox</code>) — click to expand</summary>
+<summary>Two additional, experimental standalone apps exist in this repo (<code>archive/servicehub-4.0.0/apps/demo</code>, <code>archive/servicehub-4.0.0/apps/sandbox</code>) — click to expand</summary>
 
-`./run.sh demo` and `./run.sh sandbox` (or `./run.sh all`) start two separate exploratory apps on
+From `archive/servicehub-4.0.0/`, `./run.sh demo` and `./run.sh sandbox` (or `./run.sh all`) start two separate exploratory apps on
 ports 5174 and 5175. They're real and launchable, but **experimental and unsupported** — no test
 suite, not covered by the e2e suite, CI only checks that they build and typecheck. If you just want
 to try ServiceHub, use the in-app demo mentioned above instead. See
-[`apps/demo/README.md`](apps/demo/README.md) and [`apps/sandbox/README.md`](apps/sandbox/README.md)
+[`archive/servicehub-4.0.0/apps/demo/README.md`](archive/servicehub-4.0.0/apps/demo/README.md) and [`archive/servicehub-4.0.0/apps/sandbox/README.md`](archive/servicehub-4.0.0/apps/sandbox/README.md)
 for what each one is for.
 
 </details>
@@ -627,7 +633,7 @@ Verify against `/health/ready` and confirm the `sqlite` entry reports journal mo
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `docker compose up` exits immediately, names a missing variable | `SECURITY__ENCRYPTIONKEY` or `SECURITY__SPATOKEN__SECRET` unset | `cp .env.example .env` and fill both in — see [Quick Start](#quick-start) |
+| `docker compose up` exits immediately, names a missing variable | `SECURITY__ENCRYPTIONKEY` or `SECURITY__SPATOKEN__SECRET` unset | `cp .env.example .env` (inside `archive/servicehub-4.0.0/`) and fill both in — see [Quick Start](#quick-start) |
 | App starts but every request is rejected / wrong host | `AllowedHosts` or `SITEURL` doesn't match the hostname you're actually visiting | Set both to the real external hostname, not `localhost`, once you're off loopback |
 | Creating an AWS or GCP namespace returns `503` | `CloudProviders:Aws:Enabled` / `CloudProviders:Gcp:Enabled` is `false` (Azure-only by default) | Set `CLOUDPROVIDERS__AWS__ENABLED=true` / `CLOUDPROVIDERS__GCP__ENABLED=true` before connecting that provider |
 | `/health/live` fails after deploy | Container isn't listening on the platform's expected port, or hasn't finished startup config validation | Confirm `WEBSITES_PORT`/`--target-port` is `8080`; check container logs for the startup config validator's specific missing-variable error |
@@ -780,6 +786,8 @@ Bug fixes, features, and documentation improvements are welcome! See [CONTRIBUTI
 for the full guide, including [adding a new messaging provider](docs/extending/adding-a-provider.md).
 
 ```bash
+cd archive/servicehub-4.0.0
+
 # Frontend unit tests (Vitest, ≥60% coverage required)
 npm run -w apps/web test:coverage
 npm run -w packages/servicehub-ui-shared test   # hooks + API client live here, not in apps/web
@@ -837,7 +845,7 @@ risking dead-lettering it — a provider fact, not a maturity gap. And **all rec
 autonomous, runs against namespaces marked Dev or UAT**; ServiceHub refuses to connect to a
 namespace marked Production at all.
 
-**🔵 Reasoning companion** *(optional, off by default)*. `services/agent` is a local, self-hosted
+**🔵 Reasoning companion** *(optional, off by default)*. `archive/servicehub-4.0.0/services/agent` is a local, self-hosted
 container that reads payload-free evidence — counts, lifecycle state, normalised error terms, never
 a message body — and writes plain-language observations into the Playbook Ledger for a human to
 approve or reject. It cannot execute, approve or promote anything: the boundary is enforced by an
