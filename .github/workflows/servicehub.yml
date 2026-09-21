@@ -60,6 +60,30 @@ jobs:
           fi
           echo "✅ No trailing whitespace in tracked files"
 
+  # ADR-0012 D2 / ADR-0013 D3: archive/servicehub-4.0.0/ is the frozen 4.0.0 codebase. Once the archive
+  # exists on the base branch, a pull request that changes anything under archive/ fails here, unless a
+  # commit carries an `Archive-Change-Approved: <ADR>` trailer. Pull requests only: every promotion
+  # (local -> develop -> release -> main) is one, and the change that INTRODUCES the archive is allowed
+  # because its base has no archive/ yet. Skipped on push, which ci-status treats as fine.
+  archive-freeze-guard:
+    name: Archive Freeze Guard
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - name: Checkout code (full history — the guard diffs against the base branch)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fail on any change under archive/
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: .github/scripts/archive-freeze-guard.sh "origin/${BASE_REF}" "${HEAD_SHA}"
+
   build-and-test-backend:
     name: Build & Test Backend (.NET)
     runs-on: ubuntu-latest
@@ -605,12 +629,17 @@ jobs:
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
-    needs: [whitespace-check, build-and-test-backend, build-and-test-frontend, build-experimental-apps, e2e-tests, container-smoke-test, production-configuration-validation]
+    needs: [whitespace-check, archive-freeze-guard, build-and-test-backend, build-and-test-frontend, build-experimental-apps, e2e-tests, container-smoke-test, production-configuration-validation]
     if: always()
 
     steps:
       - name: Check build and test status
         run: |
+          # The freeze guard only runs on pull requests, so "skipped" (a push) is acceptable.
+          if [ "${{ needs.archive-freeze-guard.result }}" = "failure" ] || [ "${{ needs.archive-freeze-guard.result }}" = "cancelled" ]; then
+            echo "❌ Archive freeze guard failed — archive/ is frozen"
+            exit 1
+          fi
           if [ "${{ needs.whitespace-check.result }}" != "success" ]; then
             echo "❌ Whitespace check failed"
             exit 1

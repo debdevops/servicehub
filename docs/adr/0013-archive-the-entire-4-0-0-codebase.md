@@ -74,9 +74,14 @@ Azure deploy workflow, CodeQL, Dependabot and the Azure DevOps pipeline all buil
 **Nothing under `archive/` is ever edited.** ADR-0012 §5.2 named one two-line exception (moving the
 archived app off the origin root at cutover). It is **withdrawn**: the archive is now
 self-contained, includes its own API, and is never re-based, so nothing ever needs to be edited.
-A CI check that fails on any change under `archive/` is still to be added; ADR-0012 D2's other two
-mechanisms (the `archive/README.md` banner, a standing instruction to AI assistants) apply as
-before.
+Three mechanisms enforce it, as ADR-0012 D2 required: the `archive/README.md` banner; a standing
+instruction to AI assistants; and a **CI job, `Archive Freeze Guard`** (`.github/scripts/archive-freeze-guard.sh`),
+which fails a pull request that changes, adds, deletes or moves anything under `archive/` once the base
+branch already has the archive. The one way through is a commit trailer
+`Archive-Change-Approved: <ADR or decision>`. It runs on pull requests only — which is every promotion
+(local → develop → release → main) — and the change that *introduces* the archive is allowed because its
+base has no `archive/` yet. The guard was tested by breaking it: a one-character edit, an added file, a
+deletion and a move out all fail; the introducing change, a net-zero revert and an approved exception pass.
 
 ### D4 — Reuse by copying, never by importing
 
@@ -90,6 +95,20 @@ Documentation at the root that mentions code paths carries the full `archive/ser
 path in prose and links, and the `cd archive/servicehub-4.0.0` step in command blocks. **Accepted
 ADRs 0001–0012 are not rewritten**: they cite paths as they were when written, and
 `docs/adr/README.md` says so. `CHANGELOG.md` history is likewise left intact.
+
+### D6 — ServiceHub 4.0.0 and 4.1.0 are never mixed
+
+The archive is 4.0.0 and stays 4.0.0. To make that structural rather than a matter of care:
+
+- **The release-image workflow builds only the archive**, and `.github/scripts/verify-release-tag.sh`
+  refuses to run unless the pushed tag equals `archive/servicehub-4.0.0/.version` **and** the run is from a
+  tag. So tagging `v4.1.0` **fails loudly** instead of publishing the frozen 4.0.0 code as `:4.1.0` and
+  `:latest`. A 4.1.0 release needs its own build path, added with the new stack.
+- **The archive reads only its own `.version`** (`archive/servicehub-4.0.0/.version`, frozen at `4.0.0`). The
+  root `.version` feeds nothing that builds, so it can move to `4.1.0` with the new stack without touching
+  the archive.
+- **Nothing outside `archive/` imports from it, and nothing inside it changes** (D3, D4).
+- The manual Azure deploy workflow prints which codebase and version it is deploying.
 
 ## What this reopens, and what it deliberately does not decide
 
@@ -106,7 +125,8 @@ background workers", "A separate `ServiceHub.Agents` project") no longer describ
    `/new` fallback and cutover assumed one shared API and no longer apply).
 3. What becomes of the planned units that assumed the old API — the escalation/pending-work
    endpoints (M0), the agent registry (L3.8–L3.10) and the Agent Activity trace (L4.1).
-4. How defects found in 4.0.0 are handled while it is frozen (a hotfix branch from tag `v4.0.0`, or
+4. How defects found in 4.0.0 are handled while it is frozen (the freeze guard's approval trailer is the
+   mechanism; the policy is undecided) (a hotfix branch from tag `v4.0.0`, or
    a recorded exception).
 
 ## Consequences
@@ -132,6 +152,7 @@ background workers", "A separate `ServiceHub.Agents` project") no longer describ
 ## What would make this decision wrong
 
 1. If the archive needs editing for any reason, it is not actually frozen.
+   (The freeze guard would have failed the pull request; its trailer records the exception.)
 2. If a `docker build` or CI run of the archive requires a file that was not moved, the "old repo
    root" claim is false — the blob-identity check in D1 would then be incomplete.
 3. If, after the follow-up ADR, the new backend is mostly the old backend with different paths, the

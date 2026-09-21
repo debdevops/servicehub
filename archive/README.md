@@ -60,6 +60,14 @@ cases, exact endpoint sequences — and that is paid-for knowledge.
 when it earns its place. Nothing outside `archive/` imports from it, and nothing inside it is
 ever changed to accommodate the new code.
 
+## Keeping 4.0.0 and 4.1.0 apart
+
+- **The freeze is enforced.** The `Archive Freeze Guard` CI job fails any pull request that changes,
+  adds, deletes or moves a file under `archive/`. A recorded exception needs a commit trailer,
+  `Archive-Change-Approved: <ADR or decision>`.
+- **The release-image workflow builds only this archive**, and refuses any tag that is not exactly
+  its version (`v4.0.0`). Tagging `v4.1.0` fails; it will not publish this code as 4.1.0.
+
 ## Version
 
 `servicehub-4.0.0/.version` is `4.0.0` and is read by the archive's own builds. The repository's

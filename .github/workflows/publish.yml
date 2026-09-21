@@ -1,5 +1,6 @@
-# Publishes the production Docker image (see archive/servicehub-4.0.0/Dockerfile) to GitHub Container
-# Registry on every version tag push. This does not change how the image is built —
+# Publishes the ARCHIVED ServiceHub 4.0.0 Docker image (see archive/servicehub-4.0.0/Dockerfile) to GitHub
+# Container Registry on every version tag push — but only when the tag equals the archive's own version
+# (verify-release-tag.sh, ADR-0013 D6), so it can never publish 4.0.0 code as another release. This does not change how the image is built —
 # it only adds the registry-publish step that was missing (main CI only builds and
 # smoke-tests the image, it never pushes it anywhere).
 #
@@ -30,6 +31,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Refuse to publish the archived 4.0.0 codebase under any other version
+        # ADR-0013 D6. This workflow builds archive/servicehub-4.0.0/. Without this check, tagging
+        # v4.1.0 for the new ServiceHub would publish the frozen 4.0.0 code as ":4.1.0" and ":latest".
+        run: .github/scripts/verify-release-tag.sh "${{ github.ref_type }}" "${{ github.ref_name }}" archive/servicehub-4.0.0/.version
 
       - name: Set up QEMU (multi-arch emulation)
         uses: docker/setup-qemu-action@v3
