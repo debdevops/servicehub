@@ -215,6 +215,9 @@ jobs:
           path: services/api/TestResults/CoverageReport/
           retention-days: 14
 
+  # Builds and tests the ARCHIVED ServiceHub 4.0 frontend (archive/servicehub-web-4.0.0), which is
+  # frozen (ADR-0012). The job `name:` below is deliberately unchanged: branch protection matches
+  # required checks by name, so renaming it would silently un-require this check.
   build-and-test-frontend:
     name: Build & Test Frontend (React)
     runs-on: ubuntu-latest
@@ -234,7 +237,7 @@ jobs:
         run: npm ci --include=optional
 
       - name: Run ESLint
-        run: npm run -w apps/web lint
+        run: npm run -w archive/servicehub-web-4.0.0 lint
 
       - name: Audit npm packages for vulnerabilities
         run: |
@@ -252,7 +255,7 @@ jobs:
           #     react-router-dom v8 (breaking change); tracked separately.
           ACCEPTED_ADVISORIES="GHSA-qwww-vcr4-c8h2"
 
-          AUDIT_JSON=$(npm audit --audit-level=high --omit=dev --workspace=apps/web --json || true)
+          AUDIT_JSON=$(npm audit --audit-level=high --omit=dev --workspace=archive/servicehub-web-4.0.0 --json || true)
           UNACCEPTED=$(echo "$AUDIT_JSON" | jq -r --arg accepted "$ACCEPTED_ADVISORIES" '
             ($accepted | split(",")) as $ignore
             | [.vulnerabilities[]? | select(.severity == "high" or .severity == "critical")
@@ -271,18 +274,18 @@ jobs:
           echo "✅ No unaccepted high/critical npm vulnerabilities in production dependencies"
 
       - name: Run unit tests with coverage
-        run: npm run -w apps/web test:coverage
+        run: npm run -w archive/servicehub-web-4.0.0 test:coverage
 
       - name: Check frontend coverage threshold (60%)
         run: |
-          if [ ! -f "apps/web/coverage/coverage-summary.json" ]; then
+          if [ ! -f "archive/servicehub-web-4.0.0/coverage/coverage-summary.json" ]; then
             echo "⚠ Coverage file not found — skipping threshold check"
             exit 0
           fi
 
           # Extract total line coverage from vitest coverage JSON
           COVERAGE=$(node -e "
-            const c = require('./apps/web/coverage/coverage-summary.json');
+            const c = require('./archive/servicehub-web-4.0.0/coverage/coverage-summary.json');
             const total = c.total || c;
             const pct = total.lines?.pct ?? total.lines?.percent ?? 0;
             console.log(pct);
@@ -301,16 +304,16 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-frontend-${{ github.run_number }}
-          path: apps/web/coverage/
+          path: archive/servicehub-web-4.0.0/coverage/
           retention-days: 14
 
       - name: Run shared UI package tests with coverage (@servicehub/ui-shared)
-        # apps/web consumes this workspace package, but its ~500 tests were never executed in
-        # CI — only apps/web's own suite was. Same command developers run locally, so a green
+        # archive/servicehub-web-4.0.0 consumes this workspace package, but its ~500 tests were never executed in
+        # CI — only archive/servicehub-web-4.0.0's own suite was. Same command developers run locally, so a green
         # local run and a green CI run now mean the same thing for the shared package.
         # test:coverage runs vitest --coverage, which enforces the same 60%/60%/50%/60%
         # lines/functions/branches/statements thresholds already configured in this package's
-        # own vite.config.ts (identical to apps/web's) — vitest fails the command itself if
+        # own vite.config.ts (identical to archive/servicehub-web-4.0.0's) — vitest fails the command itself if
         # coverage regresses below them, so no separate bash threshold-check step is needed here.
         run: npm run -w packages/servicehub-ui-shared test:coverage
 
@@ -323,17 +326,17 @@ jobs:
           retention-days: 14
 
       - name: Type check with TypeScript
-        run: npm exec -w apps/web -- tsc -b
+        run: npm exec -w archive/servicehub-web-4.0.0 -- tsc -b
 
       - name: Verify production env file exists
         run: |
-          if [ ! -f apps/web/.env.production ]; then
-            echo "ERROR: apps/web/.env.production is missing. Create it with VITE_API_BASE_URL=/api/v1"
+          if [ ! -f archive/servicehub-web-4.0.0/.env.production ]; then
+            echo "ERROR: archive/servicehub-web-4.0.0/.env.production is missing. Create it with VITE_API_BASE_URL=/api/v1"
             exit 1
           fi
 
       - name: Build application
-        run: npm run -w apps/web build
+        run: npm run -w archive/servicehub-web-4.0.0 build
 
   build-experimental-apps:
     name: Build Experimental Apps (apps/demo, apps/sandbox)
@@ -400,17 +403,17 @@ jobs:
         run: npm ci --include=optional
 
       - name: Install Playwright browsers
-        run: npx --prefix apps/web playwright install --with-deps chromium
+        run: npx --prefix archive/servicehub-web-4.0.0 playwright install --with-deps chromium
 
       - name: Run Playwright E2E tests
-        run: npm run -w apps/web test:e2e
+        run: npm run -w archive/servicehub-web-4.0.0 test:e2e
 
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-${{ github.run_number }}
-          path: apps/web/playwright-report/
+          path: archive/servicehub-web-4.0.0/playwright-report/
           retention-days: 14
           if-no-files-found: ignore
 

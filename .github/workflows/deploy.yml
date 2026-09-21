@@ -45,7 +45,7 @@ jobs:
         run: npm ci
 
       - name: Build React SPA (outputs to API wwwroot)
-        run: npm run -w apps/web build
+        run: npm run -w archive/servicehub-web-4.0.0 build
         # vite.config.ts build.outDir points to:
         # ../../services/api/src/ServiceHub.Api/wwwroot
         # So the React build is already inside the API project after this step.

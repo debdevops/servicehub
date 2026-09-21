@@ -17,9 +17,9 @@ query-filters:
 paths-ignore:
   # Test files — intentional weak values for testing only
   - "services/api/tests/**"
-  - "apps/web/src/__tests__/**"
+  - "archive/servicehub-web-4.0.0/src/__tests__/**"
   # Mock/fixture data — not application logic
-  - "apps/web/src/lib/mockData.ts"
-  - "apps/web/src/lib/aiMockData.ts"
-  - "apps/web/src/lib/insightsMockData.ts"
-  - "apps/web/src/lib/messageGenerator.ts"
+  - "archive/servicehub-web-4.0.0/src/lib/mockData.ts"
+  - "archive/servicehub-web-4.0.0/src/lib/aiMockData.ts"
+  - "archive/servicehub-web-4.0.0/src/lib/insightsMockData.ts"
+  - "archive/servicehub-web-4.0.0/src/lib/messageGenerator.ts"

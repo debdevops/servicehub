@@ -27,7 +27,7 @@ updates:
           - "Azure.*"
 
   # npm packages (React frontend + monorepo workspaces)
-  # Watches root package.json and all workspace packages (apps/web, packages/*, etc.)
+  # Watches root package.json and all workspace packages (archive/servicehub-web-4.0.0, packages/*, etc.)
   - package-ecosystem: "npm"
     directory: "/"
     schedule:

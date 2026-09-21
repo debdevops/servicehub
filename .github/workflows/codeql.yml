@@ -101,7 +101,7 @@ jobs:
 
       - name: Build for CodeQL analysis
         # TypeScript build helps CodeQL resolve types accurately
-        run: npm exec -w apps/web -- tsc -b --noEmit || true
+        run: npm exec -w archive/servicehub-web-4.0.0 -- tsc -b --noEmit || true
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3

@@ -48,7 +48,7 @@ stages:
           # vite.config.ts build.outDir = ../../services/api/src/ServiceHub.Api/wwwroot
           # So the React build populates wwwroot before dotnet publish runs.
           - script: |
-              cd apps/web
+              cd archive/servicehub-web-4.0.0
               npm ci
               npm run build
             displayName: 'UI: Install & Build'
