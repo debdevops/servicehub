@@ -19,6 +19,7 @@ the way they were.
 | [0009](0009-next-chapter-migrations-authorized.md) | Next-chapter migrations authorized: pillar-evidence tables and the `HashKind` discriminator (M1), production elevation record (M2, conditional on 0010) |
 | [0010](0010-production-namespace-elevation.md) | Production namespaces: observed by default, recovered only under a time-boxed two-person elevation, never autonomously |
 | [0011](0011-dlq-observer-attestation-table-authorized.md) | DLQ observer attestation table authorized (M3.2): durable per-namespace liveness-canary state |
+| [0012](0012-single-servicehub-application.md) | ServiceHub is one application: the 4.0.0 frontend is archived and frozen, the new app is built beside it |
 
 Each ADR states its Status. An ADR marked `Accepted` is currently in force — do not propose
 reversing it without the same level of justification the ADR itself required. An ADR marked
