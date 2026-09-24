@@ -15,8 +15,8 @@ namespace ServiceHub.IntegrationTests;
 /// every later unit depends on — health answers, an unknown API route 404s as an API rather than
 /// silently returning HTML, and no response carries a stack trace.
 /// </remarks>
-public sealed class ApiSmokeTests(WebApplicationFactory<Program> factory)
-    : IClassFixture<WebApplicationFactory<Program>>
+public sealed class ApiSmokeTests(ServiceHubApiFactory factory)
+    : IClassFixture<ServiceHubApiFactory>
 {
     [Fact]
     public async Task Health_answers()

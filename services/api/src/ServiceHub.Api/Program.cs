@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Extensions;
 using ServiceHub.Api.Middleware;
 using ServiceHub.Infrastructure.Agents;
+using ServiceHub.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,6 +25,7 @@ builder.Services.AddProblemDetails(options =>
 });
 
 builder.Services.AddHealthChecks();
+builder.Services.AddServiceHubPersistence();
 builder.Services.AddOpenApi();
 
 // The agent platform runs with zero agents in Wave 0 and says so at startup. Agents arrive one
@@ -31,6 +33,11 @@ builder.Services.AddOpenApi();
 builder.Services.AddAgentPlatform();
 
 var app = builder.Build();
+
+// Take the single-instance lock and apply migrations BEFORE serving. A second instance against the
+// same data directory, or a database this version does not recognise, stops here with a clear
+// message rather than starting up and corrupting anything (ADR-0003, ADR-0015 D4).
+await app.Services.InitializeServiceHubDatabaseAsync().ConfigureAwait(false);
 
 // ── Pipeline ────────────────────────────────────────────────────────────────────────────────────
 // Order matters and is deliberate: correlate, then harden, then handle errors, then route.

@@ -37,4 +37,24 @@ public static class ErrorCodes
     /// fact, not a fault — and it always travels with the remedy, where one exists (rule R4).
     /// </summary>
     public const string CapabilityUnavailable = "capability_unavailable";
+
+    /// <summary>Codes raised while connecting and describing a namespace (unit 1.1 onwards).</summary>
+    /// <remarks>Values match 4.0.0's so runbooks and clients that quote them keep working.</remarks>
+    public static class Namespace
+    {
+        /// <summary>The namespace name is required.</summary>
+        public const string NameRequired = "Namespace.Name.Required";
+
+        /// <summary>The namespace name, display name or description is too long.</summary>
+        public const string NameTooLong = "Namespace.Name.TooLong";
+
+        /// <summary>The namespace name contains invalid characters or has an invalid format.</summary>
+        public const string NameInvalid = "Namespace.Name.Invalid";
+
+        /// <summary>The connection string is required.</summary>
+        public const string ConnectionStringRequired = "Namespace.ConnectionString.Required";
+
+        /// <summary>The connection string format is invalid.</summary>
+        public const string ConnectionStringInvalid = "Namespace.ConnectionString.Invalid";
+    }
 }

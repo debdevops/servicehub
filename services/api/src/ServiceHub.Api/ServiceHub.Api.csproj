@@ -17,6 +17,11 @@
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
     <!-- Transitive of Microsoft.AspNetCore.OpenApi; pinned forward past GHSA-v5pm-xwqc-g5wc. -->
     <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
+    <!-- Design-time only: powers `dotnet ef migrations add` against ServiceHubDbContext in ServiceHub.Infrastructure -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>
