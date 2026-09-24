@@ -1,0 +1,21 @@
+{
+  "name": "servicehub-workspace",
+  "private": true,
+  "version": "4.1.0",
+  "description": "ServiceHub 4.1.0 — find and fix stuck messages in cloud message queues.",
+  "workspaces": [
+    "apps/*"
+  ],
+  "comment:workspaces": "archive/servicehub-4.0.0 is deliberately NOT a workspace. It has its own package.json and its own lockfile, and joining them would let one npm install change the frozen 4.0.0 tree (rule R1).",
+  "scripts": {
+    "dev": "npm run dev -w apps/servicehub",
+    "build": "npm run build -w apps/servicehub",
+    "lint": "npm run lint -w apps/servicehub",
+    "typecheck": "npm run typecheck -w apps/servicehub",
+    "test": "npm run test -w apps/servicehub",
+    "test:coverage": "npm run test:coverage -w apps/servicehub"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

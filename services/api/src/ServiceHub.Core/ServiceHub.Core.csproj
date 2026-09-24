@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    ServiceHub.Core — contracts, entities, enums, value models and Result.
+    DEPENDS ON NOTHING, by design (ADR-0014 D5). No EF, no cloud SDK, no ASP.NET, no I/O.
+    DependencyDirectionTests fails the build if that ever stops being true.
+  -->
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ServiceHub.UnitTests" />
+  </ItemGroup>
+
+</Project>

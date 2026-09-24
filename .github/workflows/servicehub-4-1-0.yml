@@ -1,0 +1,194 @@
+# CI workflow for ServiceHub 4.1.0 — the product being built at the repository root.
+#
+# Deliberately a SEPARATE workflow from servicehub.yml, which builds the frozen 4.0.0 archive with a
+# workflow-level `defaults.run.working-directory: archive/servicehub-4.0.0`. Two products with two
+# working directories in one workflow is how a `with:` path quietly points at the wrong tree.
+# It also means no existing job is renamed — branch protection matches required checks by NAME.
+#
+# ⚠️  After this workflow's first run, add its checks to the protected branches' required list:
+#     Build & Test API (4.1.0) · Build & Test Web (4.1.0) · Architecture Tests (4.1.0) ·
+#     Plan & Provenance Guards · Container Smoke Test (4.1.0) · CI Status (4.1.0)
+name: CI – ServiceHub 4.1.0
+
+on:
+  push:
+    branches: [main, develop, release, 'feat/**', 'feature/**', 'fix/**', 'bugfix/**', 'hotfix/**']
+  pull_request:
+    branches: [main, develop, release, 'feat/**', 'feature/**', 'fix/**', 'bugfix/**', 'hotfix/**']
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  NODE_VERSION: '22.x'
+
+jobs:
+  build-and-test-api:
+    name: Build & Test API (4.1.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore services/api/ServiceHub.slnx
+
+      - name: Build
+        # Directory.Build.props sets TreatWarningsAsErrors, so a warning fails here.
+        run: dotnet build services/api/ServiceHub.slnx --no-restore -c Release
+
+      - name: Test
+        run: >
+          dotnet test services/api/ServiceHub.slnx --no-build -c Release --nologo
+          --logger "trx;LogFileName=api-tests.trx"
+          --collect:"XPlat Code Coverage"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-test-results-4-1-0
+          path: services/api/tests/**/TestResults/**
+          retention-days: 7
+
+  architecture-tests:
+    name: Architecture Tests (4.1.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # Run separately from the main suite and report separately, because these are the rules that
+      # hold the architecture together: the dependency direction (ADR-0014 D5), rule R4's ban on
+      # branching by provider name, and the archive staying a parts bin rather than a dependency.
+      # When one of them fails, the failure should say so by its own name.
+      - name: Architecture rules
+        run: >
+          dotnet test services/api/ServiceHub.slnx --nologo
+          --filter "Category=Architecture"
+
+  build-and-test-web:
+    name: Build & Test Web (4.1.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint -w apps/servicehub
+
+      - name: Type-check
+        # runtest.sh does NOT do this. In 4.0.0 that gap meant local green and CI red, repeatedly.
+        run: npm run typecheck -w apps/servicehub
+
+      - name: Test with coverage
+        run: npm run test:coverage -w apps/servicehub
+
+      - name: Build
+        run: npm run build -w apps/servicehub
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-coverage-4-1-0
+          path: apps/servicehub/coverage/**
+          retention-days: 7
+
+  plan-and-provenance-guards:
+    name: Plan & Provenance Guards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Keeps the copied/written distinction mechanically true (ADR-0014 D2). A file claiming
+      # `changes: namespace only` is re-derived from its source in archive/ and diffed.
+      - name: Verify provenance headers
+        run: ./.github/scripts/verify-ported-files.sh
+
+      # ROADMAP.md is what the next session executes from. If its board and TASKS.md's cards drift
+      # apart, "what do I do next?" stops having a reliable answer.
+      # docs-private/ is git-ignored on purpose, so the plan never reaches a CI checkout. The guard
+      # runs wherever the plan exists — locally in ./runtest.sh --all — and is skipped, visibly, here.
+      - name: Verify the roadmap board matches the task cards
+        if: hashFiles('docs-private/servicehub-4.1.0/ROADMAP.md') != ''
+        run: ./.github/scripts/verify-roadmap.sh
+      - name: Roadmap guard skipped — docs-private is not in the repository
+        if: hashFiles('docs-private/servicehub-4.1.0/ROADMAP.md') == ''
+        run: echo "::notice::docs-private/ is git-ignored; the roadmap guard runs locally via ./runtest.sh --all."
+
+  container-smoke-test:
+    name: Container Smoke Test (4.1.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build -t servicehub:ci -f Dockerfile .
+
+      - name: The image contains no 4.0.0
+        # ADR-0014 D3: a 4.1.0 image ships only 4.1.0. .dockerignore excludes archive/, and this is
+        # the check that the exclusion actually held.
+        run: |
+          if docker run --rm --entrypoint sh servicehub:ci -c 'ls -A /app' | grep -qi 'servicehub-4.0.0'; then
+            echo "❌ The 4.1.0 image contains files from the 4.0.0 archive."
+            exit 1
+          fi
+          echo "✅ No archive content in the image."
+
+      - name: Start and probe
+        run: |
+          docker run -d --name servicehub-ci -p 8080:8080 servicehub:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/health > /dev/null; then
+              echo "✅ /health answered after ${i}s"
+              curl -fsS -o /dev/null -w 'SPA at /: %{http_code}\n' http://localhost:8080/
+              docker rm -f servicehub-ci
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "❌ /health never answered"
+          docker logs servicehub-ci
+          docker rm -f servicehub-ci
+          exit 1
+
+  ci-status:
+    name: CI Status (4.1.0)
+    runs-on: ubuntu-latest
+    needs:
+      - build-and-test-api
+      - architecture-tests
+      - build-and-test-web
+      - plan-and-provenance-guards
+      - container-smoke-test
+    if: always()
+    steps:
+      - name: Check status
+        run: |
+          fail=0
+          check() {
+            if [ "$2" != "success" ]; then
+              echo "❌ $1 — $2"
+              fail=1
+            fi
+          }
+          check "API build/tests"        "${{ needs.build-and-test-api.result }}"
+          check "Architecture rules"     "${{ needs.architecture-tests.result }}"
+          check "Web build/tests"        "${{ needs.build-and-test-web.result }}"
+          check "Plan & provenance guards" "${{ needs.plan-and-provenance-guards.result }}"
+          check "Container smoke test"   "${{ needs.container-smoke-test.result }}"
+          [ "$fail" -eq 0 ] || exit 1
+          echo "✅ ServiceHub 4.1.0: everything passed."

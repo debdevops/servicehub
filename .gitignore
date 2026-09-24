@@ -290,3 +290,18 @@ docs/architecture/ARCHITECTURE_VISION.md
 docs/BACKUP-RESTORE.md
 docs/BACKUP-RESTORE.md
 docs/BACKUP-RESTORE.md
+
+# ── ServiceHub 4.1.0 ────────────────────────────────────────────────────────────────────────────
+# The SPA build output. In 4.0.0 this folder was TRACKED, so every local build dirtied the tree and
+# every session had to be told that was expected. Here it is generated — by `npm run build` locally
+# and by the Docker build for a release — and never committed (ARCHITECTURE §9.3).
+services/api/src/ServiceHub.Api/wwwroot/
+
+# .NET build output for the new stack (the archive keeps its own rules)
+services/api/**/bin/
+services/api/**/obj/
+
+# The local SQLite database and its write-ahead log
+*.db
+*.db-shm
+*.db-wal

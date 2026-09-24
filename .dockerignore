@@ -1,0 +1,26 @@
+# The frozen 4.0.0 stack is never in a 4.1.0 image (ADR-0014 D3), and excluding it keeps the build
+# context small — it is by far the largest thing in the repository.
+archive/
+
+.git/
+.github/
+docs/
+docs-private/
+deploy/
+self-hosting/
+azuredevops/
+
+**/node_modules/
+**/bin/
+**/obj/
+**/dist/
+**/coverage/
+**/TestResults/
+services/api/src/ServiceHub.Api/wwwroot/
+
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.*
+!.env.example

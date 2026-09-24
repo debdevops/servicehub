@@ -1,0 +1,55 @@
+<Project>
+
+  <!--
+    ServiceHub 4.1.0 — settings every project in the solution inherits.
+    ADR-0014 D5: four kinds of project, one dependency direction, enforced by a test
+    (ServiceHub.UnitTests/Architecture/DependencyDirectionTests.cs).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- A warning left in place becomes a warning nobody reads. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+    <!--
+      The analyser posture deliberately MATCHES the archive's, because the archive is a parts bin
+      (ADR-0014 D2) and a file copied out of it must compile unedited. A stricter posture here was
+      tried first and rejected within the hour: it failed copied files on CA1000/CA1716 and on doc
+      crefs pointing at types 4.1.0 has not ported yet, which would mean editing proven code to
+      satisfy a style rule — and then `changes: namespace only` in every provenance header would be
+      a lie. The copy-verbatim property is worth more than the rule set.
+
+      1591 — missing XML doc on a public member (as the archive suppressed it)
+      1574/1580/1584 — a doc cref to a type not ported yet. A stale doc link is not a reason to
+                       edit a file that was proven against live cloud traffic.
+      NU1510 — an unprunable package reference
+    -->
+    <NoWarn>$(NoWarn);1591;1574;1580;1584;NU1510</NoWarn>
+
+    <Deterministic>true</Deterministic>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+
+    <!--
+      ONE source of version truth: the repository's .version file (ADR-0013 D6), which the SPA also
+      reads through vite.config.ts. Two places to bump is how a footer and an API end up disagreeing
+      about what is running.
+
+      It still reads 4.0.0 — that is the released version, and unit 7.1 moves it to 4.1.0, which is
+      the single edit that changes the version everywhere at once.
+    -->
+    <VersionFile>$([System.IO.Path]::Combine('$(MSBuildThisFileDirectory)', '..', '..', '.version'))</VersionFile>
+    <VersionPrefix>$([System.IO.File]::ReadAllText($(VersionFile)).Trim())</VersionPrefix>
+    <Product>ServiceHub</Product>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+</Project>

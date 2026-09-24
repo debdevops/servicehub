@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ServiceHub.Api/ServiceHub.Api.csproj" />
+    <Project Path="src/ServiceHub.Core/ServiceHub.Core.csproj" />
+    <Project Path="src/ServiceHub.Infrastructure/ServiceHub.Infrastructure.csproj" />
+    <Project Path="src/ServiceHub.Providers.Aws/ServiceHub.Providers.Aws.csproj" />
+    <Project Path="src/ServiceHub.Providers.Azure/ServiceHub.Providers.Azure.csproj" />
+    <Project Path="src/ServiceHub.Providers.Gcp/ServiceHub.Providers.Gcp.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ServiceHub.IntegrationTests/ServiceHub.IntegrationTests.csproj" />
+    <Project Path="tests/ServiceHub.UnitTests/ServiceHub.UnitTests.csproj" />
+  </Folder>
+</Solution>

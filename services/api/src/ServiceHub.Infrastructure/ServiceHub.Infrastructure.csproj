@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    ServiceHub.Infrastructure — persistence, the ledger, the eligibility gate, the agent host,
+    the event bus, webhooks and secret protection. Depends on Core only.
+
+    It must NEVER reference a ServiceHub.Providers.* project: the composition root in
+    ServiceHub.Api is the one place the three clouds and the infrastructure meet.
+  -->
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.10" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ServiceHub.Core\ServiceHub.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ServiceHub.UnitTests" />
+  </ItemGroup>
+
+</Project>
