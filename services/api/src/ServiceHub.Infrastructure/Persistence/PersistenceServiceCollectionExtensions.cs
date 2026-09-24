@@ -59,6 +59,7 @@ public static class PersistenceServiceCollectionExtensions
 
         services.TryAddScoped<INamespaceRepository, NamespaceRepository>();
         services.TryAddScoped<IAuditTrail, AuditTrail>();
+        services.TryAddScoped<IDlqMessageReader, Dlq.DlqMessageReader>();
         services.TryAddSingleton<IActorIdentityResolver, Identity.ActorIdentityResolver>();
 
         // Single-instance invariant (ADR-0003). Singleton, so the OS file lock is held for the

@@ -37,6 +37,9 @@ public sealed class ServiceHubDbContext : DbContext
     /// <summary>Recent activity (W1).</summary>
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
+    /// <summary>Messages found in dead-letter queues (W2).</summary>
+    public DbSet<DlqMessage> DlqMessages => Set<DlqMessage>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -44,6 +47,7 @@ public sealed class ServiceHubDbContext : DbContext
 
         ConfigureNamespace(modelBuilder);
         ConfigureAuditLog(modelBuilder);
+        ConfigureDlqMessage(modelBuilder);
     }
 
     /// <inheritdoc />
@@ -124,6 +128,57 @@ public sealed class ServiceHubDbContext : DbContext
         entity.HasIndex(e => new { e.OwnerId, e.Name }).IsUnique().HasDatabaseName("IX_Namespaces_OwnerId_Name");
         entity.HasIndex(e => e.OwnerId).HasDatabaseName("IX_Namespaces_OwnerId");
         entity.HasIndex(e => e.IsActive).HasDatabaseName("IX_Namespaces_IsActive");
+    }
+
+    private static readonly Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<DateTimeOffset, string> SortableUtc =
+        new(
+            v => v.UtcDateTime.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+            v => DateTimeOffset.Parse(v, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind));
+
+    private static readonly Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<DateTimeOffset?, string?> SortableUtcNullable =
+        new(
+            v => v.HasValue ? v.Value.UtcDateTime.ToString("O", System.Globalization.CultureInfo.InvariantCulture) : null,
+            v => v == null ? null : DateTimeOffset.Parse(v, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind));
+
+    private static void ConfigureDlqMessage(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<DlqMessage>();
+
+        entity.ToTable("DlqMessages");
+        entity.HasKey(e => e.Id);
+        entity.Property(e => e.Id).ValueGeneratedOnAdd();
+
+        entity.Property(e => e.MessageId).HasMaxLength(256).IsRequired();
+        entity.Property(e => e.BodyHash).HasMaxLength(64).IsRequired();
+        entity.Property(e => e.OwnerId).HasMaxLength(128).IsRequired();
+        entity.Property(e => e.EntityName).HasMaxLength(512).IsRequired();
+        entity.Property(e => e.TopicName).HasMaxLength(512);
+        entity.Property(e => e.EntityType).HasConversion<string>().HasMaxLength(32);
+        entity.Property(e => e.CloudProvider).HasConversion<string>().HasMaxLength(32);
+        entity.Property(e => e.DeadLetterReason).HasMaxLength(1024);
+        entity.Property(e => e.DeadLetterErrorDescription).HasMaxLength(4096);
+        entity.Property(e => e.ContentType).HasMaxLength(256);
+        entity.Property(e => e.BodyPreview).HasMaxLength(2048);
+        entity.Property(e => e.ApplicationPropertiesJson).HasMaxLength(8192);
+        entity.Property(e => e.CorrelationId).HasMaxLength(256);
+        entity.Property(e => e.SessionId).HasMaxLength(256);
+        entity.Property(e => e.Status).HasConversion<string>().HasMaxLength(32).IsConcurrencyToken();
+
+        // Sortable UTC text, as for the audit trail: SQLite cannot ORDER BY its default
+        // DateTimeOffset encoding, and this table is read newest-first.
+        entity.Property(e => e.EnqueuedTimeUtc).HasConversion(SortableUtc);
+        entity.Property(e => e.DetectedAtUtc).HasConversion(SortableUtc);
+        entity.Property(e => e.ResolvedAt).HasConversion(SortableUtcNullable);
+        entity.Property(e => e.ArchivedAt).HasConversion(SortableUtcNullable);
+        entity.Property(e => e.ResolutionCause).HasConversion<string>().HasMaxLength(32);
+
+        // The same message in the same place is one row (per owner).
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.EntityName, e.SequenceNumber })
+            .IsUnique()
+            .HasDatabaseName("IX_DlqMessages_Owner_Namespace_Entity_Sequence");
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.Status }).HasDatabaseName("IX_DlqMessages_Owner_Namespace_Status");
+        entity.HasIndex(e => e.BodyHash).HasDatabaseName("IX_DlqMessages_BodyHash");
+        entity.HasIndex(e => e.DetectedAtUtc).HasDatabaseName("IX_DlqMessages_DetectedAt");
     }
 
     private static void ConfigureAuditLog(ModelBuilder modelBuilder)

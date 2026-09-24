@@ -43,9 +43,9 @@ builder.Services.AddAwsProvider();
 builder.Services.AddGcpProvider();
 builder.Services.AddOpenApi();
 
-// The agent platform runs with zero agents in Wave 0 and says so at startup. Agents arrive one
-// file and one registration line at a time, from unit 2.1 onwards.
+// The agent platform. Agents arrive one file and one registration line at a time (unit 2.1 onwards).
 builder.Services.AddAgentPlatform();
+builder.Services.AddAgent<DlqMonitorAgent>();
 
 var app = builder.Build();
 

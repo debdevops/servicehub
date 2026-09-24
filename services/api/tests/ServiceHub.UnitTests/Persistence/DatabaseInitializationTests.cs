@@ -61,10 +61,12 @@ public sealed class DatabaseInitializationTests : IDisposable
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ServiceHubDbContext>();
         (await db.Database.GetPendingMigrationsAsync()).Should().BeEmpty();
-        (await db.Database.GetAppliedMigrationsAsync()).Should().ContainSingle()
-            .Which.Should().Be("0001_W1_NamespacesAndAudit");
+        // Every migration this build ships, in order — and it starts where ADR-0015 D2 says: at 0001.
+        (await db.Database.GetAppliedMigrationsAsync()).Should().Equal(db.Database.GetMigrations())
+            .And.StartWith("0001_W1_NamespacesAndAudit");
         (await db.Namespaces.CountAsync()).Should().Be(0);
         (await db.AuditLogs.CountAsync()).Should().Be(0);
+        (await db.DlqMessages.CountAsync()).Should().Be(0);
     }
 
     [Fact]
@@ -93,7 +95,7 @@ public sealed class DatabaseInitializationTests : IDisposable
 
         await using var scope = second.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ServiceHubDbContext>();
-        (await db.Database.GetAppliedMigrationsAsync()).Should().ContainSingle();
+        (await db.Database.GetAppliedMigrationsAsync()).Should().Equal(db.Database.GetMigrations());
     }
 
     [Fact]

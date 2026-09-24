@@ -59,6 +59,11 @@ public sealed class GcpMessagingProvider : ICloudMessagingProvider
     /// <inheritdoc/>
     public IMessageReceiver GetMessageReceiver() => _receiver;
 
+    /// <inheritdoc />
+    // Dead-letter subscriptions follow the "{subscription}-dlq" convention and are DLQs themselves.
+    public bool CanHaveDeadLetters(CloudEntity entity) =>
+        !entity.Name.EndsWith("-dlq", StringComparison.Ordinal);
+
     /// <inheritdoc/>
     public IMessageSender GetMessageSender() => _sender;
 

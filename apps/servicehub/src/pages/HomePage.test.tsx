@@ -4,11 +4,14 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../lib/api/namespaces'
+import { fetchDeadLetters, type DeadLetter } from '../lib/api/deadLetters'
 import type { CloudProvider, Entity, Namespace, NamespaceStats } from '../lib/api/namespaces'
 import { AppLayout } from '../layouts/AppLayout'
 import { HomePage } from './HomePage'
 
 vi.mock('../lib/api/namespaces')
+vi.mock('../lib/api/deadLetters')
+const emptyPage = { items: [], paging: { total: 0, page: 1, pageSize: 5 }, groups: [], otherReasons: null, entities: [] }
 const mocked = vi.mocked(api)
 
 const ns = (id: string, provider: CloudProvider, over: Partial<Namespace> = {}): Namespace =>
@@ -23,7 +26,8 @@ function renderHome() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/?tab=dlq']}>
+      {/* A bare "/" is where the landing rule sends two clouds to Fleet Overview; a deep link is left alone. */}
+      <MemoryRouter initialEntries={['/?tab=overview']}>
         <Routes>
           <Route element={<AppLayout />}>
             <Route index element={<HomePage />} />
@@ -39,6 +43,7 @@ describe('Home — one cloud, real numbers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     window.localStorage.clear()
+    vi.mocked(fetchDeadLetters).mockResolvedValue(emptyPage)
     mocked.fetchEntities.mockImplementation(async (id) => ({ namespaceId: id, entities: [entity(3), entity(0)] }))
   })
 
@@ -154,5 +159,34 @@ describe('Home — one cloud, real numbers', () => {
     renderHome()
 
     expect(await screen.findByText('Could not connect at last check', { selector: 'span.rounded-full' })).toBeInTheDocument()
+  })
+
+  it('previews the latest dead letters in five rows and links to the full view', async () => {
+    mocked.fetchNamespaces.mockResolvedValue([ns('a1', 'azure')])
+    mocked.fetchNamespaceStats.mockResolvedValue(stats('a1'))
+    const item = (id: number): DeadLetter => ({
+      id, namespaceId: 'a1', messageId: `m-${id}`, sequenceNumber: id, entityName: 'orders', entityType: 'queue', topicName: null,
+      detectedAtUtc: '2026-09-24T10:12:00Z', enqueuedTimeUtc: '2026-09-24T09:00:00Z', deliveryCount: 5, sizeInBytes: 2048,
+      deadLetterReason: 'TimedOut', deadLetterErrorDescription: null, status: 'Active',
+    })
+    vi.mocked(fetchDeadLetters).mockResolvedValue({
+      ...emptyPage, items: [1, 2, 3, 4, 5].map(item), paging: { total: 128, page: 1, pageSize: 5 },
+    })
+    renderHome()
+
+    const section = await screen.findByRole('region', { name: 'Latest dead letters' })
+    expect(within(section).getAllByRole('row')).toHaveLength(6)
+    expect(within(section).getByRole('link', { name: 'See all 128 →' })).toHaveAttribute('href', '/?tab=dlq')
+    expect(vi.mocked(fetchDeadLetters)).toHaveBeenCalledWith(expect.objectContaining({ provider: 'azure', pageSize: 5 }))
+  })
+
+  it('draws no preview when there is nothing to preview', async () => {
+    mocked.fetchNamespaces.mockResolvedValue([ns('a1', 'azure')])
+    mocked.fetchNamespaceStats.mockResolvedValue(stats('a1'))
+    renderHome()
+
+    await screen.findByRole('heading', { name: 'Azure — Home' })
+    await screen.findByRole('region', { name: 'Azure at a glance' })
+    expect(screen.queryByRole('region', { name: 'Latest dead letters' })).not.toBeInTheDocument()
   })
 })

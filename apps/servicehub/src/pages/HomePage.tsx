@@ -1,6 +1,10 @@
 import { CheckCircle2, TriangleAlert } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import { Welcome } from '../components/connect/Welcome'
 import { FleetCard } from '../components/FleetCard'
+import { DeadLettersView } from '../components/message/DeadLettersView'
+import { RecentDeadLetters } from '../components/message/RecentDeadLetters'
+import { WorkTabs } from '../components/message/WorkTabs'
 import { useProviderScope } from '../components/provider/providerScope'
 import { StatTile } from '../components/ui/StatTile'
 import { useNamespaces } from '../hooks/useNamespaces'
@@ -41,9 +45,15 @@ function CloudHome({
   otherCloudsConnected: boolean
 }) {
   const cloud = providerLabel[provider]
+  const [params] = useSearchParams()
+  const tab = params.get('tab')
   const summary = useProviderSummary(namespaces)
   const connection = connectionState(namespaces)
   const chips = scopeChips(provider, namespaces)
+
+  // The work views of Home's table (D45): `?tab=dlq` is the dead letters, in place of the overview.
+  if (tab === 'dlq') return <DeadLettersView provider={provider} namespaces={namespaces} />
+  if (tab === 'active' || tab === 'replayed') return <NotBuiltTab tab={tab} cloud={cloud} />
 
   return (
     <section className="px-6 py-6">
@@ -99,6 +109,7 @@ function CloudHome({
               action="See active messages"
             />
           </div>
+          <RecentDeadLetters provider={provider} namespaces={namespaces} />
           <FleetCard cloud={cloud} summary={summary.summary} fleetHref={otherCloudsConnected ? '/fleet' : undefined} />
         </div>
       )}
@@ -138,4 +149,22 @@ function connectionState(namespaces: readonly Namespace[]): { label: string; ok:
   if (namespaces.every((n) => n.lastConnectionTestSucceeded === true)) return { label: 'Connected', ok: true }
   if (namespaces.some((n) => n.lastConnectionTestSucceeded === false)) return { label: 'Could not connect at last check', ok: false }
   return { label: 'Not tested yet', ok: null }
+}
+
+/** Active and Replayed are views of the same table, built in their own units. Until then they say so. */
+function NotBuiltTab({ tab, cloud }: { tab: 'active' | 'replayed'; cloud: string }) {
+  const wave = tab === 'active' ? 3 : 2
+  return (
+    <section className="px-6 py-6">
+      <h1 className="text-2xl font-semibold text-[var(--color-text)]">
+        {cloud} — {tab === 'active' ? 'Active messages' : 'Replayed'}
+      </h1>
+      <div className="mt-4">
+        <WorkTabs current={tab} />
+      </div>
+      <p className="inline-block rounded-full bg-[var(--color-surface-muted)] px-4 py-1.5 text-sm text-[var(--color-text-muted)]">
+        Not built yet — Wave {wave}
+      </p>
+    </section>
+  )
 }
