@@ -1,8 +1,3 @@
-// Ported from ServiceHub 4.0.0
-//   source: archive/servicehub-4.0.0/services/api/tests/ServiceHub.UnitTests/Shared/Results/ResultTTests.cs
-//   copied: 2026-09-21 for unit 0.3
-//   changes: namespace only
-
 using FluentAssertions;
 using ServiceHub.Core.Results;
 

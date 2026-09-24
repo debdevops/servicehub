@@ -61,8 +61,8 @@ public sealed class DependencyDirectionTests
     {
         ProjectReferencesOf(provider).Should().BeEquivalentTo([Core],
             "each cloud adapter is a peer of the other two: it may depend on Core and its own SDK, " +
-            "never on Infrastructure and never on another provider. In 4.0.0 Azure lived inside " +
-            "Infrastructure, which gave one provider reach the other two did not have");
+            "never on Infrastructure and never on another provider. A provider living inside " +
+            "Infrastructure would give it reach the other two do not have");
     }
 
     [Fact]

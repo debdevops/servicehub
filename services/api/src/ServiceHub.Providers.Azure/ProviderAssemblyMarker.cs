@@ -8,8 +8,8 @@ namespace ServiceHub.Providers.Azure;
 /// is not allowed to guess.
 /// </summary>
 /// <remarks>
-/// The adapter itself — connection factory, receiver, sender, health check — is copied from the
-/// archive at unit 1.3 (PORTING-MAP P17). Until then this type exists so the project is
+/// The adapter itself — connection factory, receiver, sender, health check — arrives with
+/// unit 1.3. Until then this type exists so the project is
 /// real, so <c>DependencyDirectionTests</c> has an assembly to check, and so the boundary is in
 /// place before there is any code to put on the wrong side of it.
 /// </remarks>

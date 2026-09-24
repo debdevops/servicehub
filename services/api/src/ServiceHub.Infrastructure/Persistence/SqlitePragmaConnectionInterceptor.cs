@@ -1,8 +1,3 @@
-// Ported from ServiceHub 4.0.0
-//   source: archive/servicehub-4.0.0/services/api/src/ServiceHub.Infrastructure/Persistence/SqlitePragmaConnectionInterceptor.cs
-//   copied: 2026-09-24 for unit 1.1
-//   changes: none
-
 using System.Data.Common;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -13,20 +8,20 @@ namespace ServiceHub.Infrastructure.Persistence;
 /// Applies SQLite hardening PRAGMAs on every new connection: WAL journaling so readers never
 /// block a writer (or vice versa), and a <c>busy_timeout</c> so a writer contending with
 /// another connection's write lock blocks and retries inside the SQLite driver instead of
-/// failing immediately with SQLITE_BUSY. Roadmap F1 — eight independent background workers
-/// write to a single SQLite file with neither of these configured today.
+/// failing immediately with SQLITE_BUSY. Several background agents write to a single
+/// SQLite file, so both are required.
 /// </summary>
 /// <remarks>
 /// <c>busy_timeout</c> alone does not bound how long a caller actually waits: Microsoft.Data.Sqlite
 /// retries SQLITE_BUSY/SQLITE_LOCKED internally on its own schedule, gated by
 /// <see cref="Microsoft.Data.Sqlite.SqliteCommand.CommandTimeout"/> (30s by default), not by this
 /// PRAGMA. Callers that configure <see cref="_busyTimeoutMilliseconds"/> must also set
-/// <c>CommandTimeout</c> to match (see <c>DependencyInjection.AddDlqDatabase</c>) or the
+/// <c>CommandTimeout</c> to match (see <c>AddServiceHubPersistence</c>) or the
 /// configured value has no real effect on contention wait time.
 /// </remarks>
 public sealed class SqlitePragmaConnectionInterceptor : DbConnectionInterceptor
 {
-    /// <summary>Default busy_timeout applied when <c>DlqDatabase:BusyTimeoutMilliseconds</c> is
+    /// <summary>Default busy_timeout applied when <c>ServiceHub:BusyTimeoutMilliseconds</c> is
     /// not configured — generous enough to absorb ordinary write contention between the eight
     /// background workers without masking genuinely stuck locks.</summary>
     public const int DefaultBusyTimeoutMilliseconds = 5000;

@@ -22,7 +22,7 @@ import {
  * THE navigation array — every destination in the product, of every kind.
  *
  * The sidebar, the route table, the overlay registry, the command palette and every breadcrumb are
- * derived from this one list. In 4.0.0 the same information lived in four places and drifted.
+ * derived from this one list. One list means it cannot drift.
  * `navigation.test.ts` asserts the router and this array cannot disagree.
  *
  * Most work happens in place (D45): Simple has two PAGES; everything else is a TAB of Home's table,

@@ -3,7 +3,9 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Moq;
 using ServiceHub.Infrastructure.Persistence;
 
 namespace ServiceHub.UnitTests.Persistence;
@@ -30,12 +32,16 @@ public sealed class DatabaseInitializationTests : IDisposable
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                [ServiceHubDataDirectory.ConfigurationKey] = dataDirectory ?? _dataDir
+                [ServiceHubDataDirectory.ConfigurationKey] = dataDirectory ?? _dataDir,
+                // The database registers the connection-string protector (unit 1.2), which by
+                // design refuses to start without a key.
+                ["Security:EncryptionKey"] = "DEV_KEY_NOT_FOR_PRODUCTION_12345678901234567890"
             })
             .Build();
 
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(configuration);
+        services.AddSingleton(Mock.Of<IHostEnvironment>(e => e.EnvironmentName == Environments.Development));
         services.AddLogging();
         services.AddServiceHubPersistence();
         return services.BuildServiceProvider();

@@ -1,8 +1,3 @@
-// Ported from ServiceHub 4.0.0
-//   source: archive/servicehub-4.0.0/services/api/tests/ServiceHub.UnitTests/Infrastructure/Persistence/SqlitePragmaConnectionInterceptorTests.cs
-//   copied: 2026-09-24 for unit 1.1
-//   changes: DlqDbContext -> ServiceHubDbContext and DlqMessages -> Namespaces (the only table the read-back touches; 4.1.0 has no DlqMessages until W2); namespace. Assertions untouched
-
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -11,7 +6,7 @@ using ServiceHub.Infrastructure.Persistence;
 namespace ServiceHub.UnitTests.Persistence;
 
 /// <summary>
-/// Roadmap F1 (SQLite hardening): proves the interceptor actually applies WAL journaling and
+/// SQLite hardening: proves the interceptor actually applies WAL journaling and
 /// the configured busy_timeout, not just that it compiles. WAL requires a real file-backed
 /// database — SQLite always reports "memory" journal mode for <c>:memory:</c> and shared-cache
 /// in-memory databases regardless of what is PRAGMA'd, so this test cannot use the ":memory:"
@@ -98,7 +93,7 @@ public sealed class SqlitePragmaConnectionInterceptorTests : IDisposable
     [Fact]
     public async Task ConnectionOpened_SqliteReadonlyOnWalPragma_IsSwallowed_ConnectionStaysUsable()
     {
-        // Reproduces the scenario that previously broke EF Core startup/migrations:
+        // Reproduces a scenario that breaks EF Core startup/migrations without the guard:
         // SqliteDatabaseCreator.Exists() opens a genuinely read-only ADO.NET connection against
         // an already-existing file purely to check for the file's presence. WAL requires write
         // access to create the -wal/-shm files, so "PRAGMA journal_mode=WAL;" on that connection

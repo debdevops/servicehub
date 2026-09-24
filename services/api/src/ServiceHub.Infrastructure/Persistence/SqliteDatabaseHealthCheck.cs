@@ -6,8 +6,7 @@ namespace ServiceHub.Infrastructure.Persistence;
 
 /// <summary>
 /// Readiness check for the SQLite file: it exists, it answers a query, it is in WAL mode, and its
-/// size is visible. Written for 4.1.0 rather than ported — 4.0.0's version reported WAL-checkpoint
-/// and slow-query signals no screen reads yet (R12).
+/// size is visible. It reports only what a screen reads (R12).
 /// </summary>
 public sealed class SqliteDatabaseHealthCheck(ServiceHubDbContext dbContext, IConfiguration configuration) : IHealthCheck
 {

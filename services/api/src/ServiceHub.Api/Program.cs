@@ -4,6 +4,8 @@ using ServiceHub.Api.Extensions;
 using ServiceHub.Api.Middleware;
 using ServiceHub.Infrastructure.Agents;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.Routing;
+using ServiceHub.Providers.Azure;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,6 +28,10 @@ builder.Services.AddProblemDetails(options =>
 
 builder.Services.AddHealthChecks();
 builder.Services.AddServiceHubPersistence();
+builder.Services.AddCloudProviderRouting();
+
+// One line per cloud: this is the only place the API knows a provider exists.
+builder.Services.AddAzureProvider();
 builder.Services.AddOpenApi();
 
 // The agent platform runs with zero agents in Wave 0 and says so at startup. Agents arrive one

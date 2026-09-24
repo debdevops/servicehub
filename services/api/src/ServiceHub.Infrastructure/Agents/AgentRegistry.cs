@@ -10,7 +10,7 @@ namespace ServiceHub.Infrastructure.Agents;
 /// </summary>
 /// <remarks>
 /// <para>
-/// In memory on purpose: 4.0.0 kept worker heartbeats in memory and that was right. State that is
+/// In memory on purpose: worker heartbeats belong in memory. State that is
 /// rebuilt from the running process cannot drift from it, needs no table, and cannot survive a
 /// restart as a stale lie. A restart means "unknown until the first cycle", which is the truth.
 /// </para>

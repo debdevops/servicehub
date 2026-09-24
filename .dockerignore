@@ -1,4 +1,4 @@
-# The frozen 4.0.0 stack is never in a 4.1.0 image (ADR-0014 D3), and excluding it keeps the build
+# The frozen archive is never in the image (ADR-0014 D3), and excluding it keeps the build
 # context small — it is by far the largest thing in the repository.
 archive/
 

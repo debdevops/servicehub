@@ -55,8 +55,8 @@
 /*
  * Provider accents.
  *
- * The chrome stays constant when you switch clouds — only accents change (IA §3.1). 4.0.0 re-tinted
- * the entire UI per provider, which made the product feel like it had changed identity.
+ * The chrome stays constant when you switch clouds — only accents change (IA §3.1). Re-tinting
+ * the entire UI per provider would make the product feel like it had changed identity.
  */
 :root[data-provider='aws'] {
   --color-accent: #f97316;

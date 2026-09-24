@@ -10,7 +10,7 @@ namespace ServiceHub.Core.Interfaces;
 /// An agent implements a single cycle and nothing else. The host owns the loop, the cadence, the
 /// heartbeat, the error handling, the pause and the authority enforcement — so an agent never
 /// re-implements any of them, and every agent behaves identically when things go wrong. That is
-/// the one thing 4.0.0's twenty <c>BackgroundService</c> workers could not promise.
+/// the one thing free-standing <c>BackgroundService</c> workers cannot promise.
 /// </remarks>
 public interface IAgent
 {

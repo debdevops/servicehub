@@ -4,8 +4,6 @@
 # Starts the API and the Vite dev server together, and stops both on Ctrl-C. The browser only ever
 # talks to Vite, which proxies /api and /health to the API — so there is no CORS to configure, and
 # in production they are the same origin anyway (ADR-0014 D3).
-#
-# ServiceHub 4.0.0 is a separate, frozen stack: cd archive/servicehub-4.0.0 && ./run.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -1,8 +1,3 @@
-// Ported from ServiceHub 4.0.0
-//   source: archive/servicehub-4.0.0/services/api/src/ServiceHub.Core/Events/PlatformEvent.cs
-//   copied: 2026-09-21 for unit 0.5
-//   changes: none
-
 namespace ServiceHub.Core.Events;
 
 /// <summary>
@@ -55,7 +50,7 @@ public sealed record PlatformEvent
     /// <summary>
     /// Origin of the event within ServiceHub.
     /// Recommended format: <c>{assembly}.{class}</c>,
-    /// e.g. <c>ServiceHub.Infrastructure.DlqMonitorWorker</c>.
+    /// e.g. <c>ServiceHub.Infrastructure.Agents.AgentHost</c>.
     /// </summary>
     public required string Source { get; init; }
 

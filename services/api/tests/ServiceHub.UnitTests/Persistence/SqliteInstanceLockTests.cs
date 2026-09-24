@@ -1,8 +1,3 @@
-// Ported from ServiceHub 4.0.0
-//   source: archive/servicehub-4.0.0/services/api/tests/ServiceHub.UnitTests/Infrastructure/Persistence/SqliteInstanceLockTests.cs
-//   copied: 2026-09-24 for unit 1.1
-//   changes: config key DlqDatabase:DataDirectory -> ServiceHub:DataDirectory (the lock now reads ServiceHubDataDirectory); message assertion names the new key; namespace. Assertions otherwise untouched
-
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using ServiceHub.Infrastructure.Persistence;

@@ -1,9 +1,6 @@
 # ServiceHub 4.1.0, locally.
 #
 #   docker compose up --build        → http://localhost:8080
-#
-# ServiceHub 4.0.0 is a separate stack with its own compose file:
-#   cd archive/servicehub-4.0.0 && docker compose up
 services:
   servicehub:
     build:

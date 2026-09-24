@@ -10,9 +10,9 @@ namespace ServiceHub.Infrastructure.Agents;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>One host, not twenty loops.</b> In 4.0.0 each of the twenty background workers carried its
-/// own <c>BackgroundService</c>, its own timing, its own try/catch and its own heartbeat call — so
-/// "what happens when an agent throws?" had twenty answers. Here it has one, and an agent is a
+/// <b>One host, not twenty loops.</b> A background worker written as its own
+/// loop would carry its <c>BackgroundService</c>, its own timing, its own try/catch and its own heartbeat call — so
+/// "what happens when an agent throws?" would have one answer per worker. Here it has one, and an agent is a
 /// single <see cref="IAgent.ExecuteCycleAsync"/>.
 /// </para>
 /// <para>

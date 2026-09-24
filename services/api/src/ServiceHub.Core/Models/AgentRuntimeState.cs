@@ -4,7 +4,7 @@ namespace ServiceHub.Core.Models;
 
 /// <summary>
 /// What the host knows about a registered agent right now. Held in memory, rebuilt on restart —
-/// 4.0.0 kept worker heartbeats in memory and that was the right call (no table, cannot drift).
+/// no table, so it cannot drift.
 /// </summary>
 /// <param name="Descriptor">The agent's own description of itself.</param>
 /// <param name="Health">Derived from recent cycles, never self-reported.</param>

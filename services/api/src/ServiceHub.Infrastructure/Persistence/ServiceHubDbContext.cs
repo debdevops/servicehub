@@ -9,7 +9,7 @@ namespace ServiceHub.Infrastructure.Persistence;
 
 /// <summary>
 /// The ServiceHub 4.1.0 database. It grows one <see cref="DbSet{TEntity}"/> per unit that needs a
-/// table (ADR-0015 D2) — never by copying 4.0.0's thirty-entity <c>DlqDbContext</c>.
+/// table (ADR-0015 D2) — never all at once.
 /// </summary>
 public sealed class ServiceHubDbContext : DbContext
 {
@@ -62,7 +62,7 @@ public sealed class ServiceHubDbContext : DbContext
     // the write lock) or SQLITE_LOCKED. busy_timeout (SqlitePragmaConnectionInterceptor) absorbs short
     // contention inside the driver; this is the outer safety net for contention that outlasts it.
     // Never retries DbUpdateConcurrencyException or constraint violations: callers handling those
-    // must see them immediately. Same behaviour as 4.0.0's DlqDbContext (roadmap F1).
+    // must see them immediately. 
     private static ResiliencePipeline BuildSaveChangesRetryPipeline(
         SqliteBusyRetryOptions retryOptions, ILogger<ServiceHubDbContext>? logger) =>
         new ResiliencePipelineBuilder()
@@ -98,8 +98,7 @@ public sealed class ServiceHubDbContext : DbContext
     private static bool IsBusyOrLocked(SqliteException exception) =>
         exception.SqliteErrorCode is 5 or 6;
 
-    // Shapes are copied from 4.0.0's DlqDbContext (ADR-0015 D3): same columns, names and indexes.
-    private static void ConfigureNamespace(ModelBuilder modelBuilder)
+        private static void ConfigureNamespace(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<Namespace>();
 

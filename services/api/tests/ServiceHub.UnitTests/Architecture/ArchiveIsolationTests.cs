@@ -4,13 +4,11 @@ using FluentAssertions;
 namespace ServiceHub.UnitTests.Architecture;
 
 /// <summary>
-/// Rule R1's other half: the archive is a parts bin, not a dependency.
+/// Nothing in the product may depend on the frozen archive folder.
 /// </summary>
 /// <remarks>
 /// The <c>Archive Freeze Guard</c> CI job stops anything being written <i>into</i> the archive.
-/// This stops anything <i>reaching into</i> it. If new code ever imports from
-/// <c>archive/servicehub-4.0.0/</c>, the freeze stops being a tidy-up and starts being load-bearing
-/// for the shipping product — and 4.0.0 could then never be deleted.
+/// This stops anything <i>reaching into</i> it, so the archive can be deleted without breaking a build.
 /// </remarks>
 [Trait("Category", "Architecture")]
 public sealed class ArchiveIsolationTests
@@ -22,7 +20,7 @@ public sealed class ArchiveIsolationTests
     [Theory]
     [InlineData("services/api/src")]
     [InlineData("services/api/tests")]
-    public void No_source_file_references_the_archive_outside_a_provenance_header(string relativePath)
+    public void No_source_file_references_the_archive(string relativePath)
     {
         var offenders = new List<string>();
 
@@ -38,20 +36,11 @@ public sealed class ArchiveIsolationTests
                     continue;
                 }
 
-                // A provenance header names where a file was copied FROM. That is a record, not a
-                // reference — it compiles to nothing (ARCHITECTURE §8).
-                var trimmed = line.TrimStart();
-                if (trimmed.StartsWith("//", StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
                 offenders.Add($"{file.Name} line {lineNumber}");
             }
         }
 
         offenders.Should().BeEmpty(
-            "nothing outside archive/ may import from inside it (ADR-0013 D4). Copy what you need " +
-            "out of the archive; never depend on it");
+            "nothing outside archive/ may import from inside it (ADR-0013 D4)");
     }
 }

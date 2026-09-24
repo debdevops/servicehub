@@ -4,8 +4,7 @@ import { entriesInGroup, hrefOf, type NavEntry } from '../nav/navigation'
 /**
  * The application frame: a 56px header, one 260px sidebar, content, and a footer.
  *
- * One sidebar, deliberately. 4.0.0 had an icon rail, a Quick Access panel, a Namespaces panel and a
- * workspace toolbar — four navigation surfaces that drifted apart from each other.
+ * One sidebar, deliberately. Several navigation surfaces would drift apart from each other.
  *
  * Every entry here comes from the navigation array (ARCHITECTURE §4.5). Nothing is hard-coded, so
  * the sidebar and the router cannot disagree.

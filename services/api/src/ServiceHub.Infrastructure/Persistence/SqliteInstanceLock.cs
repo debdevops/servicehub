@@ -1,16 +1,11 @@
-// Ported from ServiceHub 4.0.0
-//   source: archive/servicehub-4.0.0/services/api/src/ServiceHub.Infrastructure/Persistence/SqliteInstanceLock.cs
-//   copied: 2026-09-24 for unit 1.1
-//   changes: data directory now comes from ServiceHubDataDirectory (ServiceHub:DataDirectory, default ./data) instead of DlqDatabase:DataDirectory under AppContext.BaseDirectory; message names the new key
-
 using Microsoft.Extensions.Configuration;
 
 namespace ServiceHub.Infrastructure.Persistence;
 
 /// <summary>
 /// Enforces the single-writer assumption <see cref="RecoveryLedger.RecoveryLedgerService"/>'s
-/// hash chain depends on (roadmap W1.4). The chain is sequenced with an in-process,
-/// per-owner <c>SemaphoreSlim</c> — a real guarantee inside one process, but nothing previously
+/// hash chain depends on. The chain is sequenced with an in-process,
+/// per-owner <c>SemaphoreSlim</c> — a real guarantee inside one process, but nothing
 /// stopped a second process from opening the same SQLite file and silently corrupting the chain.
 /// Taking an OS-level exclusive lock on a marker file in the data directory turns that unguarded
 /// assumption into an enforced invariant: a second instance against the same directory fails

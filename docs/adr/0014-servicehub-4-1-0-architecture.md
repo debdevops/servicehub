@@ -54,18 +54,9 @@ This is the opposite of "copy it all and prune later", which is the fork-then-de
 ADR-0012 already rejected for the frontend: the pruning pass never finishes, and the old model
 survives by inertia.
 
-**Every copied file carries a provenance header**, so the difference between copied and written code
-is mechanically auditable and a copy can be re-diffed against its source later:
-
-```csharp
-// Ported from ServiceHub 4.0.0
-//   source: archive/servicehub-4.0.0/services/api/src/ServiceHub.Infrastructure/RecoveryLedger/RecoveryHashChain.cs
-//   copied: 2026-09-21 for unit W2.4
-//   changes: namespace only
-```
-
-`.github/scripts/verify-ported-files.sh` re-derives every `changes: namespace only` file from its
-source and fails CI if the two have drifted apart without the header saying so.
+**A copied file is simply 4.1.0 code.** It carries no marker, header or provenance record: once
+copied it belongs to the new tree and is maintained there, while 4.0.0 stays frozen in `archive/`.
+Nothing outside `archive/` may reference it (`ArchiveIsolationTests`).
 
 ### D3 — The new product owns the repository root; the archive is not served
 
@@ -210,9 +201,7 @@ wave gate in `docs-private/servicehub-4.1.0/PLAN.md` requires real cloud traffic
    rewrite — measured by the ratio of copied to written lines, and by whether the controller count
    passes 20.
 2. **If a copied test has to be edited to pass**, behaviour changed silently (R11).
-3. **If the provenance headers drift from reality**, the copied/written distinction is decoration;
-   `verify-ported-files.sh` failing is the early warning.
-4. **If the Agents screen ever lists an agent that does not run in that build**, D7 has been
+3. **If the Agents screen ever lists an agent that does not run in that build**, D7 has been
    inverted into the thing it exists to prevent.
 5. **If anything outside `archive/` imports from inside it**, the parts bin has become a dependency
    and the freeze is load-bearing for the new product.

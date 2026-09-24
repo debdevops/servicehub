@@ -4,8 +4,6 @@
     ServiceHub.Providers.Aws — one cloud's adapter, a peer of the other two (ADR-0014 D5).
     Depends on Core and on its own cloud SDK. NEVER on ServiceHub.Infrastructure, and never on
     another provider. Adding a fourth cloud is a project like this one plus one registration line.
-
-    The adapter itself is copied from the archive at unit 1.3 / 1.4 / 1.5 (PORTING-MAP P17-P19).
   -->
 
   <ItemGroup>

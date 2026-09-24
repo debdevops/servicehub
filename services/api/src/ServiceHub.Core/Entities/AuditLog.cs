@@ -1,8 +1,3 @@
-// Ported from ServiceHub 4.0.0
-//   source: archive/servicehub-4.0.0/services/api/src/ServiceHub.Core/Entities/AuditLog.cs
-//   copied: 2026-09-24 for unit 1.1
-//   changes: none
-
 namespace ServiceHub.Core.Entities;
 
 /// <summary>

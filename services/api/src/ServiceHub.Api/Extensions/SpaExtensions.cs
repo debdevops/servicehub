@@ -2,9 +2,7 @@ namespace ServiceHub.Api.Extensions;
 
 /// <summary>Serves the built SPA from <c>wwwroot</c>.</summary>
 /// <remarks>
-/// One application, at the origin root, with no prefix. 4.0.0's plan mounted a second app under
-/// <c>/new</c> and then had a cutover wave to undo it; ADR-0014 D3 removed both by not serving the
-/// archive at all.
+/// One application, at the origin root, with no prefix. There is no second app to mount and no cutover.
 /// </remarks>
 public static class SpaExtensions
 {

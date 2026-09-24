@@ -1,8 +1,3 @@
-// Ported from ServiceHub 4.0.0
-//   source: archive/servicehub-4.0.0/services/api/src/ServiceHub.Core/Models/RecoveryActor.cs
-//   copied: 2026-09-21 for unit 0.5
-//   changes: none
-
 using ServiceHub.Core.Enums;
 
 namespace ServiceHub.Core.Models;

@@ -4,6 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ServiceHub.Core.Interfaces;
+using ServiceHub.Infrastructure.Security;
 
 namespace ServiceHub.Infrastructure.Persistence;
 
@@ -41,13 +43,21 @@ public static class PersistenceServiceCollectionExtensions
             options.UseSqlite(
                 $"Data Source={ServiceHubDataDirectory.ResolveDatabasePath(configuration)}",
                 sqlite => sqlite.CommandTimeout(commandTimeoutSeconds));
-            options.AddInterceptors(new SqlitePragmaConnectionInterceptor(busyTimeoutMilliseconds));
+            options.AddInterceptors(
+                new SqlitePragmaConnectionInterceptor(busyTimeoutMilliseconds),
+                new ConnectionStringEncryptionInterceptor(serviceProvider.GetRequiredService<IConnectionStringProtector>()));
 
             if (serviceProvider.GetService<IHostEnvironment>()?.IsDevelopment() == true)
             {
                 options.EnableDetailedErrors();
             }
         });
+
+        // One protector for the process: it owns the key registry, which is validated once at
+        // startup (a bad registry is fatal then, never on first use).
+        services.TryAddSingleton<IConnectionStringProtector, ConnectionStringProtector>();
+
+        services.TryAddScoped<INamespaceRepository, NamespaceRepository>();
 
         // Single-instance invariant (ADR-0003). Singleton, so the OS file lock is held for the
         // process lifetime and released by the container on shutdown.
@@ -95,7 +105,7 @@ public static class PersistenceServiceCollectionExtensions
         logger.LogInformation("ServiceHub database ready at {DatabasePath}", dbPath);
     }
 
-    // ADR-0015 D4: 4.1.0 does not open a 4.0.0 file and does not try to be clever about it. A file
+    // ADR-0015 D4: ServiceHub only opens a database it created itself, and does not try to be clever about it. A file
     // that already holds tables ServiceHub did not migrate itself, or a migration this build has
     // never heard of, means "not ours" — refuse, in words that say what to do.
     private static async Task EnsureSchemaIsRecognisedAsync(
@@ -143,6 +153,6 @@ public static class PersistenceServiceCollectionExtensions
     private static InvalidOperationException NotRecognised(string dbPath, string reason) =>
         new(
             $"The database at '{dbPath}' is not a ServiceHub 4.1.0 database: {reason}. " +
-            "ServiceHub 4.1.0 starts from a fresh schema and cannot open a 4.0.0 database (ADR-0015). " +
-            "Point ServiceHub:DataDirectory at an empty directory to start clean, or keep running 4.0.0 against this one.");
+            "ServiceHub starts from a fresh schema and cannot open a database created by another application or version (ADR-0015). " +
+            "Point ServiceHub:DataDirectory at an empty directory to start clean.");
 }

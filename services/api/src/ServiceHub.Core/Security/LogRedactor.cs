@@ -1,0 +1,270 @@
+using System.Text.RegularExpressions;
+
+namespace ServiceHub.Core.Security;
+
+/// <summary>
+/// Provides log redaction capabilities to prevent sensitive data from being logged.
+/// Uses pattern matching to identify and mask secrets like connection strings, keys, and tokens.
+/// </summary>
+public static partial class LogRedactor
+{
+    private const string MaskedValue = "***REDACTED***";
+    private const string PartialMaskedValue = "***...***";
+
+    /// <summary>
+    /// Redacts sensitive information from a string value.
+    /// </summary>
+    /// <param name="value">The value to redact.</param>
+    /// <returns>The redacted value with sensitive data masked.</returns>
+    public static string Redact(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        var result = value;
+
+        // Redact SharedAccessKey values
+        result = SharedAccessKeyRegex().Replace(result, $"SharedAccessKey={MaskedValue}");
+
+        // Redact SharedAccessSignature values
+        result = SharedAccessSignatureRegex().Replace(result, $"SharedAccessSignature={MaskedValue}");
+
+        // Redact AccountKey values (Azure Storage)
+        result = AccountKeyRegex().Replace(result, $"AccountKey={MaskedValue}");
+
+        // Redact password patterns
+        result = PasswordRegex().Replace(result, $"$1={MaskedValue}");
+
+        // Redact connection string endpoints (partial - keep domain)
+        result = EndpointRegex().Replace(result, m =>
+        {
+            var endpoint = m.Groups[1].Value;
+            // Keep the domain but mask the protocol/port details
+            if (Uri.TryCreate(endpoint, UriKind.Absolute, out var uri))
+            {
+                return $"Endpoint={uri.Scheme}://{uri.Host}/***";
+            }
+            return $"Endpoint={PartialMaskedValue}";
+        });
+
+        // Redact API keys (common patterns)
+        result = ApiKeyRegex().Replace(result, $"$1{MaskedValue}");
+
+        // Redact Bearer tokens
+        result = BearerTokenRegex().Replace(result, $"Bearer {MaskedValue}");
+
+        // Redact encrypted values (current versioned format)
+        result = EncryptedValueV1Regex().Replace(result, "[ENCRYPTED:v1]");
+
+        // Redact encrypted values (legacy V2 format)
+        result = EncryptedValueV2Regex().Replace(result, "[ENCRYPTED:V2]");
+
+        // Redact Base64-encoded protected values (legacy format)
+        result = LegacyProtectedRegex().Replace(result, "[PROTECTED]");
+
+        // Redact Authorization headers (in case full headers are logged)
+        result = AuthorizationHeaderRegex().Replace(result, "Authorization: [REDACTED]");
+
+        // Redact X-API-Key headers
+        result = ApiKeyHeaderRegex().Replace(result, "X-API-Key: [REDACTED]");
+
+        // Redact AWS access key IDs (AKIA long-term, ASIA temporary/STS-issued)
+        result = AwsAccessKeyIdRegex().Replace(result, MaskedValue);
+
+        // Redact AWS secret access keys / session tokens — key=value and JSON "key": "value" forms
+        result = AwsCredentialFieldRegex().Replace(result, $"$1={MaskedValue}");
+
+        // Redact GCP service-account JSON private key fields
+        result = GcpPrivateKeyFieldRegex().Replace(result, $"\"private_key\": \"{MaskedValue}\"");
+        result = GcpPrivateKeyIdFieldRegex().Replace(result, $"\"private_key_id\": \"{MaskedValue}\"");
+
+        // Redact raw PEM private-key blocks outside JSON (defense in depth)
+        result = PemPrivateKeyBlockRegex().Replace(result, "[PRIVATE KEY REDACTED]");
+
+        // Redact Slack/Teams incoming-webhook URLs — the URL itself is a bearer secret
+        result = SlackWebhookRegex().Replace(result, "[SLACK_WEBHOOK_REDACTED]");
+        result = TeamsWebhookRegex().Replace(result, "[TEAMS_WEBHOOK_REDACTED]");
+
+        return result;
+    }
+
+    /// <summary>
+    /// Sanitises a string value for safe inclusion in log messages.
+    /// Removes newline characters and other control characters that could be used
+    /// for log injection attacks (CodeQL: cs/log-forging).
+    /// </summary>
+    /// <param name="value">The value to sanitise.</param>
+    /// <returns>The sanitised value with control characters removed.</returns>
+    public static string SanitiseForLog(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        // Remove characters that could forge new log entries or break log structure.
+        // \r \n \t are the primary log injection vectors.
+        // Control characters (< \u0020, excluding space) are also stripped.
+        return ControlCharRegex().Replace(value, string.Empty);
+    }
+
+    /// <summary>
+    /// Sanitises a long value for safe inclusion in log messages.
+    /// Long integers cannot contain injection characters — this overload exists
+    /// to avoid unnecessary boxing and to be explicit about numeric safety.
+    /// </summary>
+    /// <param name="value">The value to sanitise.</param>
+    /// <returns>The string representation of the value.</returns>
+    public static string SanitiseForLog(long value) => value.ToString();
+
+    /// <summary>
+    /// Sanitises a nullable <see cref="Guid"/> value for safe inclusion in log messages.
+    /// Guids cannot contain injection characters — this overload exists to be explicit
+    /// about that safety and keep CodeQL's log-forging check satisfied at call sites that
+    /// log a request-derived namespace/entity id.
+    /// </summary>
+    /// <param name="value">The value to sanitise.</param>
+    /// <returns>The string representation of the value, or an empty string when null.</returns>
+    public static string SanitiseForLog(Guid? value) => value?.ToString() ?? string.Empty;
+
+    /// <summary>
+    /// Redacts sensitive information from an object for logging.
+    /// Handles common types including strings, exceptions, and dictionaries.
+    /// </summary>
+    /// <param name="value">The value to redact.</param>
+    /// <returns>A redacted representation suitable for logging.</returns>
+    public static object? RedactForLogging(object? value)
+    {
+        return value switch
+        {
+            null => null,
+            string s => Redact(s),
+            Exception ex => RedactException(ex),
+            IDictionary<string, object> dict => RedactDictionary(dict),
+            _ => value
+        };
+    }
+
+    /// <summary>
+    /// Creates a redacted version of an exception message.
+    /// </summary>
+    private static string RedactException(Exception ex)
+    {
+        var message = Redact(ex.Message);
+        if (ex.InnerException != null)
+        {
+            message += $" -> {Redact(ex.InnerException.Message)}";
+        }
+        return message;
+    }
+
+    /// <summary>
+    /// Creates a redacted copy of a dictionary.
+    /// </summary>
+    private static IDictionary<string, object> RedactDictionary(IDictionary<string, object> dict)
+    {
+        var result = new Dictionary<string, object>(dict.Count);
+        foreach (var kvp in dict)
+        {
+            // Check if key suggests sensitive data
+            var key = kvp.Key.ToLowerInvariant();
+            if (IsSensitiveKey(key))
+            {
+                result[kvp.Key] = MaskedValue;
+            }
+            else if (kvp.Value is string s)
+            {
+                result[kvp.Key] = Redact(s);
+            }
+            else
+            {
+                result[kvp.Key] = kvp.Value;
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Determines if a key name suggests sensitive data.
+    /// </summary>
+    private static bool IsSensitiveKey(string key)
+    {
+        return key.Contains("password", StringComparison.OrdinalIgnoreCase) ||
+               key.Contains("secret", StringComparison.OrdinalIgnoreCase) ||
+               key.Contains("key", StringComparison.OrdinalIgnoreCase) ||
+               key.Contains("token", StringComparison.OrdinalIgnoreCase) ||
+               key.Contains("credential", StringComparison.OrdinalIgnoreCase) ||
+               key.Contains("connectionstring", StringComparison.OrdinalIgnoreCase) ||
+               key.Contains("apikey", StringComparison.OrdinalIgnoreCase);
+    }
+
+    // Regex patterns for sensitive data detection
+
+    [GeneratedRegex(@"SharedAccessKey=[^;]+", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex SharedAccessKeyRegex();
+
+    [GeneratedRegex(@"SharedAccessSignature=[^;]+", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex SharedAccessSignatureRegex();
+
+    [GeneratedRegex(@"AccountKey=[^;]+", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex AccountKeyRegex();
+
+    [GeneratedRegex(@"(password|pwd|passwd)=[^;]+", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex PasswordRegex();
+
+    [GeneratedRegex(@"Endpoint=([^;]+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex EndpointRegex();
+
+    [GeneratedRegex(@"(api[_-]?key|apikey|x-api-key)[=:\s]+\S+", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex ApiKeyRegex();
+
+    [GeneratedRegex(@"Bearer\s+[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+", RegexOptions.Compiled)]
+    private static partial Regex BearerTokenRegex();
+
+    [GeneratedRegex(@"ENC\[v1\]:[A-Za-z0-9+/=]+", RegexOptions.Compiled)]
+    private static partial Regex EncryptedValueV1Regex();
+
+    [GeneratedRegex(@"ENC:V2:[A-Za-z0-9+/=]+", RegexOptions.Compiled)]
+    private static partial Regex EncryptedValueV2Regex();
+
+    [GeneratedRegex(@"PROTECTED:[A-Za-z0-9+/=]+", RegexOptions.Compiled)]
+    private static partial Regex LegacyProtectedRegex();
+
+    [GeneratedRegex(@"Authorization:\s*[^\r\n]+", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex AuthorizationHeaderRegex();
+
+    [GeneratedRegex(@"X-API-Key:\s*[^\r\n]+", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex ApiKeyHeaderRegex();
+
+    // ── AWS credential patterns ──────────────────────────────────────
+
+    [GeneratedRegex(@"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b", RegexOptions.Compiled)]
+    private static partial Regex AwsAccessKeyIdRegex();
+
+    [GeneratedRegex(@"(aws_secret_access_key|aws_session_token)""?\s*[:=]\s*""?[^""\r\n,;}]+""?", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex AwsCredentialFieldRegex();
+
+    // ── GCP service-account credential patterns ──────────────────────
+
+    [GeneratedRegex(@"""private_key""\s*:\s*""[^""]*""", RegexOptions.Compiled)]
+    private static partial Regex GcpPrivateKeyFieldRegex();
+
+    [GeneratedRegex(@"""private_key_id""\s*:\s*""[^""]*""", RegexOptions.Compiled)]
+    private static partial Regex GcpPrivateKeyIdFieldRegex();
+
+    [GeneratedRegex(@"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----", RegexOptions.Compiled)]
+    private static partial Regex PemPrivateKeyBlockRegex();
+
+    // ── Webhook URL patterns (the URL itself is a bearer secret) ─────
+
+    [GeneratedRegex(@"https://hooks\.slack\.com/services/\S+", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex SlackWebhookRegex();
+
+    [GeneratedRegex(@"https://(?:outlook\.office\.com/webhook|[a-z0-9-]+\.webhook\.office\.com/webhookb2)/\S+", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex TeamsWebhookRegex();
+
+    [GeneratedRegex(@"[\x00-\x1F\x7F]", RegexOptions.Compiled)]
+    private static partial Regex ControlCharRegex();
+}

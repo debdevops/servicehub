@@ -1,8 +1,7 @@
 # ServiceHub 4.1.0 — one image, one process, one origin.
 #
-# The image contains ONLY 4.1.0. archive/servicehub-4.0.0/ is excluded in .dockerignore and is
-# never present in any layer: 4.0.0 is a separate, frozen stack with its own Dockerfile, published
-# only under v4.0.x tags (ADR-0013 D6, ADR-0014 D3).
+# The archive folder is excluded in .dockerignore and is never present in any layer
+# (ADR-0013 D6, ADR-0014 D3).
 
 # ── 1. The SPA ──────────────────────────────────────────────────────────────────────────────────
 FROM node:22-alpine AS web

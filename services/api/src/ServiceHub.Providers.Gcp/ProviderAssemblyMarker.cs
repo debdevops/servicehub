@@ -8,8 +8,8 @@ namespace ServiceHub.Providers.Gcp;
 /// is not allowed to guess.
 /// </summary>
 /// <remarks>
-/// The adapter itself — connection factory, receiver, sender, health check — is copied from the
-/// archive at unit 1.5 (PORTING-MAP P19). Until then this type exists so the project is
+/// The adapter itself — connection factory, receiver, sender, health check — arrives with
+/// unit 1.5. Until then this type exists so the project is
 /// real, so <c>DependencyDirectionTests</c> has an assembly to check, and so the boundary is in
 /// place before there is any code to put on the wrong side of it.
 /// </remarks>

@@ -1,0 +1,110 @@
+using ServiceHub.Core.DTOs.Requests;
+using ServiceHub.Core.Entities;
+using ServiceHub.Core.Results;
+
+namespace ServiceHub.Core.Interfaces;
+
+/// <summary>
+/// Interface for receiving/peeking messages from Azure Service Bus queues and subscriptions.
+/// </summary>
+public interface IMessageReceiver
+{
+    /// <summary>
+    /// Peeks messages from a queue or subscription without removing them.
+    /// </summary>
+    /// <param name="request">The get messages request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A result containing the peeked messages.</returns>
+    Task<Result<IReadOnlyList<Message>>> PeekMessagesAsync(GetMessagesRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Peeks messages from the dead-letter queue.
+    /// </summary>
+    /// <param name="request">The get messages request with FromDeadLetter set to true.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A result containing the peeked dead-letter messages.</returns>
+    Task<Result<IReadOnlyList<Message>>> PeekDeadLetterMessagesAsync(GetMessagesRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the count of messages in a queue or subscription.
+    /// </summary>
+    /// <param name="namespaceId">The namespace identifier.</param>
+    /// <param name="entityName">The queue or topic name.</param>
+    /// <param name="subscriptionName">Optional subscription name for topics.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A result containing the message count.</returns>
+    Task<Result<long>> GetMessageCountAsync(
+        Guid namespaceId,
+        string entityName,
+        string? subscriptionName = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Receives a message and moves it to the dead-letter queue.
+    /// This is used for testing DLQ functionality.
+    /// </summary>
+    /// <param name="request">The dead-letter request containing namespace, entity, and reason.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A result indicating success or failure.</returns>
+    Task<Result<int>> DeadLetterMessagesAsync(DeadLetterRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Replays a message from the dead-letter queue back to the main queue.
+    /// </summary>
+    /// <param name="namespaceId">The namespace identifier.</param>
+    /// <param name="entityName">The queue or topic name.</param>
+    /// <param name="subscriptionName">Optional subscription name for topics.</param>
+    /// <param name="sequenceNumber">The sequence number of the message to replay.</param>
+    /// <param name="recoveryMarker">
+    /// The <c>x-servicehub-recovery-id</c> value to stamp onto the replayed message, or null to
+    /// skip stamping.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>
+    /// A result indicating success or failure. On success, the value is whether
+    /// <paramref name="recoveryMarker"/> was actually applied to the replayed message.
+    /// </returns>
+    Task<Result<bool>> ReplayMessageAsync(
+        Guid namespaceId,
+        string entityName,
+        string? subscriptionName,
+        long sequenceNumber,
+        string? recoveryMarker,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Purges (permanently deletes) a message.
+    /// </summary>
+    /// <param name="namespaceId">The namespace identifier.</param>
+    /// <param name="entityName">The queue or topic name.</param>
+    /// <param name="subscriptionName">Optional subscription name for topics.</param>
+    /// <param name="sequenceNumber">The sequence number of the message to purge.</param>
+    /// <param name="fromDeadLetter">Whether to purge from the dead-letter queue.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A result indicating success or failure.</returns>
+    Task<Result> PurgeMessageAsync(
+        Guid namespaceId,
+        string entityName,
+        string? subscriptionName,
+        long sequenceNumber,
+        bool fromDeadLetter,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets scheduled messages from a queue or subscription by scanning beyond the active message window.
+    /// Unlike PeekMessagesAsync, this method is optimised for finding scheduled messages even when
+    /// there are many active messages with lower sequence numbers.
+    /// </summary>
+    /// <param name="namespaceId">The namespace identifier.</param>
+    /// <param name="entityName">The queue or topic name.</param>
+    /// <param name="subscriptionName">Optional subscription name for topics.</param>
+    /// <param name="maxMessages">Maximum number of scheduled messages to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A result containing the list of scheduled messages.</returns>
+    Task<Result<IReadOnlyList<Message>>> GetScheduledMessagesAsync(
+        Guid namespaceId,
+        string entityName,
+        string? subscriptionName,
+        int maxMessages,
+        CancellationToken cancellationToken = default);
+}

@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
 # ServiceHub 4.1.0 — the test suites.
 #
-# ⚠️  This script does NOT type-check the frontend. That caught people out repeatedly in 4.0.0:
-#     the local suites were green while CI was red. Run `npm run typecheck` too — or use --all,
-#     which does everything CI does.
-#
-# ServiceHub 4.0.0 has its own suite: cd archive/servicehub-4.0.0 && ./runtest.sh
+# ⚠️  This script does NOT type-check the frontend, so local suites can be green while CI is red.
+#     Run `npm run typecheck` too — or use --all, which does everything CI does.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -55,9 +52,6 @@ if [ "$MODE" = "--all" ]; then
 
   step "Frontend lint"
   npm run lint -w apps/servicehub
-
-  step "Ported-file provenance"
-  ./.github/scripts/verify-ported-files.sh
 
   step "Roadmap board vs task cards"
   ./.github/scripts/verify-roadmap.sh

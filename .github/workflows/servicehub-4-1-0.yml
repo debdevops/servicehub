@@ -113,11 +113,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Keeps the copied/written distinction mechanically true (ADR-0014 D2). A file claiming
-      # `changes: namespace only` is re-derived from its source in archive/ and diffed.
-      - name: Verify provenance headers
-        run: ./.github/scripts/verify-ported-files.sh
-
       # ROADMAP.md is what the next session executes from. If its board and TASKS.md's cards drift
       # apart, "what do I do next?" stops having a reliable answer.
       # docs-private/ is git-ignored on purpose, so the plan never reaches a CI checkout. The guard

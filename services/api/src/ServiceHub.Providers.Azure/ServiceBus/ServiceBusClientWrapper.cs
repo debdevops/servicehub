@@ -1,0 +1,1963 @@
+using System.Text.Json;
+using Azure.Messaging.ServiceBus;
+using Azure.Messaging.ServiceBus.Administration;
+using Microsoft.Extensions.Logging;
+using ServiceHub.Core.DTOs.Requests;
+using ServiceHub.Core.DTOs.Responses;
+using ServiceHub.Core.Entities;
+using ServiceHub.Core.Enums;
+using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Security;
+using ServiceHub.Core.Constants;
+using ServiceHub.Core.Results;
+
+namespace ServiceHub.Providers.Azure.ServiceBus;
+
+/// <summary>
+/// Wrapper around Azure Service Bus client providing high-level operations.
+/// </summary>
+public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
+{
+    private readonly ServiceBusClient _client;
+    private readonly string _connectionString;
+    private readonly ILogger<ServiceBusClientWrapper> _logger;
+    private volatile bool _disposed;
+
+    // CRITICAL FIX: Cache admin client to prevent per-request creation and socket exhaustion
+    private ServiceBusAdministrationClient? _adminClient;
+    private readonly SemaphoreSlim _adminClientLock = new(1, 1);
+
+    /// <inheritdoc/>
+    public Guid NamespaceId { get; }
+
+    /// <inheritdoc/>
+    public bool IsClosed => _client.IsClosed;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ServiceBusClientWrapper"/> class.
+    /// </summary>
+    /// <param name="namespaceId">The namespace identifier.</param>
+    /// <param name="client">The underlying Service Bus client.</param>
+    /// <param name="connectionString">The connection string for creating the admin client.</param>
+    /// <param name="logger">The logger instance.</param>
+    public ServiceBusClientWrapper(
+        Guid namespaceId,
+        ServiceBusClient client,
+        string connectionString,
+        ILogger<ServiceBusClientWrapper> logger)
+    {
+        NamespaceId = namespaceId;
+        _client = client ?? throw new ArgumentNullException(nameof(client));
+        _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result> SendMessageAsync(SendMessageRequest request, CancellationToken cancellationToken = default)
+    {
+        if (_disposed || _client.IsClosed)
+        {
+            return Result.Failure(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The Service Bus client has been disposed or closed."));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.EntityName))
+        {
+            return Result.Failure(Error.Validation(
+                ErrorCodes.Message.QueueNameRequired,
+                "Queue or topic name is required."));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Body))
+        {
+            return Result.Failure(Error.Validation(
+                ErrorCodes.Message.BodyRequired,
+                "Message body is required."));
+        }
+
+        ServiceBusSender? sender = null;
+        try
+        {
+            sender = _client.CreateSender(request.EntityName);
+            var message = CreateServiceBusMessage(request);
+
+            // When a future scheduled enqueue time is requested, use ScheduleMessageAsync so
+            // the message appears as State=Scheduled in PeekMessages (SendMessageAsync with
+            // ScheduledEnqueueTime uses a different AMQP path that is invisible to peek).
+            if (request.ScheduledEnqueueTimeUtc.HasValue && request.ScheduledEnqueueTimeUtc.Value > DateTimeOffset.UtcNow)
+            {
+                await sender.ScheduleMessageAsync(message, request.ScheduledEnqueueTimeUtc.Value, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await sender.SendMessageAsync(message, cancellationToken).ConfigureAwait(false);
+            }
+
+            _logger.LogDebug(
+                "Message sent to {EntityName} in namespace {NamespaceId}",
+                LogRedactor.SanitiseForLog(request.EntityName),
+                NamespaceId);
+
+            return Result.Success();
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            _logger.LogWarning(ex,
+                "Entity {EntityName} not found in namespace {NamespaceId}",
+                LogRedactor.SanitiseForLog(request.EntityName),
+                NamespaceId);
+
+            return Result.Failure(Error.NotFound(
+                ErrorCodes.Queue.NotFound,
+                $"The queue or topic '{request.EntityName}' was not found."));
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessageSizeExceeded)
+        {
+            _logger.LogWarning(ex,
+                "Message size exceeded for entity {EntityName}",
+                LogRedactor.SanitiseForLog(request.EntityName));
+
+            return Result.Failure(Error.Validation(
+                ErrorCodes.Message.BodyTooLarge,
+                "The message body exceeds the maximum allowed size."));
+        }
+        catch (ServiceBusException ex)
+        {
+            _logger.LogError(ex,
+                "Service Bus error sending message to {EntityName}",
+                LogRedactor.SanitiseForLog(request.EntityName));
+
+            return Result.Failure(Error.ExternalService(
+                ErrorCodes.Message.SendFailed,
+                $"Failed to send message: {ex.Reason}"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Unexpected error sending message to {EntityName}",
+                LogRedactor.SanitiseForLog(request.EntityName));
+
+            return Result.Failure(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                "An unexpected error occurred while sending the message."));
+        }
+        finally
+        {
+            if (sender != null)
+            {
+                await sender.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<IReadOnlyList<Message>>> PeekMessagesAsync(
+        GetMessagesRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (_disposed || _client.IsClosed)
+        {
+            return Result.Failure<IReadOnlyList<Message>>(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The Service Bus client has been disposed or closed."));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.EntityName))
+        {
+            return Result.Failure<IReadOnlyList<Message>>(Error.Validation(
+                ErrorCodes.Message.QueueNameRequired,
+                "Queue or topic name is required."));
+        }
+
+        var maxMessages = Math.Clamp(request.MaxMessages, GetMessagesRequest.MinAllowedMessages, GetMessagesRequest.MaxAllowedMessages);
+
+        ServiceBusReceiver? receiver = null;
+        try
+        {
+            var entityPath = BuildEntityPath(request.EntityName, request.SubscriptionName, request.FromDeadLetter);
+            receiver = CreateReceiver(request.EntityName, request.SubscriptionName, request.FromDeadLetter);
+
+            IReadOnlyList<ServiceBusReceivedMessage> peekedMessages;
+
+            if (request.FromSequenceNumber.HasValue)
+            {
+                peekedMessages = await receiver
+                    .PeekMessagesAsync(maxMessages, request.FromSequenceNumber.Value, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                peekedMessages = await receiver
+                    .PeekMessagesAsync(maxMessages, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            var messages = peekedMessages
+                .Select(m => MapToMessage(m, request))
+                .ToList();
+
+            _logger.LogDebug(
+                "Peeked {Count} messages from {EntityPath} in namespace {NamespaceId}",
+                messages.Count,
+                LogRedactor.SanitiseForLog(entityPath),
+                NamespaceId);
+
+            return Result.Success<IReadOnlyList<Message>>(messages);
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            // Entity-not-found is an expected operational state — log without exception object
+            // so Application Insights does not track it as exception telemetry.
+            _logger.LogWarning(
+                "Entity {EntityName} not found in namespace {NamespaceId}",
+                LogRedactor.SanitiseForLog(request.EntityName),
+                NamespaceId);
+
+            return Result.Failure<IReadOnlyList<Message>>(Error.NotFound(
+                ErrorCodes.Queue.NotFound,
+                $"The queue, topic, or subscription '{request.EntityName}' was not found."));
+        }
+        catch (OperationCanceledException)
+        {
+            // Client navigated away — expected when the browser tab closes or route changes.
+            _logger.LogInformation(
+                "PeekMessagesAsync cancelled for {EntityName} in namespace {NamespaceId}",
+                LogRedactor.SanitiseForLog(request.EntityName),
+                NamespaceId);
+
+            return Result.Failure<IReadOnlyList<Message>>(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The operation was cancelled."));
+        }
+        catch (ServiceBusException ex)
+        {
+            if (IsNetworkConnectivityFailure(ex))
+            {
+                _logger.LogWarning(
+                    "Network connectivity failure peeking messages from {EntityName} in namespace {NamespaceId}: {Reason}",
+                    LogRedactor.SanitiseForLog(request.EntityName),
+                    NamespaceId, ex.Reason);
+            }
+            else
+            {
+                _logger.LogError(ex,
+                    "Service Bus error peeking messages from {EntityName}",
+                    LogRedactor.SanitiseForLog(request.EntityName));
+            }
+
+            return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(
+                ErrorCodes.Message.ReceiveFailed,
+                $"Failed to peek messages: {ex.Reason}"));
+        }
+        catch (Exception ex)
+        {
+            if (IsNetworkConnectivityFailure(ex))
+            {
+                _logger.LogWarning(
+                    "Network connectivity failure peeking messages from {EntityName} in namespace {NamespaceId}: {Message}",
+                    LogRedactor.SanitiseForLog(request.EntityName),
+                    NamespaceId, ex.Message);
+            }
+            else
+            {
+                _logger.LogError(ex,
+                    "Unexpected error peeking messages from {EntityName}",
+                    LogRedactor.SanitiseForLog(request.EntityName));
+            }
+
+            return Result.Failure<IReadOnlyList<Message>>(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                "An unexpected error occurred while peeking messages."));
+        }
+        finally
+        {
+            if (receiver != null)
+            {
+                await receiver.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<bool>> TestConnectionAsync(CancellationToken cancellationToken = default)
+    {
+        if (_disposed || _client.IsClosed)
+        {
+            return Result.Failure<bool>(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The Service Bus client has been disposed or closed."));
+        }
+
+        try
+        {
+            // Make a real network call to verify credentials and connectivity.
+            // GetNamespacePropertiesAsync is the lightest admin operation available.
+            var adminClient = await GetOrCreateAdminClientAsync().ConfigureAwait(false);
+            await adminClient.GetNamespacePropertiesAsync(cancellationToken).ConfigureAwait(false);
+
+            _logger.LogDebug(
+                "Connection test successful for namespace {NamespaceId} ({Namespace})",
+                NamespaceId,
+                _client.FullyQualifiedNamespace);
+
+            return Result.Success(true);
+        }
+        catch (ServiceBusException ex)
+        {
+            _logger.LogWarning(ex,
+                "Connection test failed for namespace {NamespaceId}",
+                NamespaceId);
+
+            return Result.Failure<bool>(Error.ExternalService(
+                ErrorCodes.Namespace.ConnectionFailed,
+                $"Connection test failed: {ex.Reason}"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Connection test failed for namespace {NamespaceId}",
+                NamespaceId);
+
+            return Result.Failure<bool>(Error.ExternalService(
+                ErrorCodes.Namespace.ConnectionFailed,
+                "Unable to connect to the Service Bus namespace. Check that the connection string is valid and the namespace exists."));
+        }
+    }
+
+    /// <summary>
+    /// Gets or creates the cached ServiceBusAdministrationClient.
+    /// CRITICAL FIX: Ensures only ONE admin client per namespace to prevent socket exhaustion.
+    /// </summary>
+    private async ValueTask<ServiceBusAdministrationClient> GetOrCreateAdminClientAsync()
+    {
+        // Fast path: return existing client without locking
+        if (_adminClient != null)
+        {
+            return _adminClient;
+        }
+
+        // Slow path: create client with lock
+        await _adminClientLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            // Double-check after acquiring lock
+            if (_adminClient == null)
+            {
+                _adminClient = new ServiceBusAdministrationClient(_connectionString);
+
+                _logger.LogDebug(
+                    "Created ServiceBusAdministrationClient for namespace {NamespaceId}",
+                    NamespaceId);
+            }
+
+            return _adminClient;
+        }
+        finally
+        {
+            _adminClientLock.Release();
+        }
+    }
+
+    /// <inheritdoc/>
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+
+        try
+        {
+            await _client.DisposeAsync().ConfigureAwait(false);
+            _logger.LogDebug("Disposed ServiceBusClient for namespace {NamespaceId}", NamespaceId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error disposing ServiceBusClient for namespace {NamespaceId}", NamespaceId);
+        }
+
+        // CRITICAL FIX: Dispose admin client to release resources
+        _adminClientLock.Dispose();
+    }
+
+    /// <inheritdoc/>
+    public async Task<int> DeadLetterMessagesAsync(
+        string entityName,
+        string? subscriptionName,
+        int messageCount,
+        string reason,
+        string? errorDescription,
+        CancellationToken cancellationToken = default)
+    {
+        if (_disposed || _client.IsClosed)
+        {
+            _logger.LogWarning("Attempted to dead-letter messages on a disposed client");
+            return 0;
+        }
+
+        ServiceBusReceiver? receiver = null;
+        var deadLetteredCount = 0;
+
+        try
+        {
+            // Create receiver for the entity (queue or subscription)
+            var receiverOptions = new ServiceBusReceiverOptions
+            {
+                ReceiveMode = ServiceBusReceiveMode.PeekLock, // Required for dead-lettering
+            };
+
+            if (!string.IsNullOrEmpty(subscriptionName))
+            {
+                receiver = _client.CreateReceiver(entityName, subscriptionName, receiverOptions);
+            }
+            else
+            {
+                receiver = _client.CreateReceiver(entityName, receiverOptions);
+            }
+
+            // Receive messages and dead-letter them
+            for (var i = 0; i < messageCount; i++)
+            {
+                var message = await receiver.ReceiveMessageAsync(
+                    TimeSpan.FromSeconds(5),
+                    cancellationToken).ConfigureAwait(false);
+
+                if (message == null)
+                {
+                    _logger.LogDebug("No more messages to dead-letter in {EntityName}", LogRedactor.SanitiseForLog(entityName));
+                    break;
+                }
+
+                await receiver.DeadLetterMessageAsync(
+                    message,
+                    reason,
+                    errorDescription ?? $"Manually dead-lettered for testing purposes at {DateTime.UtcNow:O}",
+                    cancellationToken).ConfigureAwait(false);
+
+                deadLetteredCount++;
+
+                _logger.LogDebug(
+                    "Dead-lettered message {MessageId} from {EntityName} with reason: {Reason}",
+                    message.MessageId,
+                    LogRedactor.SanitiseForLog(entityName),
+                    LogRedactor.SanitiseForLog(reason));
+            }
+
+            _logger.LogInformation(
+                "Successfully dead-lettered {Count} messages from {EntityName} in namespace {NamespaceId}",
+                deadLetteredCount,
+                LogRedactor.SanitiseForLog(entityName),
+                NamespaceId);
+
+            return deadLetteredCount;
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            _logger.LogWarning(ex,
+                "Entity {EntityName} not found when attempting to dead-letter messages",
+                LogRedactor.SanitiseForLog(entityName));
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Error dead-lettering messages from {EntityName}",
+                LogRedactor.SanitiseForLog(entityName));
+            throw;
+        }
+        finally
+        {
+            if (receiver != null)
+            {
+                await receiver.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<IReadOnlyList<QueueRuntimePropertiesDto>>> GetQueuesAsync(CancellationToken cancellationToken = default)
+    {
+        if (_disposed || _client.IsClosed)
+        {
+            return Result.Failure<IReadOnlyList<QueueRuntimePropertiesDto>>(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The Service Bus client has been disposed or closed."));
+        }
+
+        try
+        {
+            // CRITICAL FIX: Reuse cached admin client instead of creating new one per request
+            var adminClient = await GetOrCreateAdminClientAsync().ConfigureAwait(false);
+            var queues = new List<QueueRuntimePropertiesDto>();
+
+            await foreach (var queue in adminClient.GetQueuesRuntimePropertiesAsync(cancellationToken))
+            {
+                queues.Add(MapToQueueDto(queue));
+            }
+
+            _logger.LogDebug(
+                "Retrieved {Count} queues from namespace {NamespaceId}",
+                queues.Count,
+                NamespaceId);
+
+            return Result.Success<IReadOnlyList<QueueRuntimePropertiesDto>>(queues);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogDebug("GetQueuesAsync cancelled for namespace {NamespaceId}", NamespaceId);
+            return Result.Failure<IReadOnlyList<QueueRuntimePropertiesDto>>(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The operation was cancelled."));
+        }
+        catch (ServiceBusException ex)
+        {
+            if (IsNetworkConnectivityFailure(ex))
+            {
+                // DNS / TCP failure — the namespace is unreachable.  Log at Warning without the
+                // exception object so Application Insights does not create exception telemetry.
+                _logger.LogWarning(
+                    "Network connectivity failure getting queues for namespace {NamespaceId}: {Reason}",
+                    NamespaceId, ex.Reason);
+            }
+            else
+            {
+                _logger.LogError(ex, "Service Bus error getting queues for namespace {NamespaceId}", NamespaceId);
+            }
+            return Result.Failure<IReadOnlyList<QueueRuntimePropertiesDto>>(Error.ExternalService(
+                ErrorCodes.Queue.ListFailed,
+                $"Failed to list queues: {ex.Reason}"));
+        }
+        catch (Exception ex)
+        {
+            if (IsNetworkConnectivityFailure(ex))
+            {
+                _logger.LogWarning(
+                    "Network connectivity failure getting queues for namespace {NamespaceId}: {Message}",
+                    NamespaceId, ex.Message);
+            }
+            else
+            {
+                _logger.LogError(ex, "Unexpected error getting queues for namespace {NamespaceId}", NamespaceId);
+            }
+            return Result.Failure<IReadOnlyList<QueueRuntimePropertiesDto>>(Error.ExternalService(
+                ErrorCodes.Queue.ListFailed,
+                "An error occurred while connecting to the Service Bus namespace to list queues."));
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<QueueRuntimePropertiesDto>> GetQueueAsync(string queueName, CancellationToken cancellationToken = default)
+    {
+        if (_disposed || _client.IsClosed)
+        {
+            return Result.Failure<QueueRuntimePropertiesDto>(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The Service Bus client has been disposed or closed."));
+        }
+
+        try
+        {
+            // CRITICAL FIX: Reuse cached admin client instead of creating new one per request
+            var adminClient = await GetOrCreateAdminClientAsync().ConfigureAwait(false);
+            var queueResponse = await adminClient.GetQueueRuntimePropertiesAsync(queueName, cancellationToken);
+            var propsResponse = await adminClient.GetQueueAsync(queueName, cancellationToken);
+
+            _logger.LogDebug(
+                "Retrieved queue {QueueName} from namespace {NamespaceId}",
+                LogRedactor.SanitiseForLog(queueName),
+                NamespaceId);
+
+            return Result.Success(MapToQueueDto(queueResponse.Value, propsResponse.Value));
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            _logger.LogWarning(ex, "Queue {QueueName} not found in namespace {NamespaceId}", LogRedactor.SanitiseForLog(queueName), NamespaceId);
+            return Result.Failure<QueueRuntimePropertiesDto>(Error.NotFound(
+                ErrorCodes.Queue.NotFound,
+                $"Queue '{queueName}' was not found."));
+        }
+        catch (ServiceBusException ex)
+        {
+            _logger.LogError(ex, "Service Bus error getting queue {QueueName} for namespace {NamespaceId}", LogRedactor.SanitiseForLog(queueName), NamespaceId);
+            return Result.Failure<QueueRuntimePropertiesDto>(Error.ExternalService(
+                ErrorCodes.Queue.GetFailed,
+                $"Failed to get queue: {ex.Reason}"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error getting queue {QueueName} for namespace {NamespaceId}", LogRedactor.SanitiseForLog(queueName), NamespaceId);
+            return Result.Failure<QueueRuntimePropertiesDto>(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                "An unexpected error occurred while getting queue."));
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<IReadOnlyList<TopicRuntimePropertiesDto>>> GetTopicsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_disposed || _client.IsClosed)
+        {
+            return Result.Failure<IReadOnlyList<TopicRuntimePropertiesDto>>(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The Service Bus client has been disposed or closed."));
+        }
+
+        try
+        {
+            // CRITICAL FIX: Reuse cached admin client instead of creating new one per request
+            var adminClient = await GetOrCreateAdminClientAsync().ConfigureAwait(false);
+            var topics = new List<TopicRuntimePropertiesDto>();
+
+            await foreach (var topic in adminClient.GetTopicsRuntimePropertiesAsync(cancellationToken))
+            {
+                topics.Add(MapToTopicDto(topic));
+            }
+
+            _logger.LogDebug(
+                "Retrieved {Count} topics from namespace {NamespaceId}",
+                topics.Count,
+                NamespaceId);
+
+            return Result.Success<IReadOnlyList<TopicRuntimePropertiesDto>>(topics);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogDebug("GetTopicsAsync cancelled for namespace {NamespaceId}", NamespaceId);
+            return Result.Failure<IReadOnlyList<TopicRuntimePropertiesDto>>(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The operation was cancelled."));
+        }
+        catch (ServiceBusException ex)
+        {
+            if (IsNetworkConnectivityFailure(ex))
+            {
+                _logger.LogWarning(
+                    "Network connectivity failure getting topics for namespace {NamespaceId}: {Reason}",
+                    NamespaceId, ex.Reason);
+            }
+            else
+            {
+                _logger.LogError(ex, "Service Bus error getting topics for namespace {NamespaceId}", NamespaceId);
+            }
+            return Result.Failure<IReadOnlyList<TopicRuntimePropertiesDto>>(Error.ExternalService(
+                ErrorCodes.Topic.ListFailed,
+                $"Failed to list topics: {ex.Reason}"));
+        }
+        catch (Exception ex)
+        {
+            if (IsNetworkConnectivityFailure(ex))
+            {
+                _logger.LogWarning(
+                    "Network connectivity failure getting topics for namespace {NamespaceId}: {Message}",
+                    NamespaceId, ex.Message);
+            }
+            else
+            {
+                _logger.LogError(ex, "Unexpected error getting topics for namespace {NamespaceId}", NamespaceId);
+            }
+            return Result.Failure<IReadOnlyList<TopicRuntimePropertiesDto>>(Error.ExternalService(
+                ErrorCodes.Topic.ListFailed,
+                "An error occurred while connecting to the Service Bus namespace to list topics."));
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<TopicRuntimePropertiesDto>> GetTopicAsync(string topicName, CancellationToken cancellationToken = default)
+    {
+        if (_disposed || _client.IsClosed)
+        {
+            return Result.Failure<TopicRuntimePropertiesDto>(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The Service Bus client has been disposed or closed."));
+        }
+
+        try
+        {
+            // CRITICAL FIX: Reuse cached admin client instead of creating new one per request
+            var adminClient = await GetOrCreateAdminClientAsync().ConfigureAwait(false);
+            var topicResponse = await adminClient.GetTopicRuntimePropertiesAsync(topicName, cancellationToken);
+            var propsResponse = await adminClient.GetTopicAsync(topicName, cancellationToken);
+
+            _logger.LogDebug(
+                "Retrieved topic {TopicName} from namespace {NamespaceId}",
+                LogRedactor.SanitiseForLog(topicName),
+                NamespaceId);
+
+            return Result.Success(MapToTopicDto(topicResponse.Value, propsResponse.Value));
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            _logger.LogWarning(ex, "Topic {TopicName} not found in namespace {NamespaceId}", LogRedactor.SanitiseForLog(topicName), NamespaceId);
+            return Result.Failure<TopicRuntimePropertiesDto>(Error.NotFound(
+                ErrorCodes.Topic.NotFound,
+                $"Topic '{topicName}' was not found."));
+        }
+        catch (ServiceBusException ex)
+        {
+            _logger.LogError(ex, "Service Bus error getting topic {TopicName} for namespace {NamespaceId}", LogRedactor.SanitiseForLog(topicName), NamespaceId);
+            return Result.Failure<TopicRuntimePropertiesDto>(Error.ExternalService(
+                ErrorCodes.Topic.GetFailed,
+                $"Failed to get topic: {ex.Reason}"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error getting topic {TopicName} for namespace {NamespaceId}", LogRedactor.SanitiseForLog(topicName), NamespaceId);
+            return Result.Failure<TopicRuntimePropertiesDto>(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                "An unexpected error occurred while getting topic."));
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<IReadOnlyList<SubscriptionRuntimePropertiesDto>>> GetSubscriptionsAsync(string topicName, CancellationToken cancellationToken = default)
+    {
+        if (_disposed || _client.IsClosed)
+        {
+            return Result.Failure<IReadOnlyList<SubscriptionRuntimePropertiesDto>>(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The Service Bus client has been disposed or closed."));
+        }
+
+        try
+        {
+            // CRITICAL FIX: Reuse cached admin client instead of creating new one per request
+            var adminClient = await GetOrCreateAdminClientAsync().ConfigureAwait(false);
+            var subscriptions = new List<SubscriptionRuntimePropertiesDto>();
+
+            await foreach (var subscription in adminClient.GetSubscriptionsRuntimePropertiesAsync(topicName, cancellationToken))
+            {
+                subscriptions.Add(MapToSubscriptionDto(subscription));
+            }
+
+            _logger.LogDebug(
+                "Retrieved {Count} subscriptions for topic {TopicName} from namespace {NamespaceId}",
+                subscriptions.Count,
+                LogRedactor.SanitiseForLog(topicName),
+                NamespaceId);
+
+            return Result.Success<IReadOnlyList<SubscriptionRuntimePropertiesDto>>(subscriptions);
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            // Entity-not-found is an expected operational state — log without exception object
+            // so Application Insights does not track it as exception telemetry.
+            _logger.LogWarning(
+                "Topic {TopicName} not found in namespace {NamespaceId}",
+                LogRedactor.SanitiseForLog(topicName), NamespaceId);
+            return Result.Failure<IReadOnlyList<SubscriptionRuntimePropertiesDto>>(Error.NotFound(
+                ErrorCodes.Topic.NotFound,
+                $"Topic '{topicName}' was not found."));
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogDebug("GetSubscriptionsAsync cancelled for topic {TopicName} namespace {NamespaceId}", LogRedactor.SanitiseForLog(topicName), NamespaceId);
+            return Result.Failure<IReadOnlyList<SubscriptionRuntimePropertiesDto>>(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The operation was cancelled."));
+        }
+        catch (ServiceBusException ex)
+        {
+            if (IsNetworkConnectivityFailure(ex))
+            {
+                _logger.LogWarning(
+                    "Network connectivity failure getting subscriptions for topic {TopicName} in namespace {NamespaceId}: {Reason}",
+                    LogRedactor.SanitiseForLog(topicName), NamespaceId, ex.Reason);
+            }
+            else
+            {
+                _logger.LogError(ex, "Service Bus error getting subscriptions for topic {TopicName} in namespace {NamespaceId}", LogRedactor.SanitiseForLog(topicName), NamespaceId);
+            }
+            return Result.Failure<IReadOnlyList<SubscriptionRuntimePropertiesDto>>(Error.ExternalService(
+                ErrorCodes.Subscription.ListFailed,
+                $"Failed to list subscriptions: {ex.Reason}"));
+        }
+        catch (Exception ex)
+        {
+            if (IsNetworkConnectivityFailure(ex))
+            {
+                _logger.LogWarning(
+                    "Network connectivity failure getting subscriptions for topic {TopicName} in namespace {NamespaceId}: {Message}",
+                    LogRedactor.SanitiseForLog(topicName), NamespaceId, ex.Message);
+            }
+            else
+            {
+                _logger.LogError(ex, "Unexpected error getting subscriptions for topic {TopicName} in namespace {NamespaceId}", LogRedactor.SanitiseForLog(topicName), NamespaceId);
+            }
+            return Result.Failure<IReadOnlyList<SubscriptionRuntimePropertiesDto>>(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                "An unexpected error occurred while listing subscriptions."));
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<SubscriptionRuntimePropertiesDto>> GetSubscriptionAsync(string topicName, string subscriptionName, CancellationToken cancellationToken = default)
+    {
+        if (_disposed || _client.IsClosed)
+        {
+            return Result.Failure<SubscriptionRuntimePropertiesDto>(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The Service Bus client has been disposed or closed."));
+        }
+
+        try
+        {
+            // CRITICAL FIX: Reuse cached admin client instead of creating new one per request
+            var adminClient = await GetOrCreateAdminClientAsync().ConfigureAwait(false);
+            var subscriptionResponse = await adminClient.GetSubscriptionRuntimePropertiesAsync(topicName, subscriptionName, cancellationToken);
+            var propsResponse = await adminClient.GetSubscriptionAsync(topicName, subscriptionName, cancellationToken);
+
+            _logger.LogDebug(
+                "Retrieved subscription {SubscriptionName} for topic {TopicName} from namespace {NamespaceId}",
+                LogRedactor.SanitiseForLog(subscriptionName),
+                LogRedactor.SanitiseForLog(topicName),
+                NamespaceId);
+
+            return Result.Success(MapToSubscriptionDto(subscriptionResponse.Value, propsResponse.Value));
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            _logger.LogWarning(ex, "Subscription {SubscriptionName} for topic {TopicName} not found in namespace {NamespaceId}", LogRedactor.SanitiseForLog(subscriptionName), LogRedactor.SanitiseForLog(topicName), NamespaceId);
+            return Result.Failure<SubscriptionRuntimePropertiesDto>(Error.NotFound(
+                ErrorCodes.Subscription.NotFound,
+                $"Subscription '{subscriptionName}' for topic '{topicName}' was not found."));
+        }
+        catch (ServiceBusException ex)
+        {
+            _logger.LogError(ex, "Service Bus error getting subscription {SubscriptionName} for topic {TopicName} in namespace {NamespaceId}", LogRedactor.SanitiseForLog(subscriptionName), LogRedactor.SanitiseForLog(topicName), NamespaceId);
+            return Result.Failure<SubscriptionRuntimePropertiesDto>(Error.ExternalService(
+                ErrorCodes.Subscription.GetFailed,
+                $"Failed to get subscription: {ex.Reason}"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error getting subscription {SubscriptionName} for topic {TopicName} in namespace {NamespaceId}", LogRedactor.SanitiseForLog(subscriptionName), LogRedactor.SanitiseForLog(topicName), NamespaceId);
+            return Result.Failure<SubscriptionRuntimePropertiesDto>(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                "An unexpected error occurred while getting subscription."));
+        }
+    }
+
+    private ServiceBusReceiver CreateReceiver(string entityName, string? subscriptionName, bool fromDeadLetter)
+    {
+        var options = new ServiceBusReceiverOptions
+        {
+            ReceiveMode = ServiceBusReceiveMode.PeekLock,
+            PrefetchCount = 0
+        };
+
+        if (fromDeadLetter)
+        {
+            options.SubQueue = SubQueue.DeadLetter;
+        }
+
+        if (!string.IsNullOrWhiteSpace(subscriptionName))
+        {
+            return _client.CreateReceiver(entityName, subscriptionName, options);
+        }
+
+        return _client.CreateReceiver(entityName, options);
+    }
+
+    /// <summary>
+    /// Returns true when the exception chain contains a network-connectivity failure such as a DNS
+    /// resolution error, TCP connect timeout, or socket-level I/O error.  These represent
+    /// transient infrastructure problems (unreachable namespace) and should be logged at Warning
+    /// rather than Error to avoid flooding Application Insights with noisy exception telemetry.
+    /// </summary>
+    private static bool IsNetworkConnectivityFailure(Exception ex)
+    {
+        var current = ex;
+        while (current != null)
+        {
+            if (current is System.Net.Sockets.SocketException)
+                return true;
+            current = current.InnerException;
+        }
+        return false;
+    }
+
+    private static string BuildEntityPath(string entityName, string? subscriptionName, bool fromDeadLetter)
+    {
+        var path = entityName;
+
+        if (!string.IsNullOrWhiteSpace(subscriptionName))
+        {
+            path = $"{entityName}/Subscriptions/{subscriptionName}";
+        }
+
+        if (fromDeadLetter)
+        {
+            path = $"{path}/$DeadLetterQueue";
+        }
+
+        return path;
+    }
+
+    private static ServiceBusMessage CreateServiceBusMessage(SendMessageRequest request)
+    {
+        var message = new ServiceBusMessage(request.Body);
+
+        if (!string.IsNullOrWhiteSpace(request.ContentType))
+        {
+            message.ContentType = request.ContentType;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.CorrelationId))
+        {
+            message.CorrelationId = request.CorrelationId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.SessionId))
+        {
+            message.SessionId = request.SessionId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.PartitionKey))
+        {
+            message.PartitionKey = request.PartitionKey;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Subject))
+        {
+            message.Subject = request.Subject;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ReplyTo))
+        {
+            message.ReplyTo = request.ReplyTo;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ReplyToSessionId))
+        {
+            message.ReplyToSessionId = request.ReplyToSessionId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.To))
+        {
+            message.To = request.To;
+        }
+
+        if (request.TimeToLiveSeconds.HasValue && request.TimeToLiveSeconds.Value > 0)
+        {
+            message.TimeToLive = TimeSpan.FromSeconds(request.TimeToLiveSeconds.Value);
+        }
+
+        if (request.ScheduledEnqueueTimeUtc.HasValue)
+        {
+            message.ScheduledEnqueueTime = request.ScheduledEnqueueTimeUtc.Value;
+        }
+
+        if (request.ApplicationProperties is { Count: > 0 })
+        {
+            foreach (var (key, value) in request.ApplicationProperties)
+            {
+                var converted = ConvertApplicationPropertyValue(value);
+                if (converted is not null)
+                {
+                    message.ApplicationProperties[key] = converted;
+                }
+            }
+        }
+
+        return message;
+    }
+
+    private static object? ConvertApplicationPropertyValue(object? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (value is JsonElement jsonElement)
+        {
+            return jsonElement.ValueKind switch
+            {
+                JsonValueKind.String => jsonElement.GetString(),
+                JsonValueKind.Number => jsonElement.TryGetInt64(out var longValue)
+                    ? longValue
+                    : jsonElement.TryGetDecimal(out var decimalValue)
+                        ? decimalValue
+                        : jsonElement.GetDouble(),
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.Null => null,
+                JsonValueKind.Undefined => null,
+                _ => jsonElement.GetRawText()
+            };
+        }
+
+        return value;
+    }
+
+    private Message MapToMessage(ServiceBusReceivedMessage sbMessage, GetMessagesRequest request)
+    {
+        var state = DetermineMessageState(sbMessage, request.FromDeadLetter);
+
+        return new Message
+        {
+            MessageId = sbMessage.MessageId ?? Guid.NewGuid().ToString(),
+            SequenceNumber = sbMessage.SequenceNumber,
+            Body = sbMessage.Body?.ToString(),
+            ContentType = sbMessage.ContentType,
+            CorrelationId = sbMessage.CorrelationId,
+            SessionId = sbMessage.SessionId,
+            PartitionKey = sbMessage.PartitionKey,
+            ReplyTo = sbMessage.ReplyTo,
+            ReplyToSessionId = sbMessage.ReplyToSessionId,
+            To = sbMessage.To,
+            Subject = sbMessage.Subject,
+            TimeToLive = sbMessage.TimeToLive,
+            ScheduledEnqueueTime = sbMessage.ScheduledEnqueueTime != default ? sbMessage.ScheduledEnqueueTime : null,
+            EnqueuedTime = sbMessage.EnqueuedTime,
+            ExpiresAt = sbMessage.ExpiresAt != default ? sbMessage.ExpiresAt : null,
+            LockedUntil = sbMessage.LockedUntil != default ? sbMessage.LockedUntil : null,
+            LockToken = null, // Not available for peeked messages
+            DeliveryCount = sbMessage.DeliveryCount,
+            State = state,
+            DeadLetterSource = sbMessage.DeadLetterSource,
+            DeadLetterReason = sbMessage.DeadLetterReason,
+            DeadLetterErrorDescription = sbMessage.DeadLetterErrorDescription,
+            ApplicationProperties = sbMessage.ApplicationProperties?.Count > 0
+                ? sbMessage.ApplicationProperties.ToDictionary(kvp => kvp.Key, kvp => kvp.Value)
+                : null,
+            SizeInBytes = sbMessage.Body?.ToMemory().Length ?? 0,
+            NamespaceId = request.NamespaceId,
+            EntityName = request.EntityName,
+            SubscriptionName = request.SubscriptionName,
+            IsFromDeadLetter = request.FromDeadLetter,
+            EnqueuedSequenceNumber = sbMessage.EnqueuedSequenceNumber
+        };
+    }
+
+    private static MessageState DetermineMessageState(ServiceBusReceivedMessage message, bool isFromDeadLetter)
+    {
+        if (isFromDeadLetter)
+        {
+            return MessageState.DeadLettered;
+        }
+
+        if (message.State == ServiceBusMessageState.Deferred)
+        {
+            return MessageState.Deferred;
+        }
+
+        if (message.State == ServiceBusMessageState.Scheduled)
+        {
+            return MessageState.Scheduled;
+        }
+
+        return MessageState.Active;
+    }
+
+    /// <remarks>
+    /// <paramref name="props"/> is null on the list path: <c>GetQueuesRuntimePropertiesAsync</c>
+    /// returns counts only, never the entity's static configuration. Everything sourced from
+    /// <paramref name="props"/> therefore falls back to a deliberately <b>neutral</b> value
+    /// (0 / <see cref="TimeSpan.Zero"/> / <c>false</c> / "Unknown"), never to the Service Bus
+    /// SDK's own defaults — a caller must be able to tell "not fetched" from "fetched and
+    /// genuinely 1 minute". This mirrors what <c>QueuesController.GetAllViaProviderAsync</c>
+    /// already does for AWS/GCP. Callers that need the real static configuration must use the
+    /// single-entity endpoint, which passes <paramref name="props"/> and returns live values.
+    /// </remarks>
+    private static QueueRuntimePropertiesDto MapToQueueDto(QueueRuntimeProperties runtime, QueueProperties? props = null)
+    {
+        return new QueueRuntimePropertiesDto(
+            Name: runtime.Name,
+            ActiveMessageCount: runtime.ActiveMessageCount,
+            DeadLetterMessageCount: runtime.DeadLetterMessageCount,
+            ScheduledMessageCount: runtime.ScheduledMessageCount,
+            TransferMessageCount: runtime.TransferMessageCount,
+            TransferDeadLetterMessageCount: runtime.TransferDeadLetterMessageCount,
+            SizeInBytes: runtime.SizeInBytes,
+            Status: props?.Status.ToString() ?? "Unknown",
+            CreatedAt: runtime.CreatedAt,
+            UpdatedAt: runtime.UpdatedAt,
+            AccessedAt: runtime.AccessedAt,
+            RequiresSession: props?.RequiresSession ?? false,
+            RequiresDuplicateDetection: props?.RequiresDuplicateDetection ?? false,
+            EnablePartitioning: props?.EnablePartitioning ?? false,
+            EnableBatchedOperations: props?.EnableBatchedOperations ?? false,
+            MaxSizeInMegabytes: props?.MaxSizeInMegabytes ?? 0,
+            MaxDeliveryCount: props?.MaxDeliveryCount ?? 0,
+            DefaultMessageTimeToLive: props?.DefaultMessageTimeToLive ?? TimeSpan.Zero,
+            LockDuration: props?.LockDuration ?? TimeSpan.Zero,
+            AutoDeleteOnIdle: props?.AutoDeleteOnIdle ?? TimeSpan.Zero);
+    }
+
+    /// <remarks>
+    /// <paramref name="props"/> is null on the list path: <c>GetQueuesRuntimePropertiesAsync</c>
+    /// returns counts only, never the entity's static configuration. Everything sourced from
+    /// <paramref name="props"/> therefore falls back to a deliberately <b>neutral</b> value
+    /// (0 / <see cref="TimeSpan.Zero"/> / <c>false</c> / "Unknown"), never to the Service Bus
+    /// SDK's own defaults — a caller must be able to tell "not fetched" from "fetched and
+    /// genuinely 1 minute". This mirrors what <c>QueuesController.GetAllViaProviderAsync</c>
+    /// already does for AWS/GCP. Callers that need the real static configuration must use the
+    /// single-entity endpoint, which passes <paramref name="props"/> and returns live values.
+    /// </remarks>
+    private static TopicRuntimePropertiesDto MapToTopicDto(TopicRuntimeProperties runtime, TopicProperties? props = null)
+    {
+        return new TopicRuntimePropertiesDto(
+            Name: runtime.Name,
+            SubscriptionCount: runtime.SubscriptionCount,
+            SizeInBytes: runtime.SizeInBytes,
+            Status: props?.Status.ToString() ?? "Unknown",
+            CreatedAt: runtime.CreatedAt,
+            UpdatedAt: runtime.UpdatedAt,
+            AccessedAt: runtime.AccessedAt,
+            RequiresDuplicateDetection: props?.RequiresDuplicateDetection ?? false,
+            EnablePartitioning: props?.EnablePartitioning ?? false,
+            EnableBatchedOperations: props?.EnableBatchedOperations ?? false,
+            SupportOrdering: props?.SupportOrdering ?? false,
+            MaxSizeInMegabytes: props?.MaxSizeInMegabytes ?? 0,
+            DefaultMessageTimeToLive: props?.DefaultMessageTimeToLive ?? TimeSpan.Zero,
+            AutoDeleteOnIdle: props?.AutoDeleteOnIdle ?? TimeSpan.Zero,
+            DuplicateDetectionHistoryTimeWindow: props?.DuplicateDetectionHistoryTimeWindow ?? TimeSpan.Zero);
+    }
+
+    /// <remarks>
+    /// <paramref name="props"/> is null on the list path: <c>GetQueuesRuntimePropertiesAsync</c>
+    /// returns counts only, never the entity's static configuration. Everything sourced from
+    /// <paramref name="props"/> therefore falls back to a deliberately <b>neutral</b> value
+    /// (0 / <see cref="TimeSpan.Zero"/> / <c>false</c> / "Unknown"), never to the Service Bus
+    /// SDK's own defaults — a caller must be able to tell "not fetched" from "fetched and
+    /// genuinely 1 minute". This mirrors what <c>QueuesController.GetAllViaProviderAsync</c>
+    /// already does for AWS/GCP. Callers that need the real static configuration must use the
+    /// single-entity endpoint, which passes <paramref name="props"/> and returns live values.
+    /// </remarks>
+    private static SubscriptionRuntimePropertiesDto MapToSubscriptionDto(SubscriptionRuntimeProperties runtime, SubscriptionProperties? props = null)
+    {
+        return new SubscriptionRuntimePropertiesDto(
+            Name: runtime.SubscriptionName,
+            TopicName: runtime.TopicName,
+            ActiveMessageCount: runtime.ActiveMessageCount,
+            DeadLetterMessageCount: runtime.DeadLetterMessageCount,
+            TransferMessageCount: runtime.TransferMessageCount,
+            TransferDeadLetterMessageCount: runtime.TransferDeadLetterMessageCount,
+            Status: props?.Status.ToString() ?? "Unknown",
+            CreatedAt: runtime.CreatedAt,
+            UpdatedAt: runtime.UpdatedAt,
+            AccessedAt: runtime.AccessedAt,
+            RequiresSession: props?.RequiresSession ?? false,
+            EnableBatchedOperations: props?.EnableBatchedOperations ?? false,
+            EnableDeadLetteringOnMessageExpiration: props?.DeadLetteringOnMessageExpiration ?? false,
+            EnableDeadLetteringOnFilterEvaluationExceptions: props?.EnableDeadLetteringOnFilterEvaluationExceptions ?? false,
+            MaxDeliveryCount: props?.MaxDeliveryCount ?? 0,
+            DefaultMessageTimeToLive: props?.DefaultMessageTimeToLive ?? TimeSpan.Zero,
+            LockDuration: props?.LockDuration ?? TimeSpan.Zero,
+            AutoDeleteOnIdle: props?.AutoDeleteOnIdle ?? TimeSpan.Zero,
+            ForwardTo: props?.ForwardTo,
+            ForwardDeadLetteredMessagesTo: props?.ForwardDeadLetteredMessagesTo);
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<bool>> ReplayMessageAsync(
+        string entityName,
+        string? subscriptionName,
+        long sequenceNumber,
+        string? recoveryMarker,
+        CancellationToken cancellationToken = default)
+    {
+        if (_disposed || _client.IsClosed)
+        {
+            return Result<bool>.Failure(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The Service Bus client has been disposed or closed."));
+        }
+
+        ServiceBusReceiver? dlqReceiver = null;
+        ServiceBusSender? sender = null;
+        var messagesToAbandon = new List<ServiceBusReceivedMessage>();
+
+        try
+        {
+            // Create receiver for dead-letter queue
+            var receiverOptions = new ServiceBusReceiverOptions
+            {
+                ReceiveMode = ServiceBusReceiveMode.PeekLock,
+                SubQueue = SubQueue.DeadLetter,
+                PrefetchCount = 0 // Disable prefetch for more control
+            };
+
+            if (!string.IsNullOrEmpty(subscriptionName))
+            {
+                dlqReceiver = _client.CreateReceiver(entityName, subscriptionName, receiverOptions);
+            }
+            else
+            {
+                dlqReceiver = _client.CreateReceiver(entityName, receiverOptions);
+            }
+
+            // Receive messages in batches to find the target message.
+            // Scan up to 5,000 messages (100 batches × 50) before giving up.
+            ServiceBusReceivedMessage? targetMessage = null;
+            const int maxAttempts = 100;
+            const int batchSize = 50;
+            const int maxScanDepth = maxAttempts * batchSize;
+
+            for (int attempt = 0; attempt < maxAttempts && targetMessage == null; attempt++)
+            {
+                var messages = await dlqReceiver.ReceiveMessagesAsync(
+                    maxMessages: batchSize,
+                    maxWaitTime: TimeSpan.FromSeconds(3),
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+
+                if (messages == null || messages.Count == 0)
+                {
+                    break; // No more messages available
+                }
+
+                foreach (var msg in messages)
+                {
+                    if (msg.SequenceNumber == sequenceNumber)
+                    {
+                        targetMessage = msg;
+                    }
+                    else
+                    {
+                        messagesToAbandon.Add(msg);
+                    }
+                }
+            }
+
+            if (targetMessage == null)
+            {
+                var scanned = messagesToAbandon.Count;
+                var hint = scanned >= maxScanDepth
+                    ? $" The DLQ was scanned up to {maxScanDepth:N0} messages without finding it. Your DLQ may contain more messages than the scan limit. Consider purging older messages first."
+                    : string.Empty;
+                return Result<bool>.Failure(Error.NotFound(
+                    ErrorCodes.Message.NotFound,
+                    $"Message with sequence number {sequenceNumber} not found in dead-letter queue.{hint}"));
+            }
+
+            // Create a new message with the same content
+            var replayMessage = new ServiceBusMessage(targetMessage.Body)
+            {
+                ContentType = targetMessage.ContentType,
+                CorrelationId = targetMessage.CorrelationId,
+                MessageId = Guid.NewGuid().ToString(), // New message ID
+                PartitionKey = targetMessage.PartitionKey,
+                SessionId = targetMessage.SessionId,
+                ReplyTo = targetMessage.ReplyTo,
+                ReplyToSessionId = targetMessage.ReplyToSessionId,
+                Subject = targetMessage.Subject,
+                TimeToLive = targetMessage.TimeToLive,
+                To = targetMessage.To
+            };
+
+            // Copy application properties, filtering out DLQ-specific ones
+            foreach (var prop in targetMessage.ApplicationProperties)
+            {
+                // Skip DLQ-specific properties that shouldn't be replayed
+                if (!prop.Key.Equals("DeadLetterReason", StringComparison.OrdinalIgnoreCase) &&
+                    !prop.Key.Equals("DeadLetterErrorDescription", StringComparison.OrdinalIgnoreCase))
+                {
+                    replayMessage.ApplicationProperties[prop.Key] = prop.Value;
+                }
+            }
+
+            // Add replay metadata
+            replayMessage.ApplicationProperties["Replayed"] = true;
+            replayMessage.ApplicationProperties["ReplayedAt"] = DateTime.UtcNow.ToString("O");
+            replayMessage.ApplicationProperties["OriginalSequenceNumber"] = sequenceNumber;
+            replayMessage.ApplicationProperties["OriginalDeadLetterReason"] = targetMessage.DeadLetterReason ?? "Unknown";
+
+            // Recovery Evidence Ledger marker — the one behavioural change replay makes for
+            // verification (see RecoveryLedgerEntry.RecoveryMarker). Service Bus has no
+            // documented cap on application-property count (only overall message size), so this
+            // is unconditional whenever a marker is supplied.
+            var markerApplied = false;
+            if (!string.IsNullOrEmpty(recoveryMarker))
+            {
+                replayMessage.ApplicationProperties["x-servicehub-recovery-id"] = recoveryMarker;
+                markerApplied = true;
+            }
+
+            // Send to main queue/topic
+            sender = _client.CreateSender(entityName);
+            await sender.SendMessageAsync(replayMessage, cancellationToken).ConfigureAwait(false);
+
+            // Complete (remove) the message from DLQ
+            await dlqReceiver.CompleteMessageAsync(targetMessage, cancellationToken).ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "Successfully replayed message {SequenceNumber} from {EntityName} DLQ to main queue",
+                sequenceNumber,
+                LogRedactor.SanitiseForLog(entityName));
+
+            return Result<bool>.Success(markerApplied);
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            _logger.LogWarning(ex, "Entity {EntityName} not found", LogRedactor.SanitiseForLog(entityName));
+            return Result<bool>.Failure(Error.NotFound(
+                ErrorCodes.Queue.NotFound,
+                $"The queue or topic '{entityName}' was not found."));
+        }
+        catch (ServiceBusException ex)
+        {
+            _logger.LogError(ex, "Service Bus error replaying message from {EntityName}", LogRedactor.SanitiseForLog(entityName));
+            return Result<bool>.Failure(Error.ExternalService(
+                ErrorCodes.Message.SendFailed,
+                $"Failed to replay message: {ex.Reason}"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error replaying message from {EntityName}", LogRedactor.SanitiseForLog(entityName));
+            return Result<bool>.Failure(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                "An unexpected error occurred while replaying the message."));
+        }
+        finally
+        {
+            // Abandon all messages we didn't need so they become available again
+            if (dlqReceiver != null)
+            {
+                foreach (var msg in messagesToAbandon)
+                {
+                    try
+                    {
+                        await dlqReceiver.AbandonMessageAsync(msg, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // Best effort - ignore errors during cleanup
+                    }
+                }
+                await dlqReceiver.DisposeAsync().ConfigureAwait(false);
+            }
+            if (sender != null)
+            {
+                await sender.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyDictionary<long, Result>> ReplayMessagesAsync(
+        string entityName,
+        string? subscriptionName,
+        IReadOnlyCollection<long> sequenceNumbers,
+        CancellationToken cancellationToken = default)
+    {
+        var results = new Dictionary<long, Result>();
+
+        if (sequenceNumbers.Count == 0)
+            return results;
+
+        if (_disposed || _client.IsClosed)
+        {
+            var error = Result.Failure(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The Service Bus client has been disposed or closed."));
+            foreach (var seq in sequenceNumbers)
+                results[seq] = error;
+            return results;
+        }
+
+        ServiceBusReceiver? dlqReceiver = null;
+        ServiceBusSender? sender = null;
+        var messagesToAbandon = new List<ServiceBusReceivedMessage>();
+
+        try
+        {
+            // Create a SINGLE receiver for the DLQ — all target messages are in the same entity
+            var receiverOptions = new ServiceBusReceiverOptions
+            {
+                ReceiveMode = ServiceBusReceiveMode.PeekLock,
+                SubQueue = SubQueue.DeadLetter,
+                PrefetchCount = 0
+            };
+
+            dlqReceiver = !string.IsNullOrEmpty(subscriptionName)
+                ? _client.CreateReceiver(entityName, subscriptionName, receiverOptions)
+                : _client.CreateReceiver(entityName, receiverOptions);
+
+            sender = _client.CreateSender(entityName);
+
+            // Build the set of target sequence numbers we're looking for
+            var pending = new HashSet<long>(sequenceNumbers);
+            var foundMessages = new Dictionary<long, ServiceBusReceivedMessage>();
+
+            // Receive messages in batches until we find all targets or exhaust the DLQ.
+            // Scan up to 5,000 messages (50 batches × 100) before giving up.
+            const int maxAttempts = 50;
+            const int batchSize = 100;
+
+            for (int attempt = 0; attempt < maxAttempts && pending.Count > 0; attempt++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var messages = await dlqReceiver.ReceiveMessagesAsync(
+                    maxMessages: batchSize,
+                    maxWaitTime: TimeSpan.FromSeconds(2),
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+
+                if (messages == null || messages.Count == 0)
+                    break; // No more messages in the DLQ
+
+                foreach (var msg in messages)
+                {
+                    if (pending.Remove(msg.SequenceNumber))
+                    {
+                        foundMessages[msg.SequenceNumber] = msg;
+                    }
+                    else
+                    {
+                        messagesToAbandon.Add(msg);
+                    }
+                }
+            }
+
+            // Mark any not-found messages as failure
+            foreach (var seq in pending)
+            {
+                results[seq] = Result.Failure(Error.NotFound(
+                    ErrorCodes.Message.NotFound,
+                    $"Message with sequence number {seq} not found in dead-letter queue."));
+            }
+
+            // Replay all found messages
+            foreach (var (seqNum, targetMessage) in foundMessages)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                try
+                {
+                    // Create a new message with the same content
+                    var replayMessage = new ServiceBusMessage(targetMessage.Body)
+                    {
+                        ContentType = targetMessage.ContentType,
+                        CorrelationId = targetMessage.CorrelationId,
+                        MessageId = Guid.NewGuid().ToString(),
+                        PartitionKey = targetMessage.PartitionKey,
+                        SessionId = targetMessage.SessionId,
+                        ReplyTo = targetMessage.ReplyTo,
+                        ReplyToSessionId = targetMessage.ReplyToSessionId,
+                        Subject = targetMessage.Subject,
+                        TimeToLive = targetMessage.TimeToLive,
+                        To = targetMessage.To
+                    };
+
+                    // Copy application properties, filtering out DLQ-specific ones
+                    foreach (var prop in targetMessage.ApplicationProperties)
+                    {
+                        if (!prop.Key.Equals("DeadLetterReason", StringComparison.OrdinalIgnoreCase) &&
+                            !prop.Key.Equals("DeadLetterErrorDescription", StringComparison.OrdinalIgnoreCase))
+                        {
+                            replayMessage.ApplicationProperties[prop.Key] = prop.Value;
+                        }
+                    }
+
+                    // Add replay metadata
+                    replayMessage.ApplicationProperties["Replayed"] = true;
+                    replayMessage.ApplicationProperties["ReplayedAt"] = DateTime.UtcNow.ToString("O");
+                    replayMessage.ApplicationProperties["OriginalSequenceNumber"] = seqNum;
+                    replayMessage.ApplicationProperties["OriginalDeadLetterReason"] = targetMessage.DeadLetterReason ?? "Unknown";
+
+                    // Send to main queue/topic
+                    await sender.SendMessageAsync(replayMessage, cancellationToken).ConfigureAwait(false);
+
+                    // Complete (remove) the message from DLQ
+                    await dlqReceiver.CompleteMessageAsync(targetMessage, cancellationToken).ConfigureAwait(false);
+
+                    _logger.LogInformation(
+                        "Batch-replayed message {SequenceNumber} from {EntityName} DLQ",
+                        seqNum, LogRedactor.SanitiseForLog(entityName));
+
+                    results[seqNum] = Result.Success();
+                }
+                catch (ServiceBusException ex)
+                {
+                    _logger.LogError(ex, "Service Bus error replaying message {SequenceNumber} from {EntityName}", seqNum, LogRedactor.SanitiseForLog(entityName));
+                    results[seqNum] = Result.Failure(Error.ExternalService(
+                        ErrorCodes.Message.SendFailed,
+                        $"Failed to replay message {seqNum}: {ex.Reason}"));
+                    // Continue with remaining messages — don't abort the batch
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error replaying message {SequenceNumber} from {EntityName}", seqNum, LogRedactor.SanitiseForLog(entityName));
+                    results[seqNum] = Result.Failure(Error.Internal(
+                        ErrorCodes.General.UnexpectedError,
+                        $"Failed to replay message {seqNum}: {ex.Message}"));
+                }
+            }
+
+            return results;
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            _logger.LogWarning(ex, "Entity {EntityName} not found for batch replay", LogRedactor.SanitiseForLog(entityName));
+            var error = Result.Failure(Error.NotFound(
+                ErrorCodes.Queue.NotFound,
+                $"The queue or topic '{entityName}' was not found."));
+            foreach (var seq in sequenceNumbers)
+                results.TryAdd(seq, error);
+            return results;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Batch replay failed for {EntityName}", LogRedactor.SanitiseForLog(entityName));
+            var error = Result.Failure(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                $"Batch replay failed: {ex.Message}"));
+            foreach (var seq in sequenceNumbers)
+                results.TryAdd(seq, error);
+            return results;
+        }
+        finally
+        {
+            // Abandon all non-target messages so they become available again
+            if (dlqReceiver != null)
+            {
+                foreach (var msg in messagesToAbandon)
+                {
+                    try
+                    {
+                        await dlqReceiver.AbandonMessageAsync(msg, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // Best effort
+                    }
+                }
+                await dlqReceiver.DisposeAsync().ConfigureAwait(false);
+            }
+            if (sender != null)
+            {
+                await sender.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result> PurgeMessageAsync(
+        string entityName,
+        string? subscriptionName,
+        long sequenceNumber,
+        bool fromDeadLetter,
+        CancellationToken cancellationToken = default)
+    {
+        if (_disposed || _client.IsClosed)
+        {
+            return Result.Failure(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The Service Bus client has been disposed or closed."));
+        }
+
+        ServiceBusReceiver? receiver = null;
+        var messagesToAbandon = new List<ServiceBusReceivedMessage>();
+
+        try
+        {
+            // Create receiver options
+            var receiverOptions = new ServiceBusReceiverOptions
+            {
+                ReceiveMode = ServiceBusReceiveMode.PeekLock,
+                PrefetchCount = 0 // Disable prefetch for more control
+            };
+
+            if (fromDeadLetter)
+            {
+                receiverOptions.SubQueue = SubQueue.DeadLetter;
+            }
+
+            // Create receiver
+            if (!string.IsNullOrEmpty(subscriptionName))
+            {
+                receiver = _client.CreateReceiver(entityName, subscriptionName, receiverOptions);
+            }
+            else
+            {
+                receiver = _client.CreateReceiver(entityName, receiverOptions);
+            }
+
+            // Receive messages in batches to find the target message more efficiently
+            // For active subscriptions with many messages, we need to scan more messages
+            ServiceBusReceivedMessage? targetMessage = null;
+            const int maxAttempts = 20; // Increased from 10 to handle larger queues
+            const int batchSize = 100; // Increased from 50 for faster scanning
+
+            _logger.LogDebug(
+                "Starting purge scan for sequence {SequenceNumber} in {EntityName}/{SubscriptionName}",
+                sequenceNumber,
+                LogRedactor.SanitiseForLog(entityName),
+                LogRedactor.SanitiseForLog(subscriptionName ?? "N/A"));
+
+            for (int attempt = 0; attempt < maxAttempts && targetMessage == null; attempt++)
+            {
+                var messages = await receiver.ReceiveMessagesAsync(
+                    maxMessages: batchSize,
+                    maxWaitTime: TimeSpan.FromSeconds(2),
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+
+                if (messages == null || messages.Count == 0)
+                {
+                    _logger.LogDebug("No more messages available after {Attempt} attempts", attempt + 1);
+                    break; // No more messages available
+                }
+
+                _logger.LogDebug("Received {Count} messages in batch {Attempt}", messages.Count, attempt + 1);
+
+                foreach (var msg in messages)
+                {
+                    if (msg.SequenceNumber == sequenceNumber)
+                    {
+                        targetMessage = msg;
+                        _logger.LogDebug("Found target message at sequence {SequenceNumber}", sequenceNumber);
+                    }
+                    else
+                    {
+                        messagesToAbandon.Add(msg);
+                    }
+                }
+            }
+
+            if (targetMessage == null)
+            {
+                _logger.LogWarning(
+                    "Message with sequence {SequenceNumber} not found after scanning {MaxAttempts} batches",
+                    sequenceNumber,
+                    maxAttempts);
+                return Result.Failure(Error.NotFound(
+                    ErrorCodes.Message.NotFound,
+                    $"Message with sequence number {sequenceNumber} not found after scanning {maxAttempts * batchSize} messages."));
+            }
+
+            // Complete (delete) the message
+            await receiver.CompleteMessageAsync(targetMessage, cancellationToken).ConfigureAwait(false);
+
+            var queueType = fromDeadLetter ? "dead-letter queue" : (string.IsNullOrEmpty(subscriptionName) ? "queue" : "subscription");
+            _logger.LogInformation(
+                "Successfully purged message {SequenceNumber} from {EntityName}/{SubscriptionName} {QueueType}",
+                sequenceNumber,
+                LogRedactor.SanitiseForLog(entityName),
+                LogRedactor.SanitiseForLog(subscriptionName ?? "N/A"),
+                LogRedactor.SanitiseForLog(queueType));
+
+            return Result.Success();
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            _logger.LogWarning(ex, "Entity {EntityName} not found", LogRedactor.SanitiseForLog(entityName));
+            return Result.Failure(Error.NotFound(
+                ErrorCodes.Queue.NotFound,
+                $"The queue or topic '{entityName}' was not found."));
+        }
+        catch (ServiceBusException ex)
+        {
+            _logger.LogError(ex, "Service Bus error purging message from {EntityName}", LogRedactor.SanitiseForLog(entityName));
+            return Result.Failure(Error.ExternalService(
+                ErrorCodes.Message.ReceiveFailed,
+                $"Failed to purge message: {ex.Reason}"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error purging message from {EntityName}", LogRedactor.SanitiseForLog(entityName));
+            return Result.Failure(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                "An unexpected error occurred while purging the message."));
+        }
+        finally
+        {
+            // Abandon all messages we didn't need so they become available again
+            if (receiver != null)
+            {
+                foreach (var msg in messagesToAbandon)
+                {
+                    try
+                    {
+                        await receiver.AbandonMessageAsync(msg, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // Best effort - ignore errors during cleanup
+                    }
+                }
+                await receiver.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<IReadOnlyList<Message>>> GetScheduledMessagesAsync(
+        string entityName,
+        string? subscriptionName,
+        int maxMessages,
+        CancellationToken cancellationToken = default)
+    {
+        if (_disposed || _client.IsClosed)
+        {
+            return Result.Failure<IReadOnlyList<Message>>(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The Service Bus client has been disposed or closed."));
+        }
+
+        if (string.IsNullOrWhiteSpace(entityName))
+        {
+            return Result.Failure<IReadOnlyList<Message>>(Error.Validation(
+                ErrorCodes.Message.QueueNameRequired,
+                "Queue or topic name is required."));
+        }
+
+        var peekCount = Math.Clamp(maxMessages, 1, 1000);
+
+        ServiceBusReceiver? receiver = null;
+        try
+        {
+            receiver = CreateReceiver(entityName, subscriptionName, fromDeadLetter: false);
+
+            var request = new GetMessagesRequest(
+                NamespaceId: NamespaceId,
+                EntityName: entityName,
+                SubscriptionName: subscriptionName,
+                FromDeadLetter: false,
+                MaxMessages: peekCount,
+                FromSequenceNumber: null);
+
+            // Peek in batches to find scheduled messages beyond the active backlog.
+            // Azure SB peek starts from a sequence number; we keep advancing until
+            // we've found enough or exhausted the queue.
+            var scheduledMessages = new List<Message>();
+            long fromSequenceNumber = 0;
+            const int batchSize = 100;
+            const int maxBatches = 50; // up to 5000 messages scanned
+
+            for (int batch = 0; batch < maxBatches && scheduledMessages.Count < peekCount; batch++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var peekedMessages = fromSequenceNumber == 0
+                    ? await receiver.PeekMessagesAsync(batchSize, cancellationToken: cancellationToken).ConfigureAwait(false)
+                    : await receiver.PeekMessagesAsync(batchSize, fromSequenceNumber, cancellationToken).ConfigureAwait(false);
+
+                if (peekedMessages == null || peekedMessages.Count == 0)
+                    break;
+
+                foreach (var m in peekedMessages)
+                {
+                    if (m.State == ServiceBusMessageState.Scheduled && scheduledMessages.Count < peekCount)
+                    {
+                        scheduledMessages.Add(MapToMessage(m, request));
+                    }
+                }
+
+                // Advance past the last peeked message
+                fromSequenceNumber = peekedMessages[^1].SequenceNumber + 1;
+            }
+
+            _logger.LogDebug(
+                "Found {Count} scheduled messages in {EntityName} via iterative peek.",
+                scheduledMessages.Count,
+                LogRedactor.SanitiseForLog(entityName));
+
+            return Result.Success<IReadOnlyList<Message>>(scheduledMessages);
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            _logger.LogWarning(ex,
+                "Entity {EntityName} not found in namespace {NamespaceId}",
+                LogRedactor.SanitiseForLog(entityName),
+                NamespaceId);
+
+            return Result.Failure<IReadOnlyList<Message>>(Error.NotFound(
+                ErrorCodes.Queue.NotFound,
+                $"The queue or topic '{entityName}' was not found."));
+        }
+        catch (ServiceBusException ex)
+        {
+            _logger.LogError(ex,
+                "Service Bus error listing scheduled messages from {EntityName}",
+                LogRedactor.SanitiseForLog(entityName));
+
+            return Result.Failure<IReadOnlyList<Message>>(Error.ExternalService(
+                ErrorCodes.Message.ScheduledListFailed,
+                $"Failed to list scheduled messages: {ex.Reason}"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Unexpected error listing scheduled messages from {EntityName}",
+                LogRedactor.SanitiseForLog(entityName));
+
+            return Result.Failure<IReadOnlyList<Message>>(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                "An unexpected error occurred while listing scheduled messages."));
+        }
+        finally
+        {
+            if (receiver != null)
+            {
+                await receiver.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<long>> ScheduleMessageAsync(
+        SendMessageRequest request,
+        DateTimeOffset scheduledTimeUtc,
+        CancellationToken cancellationToken = default)
+    {
+        if (_disposed || _client.IsClosed)
+        {
+            return Result.Failure<long>(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The Service Bus client has been disposed or closed."));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.EntityName))
+        {
+            return Result.Failure<long>(Error.Validation(
+                ErrorCodes.Message.QueueNameRequired,
+                "Queue or topic name is required."));
+        }
+
+        ServiceBusSender? sender = null;
+        try
+        {
+            sender = _client.CreateSender(request.EntityName);
+            var message = CreateServiceBusMessage(request);
+            message.ScheduledEnqueueTime = scheduledTimeUtc;
+
+            var sequenceNumber = await sender.ScheduleMessageAsync(message, scheduledTimeUtc, cancellationToken).ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "Scheduled message {SequenceNumber} in {EntityName} for {ScheduledTime} in namespace {NamespaceId}",
+                sequenceNumber,
+                LogRedactor.SanitiseForLog(request.EntityName),
+                scheduledTimeUtc,
+                NamespaceId);
+
+            return Result.Success(sequenceNumber);
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            _logger.LogWarning(ex,
+                "Entity {EntityName} not found when scheduling message",
+                LogRedactor.SanitiseForLog(request.EntityName));
+
+            return Result.Failure<long>(Error.NotFound(
+                ErrorCodes.Queue.NotFound,
+                $"The queue or topic '{request.EntityName}' was not found."));
+        }
+        catch (ServiceBusException ex)
+        {
+            _logger.LogError(ex,
+                "Service Bus error scheduling message to {EntityName}",
+                LogRedactor.SanitiseForLog(request.EntityName));
+
+            return Result.Failure<long>(Error.ExternalService(
+                ErrorCodes.Message.SendFailed,
+                $"Failed to schedule message: {ex.Reason}"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Unexpected error scheduling message to {EntityName}",
+                LogRedactor.SanitiseForLog(request.EntityName));
+
+            return Result.Failure<long>(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                "An unexpected error occurred while scheduling the message."));
+        }
+        finally
+        {
+            if (sender != null)
+            {
+                await sender.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result> CancelScheduledMessageAsync(
+        string entityName,
+        long sequenceNumber,
+        CancellationToken cancellationToken = default)
+    {
+        if (_disposed || _client.IsClosed)
+        {
+            return Result.Failure(Error.Internal(
+                ErrorCodes.General.ServiceUnavailable,
+                "The Service Bus client has been disposed or closed."));
+        }
+
+        if (string.IsNullOrWhiteSpace(entityName))
+        {
+            return Result.Failure(Error.Validation(
+                ErrorCodes.Message.QueueNameRequired,
+                "Queue or topic name is required."));
+        }
+
+        ServiceBusSender? sender = null;
+        try
+        {
+            sender = _client.CreateSender(entityName);
+            await sender.CancelScheduledMessageAsync(sequenceNumber, cancellationToken).ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "Cancelled scheduled message {SequenceNumber} from {EntityName} in namespace {NamespaceId}",
+                sequenceNumber,
+                LogRedactor.SanitiseForLog(entityName),
+                NamespaceId);
+
+            return Result.Success();
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+        {
+            _logger.LogWarning(ex,
+                "Entity {EntityName} not found when cancelling scheduled message",
+                LogRedactor.SanitiseForLog(entityName));
+
+            return Result.Failure(Error.NotFound(
+                ErrorCodes.Queue.NotFound,
+                $"The queue or topic '{entityName}' was not found."));
+        }
+        catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessageNotFound)
+        {
+            _logger.LogWarning(ex,
+                "Scheduled message {SequenceNumber} not found in {EntityName}",
+                sequenceNumber,
+                LogRedactor.SanitiseForLog(entityName));
+
+            return Result.Failure(Error.NotFound(
+                ErrorCodes.Message.NotFound,
+                $"Scheduled message with sequence number {sequenceNumber} was not found."));
+        }
+        catch (ServiceBusException ex)
+        {
+            _logger.LogError(ex,
+                "Service Bus error cancelling scheduled message {SequenceNumber} from {EntityName}",
+                sequenceNumber,
+                LogRedactor.SanitiseForLog(entityName));
+
+            return Result.Failure(Error.ExternalService(
+                ErrorCodes.Message.ScheduledCancelFailed,
+                $"Failed to cancel scheduled message: {ex.Reason}"));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Unexpected error cancelling scheduled message {SequenceNumber} from {EntityName}",
+                sequenceNumber,
+                LogRedactor.SanitiseForLog(entityName));
+
+            return Result.Failure(Error.Internal(
+                ErrorCodes.General.UnexpectedError,
+                "An unexpected error occurred while cancelling the scheduled message."));
+        }
+        finally
+        {
+            if (sender != null)
+            {
+                await sender.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+}

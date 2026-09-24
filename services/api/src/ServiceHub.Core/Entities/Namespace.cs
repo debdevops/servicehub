@@ -1,8 +1,3 @@
-// Ported from ServiceHub 4.0.0
-//   source: archive/servicehub-4.0.0/services/api/src/ServiceHub.Core/Entities/Namespace.cs
-//   copied: 2026-09-24 for unit 1.1
-//   changes: adapted — kept connection, provider, environment, encryption and ownership; DROPPED sharing (SharedWithOwnerIds, ShareWith, RevokeShare, IsAccessibleBy — NamespaceSharedOwners is not in ADR-0015 D3), Has{Listen,Send,Manage}Permission and the SharedAccessKeyName sniffing, UpdateConnectionString, and the Activate/Deactivate/Update* mutators (no screen edits a namespace yet, R12); Shared.* namespaces -> Core.*
-
 using System.Security.Cryptography;
 using System.Text;
 using ServiceHub.Core.Constants;

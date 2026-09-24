@@ -1,21 +1,16 @@
-// Ported from ServiceHub 4.0.0
-//   source: archive/servicehub-4.0.0/services/api/src/ServiceHub.Infrastructure/Persistence/SqliteBusyRetryOptions.cs
-//   copied: 2026-09-24 for unit 1.1
-//   changes: none
-
 namespace ServiceHub.Infrastructure.Persistence;
 
 /// <summary>
 /// Tunables for the SQLITE_BUSY/SQLITE_LOCKED retry wrapper around
-/// <see cref="DlqDbContext.SaveChanges"/> and
-/// <see cref="DlqDbContext.SaveChangesAsync(bool, System.Threading.CancellationToken)"/>.
-/// Bound from the <c>DlqDatabase:MaxBusyRetryAttempts</c> configuration key (roadmap F1).
+/// <see cref="ServiceHubDbContext.SaveChanges(bool)"/> and
+/// <see cref="ServiceHubDbContext.SaveChangesAsync(bool, System.Threading.CancellationToken)"/>.
+/// Bound from the <c>ServiceHub:MaxBusyRetryAttempts</c> configuration key.
 /// </summary>
 public sealed class SqliteBusyRetryOptions
 {
     /// <summary>Defaults applied when DI does not supply an instance — e.g. test fixtures
-    /// constructing <see cref="DlqDbContext"/> directly with only a
-    /// <c>DbContextOptions&lt;DlqDbContext&gt;</c> argument.</summary>
+    /// constructing <see cref="ServiceHubDbContext"/> directly with only a
+    /// <c>DbContextOptions&lt;ServiceHubDbContext&gt;</c> argument.</summary>
     public static readonly SqliteBusyRetryOptions Default = new();
 
     /// <summary>Number of retries attempted after the first failed SaveChanges call when the

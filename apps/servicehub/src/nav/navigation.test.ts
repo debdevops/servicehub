@@ -14,8 +14,7 @@ import { routes } from '../router'
 /**
  * The navigation seam, asserted.
  *
- * 4.0.0 kept this information in four places and shipped bugs from the drift. These tests are why
- * that cannot happen here: the array and the router are checked against each other, and the
+ * These tests are why navigation cannot drift: the array and the router are checked against each other, and the
  * product's own rules about the sidebar are checked against the array.
  */
 describe('navigation', () => {

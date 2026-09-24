@@ -3,7 +3,7 @@
  *
  * A dangerous action carries an explicit header saying what it intends. It means a replay cannot be
  * triggered by a stray prefetch, a link crawler or a URL copied out of DevTools without the header
- * that came with it. 4.0.0 arrived at this and it stays.
+ * that came with it.
  *
  * It is not authentication. It closes the common accident, not a determined attacker.
  */

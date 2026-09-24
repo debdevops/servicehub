@@ -8,7 +8,7 @@ import { pages } from './nav/navigation'
  * modals are URL states (?tab= · ?panel= · ?modal=) on the page you are on.
  *
  * Nothing is listed twice. A screen cannot exist in the sidebar without a route, or have a route
- * nothing links to — which is the drift that produced real bugs in 4.0.0. `navigation.test.ts`
+ * nothing links to — that drift is how navigation bugs happen. `navigation.test.ts`
  * asserts the two stay in step.
  *
  * As each wave builds a screen, its placeholder is replaced by a lazy import of the real page.

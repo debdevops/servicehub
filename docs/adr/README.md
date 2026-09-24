@@ -21,7 +21,7 @@ the way they were.
 | [0011](0011-dlq-observer-attestation-table-authorized.md) | DLQ observer attestation table authorized (M3.2): durable per-namespace liveness-canary state |
 | [0012](0012-single-servicehub-application.md) | ServiceHub is one application: the 4.0.0 frontend is archived and frozen, the new app is built beside it *(partially superseded by 0013)* |
 | [0013](0013-archive-the-entire-4-0-0-codebase.md) | The entire 4.0.0 codebase (API, web, AI services, shared package, run/Docker files) is archived as one buildable, frozen folder, `archive/servicehub-4.0.0/`; the new ServiceHub is rebuilt beside it |
-| [0014](0014-servicehub-4-1-0-architecture.md) | ServiceHub 4.1.0: same stack, new backend grown screen by screen from copied-with-provenance parts; the new product owns the repository root and the archive is not served; nine screens *(D6 superseded in part by 0016)* |
+| [0014](0014-servicehub-4-1-0-architecture.md) | ServiceHub 4.1.0: same stack, new backend grown screen by screen from parts copied out of the archive; the new product owns the repository root and the archive is not served; nine screens *(D6 superseded in part by 0016)* |
 | [0015](0015-fresh-schema-for-4-1-0.md) | ServiceHub 4.1.0 starts from a fresh schema, migrations restart at `0001`, and there is no upgrade path from a 4.0.0 database |
 | [0016](0016-simple-and-advanced-surfaces-in-4-1-0.md) | ServiceHub 4.1.0 has two surfaces: **Simple** (the default, seven screens, where people act) and a read-only **Advanced** (five screens under `/advanced`); the URL is the surface, never a mode flag *(supersedes 0014 D6 in part)* |
 
