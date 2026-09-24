@@ -98,7 +98,7 @@ public sealed class ServiceHubDbContext : DbContext
     private static bool IsBusyOrLocked(SqliteException exception) =>
         exception.SqliteErrorCode is 5 or 6;
 
-        private static void ConfigureNamespace(ModelBuilder modelBuilder)
+    private static void ConfigureNamespace(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<Namespace>();
 
@@ -133,6 +133,12 @@ public sealed class ServiceHubDbContext : DbContext
         entity.ToTable("AuditLogs");
         entity.HasKey(e => e.Id);
         entity.Property(e => e.Id).ValueGeneratedOnAdd();
+
+        // Stored as sortable UTC text (same TEXT column). SQLite cannot ORDER BY its default
+        // DateTimeOffset encoding, and the audit trail is read newest-first.
+        entity.Property(e => e.Timestamp).HasConversion(
+            v => v.UtcDateTime.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+            v => DateTimeOffset.Parse(v, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind));
 
         entity.Property(e => e.OwnerId).HasMaxLength(128).IsRequired();
         entity.Property(e => e.UserIdentity).HasMaxLength(256).IsRequired();

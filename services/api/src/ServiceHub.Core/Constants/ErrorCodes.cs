@@ -38,6 +38,15 @@ public static class ErrorCodes
     /// </summary>
     public const string CapabilityUnavailable = "capability_unavailable";
 
+    /// <summary>
+    /// A dangerous request arrived without the header that says the caller meant it. The response
+    /// names the header, so the fix is one sentence.
+    /// </summary>
+    public const string IntentRequired = "intent_required";
+
+    /// <summary>An <c>X-API-KEY</c> was presented that is not a configured key.</summary>
+    public const string InvalidApiKey = "invalid_api_key";
+
     /// <summary>Codes for failures that belong to no single screen.</summary>
     /// <remarks>Raised by <c>ConnectionStringProtector</c>.</remarks>
     public static class General

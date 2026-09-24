@@ -7,7 +7,9 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Routing;
+using ServiceHub.Providers.Aws;
 using ServiceHub.Providers.Azure;
+using ServiceHub.Providers.Gcp;
 
 namespace ServiceHub.UnitTests.Routing;
 
@@ -15,7 +17,7 @@ namespace ServiceHub.UnitTests.Routing;
 /// Unit 1.3's seam, through the real container: registering one provider is enough for the router
 /// to resolve an Azure namespace to it, and registering it twice does not register it twice.
 /// </summary>
-public sealed class AzureProviderWiringTests
+public sealed class ProviderWiringTests
 {
     private static ServiceProvider Build()
     {
@@ -34,6 +36,8 @@ public sealed class AzureProviderWiringTests
         services.AddCloudProviderRouting();
         services.AddAzureProvider();
         services.AddAzureProvider();
+        services.AddAwsProvider();
+        services.AddGcpProvider();
         return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = false });
     }
 
@@ -69,8 +73,45 @@ public sealed class AzureProviderWiringTests
 
         var router = scope.ServiceProvider.GetRequiredService<ICloudProviderRouter>();
 
-        var act = () => router.Resolve(CloudProviderType.Aws);
-        act.Should().Throw<InvalidOperationException>().WithMessage("*Aws*");
-        router.IsRegistered(CloudProviderType.Aws).Should().BeFalse();
+        var act = () => router.Resolve((CloudProviderType)999);
+        act.Should().Throw<InvalidOperationException>();
+        router.IsRegistered((CloudProviderType)999).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task TheRouter_DispatchesEachCloudToItsOwnAdapter_AndTheCapabilityMatrixIsHonest()
+    {
+        await using var provider = Build();
+        await using var scope = provider.CreateAsyncScope();
+        var router = scope.ServiceProvider.GetRequiredService<ICloudProviderRouter>();
+
+        var azure = router.Resolve(CloudProviderType.Azure);
+        var aws = router.Resolve(CloudProviderType.Aws);
+
+        var gcp = router.Resolve(CloudProviderType.Gcp);
+
+        azure.Should().BeOfType<AzureMessagingProvider>();
+        aws.Should().BeOfType<AwsMessagingProvider>();
+        gcp.Should().BeOfType<GcpMessagingProvider>();
+
+        // The capability matrix: only Azure can prove a DLQ is empty (R4).
+        azure.Capabilities.CanProveDlqAbsence.Should().BeTrue();
+        aws.Capabilities.CanProveDlqAbsence.Should().BeFalse("SQS's peek is a destructive capped receive");
+        gcp.Capabilities.CanProveDlqAbsence.Should().BeFalse("Pub/Sub reads a capped batch");
+        aws.Capabilities.SupportsRepeatablePeek.Should().BeFalse();
+        gcp.Capabilities.SupportsRepeatablePeek.Should().BeFalse();
+
+        // "Cannot know" must stay distinguishable from zero (R5).
+        gcp.Capabilities.SupportsMessageCounts.Should().BeFalse();
+        gcp.Capabilities.SupportsManualDeadLetter.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task TheDlqObserverReaders_AreNotWired_SoNothingClaimsAnObserverIsAttached()
+    {
+        await using var provider = Build();
+        await using var scope = provider.CreateAsyncScope();
+
+        scope.ServiceProvider.GetServices<IDlqObserverLogReader>().Should().BeEmpty();
     }
 }

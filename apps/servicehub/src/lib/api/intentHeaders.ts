@@ -14,6 +14,7 @@ export const Intent = {
   ReplayMessage: 'replay-message',
   BulkReplay: 'bulk-replay',
   DeleteMessage: 'delete-message',
+  CreateNamespace: 'create-namespace',
   DeleteNamespace: 'delete-namespace',
 } as const
 

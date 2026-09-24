@@ -5,7 +5,9 @@ using ServiceHub.Api.Middleware;
 using ServiceHub.Infrastructure.Agents;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.Routing;
+using ServiceHub.Providers.Aws;
 using ServiceHub.Providers.Azure;
+using ServiceHub.Providers.Gcp;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,7 +15,11 @@ var builder = WebApplication.CreateBuilder(args);
 // The composition root, and the ONLY place ServiceHub.Infrastructure and the ServiceHub.Providers.*
 // projects meet (ADR-0014 D5).
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+        // Enums travel as words ("azure", "dev"), never as numbers a client has to decode.
+        options.JsonSerializerOptions.Converters.Add(
+            new System.Text.Json.Serialization.JsonStringEnumConverter(System.Text.Json.JsonNamingPolicy.CamelCase)));
 builder.Services.AddProblemDetails(options =>
 {
     // Every failure leaves with a stable machine-readable code and a human sentence. A bare status
@@ -27,11 +33,14 @@ builder.Services.AddProblemDetails(options =>
 });
 
 builder.Services.AddHealthChecks();
+builder.Services.Configure<ServiceHub.Core.Models.OidcOptions>(builder.Configuration.GetSection(ServiceHub.Core.Models.OidcOptions.SectionName));
 builder.Services.AddServiceHubPersistence();
 builder.Services.AddCloudProviderRouting();
 
 // One line per cloud: this is the only place the API knows a provider exists.
 builder.Services.AddAzureProvider();
+builder.Services.AddAwsProvider();
+builder.Services.AddGcpProvider();
 builder.Services.AddOpenApi();
 
 // The agent platform runs with zero agents in Wave 0 and says so at startup. Agents arrive one
@@ -71,6 +80,14 @@ app.UseExceptionHandler(handler => handler.Run(async context =>
 }));
 
 app.UseStatusCodePages();
+
+// Identity, in the order it is trusted: a platform-injected principal, then a validated bearer
+// token, then a configured API key. Each is a no-op unless configured, and none of them gates a
+// request — they only decide how the caller is named (rule R6). With none configured every request
+// is "from this browser session".
+app.UseMiddleware<EasyAuthMiddleware>();
+app.UseMiddleware<OidcBearerAuthenticationMiddleware>();
+app.UseMiddleware<ApiKeyIdentityMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {

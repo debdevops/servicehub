@@ -17,6 +17,9 @@
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
     <!-- Transitive of Microsoft.AspNetCore.OpenApi; pinned forward past GHSA-v5pm-xwqc-g5wc. -->
     <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
+    <!-- OIDC bearer-token validation (the optional claims identity source). -->
+    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.19.2" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.19.2" />
     <!-- Design-time only: powers `dotnet ef migrations add` against ServiceHubDbContext in ServiceHub.Infrastructure -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
       <PrivateAssets>all</PrivateAssets>

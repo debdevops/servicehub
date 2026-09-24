@@ -1,0 +1,124 @@
+using Microsoft.Extensions.Logging;
+
+namespace ServiceHub.Api.Middleware;
+
+/// <summary>
+/// Middleware for Azure App Service Easy Authentication (Built-in authentication).
+/// Reads the X-MS-CLIENT-PRINCIPAL-ID header injected by Azure's authentication layer
+/// and sets per-user OwnerId for tenant isolation.
+///
+/// This header is:
+/// - Injected by Azure's reverse proxy AFTER successful Microsoft authentication
+/// - STRIPPED from all inbound external requests (Postman, curl, etc cannot spoof it)
+/// - Contains the user's Entra Object ID (globally unique, unforgeable)
+///
+/// Runs BEFORE ApiKeyAuthenticationMiddleware so that EasyAuth-authenticated
+/// requests bypass the legacy SPA token path.
+/// </summary>
+public sealed class EasyAuthMiddleware
+{
+    private readonly RequestDelegate _next;
+    private readonly ILogger<EasyAuthMiddleware> _logger;
+    private readonly bool _enabled;
+
+    private const string EasyAuthHeaderName = "X-MS-CLIENT-PRINCIPAL-ID";
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="EasyAuthMiddleware"/> class.
+    /// </summary>
+    /// <param name="next">The next middleware in the pipeline.</param>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="configuration">The configuration.</param>
+    public EasyAuthMiddleware(
+        RequestDelegate next,
+        ILogger<EasyAuthMiddleware> logger,
+        IConfiguration configuration)
+    {
+        _next = next ?? throw new ArgumentNullException(nameof(next));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+
+        // Read EasyAuth enabled setting from configuration.
+        // In Development, Azure Easy Auth is OFF so this middleware sees no headers
+        // and passes through without setting OwnerId (allowing legacy SPA token path).
+        // Defaults to enabled to preserve current behavior when setting is absent.
+        var easyAuthEnabledSetting = configuration["Security:EasyAuth:Enabled"];
+        var configEnabled = !bool.TryParse(easyAuthEnabledSetting, out var enabled) || enabled;
+
+        // SECURITY: X-MS-CLIENT-PRINCIPAL-ID is only unforgeable when Azure's
+        // authentication layer sits in front of the app and strips the header from
+        // inbound traffic. On any other host (AWS ECS, GCP Cloud Run, bare Kestrel)
+        // a client can send the header directly and mint an arbitrary identity.
+        // Trust it only when Azure Easy Auth is provably active for this worker
+        // (App Service sets WEBSITE_AUTH_ENABLED=True), or when the operator
+        // explicitly asserts their front end strips and injects the header.
+        var behindAzureEasyAuth = string.Equals(
+            Environment.GetEnvironmentVariable("WEBSITE_AUTH_ENABLED"),
+            "True",
+            StringComparison.OrdinalIgnoreCase);
+        var explicitHeaderTrust = configuration.GetValue(
+            "Security:EasyAuth:TrustClientPrincipalHeader", false);
+
+        _enabled = configEnabled && (behindAzureEasyAuth || explicitHeaderTrust);
+
+        if (configEnabled && !_enabled)
+        {
+            _logger.LogInformation(
+                "EasyAuth is enabled in configuration but Azure Easy Auth is not detected " +
+                "(WEBSITE_AUTH_ENABLED is not set to 'True'). The X-MS-CLIENT-PRINCIPAL-ID header will be " +
+                "ignored to prevent identity spoofing. If a trusted proxy strips and injects this " +
+                "header on your platform, set Security:EasyAuth:TrustClientPrincipalHeader=true.");
+        }
+    }
+
+    /// <summary>
+    /// Invokes the middleware.
+    /// </summary>
+    /// <param name="context">The HTTP context.</param>
+    public async Task InvokeAsync(HttpContext context)
+    {
+        // Check for the Azure Easy Auth header
+        if (_enabled && context.Request.Headers.TryGetValue(EasyAuthHeaderName, out var principalIdHeader))
+        {
+            var principalId = principalIdHeader.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(principalId))
+            {
+                // Construct OwnerId as "entra:{oid}" for consistency
+                var ownerId = $"entra:{principalId}";
+                context.Items["OwnerId"] = ownerId;
+                context.Items["Authenticated"] = true;
+                context.Items["AuthMethod"] = "EasyAuth";
+
+                // Easy Auth also injects the signed-in user's name; it is what the audit trail shows.
+                var principalName = context.Request.Headers["X-MS-CLIENT-PRINCIPAL-NAME"].FirstOrDefault();
+                if (!string.IsNullOrWhiteSpace(principalName))
+                {
+                    context.Items["ClaimsName"] = principalName;
+                }
+
+                // Sanitize log inputs to prevent log injection
+                var safeMethod = (context.Request.Method ?? string.Empty)
+                    .Replace("\r", string.Empty)
+                    .Replace("\n", string.Empty);
+                var safePath = context.Request.Path.ToString()
+                    .Replace("\r", string.Empty)
+                    .Replace("\n", string.Empty);
+
+                _logger.LogDebug(
+                    "EasyAuth authentication successful for {Method} {Path} with OwnerId {OwnerId}",
+                    safeMethod,
+                    safePath,
+                    ownerId);
+
+                // Continue to next middleware (skip ApiKeyAuthenticationMiddleware logic)
+                await _next(context);
+                return;
+            }
+        }
+
+        // No Easy Auth header (either disabled or unauthenticated request from public internet)
+        // In Development: no Easy Auth, continue to ApiKeyAuthenticationMiddleware (allows SPA token)
+        // In Production: Azure infrastructure prevents unauthenticated requests from reaching here
+        await _next(context);
+    }
+}

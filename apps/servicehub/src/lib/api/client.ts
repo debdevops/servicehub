@@ -13,6 +13,32 @@ export const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+const SESSION_KEY = 'servicehub.session'
+
+/**
+ * A random id for this browser session, kept for the session's lifetime. The API records it beside
+ * every action so the audit trail can honestly say "from this browser session". It is not a
+ * credential and it names nobody. Storage can be blocked, so a fresh id per page load is the
+ * fallback — never an error.
+ */
+export function sessionId(): string {
+  try {
+    const existing = window.sessionStorage.getItem(SESSION_KEY)
+    if (existing) return existing
+    const created = crypto.randomUUID()
+    window.sessionStorage.setItem(SESSION_KEY, created)
+    return created
+  } catch {
+    return (sessionId.fallback ??= crypto.randomUUID())
+  }
+}
+sessionId.fallback = undefined as string | undefined
+
+api.interceptors.request.use((config) => {
+  config.headers.set('X-ServiceHub-Session', sessionId())
+  return config
+})
+
 /** A failure, reduced to what a screen needs to say something true about it. */
 export interface ApiProblem {
   /** The stable machine-readable code from the API's ProblemDetails. */

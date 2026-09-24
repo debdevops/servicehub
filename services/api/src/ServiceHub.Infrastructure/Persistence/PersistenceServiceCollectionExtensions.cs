@@ -58,6 +58,8 @@ public static class PersistenceServiceCollectionExtensions
         services.TryAddSingleton<IConnectionStringProtector, ConnectionStringProtector>();
 
         services.TryAddScoped<INamespaceRepository, NamespaceRepository>();
+        services.TryAddScoped<IAuditTrail, AuditTrail>();
+        services.TryAddSingleton<IActorIdentityResolver, Identity.ActorIdentityResolver>();
 
         // Single-instance invariant (ADR-0003). Singleton, so the OS file lock is held for the
         // process lifetime and released by the container on shutdown.
