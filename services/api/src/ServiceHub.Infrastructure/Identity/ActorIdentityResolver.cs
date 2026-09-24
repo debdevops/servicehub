@@ -21,6 +21,13 @@ public sealed class ActorIdentityResolver : IActorIdentityResolver
     /// <summary>Prefix every API-key actor carries, so a grant for a key can only ever match a key.</summary>
     public const string ApiKeyIdentityPrefix = "ApiKey:";
 
+    /// <summary>The actor for work ServiceHub does on its own — never a person, and named so the ledger says which part acted.</summary>
+    public static RecoveryActor ResolveSystemActor(string component)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(component);
+        return new RecoveryActor($"System:{component.Trim()}", RecoveryActorKind.System);
+    }
+
     /// <inheritdoc />
     public RecoveryActor Resolve(ActorContext context)
     {

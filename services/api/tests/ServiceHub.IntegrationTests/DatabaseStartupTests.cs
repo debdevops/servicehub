@@ -27,6 +27,19 @@ public sealed class DatabaseStartupTests
         using var client = factory.CreateClient();
         await client.GetAsync(new Uri("/health", UriKind.Relative));
 
+        // The DLQ monitor runs a cycle as soon as the host starts, and opening a missing SQLite file
+        // creates it — so a first cycle landing after the delete below would put the file back and turn
+        // this test red under load. Let that first cycle finish, then keep the monitor quiet.
+        var registry = factory.Services.GetRequiredService<ServiceHub.Core.Interfaces.IAgentRegistry>();
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (registry.StateOf("dlq-monitor")?.LastRunUtc is null && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20);
+        }
+
+        registry.StateOf("dlq-monitor")?.LastRunUtc.Should().NotBeNull("the monitor's first cycle must be over before the file is removed");
+        registry.SetPaused("dlq-monitor", true);
+
         // Remove the file behind the running host: readiness must notice, liveness must not.
         // (Readiness is Unhealthy -> 503; the process is still alive -> 200.)
         var dbPath = Path.Combine(factory.DataDirectory, ServiceHubDataDirectory.DatabaseFileName);

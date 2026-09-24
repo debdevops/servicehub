@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Enums;
+using ServiceHub.Core.Events;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Dlq;
@@ -88,6 +89,22 @@ public sealed class DlqMonitorAgent : IAgent
         var skipped = scans.Where(s => s.Result.Outcome == ScanOutcome.Skipped).ToList();
         var failed = scans.Where(s => s.Result.Outcome == ScanOutcome.Failed).ToList();
         var unconfirmed = scanned.Sum(s => s.Result.Unconfirmed);
+
+        // Tell anyone watching that a queue's contents changed — a hint to look again, never the data itself.
+        using (var scope = _scopes.CreateScope())
+        {
+            if (scope.ServiceProvider.GetService<IPlatformEventBus>() is { } bus)
+            {
+                foreach (var (ns, result) in scanned.Where(s => s.Result.NewMessages > 0 || s.Result.Resolved > 0))
+                {
+                    await bus.PublishAsync(new PlatformEvent
+                    {
+                        Source = Descriptor.Id, Category = EventCategories.Dlq, EventType = EventTypes.DlqMessageDetected,
+                        CloudProvider = ns.Provider.ToString().ToLowerInvariant(), NamespaceId = ns.Id, NamespaceName = ns.Name, Actor = ns.OwnerId,
+                    }, ct).ConfigureAwait(false);
+                }
+            }
+        }
 
         var parts = new List<string>
         {

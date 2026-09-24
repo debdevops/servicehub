@@ -45,6 +45,10 @@ trap cleanup EXIT INT TERM
 
 if [ "$MODE" != "web" ]; then
   echo "▶ API      http://localhost:${API_PORT}"
+  # This script is for development, so the API runs as Development unless you say otherwise: that is what
+  # supplies the throw-away dev encryption key. Without it (--no-launch-profile sets no environment) the API
+  # starts as Production and, correctly, refuses to run with no key configured.
+  ASPNETCORE_ENVIRONMENT="${ASPNETCORE_ENVIRONMENT:-Development}" \
   ASPNETCORE_URLS="http://localhost:${API_PORT}" \
     dotnet run --project services/api/src/ServiceHub.Api --no-launch-profile &
   pids+=("$!")

@@ -46,8 +46,15 @@ builder.Services.AddOpenApi();
 // The agent platform. Agents arrive one file and one registration line at a time (unit 2.1 onwards).
 builder.Services.AddAgentPlatform();
 builder.Services.AddAgent<DlqMonitorAgent>();
+builder.Services.AddAgent<RecoveryVerificationAgent>();
+
+builder.Services.AddSingleton<ServiceHub.Api.Services.PlatformEventStreamBroker>();
 
 var app = builder.Build();
+
+// The stream broker listens to the bus for the life of the process, so a browser tab can be told when something changed.
+app.Services.GetRequiredService<ServiceHub.Core.Interfaces.IPlatformEventBus>()
+    .Subscribe(app.Services.GetRequiredService<ServiceHub.Api.Services.PlatformEventStreamBroker>().HandleAsync);
 
 // Take the single-instance lock and apply migrations BEFORE serving. A second instance against the
 // same data directory, or a database this version does not recognise, stops here with a clear

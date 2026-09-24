@@ -68,3 +68,44 @@ export async function fetchDeadLetters(query: DeadLetterQuery): Promise<DeadLett
   }
   return (await api.get<DeadLetterPage>('/dead-letters', { params })).data
 }
+
+/**
+ * One dead letter opened. The body is only the preview ServiceHub stored (the first 500 characters) —
+ * `bodyIsPreview` says when there is more, so it is never shown as the whole message.
+ */
+export interface DeadLetterDetail {
+  readonly item: DeadLetter
+  readonly bodyPreview: string | null
+  readonly bodyIsPreview: boolean
+  readonly contentType: string | null
+  readonly correlationId: string | null
+  readonly sessionId: string | null
+  /** The application properties, as stored JSON text. */
+  readonly applicationPropertiesJson: string | null
+  readonly resolvedAt: string | null
+  /** Other active dead letters in this queue with the same recorded reason. */
+  readonly othersLikeIt: number
+}
+
+export async function fetchDeadLetter(id: number): Promise<DeadLetterDetail> {
+  return (await api.get<DeadLetterDetail>(`/dead-letters/${id}`)).data
+}
+
+export interface TrendDay {
+  /** The UTC day, `yyyy-MM-dd`. */
+  readonly date: string
+  /** First seen dead-lettered that day. */
+  readonly new: number
+  /** Seen to leave the queue that day (replayed, or gone). */
+  readonly resolved: number
+}
+
+export interface DeadLetterTrend {
+  readonly days: number
+  /** Every day of the range, oldest first, zeros included. Daily — no hourly series exists. */
+  readonly series: readonly TrendDay[]
+}
+
+export async function fetchDeadLetterTrend(provider: CloudProvider, days: number): Promise<DeadLetterTrend> {
+  return (await api.get<DeadLetterTrend>('/dead-letters/trend', { params: { provider: providerParam(provider), days } })).data
+}

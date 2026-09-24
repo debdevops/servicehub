@@ -8,6 +8,7 @@ using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Core.Security;
 using ServiceHub.Infrastructure.Persistence;
 
@@ -69,12 +70,14 @@ public sealed class DlqScanner
     private const int MaxScanBatchesPerEntity = 50;
     private const int LookupChunk = 400;
     private const string SubscriptionPathSegment = "/subscriptions/";
+    private const string RecoveryMarkerProperty = "x-servicehub-recovery-id";
 
     private readonly ServiceHubDbContext _db;
     private readonly ICloudProviderRouter _router;
     private readonly IConfiguration _configuration;
     private readonly TimeProvider _time;
     private readonly ILogger<DlqScanner> _logger;
+    private readonly IRecoveryLedger _ledger;
 
     /// <summary>Creates the scanner. One per scope: it shares its scope's database context.</summary>
     public DlqScanner(
@@ -82,8 +85,10 @@ public sealed class DlqScanner
         ICloudProviderRouter router,
         IConfiguration configuration,
         ILogger<DlqScanner> logger,
+        IRecoveryLedger ledger,
         TimeProvider? time = null)
     {
+        _ledger = ledger ?? throw new ArgumentNullException(nameof(ledger));
         _db = db ?? throw new ArgumentNullException(nameof(db));
         _router = router ?? throw new ArgumentNullException(nameof(router));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
@@ -248,6 +253,7 @@ public sealed class DlqScanner
 
             var detectedAt = _time.GetUtcNow();
             var existing = await LoadExistingAsync(ns, fullName, peeked, useSequenceKey, ct).ConfigureAwait(false);
+            var newlySeen = new List<(Message Message, string BodyHash)>();
 
             foreach (var msg in peeked)
             {
@@ -267,11 +273,13 @@ public sealed class DlqScanner
                     continue;
                 }
 
+                var bodyHash = ComputeBodyHash(msg.Body);
+                newlySeen.Add((msg, bodyHash));
                 _db.DlqMessages.Add(new DlqMessage
                 {
                     MessageId = msg.MessageId,
                     SequenceNumber = msg.SequenceNumber,
-                    BodyHash = ComputeBodyHash(msg.Body),
+                    BodyHash = bodyHash,
                     NamespaceId = ns.Id,
                     CloudProvider = ns.Provider,
                     OwnerId = ns.OwnerId,
@@ -315,6 +323,14 @@ public sealed class DlqScanner
             }
 
             await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+            // Only once the new rows are safely stored: a message that has come back is recorded against the
+            // replay it came back from, so the answer to "did it work?" is never later than the sighting.
+            foreach (var (message, hash) in newlySeen)
+            {
+                await DetectRecurrenceAsync(ns, fullName, message, hash, detectedAt, ct).ConfigureAwait(false);
+            }
+
             return new EntityScan(newCount, peeked.Count, complete, resolvedHere);
         }
         catch (OperationCanceledException)
@@ -462,6 +478,64 @@ public sealed class DlqScanner
         return slash >= 0
             ? (fullName[(slash + 1)..], fullName[..slash], ServiceBusEntityType.Subscription)
             : (fullName, null, ServiceBusEntityType.Subscription);
+    }
+
+    /// <summary>
+    /// Attributes a newly seen dead letter to a replay it may be the return of. An exact match by the stamped
+    /// recovery marker wins. When no marker survived, a body-hash match in the same queue is a
+    /// <i>heuristic</i>: every candidate is recorded with the number of collisions rather than guessing which.
+    /// A failure here never fails the scan — the ledger's own state is authoritative.
+    /// </summary>
+    private async Task DetectRecurrenceAsync(
+        Namespace ns, string fullName, Message message, string bodyHash, DateTimeOffset detectedAt, CancellationToken ct)
+    {
+        try
+        {
+            string? marker = null;
+            if (message.ApplicationProperties is { } props && props.TryGetValue(RecoveryMarkerProperty, out var raw))
+            {
+                marker = raw as string ?? raw?.ToString();
+            }
+
+            if (!string.IsNullOrEmpty(marker)
+                && await _ledger.FindByMarkerAsync(ns.OwnerId, marker, ct).ConfigureAwait(false) is { } exact)
+            {
+                await RecordReturnAsync(exact, VerificationConfidence.Exact, 0, ct).ConfigureAwait(false);
+                return;
+            }
+
+            var candidates = await _ledger.FindHeuristicRecurrenceCandidatesAsync(ns.OwnerId, ns.Id, fullName, bodyHash, detectedAt, ct).ConfigureAwait(false);
+            foreach (var candidate in candidates)
+            {
+                await RecordReturnAsync(candidate, VerificationConfidence.Heuristic, candidates.Count, ct).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+#pragma warning disable CA1031 // Recording a return must never fail the scan that found it.
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not check whether a new dead letter in {EntityName} is a returned replay", LogRedactor.SanitiseForLog(fullName));
+        }
+#pragma warning restore CA1031
+    }
+
+    private async Task RecordReturnAsync(RecoveryLedgerEntry entry, VerificationConfidence confidence, int collisionCount, CancellationToken ct)
+    {
+        var result = await _ledger.RecordObservationAsync(new RecordObservationRequest
+        {
+            EntryId = entry.Id, OwnerId = entry.OwnerId, Actor = Identity.ActorIdentityResolver.ResolveSystemActor("DlqMonitorAgent"),
+            Outcome = RecoveryObservationOutcome.RecurrenceObserved, Confidence = confidence,
+            DetailJson = collisionCount > 0 ? JsonSerializer.Serialize(new { collisionCount }) : null,
+        }, ct).ConfigureAwait(false);
+
+        // A lost race with the verifier closing the same entry is not an error.
+        if (result.IsSuccess)
+        {
+            _logger.LogInformation("Ledger entry {EntryId} returned to the dead-letter queue ({Confidence} match)", entry.Id, confidence);
+        }
     }
 
     private static string ComputeBodyHash(string? body) =>

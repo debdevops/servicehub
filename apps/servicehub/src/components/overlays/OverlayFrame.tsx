@@ -13,12 +13,24 @@ export function OverlayFrame({
   title,
   description,
   onClose,
+  size = 'default',
+  actions,
+  docked = false,
   children,
 }: {
   kind: 'modal' | 'panel'
   title: string
   description?: string
   onClose: () => void
+  /** `drawer` is the 462px side view of a message; `wide` a modal for careful reading. */
+  size?: 'default' | 'drawer' | 'wide'
+  /** Buttons that sit in the header beside the ✕ (a drawer's ⤢ Expand). */
+  actions?: ReactNode
+  /**
+   * A panel that sits BESIDE the page instead of over it: no scrim, and the page behind stays clickable — a
+   * message drawer is read next to its table. It still traps Tab and takes Esc, and restores focus on close.
+   */
+  docked?: boolean
   children: ReactNode
 }) {
   const frame = useRef<HTMLDivElement>(null)
@@ -65,24 +77,27 @@ export function OverlayFrame({
 
   const isModal = kind === 'modal'
   return (
-    <div className={`fixed inset-0 z-40 flex ${isModal ? 'items-center justify-center p-6' : 'justify-end'}`}>
-      <div
-        className="absolute inset-0 bg-black/30"
-        aria-hidden="true"
-        data-testid="overlay-scrim"
-        onClick={onClose}
-      />
+    <div className={`fixed inset-0 z-40 flex ${isModal ? 'items-center justify-center p-6' : 'justify-end'} ${docked ? 'pointer-events-none' : ''}`}>
+      {!docked && (
+        <div
+          className="absolute inset-0 bg-black/30"
+          aria-hidden="true"
+          data-testid="overlay-scrim"
+          onClick={onClose}
+        />
+      )}
       <div
         ref={frame}
         role="dialog"
-        aria-modal="true"
+        aria-modal={docked ? 'false' : 'true'}
         aria-label={title}
         tabIndex={-1}
         data-overlay={kind}
+        data-docked={docked || undefined}
         className={
           isModal
-            ? 'relative max-h-full w-full max-w-xl overflow-y-auto rounded-2xl bg-[var(--color-surface)] shadow-xl'
-            : 'relative h-full w-full max-w-md overflow-y-auto border-l border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl'
+            ? `relative max-h-full w-full ${size === 'wide' ? 'max-w-4xl' : 'max-w-xl'} overflow-y-auto rounded-2xl bg-[var(--color-surface)] shadow-xl`
+            : `relative h-full w-full ${docked ? 'pointer-events-auto' : ''} ${size === 'drawer' ? 'max-w-[462px]' : 'max-w-md'} overflow-y-auto border-l border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl`
         }
       >
         <div className="flex items-start gap-3 border-b border-[var(--color-border)] px-5 py-4">
@@ -90,6 +105,7 @@ export function OverlayFrame({
             <h2 className="text-base font-semibold text-[var(--color-text)]">{title}</h2>
             {description && <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">{description}</p>}
           </div>
+          {actions}
           <button
             type="button"
             aria-label="Close"

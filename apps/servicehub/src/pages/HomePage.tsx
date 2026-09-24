@@ -1,8 +1,12 @@
+import { lazy, Suspense } from 'react'
 import { CheckCircle2, TriangleAlert } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { Welcome } from '../components/connect/Welcome'
 import { FleetCard } from '../components/FleetCard'
+import { MessageDrawer } from '../components/message/MessageDrawer'
 import { DeadLettersView } from '../components/message/DeadLettersView'
+import { ReplayedTab } from '../components/message/ReplayedTab'
+import { RecentActivity } from '../components/RecentActivity'
 import { RecentDeadLetters } from '../components/message/RecentDeadLetters'
 import { WorkTabs } from '../components/message/WorkTabs'
 import { useProviderScope } from '../components/provider/providerScope'
@@ -12,6 +16,9 @@ import { useProviderSummary } from '../hooks/useProviderSummary'
 import type { CloudProvider, Namespace } from '../lib/api/namespaces'
 import type { CloudSummary } from '../lib/homeSummary'
 import { connectedProviders, providerLabel, providerService, scopeChips } from '../lib/providers'
+
+// Recharts is heavy and only Home's overview draws it, so it is its own chunk (rule: bundle budget).
+const TrendChart = lazy(() => import('../components/TrendChart'))
 
 /**
  * Home. With nothing connected it is the welcome (D45 — there is no Connect page). Otherwise it is
@@ -32,7 +39,21 @@ export function HomePage() {
 
   const mine = namespaces.data.filter((n) => n.provider === selected)
   const cloudCount = connectedProviders(namespaces.data).length
-  return <CloudHome provider={selected} namespaces={mine} otherCloudsConnected={cloudCount > 1} />
+  return (
+    <>
+      <DrawerAside>
+        <CloudHome provider={selected} namespaces={mine} otherCloudsConnected={cloudCount > 1} />
+      </DrawerAside>
+      <MessageDrawer />
+    </>
+  )
+}
+
+/** Makes room for the message drawer beside the page: it docks at the right, so the page must not sit under it. */
+function DrawerAside({ children }: { children: React.ReactNode }) {
+  const [params] = useSearchParams()
+  const docked = params.get('message') !== null && params.get('view') !== 'full'
+  return <div className={docked ? 'xl:pr-[462px]' : undefined}>{children}</div>
 }
 
 function CloudHome({
@@ -53,7 +74,8 @@ function CloudHome({
 
   // The work views of Home's table (D45): `?tab=dlq` is the dead letters, in place of the overview.
   if (tab === 'dlq') return <DeadLettersView provider={provider} namespaces={namespaces} />
-  if (tab === 'active' || tab === 'replayed') return <NotBuiltTab tab={tab} cloud={cloud} />
+  if (tab === 'replayed') return <ReplayedTab provider={provider} />
+  if (tab === 'active') return <NotBuiltTab tab={tab} cloud={cloud} />
 
   return (
     <section className="px-6 py-6">
@@ -109,7 +131,18 @@ function CloudHome({
               action="See active messages"
             />
           </div>
+          {namespaces.every((n) => n.capabilities?.supportsRepeatablePeek === true) ? (
+            <Suspense fallback={<p role="status" className="text-sm text-[var(--color-text-muted)]">Reading the trend…</p>}>
+              <TrendChart provider={provider} />
+            </Suspense>
+          ) : (
+            // A trend of what ServiceHub has seen is silence, not good news, where it does not look on its own (R5).
+            <p className="rounded-xl bg-[var(--color-surface-muted)] px-4 py-3 text-sm text-[var(--color-text-muted)]">
+              ServiceHub does not watch {cloud} for dead letters on its own, so there is no trend to draw.
+            </p>
+          )}
           <RecentDeadLetters provider={provider} namespaces={namespaces} />
+          <RecentActivity />
           <FleetCard cloud={cloud} summary={summary.summary} fleetHref={otherCloudsConnected ? '/fleet' : undefined} />
         </div>
       )}
@@ -152,12 +185,12 @@ function connectionState(namespaces: readonly Namespace[]): { label: string; ok:
 }
 
 /** Active and Replayed are views of the same table, built in their own units. Until then they say so. */
-function NotBuiltTab({ tab, cloud }: { tab: 'active' | 'replayed'; cloud: string }) {
-  const wave = tab === 'active' ? 3 : 2
+function NotBuiltTab({ tab, cloud }: { tab: 'active'; cloud: string }) {
+  const wave = 3
   return (
     <section className="px-6 py-6">
       <h1 className="text-2xl font-semibold text-[var(--color-text)]">
-        {cloud} — {tab === 'active' ? 'Active messages' : 'Replayed'}
+        {cloud} — Active messages
       </h1>
       <div className="mt-4">
         <WorkTabs current={tab} />

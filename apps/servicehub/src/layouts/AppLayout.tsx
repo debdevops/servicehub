@@ -4,6 +4,7 @@ import { CloudProviders } from '../components/provider/CloudProviders'
 import { ProviderScopeProvider } from '../components/provider/ProviderScopeProvider'
 import { SurfaceSwitch } from '../components/ui/SurfaceSwitch'
 import { OverlayHost } from '../components/overlays/OverlayHost'
+import { useEventStream } from '../hooks/useEventStream'
 import { useNamespaces } from '../hooks/useNamespaces'
 import { readLastAdvancedPath, rememberAdvancedPath } from '../lib/lastAdvancedPage'
 import { connectedProviders } from '../lib/providers'
@@ -20,6 +21,7 @@ import { LandingRedirect } from './LandingRedirect'
  * there is nothing to configure and nothing greyed out.
  */
 export function AppLayout() {
+  useEventStream()
   const namespaces = useNamespaces()
   const providers = connectedProviders(namespaces.data ?? [])
   const cloudCount = providers.length

@@ -16,6 +16,9 @@ public static class IntentHeaders
     /// <summary>Removing a namespace forgets a credential and everything watched through it.</summary>
     public const string DeleteNamespace = "delete-namespace";
 
+    /// <summary>Intent for replaying one dead letter.</summary>
+    public const string ReplayMessage = "replay-message";
+
     /// <summary>Whether the request declared exactly <paramref name="expected"/>.</summary>
     public static bool Declares(HttpRequest request, string expected)
     {

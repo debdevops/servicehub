@@ -69,3 +69,35 @@ public sealed record DlqPage(
 /// <param name="Count">How many messages.</param>
 /// <param name="Kinds">How many distinct reasons.</param>
 public sealed record DlqReasonGroupOther(int Count, int Kinds);
+
+/// <summary>
+/// One stored dead letter opened for reading (unit 2.4): the row plus what the drawer needs to judge a
+/// replay. The body is only the stored preview — the first 500 characters — and says so.
+/// </summary>
+/// <param name="Item">The same row the list shows.</param>
+/// <param name="BodyPreview">The first 500 characters of the body, or null when none was stored.</param>
+/// <param name="BodyIsPreview">True when the body is longer than what is held here.</param>
+/// <param name="ContentType">Body content type.</param>
+/// <param name="CorrelationId">The message's correlation id.</param>
+/// <param name="SessionId">The message's session id.</param>
+/// <param name="ApplicationPropertiesJson">The application properties as stored JSON, or null.</param>
+/// <param name="ResolvedAt">When a scan found it gone, or null.</param>
+/// <param name="OthersLikeIt">Other active dead letters in this queue with the same recorded reason.</param>
+/// <param name="BodyHash">SHA-256 of the body. Server-side only (the eligibility gate's lineage key); never serialised.</param>
+public sealed record DlqDetail(
+    DlqListItem Item,
+    string? BodyPreview,
+    bool BodyIsPreview,
+    string? ContentType,
+    string? CorrelationId,
+    string? SessionId,
+    string? ApplicationPropertiesJson,
+    DateTimeOffset? ResolvedAt,
+    int OthersLikeIt,
+    [property: System.Text.Json.Serialization.JsonIgnore] string BodyHash = "");
+
+/// <summary>One day of the dead-letter trend: how many were first seen, and how many were seen to leave (unit 2.10).</summary>
+/// <param name="Date">The UTC day, <c>yyyy-MM-dd</c>.</param>
+/// <param name="New">Dead letters first seen that day.</param>
+/// <param name="Resolved">Dead letters that a scan (or a replay) found gone that day.</param>
+public sealed record DlqTrendDay(string Date, int New, int Resolved);

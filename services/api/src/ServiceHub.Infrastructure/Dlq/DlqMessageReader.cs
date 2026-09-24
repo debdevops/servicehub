@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using ServiceHub.Core.Entities;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Persistence;
@@ -69,6 +70,59 @@ public sealed class DlqMessageReader : IDlqMessageReader
             groups,
             rest.Count == 0 ? null : new DlqReasonGroupOther(rest.Sum(g => g.Count), rest.Count),
             entities);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<DlqTrendDay>> GetTrendAsync(
+        IReadOnlyCollection<Guid> namespaceIds, int days, DateTimeOffset nowUtc, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(namespaceIds);
+        days = Math.Clamp(days, 1, 30);
+
+        var today = nowUtc.UtcDateTime.Date;
+        var first = new DateTimeOffset(today.AddDays(-(days - 1)), TimeSpan.Zero);
+
+        var seen = await _db.DlqMessages.AsNoTracking()
+            .Where(m => namespaceIds.Contains(m.NamespaceId) && m.DetectedAtUtc >= first)
+            .Select(m => m.DetectedAtUtc)
+            .ToListAsync(ct).ConfigureAwait(false);
+
+        var gone = await _db.DlqMessages.AsNoTracking()
+            .Where(m => namespaceIds.Contains(m.NamespaceId) && m.ResolvedAt != null && m.ResolvedAt >= first)
+            .Select(m => m.ResolvedAt!.Value)
+            .ToListAsync(ct).ConfigureAwait(false);
+
+        var newByDay = seen.GroupBy(t => t.UtcDateTime.Date).ToDictionary(g => g.Key, g => g.Count());
+        var goneByDay = gone.GroupBy(t => t.UtcDateTime.Date).ToDictionary(g => g.Key, g => g.Count());
+
+        return [.. Enumerable.Range(0, days).Select(i =>
+        {
+            var day = today.AddDays(-(days - 1) + i);
+            return new DlqTrendDay(day.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
+                newByDay.GetValueOrDefault(day), goneByDay.GetValueOrDefault(day));
+        })];
+    }
+
+    /// <inheritdoc />
+    public async Task<DlqDetail?> GetAsync(long id, IReadOnlyCollection<Guid> namespaceIds, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(namespaceIds);
+
+        var m = await _db.DlqMessages.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == id && namespaceIds.Contains(x.NamespaceId), ct).ConfigureAwait(false);
+        if (m is null)
+        {
+            return null;
+        }
+
+        var reason = m.DeadLetterReason;
+        var others = await _db.DlqMessages.AsNoTracking().CountAsync(
+            x => x.NamespaceId == m.NamespaceId && x.EntityName == m.EntityName && x.Status == DlqMessageStatus.Active
+                 && x.Id != m.Id && x.DeadLetterReason == reason, ct).ConfigureAwait(false);
+
+        return new DlqDetail(
+            ToItem(m), m.BodyPreview, m.MessageSize > (m.BodyPreview?.Length ?? 0) && m.BodyPreview is not null,
+            m.ContentType, m.CorrelationId, m.SessionId, m.ApplicationPropertiesJson, m.ResolvedAt, others, m.BodyHash);
     }
 
     private static IQueryable<DlqMessage> ApplyFilters(IQueryable<DlqMessage> source, DlqListQuery q, bool includeReason)

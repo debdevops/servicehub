@@ -43,13 +43,14 @@ export default defineConfig({
     rollupOptions: {
       output: {
         // Split the vendors that change on their own schedule, so a product change does not
-        // invalidate them. Charts join this split in Wave 2.
+        // invalidate them. Charts joined it in Wave 2 (unit 2.10) and load only where Home draws one.
         manualChunks(id: string) {
           if (!id.includes('node_modules')) return undefined
           if (/[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom)[\\/]/.test(id)) {
             return 'vendor-react'
           }
           if (id.includes('@tanstack')) return 'vendor-query'
+          if (/[\\/]node_modules[\\/](recharts|d3-[^\\/]+|victory-vendor|recharts-scale)[\\/]/.test(id)) return 'vendor-charts'
           return undefined
         },
       },

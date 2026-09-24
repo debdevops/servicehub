@@ -128,7 +128,7 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                         .HasMaxLength(8192)
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset?>("ArchivedAt")
+                    b.Property<string>("ArchivedAt")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("BodyHash")
@@ -164,10 +164,12 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                     b.Property<int>("DeliveryCount")
                         .HasColumnType("INTEGER");
 
-                    b.Property<DateTimeOffset>("DetectedAtUtc")
+                    b.Property<string>("DetectedAtUtc")
+                        .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset>("EnqueuedTimeUtc")
+                    b.Property<string>("EnqueuedTimeUtc")
+                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<string>("EntityName")
@@ -200,7 +202,7 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset?>("ResolvedAt")
+                    b.Property<string>("ResolvedAt")
                         .HasColumnType("TEXT");
 
                     b.Property<long>("SequenceNumber")
@@ -321,6 +323,384 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("IX_Namespaces_OwnerId_Name");
 
                     b.ToTable("Namespaces", (string)null);
+                });
+
+            modelBuilder.Entity("ServiceHub.Core.Entities.RecoveryEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActorIdentity")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActorKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DetailJson")
+                        .HasMaxLength(8192)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EntryHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("EntryId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OccurredAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PrevHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SchemaVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("Seq")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EntryId", "Seq")
+                        .HasDatabaseName("IX_RecoveryEvents_EntryId_Seq");
+
+                    b.HasIndex("OperationId", "Seq")
+                        .HasDatabaseName("IX_RecoveryEvents_OperationId_Seq");
+
+                    b.HasIndex("OwnerId", "Seq")
+                        .IsUnique()
+                        .HasDatabaseName("IX_RecoveryEvents_Owner_Seq");
+
+                    b.HasIndex("OwnerId", "EventType", "Seq")
+                        .HasDatabaseName("IX_RecoveryEvents_Owner_EventType_Seq");
+
+                    b.ToTable("RecoveryEvents", (string)null);
+                });
+
+            modelBuilder.Entity("ServiceHub.Core.Entities.RecoveryLedgerEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("BegunAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("BodyHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ClosedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeadLetterReasonSnapshot")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Disposition")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("DlqMessageId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("EntityNameSnapshot")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EntityTypeSnapshot")
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EnvironmentSnapshot")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FailureCategorySnapshot")
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("LastEventSeq")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("MarkerApplied")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("NamespaceId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NamespaceNameSnapshot")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ObservationWindowEndsAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("OperationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProviderSnapshot")
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RecoveryMarker")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SignatureHashSnapshot")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SourceMessageIdSnapshot")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("SourceSequenceNumberSnapshot")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TargetEntity")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TopicNameSnapshot")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("VerificationConfidence")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("VerificationResult")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OperationId")
+                        .HasDatabaseName("IX_RecoveryLedgerEntries_OperationId");
+
+                    b.HasIndex("RecoveryMarker")
+                        .IsUnique()
+                        .HasDatabaseName("IX_RecoveryLedgerEntries_RecoveryMarker")
+                        .HasFilter("[RecoveryMarker] IS NOT NULL");
+
+                    b.HasIndex("OwnerId", "State", "BegunAt")
+                        .HasDatabaseName("IX_RecoveryLedgerEntries_Owner_State_BegunAt");
+
+                    b.HasIndex("OwnerId", "NamespaceId", "EntityNameSnapshot", "BodyHash")
+                        .HasDatabaseName("IX_RecoveryLedgerEntries_Owner_Namespace_Entity_BodyHash");
+
+                    b.ToTable("RecoveryLedgerEntries", (string)null);
+                });
+
+            modelBuilder.Entity("ServiceHub.Core.Entities.RecoveryOperation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActorIdentity")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActorKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActorScopes")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EnvironmentSnapshot")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("IntentHeader")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("NamespaceId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NamespaceNameSnapshot")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OpenedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProviderSnapshot")
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ScopeDescription")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ServiceVersion")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("SourceJobId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long?>("SourceRuleId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TargetCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId", "OpenedAt")
+                        .HasDatabaseName("IX_RecoveryOperations_Owner_OpenedAt");
+
+                    b.HasIndex("OwnerId", "NamespaceId", "OpenedAt")
+                        .HasDatabaseName("IX_RecoveryOperations_Owner_Namespace_OpenedAt");
+
+                    b.ToTable("RecoveryOperations", (string)null);
+                });
+
+            modelBuilder.Entity("ServiceHub.Core.Entities.ReplayHistory", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("DlqMessageId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ErrorDetails")
+                        .HasMaxLength(4096)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MessageId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("NamespaceId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NewDeadLetterReason")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OutcomeStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("RecoveryEntryId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReplayStrategy")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReplayedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReplayedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReplayedToEntity")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("RuleId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SourceEntity")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DlqMessageId")
+                        .HasDatabaseName("IX_ReplayHistories_DlqMessageId");
+
+                    b.HasIndex("ReplayedAt")
+                        .HasDatabaseName("IX_ReplayHistories_ReplayedAt");
+
+                    b.HasIndex("OwnerId", "NamespaceId", "ReplayedAt")
+                        .HasDatabaseName("IX_ReplayHistories_Owner_Namespace_ReplayedAt");
+
+                    b.ToTable("ReplayHistories", (string)null);
                 });
 #pragma warning restore 612, 618
         }

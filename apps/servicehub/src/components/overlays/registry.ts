@@ -16,6 +16,7 @@ export interface OverlayBodyProps {
  */
 export const overlayBodies: Readonly<Record<string, LazyExoticComponent<ComponentType<OverlayBodyProps>>>> = {
   'add-cloud': lazy(() => import('../connect/AddCloudModal')),
+  replay: lazy(() => import('../message/ReplayModal')),
 }
 
 /** Every modal and panel the navigation array lists — the registry test checks `overlayBodies` against it. */

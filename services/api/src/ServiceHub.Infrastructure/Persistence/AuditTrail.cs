@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.Entities;
+using ServiceHub.Core.Events;
 using ServiceHub.Core.Interfaces;
 
 namespace ServiceHub.Infrastructure.Persistence;
@@ -11,11 +13,13 @@ public sealed class AuditTrail : IAuditTrail
     public const int MaxPageSize = 200;
 
     private readonly ServiceHubDbContext _dbContext;
+    private readonly IPlatformEventBus? _events;
 
     /// <summary>Creates the trail over the request-scoped database context.</summary>
-    public AuditTrail(ServiceHubDbContext dbContext)
+    public AuditTrail(ServiceHubDbContext dbContext, IPlatformEventBus? events = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _events = events;
     }
 
     /// <inheritdoc />
@@ -25,6 +29,35 @@ public sealed class AuditTrail : IAuditTrail
 
         _dbContext.AuditLogs.Add(entry);
         await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        // After it is durable, tell anyone watching to look again. A hint only: the row above is the truth, and a
+        // publish that goes nowhere loses nothing.
+        if (_events is not null && EventFor(entry) is { } kind)
+        {
+            await _events.PublishAsync(new PlatformEvent
+            {
+                Source = "audit", Category = kind.Category, EventType = kind.Type,
+                CloudProvider = entry.CloudProvider, NamespaceId = entry.NamespaceId, NamespaceName = entry.NamespaceName,
+                CorrelationId = entry.CorrelationId, Actor = entry.OwnerId,
+            }, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Which event, if any, an audit row announces. Only things that succeeded change what a screen shows.</summary>
+    private static (string Category, string Type)? EventFor(AuditLog entry)
+    {
+        if (!string.Equals(entry.Outcome, AuditActions.Success, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return entry.Action switch
+        {
+            AuditActions.NamespaceConnect => (EventCategories.Namespace, EventTypes.NamespaceCreated),
+            AuditActions.NamespaceRemove => (EventCategories.Namespace, EventTypes.NamespaceDeleted),
+            AuditActions.ReplayMessage => (EventCategories.Replay, EventTypes.ReplayCompleted),
+            _ => null,
+        };
     }
 
     /// <inheritdoc />

@@ -59,7 +59,17 @@ public static class PersistenceServiceCollectionExtensions
 
         services.TryAddScoped<INamespaceRepository, NamespaceRepository>();
         services.TryAddScoped<IAuditTrail, AuditTrail>();
+
+        // The in-process event bus: one drain loop for the process (unit 2.11).
+        services.TryAddSingleton<Events.InProcessPlatformEventBus>();
+        services.TryAddSingleton<IPlatformEventBus>(sp => sp.GetRequiredService<Events.InProcessPlatformEventBus>());
+        services.AddHostedService(sp => sp.GetRequiredService<Events.InProcessPlatformEventBus>());
         services.TryAddScoped<IDlqMessageReader, Dlq.DlqMessageReader>();
+        services.TryAddScoped<IRecoveryLedger, RecoveryLedger.RecoveryLedgerService>();
+        services.TryAddSingleton<Telemetry.ServiceHubMetrics>();
+        services.TryAddScoped<IRecoveryEligibilityGate, RecoveryLedger.RecoveryEligibilityGate>();
+        services.TryAddScoped<IDlqReplayService, Recovery.DlqReplayService>();
+        services.TryAddScoped<IRecoveryQueries, RecoveryLedger.RecoveryQueries>();
         services.TryAddSingleton<IActorIdentityResolver, Identity.ActorIdentityResolver>();
 
         // Single-instance invariant (ADR-0003). Singleton, so the OS file lock is held for the

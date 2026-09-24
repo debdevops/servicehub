@@ -121,7 +121,7 @@ public sealed class DlqMonitorTests : IAsyncLifetime
     private DlqScanner Scanner(ServiceHubDbContext db, FakeCloud cloud, Dictionary<string, string?>? config = null) =>
         new(db, new CloudProviderRouter([cloud]),
             new ConfigurationBuilder().AddInMemoryCollection(config ?? []).Build(),
-            NullLogger<DlqScanner>.Instance, _time);
+            NullLogger<DlqScanner>.Instance, new ServiceHub.Infrastructure.RecoveryLedger.RecoveryLedgerService(db), _time);
 
     private async Task<List<DlqMessage>> Rows()
     {
@@ -367,6 +367,7 @@ public sealed class DlqMonitorTests : IAsyncLifetime
         services.AddSingleton<TimeProvider>(_time);
         services.AddDbContext<ServiceHubDbContext>(o => o.UseSqlite(_connection));
         services.AddScoped<INamespaceRepository, NamespaceRepository>();
+        services.AddScoped<IRecoveryLedger>(sp => new ServiceHub.Infrastructure.RecoveryLedger.RecoveryLedgerService(sp.GetRequiredService<ServiceHubDbContext>()));
         var provider = services.BuildServiceProvider();
 
         using (var scope = provider.CreateScope())
@@ -478,5 +479,117 @@ public sealed class DlqMonitorTests : IAsyncLifetime
 
         registry.StateOf("dlq-monitor")!.Health.Should().Be(AgentHealth.Healthy);
         (await Rows()).Should().HaveCount(1);
+    }
+
+    // ── Unit 2.8: a message that comes back is recorded against the replay it came back from ────────
+
+    private static string HashOf(string body) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(body))).ToLowerInvariant();
+
+    /// <summary>An entry the ledger is watching, as a replay of <c>Msg(seq)</c> in "orders" would leave it.</summary>
+    private async Task<Guid> Watching(Namespace ns, long seq, bool markerApplied)
+    {
+        await using var db = NewDb();
+        if (await db.Namespaces.FindAsync(ns.Id) is null)
+        {
+            db.Namespaces.Add(ns);
+            await db.SaveChangesAsync();
+        }
+
+        var ledger = new ServiceHub.Infrastructure.RecoveryLedger.RecoveryLedgerService(db);
+        var actor = new RecoveryActor("session", RecoveryActorKind.User);
+        var op = (await ledger.OpenOperationAsync(new OpenRecoveryOperationRequest
+        {
+            OwnerId = ns.OwnerId, Kind = RecoveryOperationKind.Replay, Trigger = RecoveryTrigger.Manual, Actor = actor,
+            ScopeDescription = "test", TargetCount = 1,
+        })).Value;
+        var entry = (await ledger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = op.Id, OwnerId = ns.OwnerId, Actor = actor, NamespaceId = ns.Id, EntityNameSnapshot = "orders",
+            BodyHash = HashOf($"{{\"order\":{seq}}}"), TargetEntity = "orders",
+        })).Value;
+        await ledger.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = entry.Id, OwnerId = ns.OwnerId, Actor = actor, Outcome = RecoveryExecutionOutcome.Accepted,
+            RecoveryMarker = markerApplied ? entry.Id.ToString() : null, MarkerApplied = markerApplied,
+        });
+        return entry.Id;
+    }
+
+    private async Task<RecoveryLedgerEntry> Entry(Guid id)
+    {
+        await using var db = NewDb();
+        return await db.RecoveryLedgerEntries.AsNoTracking().SingleAsync(e => e.Id == id);
+    }
+
+    [Fact]
+    public async Task A_message_carrying_the_recovery_id_is_an_exact_return()
+    {
+        var ns = AzureNs();
+        var id = await Watching(ns, 1, markerApplied: true);
+        var cloud = Azure();
+        cloud.Entities.Add(Queue("orders", 1));
+        cloud.DeadLetters["orders"] =
+        [
+            new Message
+            {
+                MessageId = "back-1", SequenceNumber = 5, Body = "{\"order\":5}", DeadLetterReason = "MaxDeliveryCountExceeded", DeliveryCount = 10,
+                EnqueuedTime = new DateTimeOffset(2026, 9, 24, 13, 0, 0, TimeSpan.Zero),
+                ApplicationProperties = new Dictionary<string, object> { ["x-servicehub-recovery-id"] = id.ToString() },
+            },
+        ];
+
+        await Scan(cloud, ns);
+
+        var entry = await Entry(id);
+        entry.State.Should().Be(RecoveryEntryState.Returned);
+        entry.VerificationConfidence.Should().Be(VerificationConfidence.Exact);
+    }
+
+    [Fact]
+    public async Task Without_a_recovery_id_a_matching_body_in_the_same_queue_is_a_heuristic_return()
+    {
+        var ns = AzureNs();
+        var id = await Watching(ns, 1, markerApplied: false);
+        var cloud = Azure();
+        cloud.Entities.Add(Queue("orders", 1));
+        cloud.DeadLetters["orders"] = [Msg(1, "came-back")];
+        _time.SetUtcNow(DateTimeOffset.UtcNow.AddMinutes(5)); // the replay began before this sighting
+
+        await Scan(cloud, ns);
+
+        var entry = await Entry(id);
+        entry.State.Should().Be(RecoveryEntryState.Returned);
+        entry.VerificationConfidence.Should().Be(VerificationConfidence.Heuristic);
+    }
+
+    [Fact]
+    public async Task A_different_message_is_not_mistaken_for_a_return()
+    {
+        var ns = AzureNs();
+        var id = await Watching(ns, 1, markerApplied: false);
+        var cloud = Azure();
+        cloud.Entities.Add(Queue("orders", 1));
+        cloud.DeadLetters["orders"] = [Msg(99)]; // a different body
+        _time.SetUtcNow(DateTimeOffset.UtcNow.AddMinutes(5));
+
+        await Scan(cloud, ns);
+
+        (await Entry(id)).State.Should().Be(RecoveryEntryState.Observing);
+    }
+
+    [Fact]
+    public async Task A_replay_whose_recovery_id_was_applied_is_never_matched_by_body_alone()
+    {
+        var ns = AzureNs();
+        var id = await Watching(ns, 1, markerApplied: true);
+        var cloud = Azure();
+        cloud.Entities.Add(Queue("orders", 1));
+        cloud.DeadLetters["orders"] = [Msg(1, "same-body-no-marker")]; // same contents, but no recovery id on it
+        _time.SetUtcNow(DateTimeOffset.UtcNow.AddMinutes(5));
+
+        await Scan(cloud, ns);
+
+        (await Entry(id)).State.Should().Be(RecoveryEntryState.Observing);
     }
 }

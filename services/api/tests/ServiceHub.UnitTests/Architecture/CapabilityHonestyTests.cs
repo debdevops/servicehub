@@ -38,7 +38,12 @@ public sealed class CapabilityHonestyTests
         ["ProviderCapabilities.cs"] = "the one enum-to-capabilities mapping (ServiceHub.Core)",
 
         // The router's entire job is dispatching by provider.
-        ["CloudProviderRouter.cs"] = "dispatch by provider is this type's purpose"
+        ["CloudProviderRouter.cs"] = "dispatch by provider is this type's purpose",
+
+        // Copied unedited from 4.0.0 (unit 2.6). Its one mention is the fail-closed default for a
+        // request with no provider: `request.Provider ?? Aws` — AWS's capabilities, where absence
+        // cannot be proven. It never branches on the name; it chooses the most cautious preset.
+        ["RecoveryEligibilityGate.cs"] = "fail-closed default preset when a request names no provider (copied verbatim)"
     };
 
     [Theory]

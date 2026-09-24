@@ -40,6 +40,18 @@ public sealed class ServiceHubDbContext : DbContext
     /// <summary>Messages found in dead-letter queues (W2).</summary>
     public DbSet<DlqMessage> DlqMessages => Set<DlqMessage>();
 
+    /// <summary>Recovery decisions — the immutable header of the evidence ledger (W2).</summary>
+    public DbSet<RecoveryOperation> RecoveryOperations => Set<RecoveryOperation>();
+
+    /// <summary>One row per recovery target — a small mutable projection over the events (W2).</summary>
+    public DbSet<RecoveryLedgerEntry> RecoveryLedgerEntries => Set<RecoveryLedgerEntry>();
+
+    /// <summary>The append-only, hash-chained evidence itself (W2).</summary>
+    public DbSet<RecoveryEvent> RecoveryEvents => Set<RecoveryEvent>();
+
+    /// <summary>What was replayed, when and by whom (W2, unit 2.7).</summary>
+    public DbSet<ReplayHistory> ReplayHistories => Set<ReplayHistory>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -48,19 +60,30 @@ public sealed class ServiceHubDbContext : DbContext
         ConfigureNamespace(modelBuilder);
         ConfigureAuditLog(modelBuilder);
         ConfigureDlqMessage(modelBuilder);
+        ConfigureRecoveryOperation(modelBuilder);
+        ConfigureRecoveryLedgerEntry(modelBuilder);
+        ConfigureRecoveryEvent(modelBuilder);
+        ConfigureReplayHistory(modelBuilder);
     }
 
     /// <inheritdoc />
-    public override int SaveChanges(bool acceptAllChangesOnSuccess) =>
-        _saveChangesRetryPipeline.Execute(() => base.SaveChanges(acceptAllChangesOnSuccess));
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        RecoveryLedgerAppendOnlyGuard.Enforce(ChangeTracker);
+        return _saveChangesRetryPipeline.Execute(() => base.SaveChanges(acceptAllChangesOnSuccess));
+    }
 
     /// <inheritdoc />
-    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default) =>
-        _saveChangesRetryPipeline
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        // Append-only is enforced here, beneath every caller — a hand-written save cannot bypass it.
+        RecoveryLedgerAppendOnlyGuard.Enforce(ChangeTracker);
+        return _saveChangesRetryPipeline
             .ExecuteAsync(
                 async ct => await base.SaveChangesAsync(acceptAllChangesOnSuccess, ct).ConfigureAwait(false),
                 cancellationToken)
             .AsTask();
+    }
 
     // Retries SaveChanges when — and only when — the failure is SQLITE_BUSY (another connection holds
     // the write lock) or SQLITE_LOCKED. busy_timeout (SqlitePragmaConnectionInterceptor) absorbs short
@@ -179,6 +202,120 @@ public sealed class ServiceHubDbContext : DbContext
         entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.Status }).HasDatabaseName("IX_DlqMessages_Owner_Namespace_Status");
         entity.HasIndex(e => e.BodyHash).HasDatabaseName("IX_DlqMessages_BodyHash");
         entity.HasIndex(e => e.DetectedAtUtc).HasDatabaseName("IX_DlqMessages_DetectedAt");
+    }
+
+    private static void ConfigureRecoveryOperation(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<RecoveryOperation>();
+
+        entity.ToTable("RecoveryOperations");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.OwnerId).HasMaxLength(128).IsRequired();
+        entity.Property(e => e.Kind).HasConversion<string>().HasMaxLength(16).IsRequired();
+        entity.Property(e => e.Trigger).HasConversion<string>().HasMaxLength(32).IsRequired();
+        entity.Property(e => e.ActorIdentity).HasMaxLength(256).IsRequired();
+        entity.Property(e => e.ActorKind).HasConversion<string>().HasMaxLength(16).IsRequired();
+        entity.Property(e => e.ActorScopes).HasMaxLength(1024);
+        entity.Property(e => e.Reason).HasMaxLength(2048);
+        entity.Property(e => e.IntentHeader).HasMaxLength(128);
+        entity.Property(e => e.NamespaceNameSnapshot).HasMaxLength(256);
+        entity.Property(e => e.ProviderSnapshot).HasConversion<string>().HasMaxLength(32);
+        entity.Property(e => e.EnvironmentSnapshot).HasConversion<string>().HasMaxLength(16);
+        entity.Property(e => e.ScopeDescription).HasMaxLength(1024).IsRequired();
+        entity.Property(e => e.CorrelationId).HasMaxLength(256);
+        entity.Property(e => e.ServiceVersion).HasMaxLength(32).IsRequired();
+        entity.Property(e => e.OpenedAt).HasConversion(SortableUtc);
+
+        entity.HasIndex(e => new { e.OwnerId, e.OpenedAt }).HasDatabaseName("IX_RecoveryOperations_Owner_OpenedAt");
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.OpenedAt }).HasDatabaseName("IX_RecoveryOperations_Owner_Namespace_OpenedAt");
+    }
+
+    private static void ConfigureRecoveryLedgerEntry(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<RecoveryLedgerEntry>();
+
+        entity.ToTable("RecoveryLedgerEntries");
+        entity.HasKey(e => e.Id);
+
+        // No foreign keys, deliberately: deleting a DlqMessage or a namespace can never reach the ledger.
+        entity.Property(e => e.OwnerId).HasMaxLength(128).IsRequired();
+        entity.Property(e => e.NamespaceNameSnapshot).HasMaxLength(256);
+        entity.Property(e => e.ProviderSnapshot).HasConversion<string>().HasMaxLength(32);
+        entity.Property(e => e.EnvironmentSnapshot).HasConversion<string>().HasMaxLength(16);
+        entity.Property(e => e.EntityNameSnapshot).HasMaxLength(512);
+        entity.Property(e => e.EntityTypeSnapshot).HasMaxLength(32);
+        entity.Property(e => e.TopicNameSnapshot).HasMaxLength(512);
+        entity.Property(e => e.SourceMessageIdSnapshot).HasMaxLength(256);
+        entity.Property(e => e.BodyHash).HasMaxLength(64).IsRequired();
+        entity.Property(e => e.FailureCategorySnapshot).HasConversion<string>().HasMaxLength(32);
+        entity.Property(e => e.DeadLetterReasonSnapshot).HasMaxLength(1024);
+        entity.Property(e => e.SignatureHashSnapshot).HasMaxLength(64);
+        entity.Property(e => e.RecoveryMarker).HasMaxLength(64);
+        entity.Property(e => e.TargetEntity).HasMaxLength(512).IsRequired();
+        entity.Property(e => e.State).HasConversion<string>().HasMaxLength(32).IsRequired();
+        entity.Property(e => e.Disposition).HasConversion<string>().HasMaxLength(16);
+        entity.Property(e => e.VerificationResult).HasConversion<string>().HasMaxLength(16);
+        entity.Property(e => e.VerificationConfidence).HasConversion<string>().HasMaxLength(16);
+        entity.Property(e => e.BegunAt).HasConversion(SortableUtc);
+        entity.Property(e => e.ObservationWindowEndsAt).HasConversion(SortableUtcNullable);
+        entity.Property(e => e.ClosedAt).HasConversion(SortableUtcNullable);
+
+        entity.HasIndex(e => new { e.OwnerId, e.State, e.BegunAt }).HasDatabaseName("IX_RecoveryLedgerEntries_Owner_State_BegunAt");
+        entity.HasIndex(e => e.OperationId).HasDatabaseName("IX_RecoveryLedgerEntries_OperationId");
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.EntityNameSnapshot, e.BodyHash })
+            .HasDatabaseName("IX_RecoveryLedgerEntries_Owner_Namespace_Entity_BodyHash");
+        entity.HasIndex(e => e.RecoveryMarker)
+            .IsUnique()
+            .HasFilter("[RecoveryMarker] IS NOT NULL")
+            .HasDatabaseName("IX_RecoveryLedgerEntries_RecoveryMarker");
+    }
+
+    private static void ConfigureRecoveryEvent(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<RecoveryEvent>();
+
+        entity.ToTable("RecoveryEvents");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.OwnerId).HasMaxLength(128).IsRequired();
+        entity.Property(e => e.EventType).HasConversion<string>().HasMaxLength(32).IsRequired();
+        entity.Property(e => e.ActorIdentity).HasMaxLength(256).IsRequired();
+        entity.Property(e => e.ActorKind).HasConversion<string>().HasMaxLength(16).IsRequired();
+        entity.Property(e => e.DetailJson).HasMaxLength(8192);
+        entity.Property(e => e.PrevHash).HasMaxLength(64).IsRequired();
+        entity.Property(e => e.EntryHash).HasMaxLength(64).IsRequired();
+        entity.Property(e => e.OccurredAt).HasConversion(SortableUtc);
+
+        entity.HasIndex(e => new { e.OwnerId, e.Seq }).IsUnique().HasDatabaseName("IX_RecoveryEvents_Owner_Seq");
+        entity.HasIndex(e => new { e.EntryId, e.Seq }).HasDatabaseName("IX_RecoveryEvents_EntryId_Seq");
+        entity.HasIndex(e => new { e.OperationId, e.Seq }).HasDatabaseName("IX_RecoveryEvents_OperationId_Seq");
+        entity.HasIndex(e => new { e.OwnerId, e.EventType, e.Seq }).HasDatabaseName("IX_RecoveryEvents_Owner_EventType_Seq");
+    }
+
+    private static void ConfigureReplayHistory(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<ReplayHistory>();
+
+        entity.ToTable("ReplayHistories");
+        entity.HasKey(e => e.Id);
+        entity.Property(e => e.Id).ValueGeneratedOnAdd();
+
+        // Soft references only: a history of what was done outlives the message it was done to.
+        entity.Property(e => e.OwnerId).HasMaxLength(128).IsRequired();
+        entity.Property(e => e.MessageId).HasMaxLength(256).IsRequired();
+        entity.Property(e => e.SourceEntity).HasMaxLength(512).IsRequired();
+        entity.Property(e => e.ReplayedBy).HasMaxLength(256).IsRequired();
+        entity.Property(e => e.ReplayStrategy).HasMaxLength(64).IsRequired();
+        entity.Property(e => e.ReplayedToEntity).HasMaxLength(512).IsRequired();
+        entity.Property(e => e.OutcomeStatus).HasMaxLength(32).IsRequired();
+        entity.Property(e => e.NewDeadLetterReason).HasMaxLength(1024);
+        entity.Property(e => e.ErrorDetails).HasMaxLength(4096);
+        entity.Property(e => e.ReplayedAt).HasConversion(SortableUtc);
+
+        entity.HasIndex(e => e.DlqMessageId).HasDatabaseName("IX_ReplayHistories_DlqMessageId");
+        entity.HasIndex(e => e.ReplayedAt).HasDatabaseName("IX_ReplayHistories_ReplayedAt");
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.ReplayedAt }).HasDatabaseName("IX_ReplayHistories_Owner_Namespace_ReplayedAt");
     }
 
     private static void ConfigureAuditLog(ModelBuilder modelBuilder)

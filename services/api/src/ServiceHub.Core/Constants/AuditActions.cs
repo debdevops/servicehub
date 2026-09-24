@@ -12,6 +12,9 @@ public static class AuditActions
     /// <summary>A namespace was removed.</summary>
     public const string NamespaceRemove = "Namespace.Remove";
 
+    /// <summary>A dead letter was replayed (or a replay was refused).</summary>
+    public const string ReplayMessage = "Replay.Message";
+
     /// <summary>The action completed.</summary>
     public const string Success = "Success";
 

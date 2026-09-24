@@ -76,6 +76,27 @@ export const explanations = {
     ],
     learnMore: 'Active vs dead letters',
   },
+  ledger: {
+    title: "What you're looking at",
+    terms: [
+      {
+        term: 'Ledger entry',
+        meaning:
+          'one recovery action — a replay by a person, a rule or the Agent — with everything that happened to it, in order. Entries are never edited or deleted.',
+      },
+      {
+        term: 'Outcome',
+        meaning:
+          'Recovered means it did not come back. Unverified means it was replayed but the cloud can’t prove it stayed out; the two are never counted together.',
+      },
+      {
+        term: 'Chain',
+        meaning:
+          'each entry carries a fingerprint of the one before it, so any change to history is detectable — even offline, with a script.',
+      },
+    ],
+    learnMore: 'How the ledger proves itself',
+  },
 } as const satisfies Record<string, Explanation>
 
 export type ExplanationId = keyof typeof explanations
