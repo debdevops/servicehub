@@ -99,3 +99,15 @@ body {
 .tabular {
   font-variant-numeric: tabular-nums;
 }
+
+/*
+ * Advanced is denser (ADR-0016): smaller type and tighter rows, decided once at the layout — never
+ * a per-page branch. Same tokens, same colours.
+ */
+[data-surface='advanced'] {
+  font-size: 13px;
+}
+[data-surface='advanced'] main table td,
+[data-surface='advanced'] main table th {
+  padding-block: 0.25rem;
+}

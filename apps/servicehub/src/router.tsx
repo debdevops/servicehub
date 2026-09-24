@@ -1,5 +1,6 @@
 import { createBrowserRouter, type RouteObject } from 'react-router-dom'
 import { AppLayout } from './layouts/AppLayout'
+import { HomePage } from './pages/HomePage'
 import { PlaceholderPage } from './pages/PlaceholderPage'
 import { pages } from './nav/navigation'
 
@@ -21,7 +22,7 @@ export const routes: RouteObject[] = [
     children: pages.map((entry) => ({
       // React Router wants the index route rather than a path of '/'.
       ...(entry.path === '/' ? { index: true as const } : { path: entry.path.replace(/^\//, '') }),
-      element: <PlaceholderPage entry={entry} />,
+      element: entry.id === 'home' ? <HomePage /> : <PlaceholderPage entry={entry} />,
     })),
   },
 ]
