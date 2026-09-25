@@ -1,4 +1,12 @@
+import type { LucideIcon } from 'lucide-react'
 import { Link } from 'react-router-dom'
+
+const tones = {
+  red: { bar: 'linear-gradient(90deg,#ef4444,#fb7185)', bg: '#fee2e2', fg: '#dc2626' },
+  blue: { bar: 'linear-gradient(90deg,#0ea5e9,#38bdf8)', bg: '#e0f2fe', fg: '#0284c7' },
+  green: { bar: 'linear-gradient(90deg,#10b981,#34d399)', bg: '#d1fae5', fg: '#059669' },
+  amber: { bar: 'linear-gradient(90deg,#f59e0b,#fbbf24)', bg: '#fef3c7', fg: '#d97706' },
+} as const
 
 /**
  * One number and what it is. Every tile is a link — a number nobody can act on is decoration.
@@ -13,6 +21,8 @@ export function StatTile({
   unavailable,
   to,
   action,
+  tone = 'blue',
+  icon: Icon,
 }: {
   label: string
   value: number | null
@@ -22,19 +32,34 @@ export function StatTile({
   unavailable: string
   to: string
   action: string
+  tone?: keyof typeof tones
+  icon?: LucideIcon
 }) {
+  const t = tones[tone]
   return (
-    <div className="flex flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-      <div className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">{label}</div>
-      {value === null ? (
-        <div className="mt-2 text-sm text-[var(--color-text-muted)]">{unavailable}</div>
-      ) : (
-        <div className="tabular mt-1 text-3xl font-semibold text-[var(--color-text)]">{value.toLocaleString()}</div>
-      )}
-      <div className="mt-1 text-xs text-[var(--color-text-muted)]">{note}</div>
-      <Link to={to} className="mt-3 text-sm font-medium text-[var(--color-primary-700)] hover:underline">
-        {action} →
-      </Link>
+    <div className="relative flex flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-[15px] shadow-[var(--shadow-card)]">
+      <div aria-hidden="true" className="absolute inset-x-0 top-0 h-[3px]" style={{ background: t.bar }} />
+      <div className="flex items-start gap-3">
+        {Icon && (
+          <span className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-[11px]" style={{ background: t.bg, color: t.fg }}>
+            <Icon className="h-5 w-5" aria-hidden="true" />
+          </span>
+        )}
+        <div>
+          {value === null ? (
+            <div className="text-sm text-[var(--color-text-muted)]">{unavailable}</div>
+          ) : (
+            <div className="tabular text-[30px] font-extrabold leading-[1.05] tracking-tight text-[var(--color-text)]">{value.toLocaleString()}</div>
+          )}
+          <div className="mt-px text-[11.5px] font-semibold text-[var(--color-text-muted)]">{label}</div>
+        </div>
+      </div>
+      <div className="mt-[13px] flex items-center justify-between border-t border-[#f3f4f6] pt-[11px]">
+        <Link to={to} className="text-[11.5px] font-semibold text-[var(--color-primary-600)] hover:underline">
+          {action} →
+        </Link>
+        <span className="text-[11.5px] text-[#9ca3af]">{note}</span>
+      </div>
     </div>
   )
 }

@@ -16,6 +16,7 @@ import {
   Settings,
   ShieldCheck,
   Timer,
+  Cable,
 } from 'lucide-react'
 
 /**
@@ -135,6 +136,11 @@ export const navigation: readonly NavEntry[] = [
   },
 
   // ── Simple · clouds and utilities ─────────────────────────────────────────────────────────────
+  {
+    kind: 'panel', id: 'connections', label: 'Connections', value: 'connections',
+    description: 'Every cloud you have connected — is it reachable, and when did it last answer?',
+    icon: Cable, surface: 'simple', group: 'clouds', visibility: 'connected', wave: 1,
+  },
   {
     kind: 'modal', id: 'add-cloud', label: 'Add a cloud', value: 'add-cloud',
     description: 'Connect Azure, AWS or Google Cloud — and see what it can prove.',

@@ -1,11 +1,12 @@
 import { lazy, Suspense } from 'react'
-import { CheckCircle2, TriangleAlert } from 'lucide-react'
+import { CheckCircle2, Inbox, Database, TriangleAlert } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { Welcome } from '../components/connect/Welcome'
 import { FleetCard } from '../components/FleetCard'
 import { MessageDrawer } from '../components/message/MessageDrawer'
 import { DeadLettersView } from '../components/message/DeadLettersView'
 import { ReplayedTab } from '../components/message/ReplayedTab'
+import { QueuesNeedingAttention } from '../components/QueuesNeedingAttention'
 import { RecentActivity } from '../components/RecentActivity'
 import { RecentDeadLetters } from '../components/message/RecentDeadLetters'
 import { WorkTabs } from '../components/message/WorkTabs'
@@ -78,20 +79,20 @@ function CloudHome({
   if (tab === 'active') return <NotBuiltTab tab={tab} cloud={cloud} />
 
   return (
-    <section className="px-6 py-6">
-      <header className="mb-5 flex flex-wrap items-start justify-between gap-3">
+    <section className="px-[22px] pb-6 pt-5">
+      <header className="mb-[18px] flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-[var(--color-text)]">{cloud} — Home</h1>
-          <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">How your {providerService[provider]} is holding up.</p>
+          <h1 className="text-2xl font-extrabold tracking-tight text-[var(--color-text)]">{cloud} — Home</h1>
+          <p className="mt-[3px] text-[13px] text-[var(--color-text-muted)]">How your {providerService[provider]} is holding up.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span
-            className={`rounded-full px-3 py-1 font-medium text-[var(--color-text)] ${connection.ok === false ? 'bg-[var(--color-warning-light)]' : connection.ok ? 'bg-[var(--color-success-light)]' : 'bg-[var(--color-surface-muted)]'}`}
+            className={`rounded-full px-[13px] py-1.5 text-xs font-semibold ${connection.ok === false ? 'bg-[var(--color-warning-light)] text-[#92400e]' : connection.ok ? 'bg-[var(--color-success-light)] text-[#047857]' : 'bg-[var(--color-surface-muted)]'}`}
           >
             {connection.label}
           </span>
           {chips.map((c) => (
-            <span key={c.label} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1">
+            <span key={c.label} className="rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface)] px-[13px] py-1.5 shadow-[var(--shadow-card)]">
               <span className="text-[var(--color-text-muted)]">{c.label}</span> <b className="font-medium">{c.value}</b>
             </span>
           ))}
@@ -113,7 +114,7 @@ function CloudHome({
       {summary.status === 'ready' && (
         <div className="space-y-5">
           <Verdict cloud={cloud} summary={summary.summary} />
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
             <StatTile
               label="Dead letters"
               value={summary.summary.deadLetters}
@@ -121,6 +122,8 @@ function CloudHome({
               unavailable={`${cloud} does not report message counts.`}
               to="/?tab=dlq"
               action="See dead letters"
+              tone="red"
+              icon={Inbox}
             />
             <StatTile
               label="Active messages"
@@ -129,21 +132,28 @@ function CloudHome({
               unavailable={`${cloud} does not report message counts.`}
               to="/?tab=active"
               action="See active messages"
+              tone="blue"
+              icon={Database}
             />
           </div>
-          {namespaces.every((n) => n.capabilities?.supportsRepeatablePeek === true) ? (
-            <Suspense fallback={<p role="status" className="text-sm text-[var(--color-text-muted)]">Reading the trend…</p>}>
-              <TrendChart provider={provider} />
-            </Suspense>
-          ) : (
-            // A trend of what ServiceHub has seen is silence, not good news, where it does not look on its own (R5).
-            <p className="rounded-xl bg-[var(--color-surface-muted)] px-4 py-3 text-sm text-[var(--color-text-muted)]">
-              ServiceHub does not watch {cloud} for dead letters on its own, so there is no trend to draw.
-            </p>
-          )}
+          <div className="grid items-start gap-3.5 xl:grid-cols-[1.58fr_1fr]">
+            {namespaces.every((n) => n.capabilities?.supportsRepeatablePeek === true) ? (
+              <Suspense fallback={<p role="status" className="text-sm text-[var(--color-text-muted)]">Reading the trend…</p>}>
+                <TrendChart provider={provider} />
+              </Suspense>
+            ) : (
+              // A trend of what ServiceHub has seen is silence, not good news, where it does not look on its own (R5).
+              <p className="rounded-xl bg-[var(--color-surface-muted)] px-4 py-3 text-sm text-[var(--color-text-muted)]">
+                ServiceHub does not watch {cloud} for dead letters on its own, so there is no trend to draw.
+              </p>
+            )}
+            <div className="space-y-3.5">
+              <FleetCard cloud={cloud} summary={summary.summary} namespaces={namespaces} fleetHref={otherCloudsConnected ? '/fleet' : undefined} />
+              <QueuesNeedingAttention summary={summary.summary} />
+            </div>
+          </div>
           <RecentDeadLetters provider={provider} namespaces={namespaces} />
           <RecentActivity />
-          <FleetCard cloud={cloud} summary={summary.summary} fleetHref={otherCloudsConnected ? '/fleet' : undefined} />
         </div>
       )}
     </section>

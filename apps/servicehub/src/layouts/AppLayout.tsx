@@ -40,13 +40,26 @@ export function AppLayout() {
       <LandingRedirect ready={loaded} connectedCloudCount={cloudCount} />
       <div className="min-h-screen" data-surface={surface}>
         <header
-          className="sticky top-0 z-20 flex items-center gap-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-6"
+          className="sticky top-0 z-20 flex items-center gap-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5"
           style={{ height: 'var(--header-height)' }}
         >
-          <span className="text-[15px] font-semibold tracking-tight text-[var(--color-text)]">ServiceHub</span>
-          <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-0.5 text-xs text-[var(--color-text-muted)]">
-            {import.meta.env.VITE_APP_VERSION}
-          </span>
+          <div className="flex items-center gap-2.5">
+            <span
+              aria-hidden="true"
+              className="flex h-[34px] w-[34px] items-center justify-center rounded-[10px] text-[17px] font-extrabold text-white shadow-[0_2px_6px_rgba(2,132,199,0.28)]"
+              style={{ background: 'linear-gradient(140deg, #38bdf8, #0369a1 70%)' }}
+            >
+              S
+            </span>
+            <div>
+              <div className="text-[17px] font-extrabold leading-[1.1] tracking-tight text-[var(--color-text)]">
+                Service<span className="text-[var(--color-primary-600)]">Hub</span>
+              </div>
+              <div className="whitespace-nowrap text-[10.5px] leading-[1.2] text-[var(--color-text-muted)]">
+                See messages. Fix issues. Keep systems moving.
+              </div>
+            </div>
+          </div>
           <div className="ml-auto">
             <SurfaceSwitch
               surface={surface}
@@ -59,7 +72,7 @@ export function AppLayout() {
         <div className="flex">
           <nav
             aria-label="Main"
-            className="sticky shrink-0 overflow-y-auto border-r border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-4"
+            className="sticky shrink-0 overflow-y-auto border-r border-[var(--color-border)] bg-[var(--color-surface)] px-3 pb-[18px] pt-3.5"
             style={{
               width: 'var(--sidebar-width)',
               top: 'var(--header-height)',
@@ -72,7 +85,7 @@ export function AppLayout() {
 
             {surface === 'simple' && (
             <div className="mb-6">
-              <h2 className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+              <h2 className="px-2 pb-[7px] pt-[18px] text-[10px] font-bold uppercase tracking-[0.9px] text-[#9ca3af]">
                 Clouds
               </h2>
               {namespaces.isPending && <p className="px-3 py-2 text-sm text-[var(--color-text-muted)]">Loading your clouds…</p>}
@@ -94,9 +107,19 @@ export function AppLayout() {
             )}
 
             <NavSection entries={inGroup('utility')} />
+
+            <div className="mt-5 rounded-[11px] border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-3.5">
+              <div className="text-[12.5px] font-bold text-[var(--color-primary-700)]">ServiceHub</div>
+              <div className="mt-0.5 text-[11px] leading-[1.4] text-[var(--color-text-muted)]">
+                See messages. Fix issues. Keep your systems moving.
+              </div>
+              <div className="mt-2 font-mono text-[10px] text-[#9ca3af]">
+                v{import.meta.env.VITE_APP_VERSION}
+              </div>
+            </div>
           </nav>
 
-          <main className="min-w-0 flex-1" style={{ maxWidth: 'var(--content-max-width)' }}>
+          <main className="min-w-0 flex-1">
             <Outlet />
           </main>
         </div>
@@ -107,9 +130,9 @@ export function AppLayout() {
   )
 }
 
-const itemClass = 'mb-0.5 flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors'
-const idleClass = 'text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]'
-const activeClass = 'bg-[var(--color-primary-50)] font-medium text-[var(--color-primary-700)]'
+const itemClass = 'mb-0.5 flex items-center gap-[11px] rounded-[9px] px-[13px] py-[8.5px] text-[13.5px] font-medium transition-colors'
+const idleClass = 'text-[#374151] hover:bg-[var(--color-primary-50)] hover:text-[var(--color-primary-700)]'
+const activeClass = 'font-semibold text-white shadow-[0_2px_6px_rgba(2,132,199,0.3)] [background:linear-gradient(100deg,#0284c7,#0369a1)]'
 
 function NavSection({ label, entries, bare }: { label?: string; entries: readonly NavEntry[]; bare?: boolean }) {
   const { pathname, search } = useLocation()
@@ -118,7 +141,7 @@ function NavSection({ label, entries, bare }: { label?: string; entries: readonl
   return (
     <div className={bare ? '' : 'mb-6'}>
       {label && (
-        <h2 className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+        <h2 className="px-2 pb-[7px] pt-[18px] text-[10px] font-bold uppercase tracking-[0.9px] text-[#9ca3af]">
           {label}
         </h2>
       )}

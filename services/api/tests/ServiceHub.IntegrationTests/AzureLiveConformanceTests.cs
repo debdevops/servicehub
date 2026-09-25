@@ -57,7 +57,7 @@ public sealed class AzureLiveConformanceTests
 
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(configuration);
-        services.AddSingleton(new DevelopmentEnvironment());
+        services.AddSingleton<IHostEnvironment>(new DevelopmentEnvironment());
         services.AddLogging();
         services.AddServiceHubPersistence();
         services.AddCloudProviderRouting();
@@ -80,7 +80,8 @@ public sealed class AzureLiveConformanceTests
             var azure = scope.ServiceProvider.GetRequiredService<ICloudProviderRouter>().Resolve(stored.Provider);
             azure.Should().BeOfType<AzureMessagingProvider>();
 
-            (await azure.ValidateConnectionAsync(stored, CancellationToken.None)).IsSuccess.Should().BeTrue();
+            var validation = await azure.ValidateConnectionAsync(stored, CancellationToken.None);
+            validation.IsSuccess.Should().BeTrue(validation.IsFailure ? validation.Error.Message : null);
 
             var entities = await azure.ListEntitiesAsync(stored.Id, CancellationToken.None);
             entities.IsSuccess.Should().BeTrue(entities.IsFailure ? entities.Error.Message : null);

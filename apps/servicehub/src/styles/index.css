@@ -43,9 +43,10 @@
   --color-text-muted: #6b7280;
 
   /* Layout */
-  --header-height: 56px;
-  --sidebar-width: 260px;
-  --content-max-width: 1440px;
+  --header-height: 60px;
+  --sidebar-width: 250px;
+  --content-max-width: 100%;
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
 
   /* Typography */
   --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -87,6 +88,8 @@ body {
   color: var(--color-text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  font-size: 14px;
+  line-height: 1.45;
 }
 
 /* Every interactive element must show where the keyboard is (accessibility, unit 6.6). */

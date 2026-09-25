@@ -17,13 +17,13 @@ const words: Readonly<Record<string, string>> = {
  */
 export function RecentActivity() {
   const status = useStreamStatus()
-  const { data, isPending, isError } = useAudit({ pageSize: 8 })
+  const { data, isPending, isError } = useAudit({ pageSize: 5 })
   const now = new Date()
 
   return (
-    <section aria-label="Recent activity" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <header className="mb-2 flex items-center justify-between">
-        <h2 className="text-base font-semibold">Recent activity</h2>
+    <section aria-label="Recent activity" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
+      <header className="mb-1 flex items-center justify-between">
+        <h2 className="text-[13.5px] font-bold text-[#1f2937]">Recent activity</h2>
         {status === 'live' ? (
           <span className="flex items-center gap-1.5 text-xs font-medium text-[var(--color-success)]"><span aria-hidden="true" className="h-2 w-2 rounded-full bg-[var(--color-success)]" />Live</span>
         ) : (
@@ -37,7 +37,7 @@ export function RecentActivity() {
       {data && data.items.length > 0 && (
         <ul className="divide-y divide-[var(--color-border)]">
           {data.items.map((a) => (
-            <li key={a.id} className="flex items-center gap-3 py-2 text-sm">
+            <li key={a.id} className="flex items-center gap-3 py-1.5 text-[12.5px]">
               <span className="min-w-0 flex-1">
                 <span className={a.outcome === 'Failure' ? 'text-[var(--color-error)]' : undefined}>{words[a.action] ?? a.action}</span>
                 {a.outcome === 'Failure' && <span className="text-[var(--color-error)]"> — did not go through</span>}

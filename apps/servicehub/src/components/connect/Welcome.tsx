@@ -30,12 +30,12 @@ export function Welcome() {
           <li key={c.cloud} className="flex flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
             <h2 className="font-semibold text-[var(--color-text)]">{c.name}</h2>
             <p className="text-sm text-[var(--color-text-muted)]">{c.detail}</p>
-            <p className="mt-3 text-sm text-[var(--color-text)]">
+            <p className="mb-4 mt-3 text-sm text-[var(--color-text)]">
               You'll need: <b>{c.need}</b>
             </p>
             <Link
               to={`/?modal=add-cloud&cloud=${c.cloud}`}
-              className="mt-4 rounded-lg bg-[var(--color-primary-600)] px-4 py-2 text-center text-sm font-medium text-white hover:bg-[var(--color-primary-700)]"
+              className="mt-auto rounded-lg bg-[var(--color-primary-600)] px-4 py-2 text-center text-sm font-medium text-white hover:bg-[var(--color-primary-700)]"
             >
               {c.action}
             </Link>

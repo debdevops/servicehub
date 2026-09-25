@@ -16,6 +16,7 @@ export interface OverlayBodyProps {
  */
 export const overlayBodies: Readonly<Record<string, LazyExoticComponent<ComponentType<OverlayBodyProps>>>> = {
   'add-cloud': lazy(() => import('../connect/AddCloudModal')),
+  connections: lazy(() => import('../connect/ConnectionsPanel')),
   replay: lazy(() => import('../message/ReplayModal')),
 }
 

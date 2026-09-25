@@ -58,14 +58,31 @@ public sealed class AzureMessagingProvider : ICloudMessagingProvider
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Delegates to <see cref="IServiceBusClientFactory.CreateClientAsync"/> which validates
-    /// the connection string format and attempts to establish an SDK client.
+    /// The stored connection string is ciphertext (<c>ENC[…]</c>), so it is decrypted first; the
+    /// format check and the client factory only understand the real string. Then one real call to
+    /// the namespace proves the credential works, not merely that it is well-formed.
     /// </remarks>
-    public Task<Result> ValidateConnectionAsync(Core.Entities.Namespace ns, CancellationToken ct)
+    public async Task<Result> ValidateConnectionAsync(Core.Entities.Namespace ns, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ns);
         _logger.LogDebug("Validating Azure Service Bus connection for namespace {NamespaceId}", ns.Id);
-        return _clientFactory.CreateClientAsync(ns, ct);
+
+        if (string.IsNullOrWhiteSpace(ns.ConnectionString))
+            return Result.Failure(Error.Validation(
+                ErrorCodes.Namespace.ConnectionStringRequired,
+                "Connection string is required for ConnectionString authentication."));
+
+        var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
+        if (unprotectResult.IsFailure)
+            return Result.Failure(unprotectResult.Error);
+
+        var format = _clientFactory.ValidateConnectionString(unprotectResult.Value);
+        if (format.IsFailure)
+            return format;
+
+        var probe = await _clientCache.GetOrCreate(ns.Id, unprotectResult.Value)
+            .GetQueuesAsync(ct).ConfigureAwait(false);
+        return probe.IsFailure ? Result.Failure(probe.Error) : Result.Success();
     }
 
     /// <inheritdoc/>

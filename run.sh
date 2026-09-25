@@ -9,8 +9,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-API_PORT="${SERVICEHUB_API_PORT:-5000}"
-WEB_PORT="${SERVICEHUB_WEB_PORT:-5173}"
+API_PORT="${SERVICEHUB_API_PORT:-5153}"
+WEB_PORT="${SERVICEHUB_WEB_PORT:-3000}"
 
 usage() {
   cat <<'USAGE'
@@ -21,8 +21,8 @@ Usage: ./run.sh [--api-only | --web-only]
   --web-only   Start only the Vite dev server (expects an API already running).
 
 Environment:
-  SERVICEHUB_API_PORT   API port (default 5000)
-  SERVICEHUB_WEB_PORT   Dev server port (default 5173)
+  SERVICEHUB_API_PORT   API port (default 5153)
+  SERVICEHUB_WEB_PORT   Dev server port (default 3000)
 USAGE
 }
 

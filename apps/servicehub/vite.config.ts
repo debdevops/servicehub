@@ -10,7 +10,7 @@ const appVersion = fs.readFileSync(resolve(import.meta.dirname, '../../.version'
 
 // The API in development. The browser only ever talks to Vite, so there is no CORS to configure —
 // in production they are the same origin anyway (ADR-0014 D3).
-const apiProxyTarget = process.env.VITE_PROXY_TARGET ?? 'http://localhost:5000'
+const apiProxyTarget = process.env.VITE_PROXY_TARGET ?? 'http://localhost:5153'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -27,7 +27,7 @@ export default defineConfig({
   },
 
   server: {
-    port: 5173,
+    port: 3000,
     proxy: {
       '/api': { target: apiProxyTarget, changeOrigin: true },
       '/health': { target: apiProxyTarget, changeOrigin: true },
