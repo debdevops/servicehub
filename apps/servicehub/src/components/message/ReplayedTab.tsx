@@ -5,6 +5,8 @@ import { DataTable, type Column } from '../ui/DataTable'
 import { WorkTabs } from './WorkTabs'
 import { ReplayedNumbers } from './ReplayedNumbers'
 import { Attribution } from '../Attribution'
+import { columnHelp } from '../../content/columns'
+import { EntityCell } from './EntityCell'
 import { useReplays } from '../../hooks/useReplay'
 import type { ReplayListItem } from '../../lib/api/replay'
 import type { CloudProvider } from '../../lib/api/namespaces'
@@ -80,18 +82,20 @@ export function ReplayedTab({ provider }: { provider: CloudProvider }) {
     return `/?${next.toString()}`
   }
 
+  const help = columnHelp.replayed
   const columns: Column<ReplayListItem>[] = [
-    { key: 'when', header: 'Replayed', className: 'whitespace-nowrap', render: (r) => formatWhen(r.replayedAt, now) },
-    { key: 'from', header: 'From', render: (r) => <span className="font-mono text-[13px]">{r.sourceEntity}</span> },
-    { key: 'by', header: 'By', render: (r) => <Attribution actor={r.actor} at={r.replayedAt} compact /> },
-    { key: 'count', header: 'Messages', numeric: true, render: () => 1 },
-    { key: 'result', header: 'Result', render: (r) => <ResultChip row={r} /> },
+    { key: 'when', header: 'Replayed', info: help.replayed, className: 'whitespace-nowrap', render: (r) => formatWhen(r.replayedAt, now) },
+    { key: 'from', header: 'Queue or topic', info: help.from, render: (r) => <EntityCell entityName={r.sourceEntity} entityType={r.sourceEntity.includes('/') ? 'subscription' : 'queue'} /> },
+    { key: 'by', header: 'By', info: help.by, render: (r) => <Attribution actor={r.actor} at={r.replayedAt} compact /> },
+    { key: 'count', header: 'Messages', info: help.messages, numeric: true, render: () => 1 },
+    { key: 'result', header: 'Result', info: help.result, width: 'min-w-[11rem]', render: (r) => <ResultChip row={r} /> },
     {
       key: 'open',
-      header: 'Open',
+      header: 'Details',
+      info: help.details,
       render: (r) => (
-        <Link to={openHref(r)} aria-label={`Open message ${r.messageId}`} className="whitespace-nowrap font-medium text-[var(--color-primary-700)] hover:underline">
-          Open →
+        <Link to={openHref(r)} aria-label={`Details of message ${r.messageId}`} className="whitespace-nowrap font-medium text-[var(--color-primary-700)] hover:underline">
+          Details →
         </Link>
       ),
     },

@@ -1,5 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import type { ColumnHelp } from '../../content/columns'
+import { InfoTip } from './InfoTip'
 
 const tones = {
   red: { bar: 'linear-gradient(90deg,#ef4444,#fb7185)', bg: '#fee2e2', fg: '#dc2626' },
@@ -23,6 +25,7 @@ export function StatTile({
   action,
   tone = 'blue',
   icon: Icon,
+  info,
 }: {
   label: string
   value: number | null
@@ -34,6 +37,8 @@ export function StatTile({
   action: string
   tone?: keyof typeof tones
   icon?: LucideIcon
+  /** What the number is and where it comes from. */
+  info?: ColumnHelp
 }) {
   const t = tones[tone]
   return (
@@ -51,7 +56,7 @@ export function StatTile({
           ) : (
             <div className="tabular text-[30px] font-extrabold leading-[1.05] tracking-tight text-[var(--color-text)]">{value.toLocaleString()}</div>
           )}
-          <div className="mt-px text-[11.5px] font-semibold text-[var(--color-text-muted)]">{label}</div>
+          <div className="mt-px flex items-center text-[11.5px] font-semibold text-[var(--color-text-muted)]">{label}{info && <InfoTip help={info} />}</div>
         </div>
       </div>
       <div className="mt-[13px] flex items-center justify-between border-t border-[#f3f4f6] pt-[11px]">

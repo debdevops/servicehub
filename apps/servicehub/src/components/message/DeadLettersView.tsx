@@ -5,11 +5,13 @@ import { ExplainerCard, ExplainerToggle } from '../explainer/Explainer'
 import { useExplainer } from '../explainer/useExplainer'
 import { Pager } from '../ui/Pager'
 import { BulkBar } from './BulkBar'
+import { EntityPicker } from './EntityPicker'
 import { FailureGroups, NO_REASON } from './FailureGroups'
 import { MessageTable } from './MessageTable'
 import { WorkTabs } from './WorkTabs'
 import { useDeadLetters } from '../../hooks/useDeadLetters'
 import type { DeadLetterRange } from '../../lib/api/deadLetters'
+import { bulkSelection } from '../../lib/bulkSelection'
 import type { CloudProvider, Namespace } from '../../lib/api/namespaces'
 import { providerLabel } from '../../lib/providers'
 
@@ -163,15 +165,10 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
                 ))}
               </select>
             </label>
-            <label className="flex items-center gap-2">
-              <span className="text-[var(--color-text-muted)]">Queue</span>
-              <select value={entity ?? ''} onChange={(e) => change({ entity: e.target.value || null })} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5">
-                <option value="">All queues</option>
-                {data.entities.map((e) => (
-                  <option key={e} value={e}>{e}</option>
-                ))}
-              </select>
-            </label>
+            <div className="flex items-center gap-2">
+              <span className="text-[var(--color-text-muted)]">Queue or topic</span>
+              <EntityPicker namespaces={namespaces} cloud={cloud} recorded={data.entities} value={entity} onChange={(e) => change({ entity: e })} />
+            </div>
             <label className="flex items-center gap-2">
               <span className="sr-only">Search these results</span>
               <input
@@ -190,11 +187,6 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
               <EmptyState cloud={cloud} filtering={filtering} watched={watched} onClear={() => setParams(new URLSearchParams({ tab: 'dlq' }), { replace: true })} />
             ) : (
               <>
-                <MessageTable
-                  rows={rows}
-                  namespaceNames={names}
-                  selection={{ selected: current.all ? new Set(rows.map((r) => String(r.id))) : current.ids, onToggle: toggle, onTogglePage: togglePage }}
-                />
                 {selectedCount > 0 && (
                   <BulkBar
                     count={selectedCount}
@@ -204,8 +196,16 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
                     canSelectAll={!!reasonParam && total > rows.length}
                     onSelectAll={() => setSelection({ sig: signature, ids: new Set(rows.map((r) => String(r.id))), all: true })}
                     onClear={() => setSelection({ sig: signature, ids: new Set(), all: false })}
+                    onOpen={() =>
+                      bulkSelection.set(current.all ? { query: { ...query, page: 1, pageSize: 100 }, total } : { ids: [...current.ids].map(Number) })
+                    }
                   />
                 )}
+                <MessageTable
+                  rows={rows}
+                  namespaceNames={names}
+                  selection={{ selected: current.all ? new Set(rows.map((r) => String(r.id))) : current.ids, onToggle: toggle, onTogglePage: togglePage }}
+                />
                 <Pager page={data.paging.page} pageSize={data.paging.pageSize} total={total} filtered={filtering} onPage={(p) => change({ page: String(p) })} />
               </>
             )}

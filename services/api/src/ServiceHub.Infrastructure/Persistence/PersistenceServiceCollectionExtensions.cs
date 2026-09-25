@@ -68,6 +68,10 @@ public static class PersistenceServiceCollectionExtensions
         services.TryAddScoped<IRecoveryLedger, RecoveryLedger.RecoveryLedgerService>();
         services.TryAddSingleton<Telemetry.ServiceHubMetrics>();
         services.TryAddScoped<IRecoveryEligibilityGate, RecoveryLedger.RecoveryEligibilityGate>();
+        services.TryAddScoped<IFleetOverviewService, Fleet.FleetOverviewService>();
+        services.TryAddScoped<IBulkOperationService, BulkOperations.BulkOperationService>();
+        services.TryAddScoped<IRulesService, Rules.RulesService>();
+        services.TryAddScoped<ISignaturesService, Signatures.SignaturesService>();
         services.TryAddScoped<IDlqReplayService, Recovery.DlqReplayService>();
         services.TryAddScoped<IRecoveryQueries, RecoveryLedger.RecoveryQueries>();
         services.TryAddSingleton<IActorIdentityResolver, Identity.ActorIdentityResolver>();

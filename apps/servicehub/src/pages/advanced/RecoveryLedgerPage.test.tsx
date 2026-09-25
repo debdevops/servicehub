@@ -84,7 +84,7 @@ describe('the Recovery Ledger (Advanced)', () => {
     vi.mocked(api.fetchLedgerEntry).mockResolvedValue(detail(entry('e1', 'Recovered')))
     const user = userEvent.setup()
     renderPage()
-    const buttons = await screen.findAllByRole('button', { name: /Open ledger entry/ })
+    const buttons = await screen.findAllByRole('button', { name: /Details of ledger entry/ })
     await user.click(buttons[0]!)
     const panel = within(await screen.findByRole('complementary', { name: 'Entry' }))
     expect(await panel.findByText('did not return')).toBeInTheDocument()

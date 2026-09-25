@@ -59,7 +59,7 @@ describe('the Dead letters view', () => {
 
     const table = await screen.findByRole('table', { name: 'Dead-lettered messages, newest first' })
     expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(
-      ['', 'When', 'Queue', 'Failed because', 'Tries', 'Waiting', 'Size', 'Open'],
+      ['', 'When', 'Queue or topic', 'Failed because', 'Tries', 'Waiting', 'Size', 'Details'],
     )
     expect(within(table).getAllByRole('row')).toHaveLength(3)
     expect(lastQuery()).toMatchObject({ provider: 'azure', status: 'active', pageSize: 25, page: 1 })
@@ -71,7 +71,7 @@ describe('the Dead letters view', () => {
     renderView()
 
     const table = await screen.findByRole('table')
-    expect(within(table).getByText('No reason recorded')).toBeInTheDocument()
+    expect(within(table).getByText('Reason not recorded')).toBeInTheDocument()
   })
 
   it('opens the explainer, and Got it puts it away for good', async () => {
@@ -141,6 +141,9 @@ describe('the Dead letters view', () => {
     await userEvent.click(first)
 
     const bar = screen.getByRole('region', { name: 'Selected messages' })
+    // The action bar sits ABOVE the table and sticks under the header, so choosing a row never means scrolling to find what to do with it.
+    expect(bar.compareDocumentPosition(screen.getByRole('table')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(bar.className).toContain('sticky')
     expect(within(bar).getByText('1 message selected')).toBeInTheDocument()
     expect(within(bar).getByRole('link', { name: 'Replay selected…' })).toHaveAttribute('href', '/?tab=dlq&modal=bulk-replay')
     expect(within(bar).getByText(/preview first/)).toBeInTheDocument()
@@ -169,7 +172,7 @@ describe('the Dead letters view', () => {
 
   it('links each row to its message, keeping the filters', async () => {
     renderView('azure', [azure], '/?tab=dlq&range=7d')
-    const link = await screen.findByRole('link', { name: 'Open message m-2' })
+    const link = await screen.findByRole('link', { name: 'Details of message m-2' })
     expect(link).toHaveAttribute('href', '/?tab=dlq&range=7d&message=2')
   })
 

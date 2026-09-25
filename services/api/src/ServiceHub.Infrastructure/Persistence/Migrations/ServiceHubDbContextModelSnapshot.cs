@@ -118,6 +118,195 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                     b.ToTable("AuditLogs", (string)null);
                 });
 
+            modelBuilder.Entity("ServiceHub.Core.Entities.AutoReplayRule", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AskedCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("BackOff")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisabledDetail")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DisabledReason")
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("EntityName")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastAskedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastAskedReason")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("MaxPerHour")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SignatureHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("WaitSeconds")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId", "Provider", "Enabled")
+                        .HasDatabaseName("IX_AutoReplayRules_Owner_Provider_Enabled");
+
+                    b.ToTable("AutoReplayRules", (string)null);
+                });
+
+            modelBuilder.Entity("ServiceHub.Core.Entities.BulkOperationItem", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("DeadLetterReason")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("DlqMessageId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("EntityName")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("JobId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("NamespaceId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ReasonCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("RecoveryEntryId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Remedy")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("JobId", "Position")
+                        .HasDatabaseName("IX_BulkOperationItems_Job_Position");
+
+                    b.ToTable("BulkOperationItems", (string)null);
+                });
+
+            modelBuilder.Entity("ServiceHub.Core.Entities.BulkOperationJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActorIdentity")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActorKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("CancelRequested")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("EndedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EndedReason")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("PerSecond")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("PreviewedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("SampleOnly")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("StartedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("StopAfterConsecutiveFailures")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId", "Status")
+                        .HasDatabaseName("IX_BulkOperationJobs_Owner_Status");
+
+                    b.ToTable("BulkOperationJobs", (string)null);
+                });
+
             modelBuilder.Entity("ServiceHub.Core.Entities.DlqMessage", b =>
                 {
                     b.Property<long>("Id")
@@ -212,6 +401,10 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("SignatureHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Status")
                         .IsConcurrencyToken()
                         .IsRequired()
@@ -229,6 +422,9 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("DetectedAtUtc")
                         .HasDatabaseName("IX_DlqMessages_DetectedAt");
+
+                    b.HasIndex("OwnerId", "NamespaceId", "SignatureHash")
+                        .HasDatabaseName("IX_DlqMessages_Owner_Namespace_Signature");
 
                     b.HasIndex("OwnerId", "NamespaceId", "Status")
                         .HasDatabaseName("IX_DlqMessages_Owner_Namespace_Status");
@@ -323,6 +519,64 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("IX_Namespaces_OwnerId_Name");
 
                     b.ToTable("Namespaces", (string)null);
+                });
+
+            modelBuilder.Entity("ServiceHub.Core.Entities.NamespaceSignature", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("DominantDeadletterReason")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EntityName")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ExampleError")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FirstSeenAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastSeenAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("NamespaceId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("OccurrenceCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SignatureHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TopTermsJson")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId", "NamespaceId", "SignatureHash")
+                        .IsUnique()
+                        .HasDatabaseName("IX_NamespaceSignatures_Owner_Namespace_Hash");
+
+                    b.ToTable("NamespaceSignatures", (string)null);
                 });
 
             modelBuilder.Entity("ServiceHub.Core.Entities.RecoveryEvent", b =>
@@ -701,6 +955,20 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("IX_ReplayHistories_Owner_Namespace_ReplayedAt");
 
                     b.ToTable("ReplayHistories", (string)null);
+                });
+
+            modelBuilder.Entity("ServiceHub.Core.Entities.BulkOperationItem", b =>
+                {
+                    b.HasOne("ServiceHub.Core.Entities.BulkOperationJob", null)
+                        .WithMany("Items")
+                        .HasForeignKey("JobId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ServiceHub.Core.Entities.BulkOperationJob", b =>
+                {
+                    b.Navigation("Items");
                 });
 #pragma warning restore 612, 618
         }

@@ -40,6 +40,18 @@ public sealed class ServiceHubDbContext : DbContext
     /// <summary>Messages found in dead-letter queues (W2).</summary>
     public DbSet<DlqMessage> DlqMessages => Set<DlqMessage>();
 
+    /// <summary>Auto Replay rules (unit 3.6).</summary>
+    public DbSet<AutoReplayRule> AutoReplayRules => Set<AutoReplayRule>();
+
+    /// <summary>Bulk replay jobs (unit 3.2).</summary>
+    public DbSet<BulkOperationJob> BulkOperationJobs => Set<BulkOperationJob>();
+
+    /// <summary>The messages of each bulk job.</summary>
+    public DbSet<BulkOperationItem> BulkOperationItems => Set<BulkOperationItem>();
+
+    /// <summary>Distinct failure fingerprints per namespace (unit 3.1).</summary>
+    public DbSet<NamespaceSignature> NamespaceSignatures => Set<NamespaceSignature>();
+
     /// <summary>Recovery decisions — the immutable header of the evidence ledger (W2).</summary>
     public DbSet<RecoveryOperation> RecoveryOperations => Set<RecoveryOperation>();
 
@@ -60,6 +72,9 @@ public sealed class ServiceHubDbContext : DbContext
         ConfigureNamespace(modelBuilder);
         ConfigureAuditLog(modelBuilder);
         ConfigureDlqMessage(modelBuilder);
+        ConfigureNamespaceSignature(modelBuilder);
+        ConfigureBulkOperations(modelBuilder);
+        ConfigureAutoReplayRule(modelBuilder);
         ConfigureRecoveryOperation(modelBuilder);
         ConfigureRecoveryLedgerEntry(modelBuilder);
         ConfigureRecoveryEvent(modelBuilder);
@@ -185,6 +200,7 @@ public sealed class ServiceHubDbContext : DbContext
         entity.Property(e => e.ApplicationPropertiesJson).HasMaxLength(8192);
         entity.Property(e => e.CorrelationId).HasMaxLength(256);
         entity.Property(e => e.SessionId).HasMaxLength(256);
+        entity.Property(e => e.SignatureHash).HasMaxLength(64);
         entity.Property(e => e.Status).HasConversion<string>().HasMaxLength(32).IsConcurrencyToken();
 
         // Sortable UTC text, as for the audit trail: SQLite cannot ORDER BY its default
@@ -202,6 +218,76 @@ public sealed class ServiceHubDbContext : DbContext
         entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.Status }).HasDatabaseName("IX_DlqMessages_Owner_Namespace_Status");
         entity.HasIndex(e => e.BodyHash).HasDatabaseName("IX_DlqMessages_BodyHash");
         entity.HasIndex(e => e.DetectedAtUtc).HasDatabaseName("IX_DlqMessages_DetectedAt");
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.SignatureHash }).HasDatabaseName("IX_DlqMessages_Owner_Namespace_Signature");
+    }
+
+    private static void ConfigureAutoReplayRule(ModelBuilder modelBuilder)
+    {
+        var rule = modelBuilder.Entity<AutoReplayRule>();
+        rule.ToTable("AutoReplayRules");
+        rule.HasKey(e => e.Id);
+        rule.Property(e => e.Id).ValueGeneratedOnAdd();
+        rule.Property(e => e.OwnerId).HasMaxLength(128).IsRequired();
+        rule.Property(e => e.Name).HasMaxLength(120).IsRequired();
+        rule.Property(e => e.Provider).HasConversion<string>().HasMaxLength(32);
+        rule.Property(e => e.Reason).HasMaxLength(1024);
+        rule.Property(e => e.EntityName).HasMaxLength(512);
+        rule.Property(e => e.SignatureHash).HasMaxLength(64);
+        rule.Property(e => e.DisabledReason).HasMaxLength(32);
+        rule.Property(e => e.DisabledDetail).HasMaxLength(512);
+        rule.Property(e => e.LastAskedReason).HasMaxLength(128);
+        rule.Property(e => e.CreatedAt).HasConversion(SortableUtc);
+        rule.Property(e => e.UpdatedAt).HasConversion(SortableUtcNullable);
+        rule.Property(e => e.LastAskedAt).HasConversion(SortableUtcNullable);
+        rule.HasIndex(e => new { e.OwnerId, e.Provider, e.Enabled }).HasDatabaseName("IX_AutoReplayRules_Owner_Provider_Enabled");
+    }
+
+    private static void ConfigureBulkOperations(ModelBuilder modelBuilder)
+    {
+        var job = modelBuilder.Entity<BulkOperationJob>();
+        job.ToTable("BulkOperationJobs");
+        job.HasKey(e => e.Id);
+        job.Property(e => e.OwnerId).HasMaxLength(128).IsRequired();
+        job.Property(e => e.ActorIdentity).HasMaxLength(256).IsRequired();
+        job.Property(e => e.ActorKind).HasConversion<string>().HasMaxLength(16);
+        job.Property(e => e.Status).HasConversion<string>().HasMaxLength(16);
+        job.Property(e => e.EndedReason).HasMaxLength(1024);
+        job.Property(e => e.PreviewedAt).HasConversion(SortableUtc);
+        job.Property(e => e.StartedAt).HasConversion(SortableUtcNullable);
+        job.Property(e => e.EndedAt).HasConversion(SortableUtcNullable);
+        job.HasIndex(e => new { e.OwnerId, e.Status }).HasDatabaseName("IX_BulkOperationJobs_Owner_Status");
+        job.HasMany(e => e.Items).WithOne().HasForeignKey(i => i.JobId).OnDelete(DeleteBehavior.Cascade);
+
+        var item = modelBuilder.Entity<BulkOperationItem>();
+        item.ToTable("BulkOperationItems");
+        item.HasKey(e => e.Id);
+        item.Property(e => e.Id).ValueGeneratedOnAdd();
+        item.Property(e => e.EntityName).HasMaxLength(512).IsRequired();
+        item.Property(e => e.DeadLetterReason).HasMaxLength(1024);
+        item.Property(e => e.State).HasConversion<string>().HasMaxLength(16);
+        item.Property(e => e.ReasonCode).HasMaxLength(128);
+        item.Property(e => e.Remedy).HasMaxLength(512);
+        item.HasIndex(e => new { e.JobId, e.Position }).HasDatabaseName("IX_BulkOperationItems_Job_Position");
+    }
+
+    private static void ConfigureNamespaceSignature(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<NamespaceSignature>();
+
+        entity.ToTable("NamespaceSignatures");
+        entity.HasKey(e => e.Id);
+        entity.Property(e => e.Id).ValueGeneratedOnAdd();
+        entity.Property(e => e.OwnerId).HasMaxLength(128).IsRequired();
+        entity.Property(e => e.SignatureHash).HasMaxLength(64).IsRequired();
+        entity.Property(e => e.DominantDeadletterReason).HasMaxLength(1024).IsRequired();
+        entity.Property(e => e.EntityName).HasMaxLength(512).IsRequired();
+        entity.Property(e => e.ExampleError).HasMaxLength(1024);
+        entity.Property(e => e.TopTermsJson).HasMaxLength(2048).IsRequired();
+        entity.Property(e => e.FirstSeenAt).HasConversion(SortableUtc);
+        entity.Property(e => e.LastSeenAt).HasConversion(SortableUtc);
+
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.SignatureHash }).IsUnique()
+            .HasDatabaseName("IX_NamespaceSignatures_Owner_Namespace_Hash");
     }
 
     private static void ConfigureRecoveryOperation(ModelBuilder modelBuilder)

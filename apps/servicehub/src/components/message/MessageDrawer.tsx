@@ -1,3 +1,7 @@
+import { columnHelp, type ColumnHelp } from '../../content/columns'
+import { describeEntity } from '../../lib/entities'
+import { InfoTip } from '../ui/InfoTip'
+import { EntityCell } from './EntityCell'
 import { useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Copy, Download, Maximize2, Minimize2, Play, Sparkles } from 'lucide-react'
@@ -120,10 +124,11 @@ function Content({ detail, full, tab, onTab, onReplay }: { detail: DeadLetterDet
         <>
           <section aria-label="What failed">
             <span className="inline-block rounded-full bg-[var(--color-error-light)] px-3 py-1 text-sm font-semibold text-[var(--color-text)]">
-              {m.deadLetterReason ?? 'No reason recorded'}
+              {m.deadLetterReason ?? 'Reason not recorded'}
             </span>
             <p className="mt-2 text-sm text-[var(--color-text)]">
-              <span className="font-mono text-[13px]">{m.entityName}</span> · tried {m.deliveryCount} {m.deliveryCount === 1 ? 'time' : 'times'} ·{' '}
+              <span className="font-mono text-[13px]">{describeEntity(m.entityName, m.entityType, m.topicName).topic ? `${describeEntity(m.entityName, m.entityType, m.topicName).topic} › ` : ''}{describeEntity(m.entityName, m.entityType, m.topicName).name}</span>
+              {m.deliveryCount > 0 ? ` · tried ${m.deliveryCount} ${m.deliveryCount === 1 ? 'time' : 'times'}` : ''} ·{' '}
               {formatBytes(m.sizeInBytes)}{detail.contentType ? ` · ${detail.contentType}` : ''} · set aside {formatAge(m.detectedAtUtc, now)} ago
             </p>
             {m.deadLetterErrorDescription && <p className="mt-1 text-sm text-[var(--color-text-muted)]">{m.deadLetterErrorDescription}</p>}
@@ -137,15 +142,17 @@ function Content({ detail, full, tab, onTab, onReplay }: { detail: DeadLetterDet
           <section aria-label="Why it failed">
             <h3 className="mb-1 flex items-center gap-2 text-sm font-semibold">
               Why it failed
-              <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary-50)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-primary-700)]">
-                <Sparkles className="h-3 w-3" aria-hidden="true" /> Suggestion
-              </span>
+              {explanation.recorded !== false && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary-50)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-primary-700)]">
+                  <Sparkles className="h-3 w-3" aria-hidden="true" /> Suggestion
+                </span>
+              )}
             </h3>
             <p className="text-sm text-[var(--color-text)]">{explanation.summary}</p>
             {detail.othersLikeIt > 0 && (
               <p className="mt-1 text-sm"><b>{detail.othersLikeIt} other {detail.othersLikeIt === 1 ? 'message' : 'messages'}</b> in this queue failed the same way.</p>
             )}
-            <p className="mt-1 text-xs text-[var(--color-text-muted)]">A reading of the recorded reason, not something the cloud reported.</p>
+            {explanation.recorded !== false && <p className="mt-1 text-xs text-[var(--color-text-muted)]">A reading of the recorded reason, not something the cloud reported.</p>}
           </section>
         </>
       )}
@@ -341,10 +348,10 @@ function pretty(text: string, isPreview: boolean): string {
   }
 }
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
+function Row({ label, help, children }: { label: string; help?: ColumnHelp; children: ReactNode }) {
   return (
     <>
-      <dt className="text-[var(--color-text-muted)]">{label}</dt>
+      <dt className="text-[var(--color-text-muted)]">{label}{help && <InfoTip help={help} />}</dt>
       <dd className="min-w-0 break-all">{children}</dd>
     </>
   )
@@ -356,15 +363,15 @@ function Details({ detail, now }: { detail: DeadLetterDetail; now: Date }) {
     <section aria-label="Details">
       <h3 className="mb-1 text-sm font-semibold">Details</h3>
       <dl className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-1 text-sm">
-        <Row label="Message ID">
+        <Row label="Message ID" help={columnHelp.drawer.messageId}>
           <span className="font-mono text-[13px]">{m.messageId}</span>{' '}
           <button type="button" aria-label="Copy message ID" onClick={() => void navigator.clipboard?.writeText(m.messageId)} className="align-middle text-[var(--color-text-muted)] hover:text-[var(--color-text)]">
             <Copy className="inline h-3.5 w-3.5" aria-hidden="true" />
           </button>
         </Row>
-        <Row label="Queue"><span className="font-mono text-[13px]">{m.entityName}</span></Row>
-        <Row label="Enqueued">{formatWhen(m.enqueuedTimeUtc, now)}</Row>
-        <Row label="Tries">{m.deliveryCount}</Row>
+        <Row label="Queue or topic" help={columnHelp.drawer.where}><EntityCell size="sm" entityName={m.entityName} entityType={m.entityType} topicName={m.topicName} /></Row>
+        <Row label="Enqueued" help={columnHelp.drawer.enqueued}>{formatWhen(m.enqueuedTimeUtc, now)}</Row>
+        <Row label="Tries" help={columnHelp.drawer.tries}>{m.deliveryCount > 0 ? m.deliveryCount : '—'}</Row>
       </dl>
     </section>
   )
@@ -422,7 +429,7 @@ function Delivery({ detail, now }: { detail: DeadLetterDetail; now: Date }) {
       <h3 className="mb-1 text-sm font-semibold">Delivery</h3>
       <dl className="grid grid-cols-[150px_1fr] gap-x-3 gap-y-1 text-sm">
         <Row label="Delivery attempts">{m.deliveryCount}</Row>
-        <Row label="Enqueued">{formatWhen(m.enqueuedTimeUtc, now)}</Row>
+        <Row label="Enqueued" help={columnHelp.drawer.enqueued}>{formatWhen(m.enqueuedTimeUtc, now)}</Row>
         <Row label="First seen set aside">{formatWhen(m.detectedAtUtc, now)}</Row>
         <Row label="Recorded reason">{m.deadLetterReason ?? 'none'}</Row>
       </dl>

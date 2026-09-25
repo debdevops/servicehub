@@ -19,7 +19,7 @@ namespace ServiceHub.IntegrationTests;
 /// </summary>
 public sealed class DeadLettersApiTests
 {
-    private sealed class Handle(ServiceHubApiFactory root, Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> factory) : IDisposable
+    internal sealed class Handle(ServiceHubApiFactory root, Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> factory) : IDisposable
     {
         public HttpClient Client { get; } = factory.CreateClient();
         public IServiceProvider Services => factory.Services;
@@ -32,9 +32,9 @@ public sealed class DeadLettersApiTests
         }
     }
 
-    private static Handle Host() => Host(new PeekLog());
+    internal static Handle Host() => Host(new PeekLog());
 
-    private static Handle Host(PeekLog azure, PeekLog? aws = null)
+    internal static Handle Host(PeekLog azure, PeekLog? aws = null)
     {
         var root = new ServiceHubApiFactory();
         var factory = root.WithWebHostBuilder(b => b.ConfigureServices(services =>
@@ -50,7 +50,7 @@ public sealed class DeadLettersApiTests
         return new Handle(root, factory);
     }
 
-    private static async Task<Guid> Connect(HttpClient client, string provider)
+    internal static async Task<Guid> Connect(HttpClient client, string provider)
     {
         object body = provider == "azure"
             ? new { name = "orders-dev", provider, authType = "connectionString", connectionString = "Endpoint=sb://orders-dev.servicebus.windows.net/;SharedAccessKeyName=servicehub;SharedAccessKey=secret==" }
@@ -64,7 +64,7 @@ public sealed class DeadLettersApiTests
 
     private static readonly DateTimeOffset Now = DateTimeOffset.UtcNow;
 
-    private static async Task Seed(Handle host, Guid namespaceId, CloudProviderType provider, int count, string? reason = "MaxDeliveryCountExceeded",
+    internal static async Task Seed(Handle host, Guid namespaceId, CloudProviderType provider, int count, string? reason = "MaxDeliveryCountExceeded",
         string entity = "orders", TimeSpan? age = null, DlqMessageStatus status = DlqMessageStatus.Active, string prefix = "m")
     {
         using var scope = host.Services.CreateScope();

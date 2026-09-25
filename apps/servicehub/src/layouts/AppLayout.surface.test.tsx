@@ -60,6 +60,14 @@ describe('the Simple | Advanced switch', () => {
     expect(switchLink('Advanced')).toHaveAttribute('aria-current', 'page')
   })
 
+  it('highlights exactly one sidebar row on an Advanced page — the Overview root must not match every page beneath it', async () => {
+    renderApp('/advanced/signatures')
+    await sidebar().findByRole('link', { name: /Failure Signatures/ })
+
+    const current = sidebar().getAllByRole('link').filter((l) => l.getAttribute('aria-current') === 'page')
+    expect(current.map((l) => l.textContent)).toEqual(['Failure Signatures'])
+  })
+
   it('always starts a first visit on Simple, and the Advanced link goes to the top of Advanced', async () => {
     renderApp('/')
     await screen.findByRole('link', { name: /Dead letters/ })

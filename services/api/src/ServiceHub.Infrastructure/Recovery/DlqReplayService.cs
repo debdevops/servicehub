@@ -109,7 +109,7 @@ public sealed class DlqReplayService : IDlqReplayService
     /// <inheritdoc />
     public async Task<Result<ReplayOutcome>> ReplayAsync(
         long dlqMessageId, Namespace ns, RecoveryActor actor, string? intentHeader, string? correlationId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, long? ruleId = null)
     {
         var message = await LoadAsync(dlqMessageId, ns, tracking: true, cancellationToken);
         if (message is null)
@@ -136,7 +136,7 @@ public sealed class DlqReplayService : IDlqReplayService
         var (entity, subscription) = SourceOf(message);
         var operation = await _ledger.OpenOperationAsync(new OpenRecoveryOperationRequest
         {
-            OwnerId = ns.OwnerId, Kind = RecoveryOperationKind.Replay, Trigger = RecoveryTrigger.Manual, Actor = actor,
+            OwnerId = ns.OwnerId, Kind = RecoveryOperationKind.Replay, Trigger = ruleId is null ? RecoveryTrigger.Manual : RecoveryTrigger.AutoRule, SourceRuleId = ruleId, Actor = actor,
             IntentHeader = intentHeader, NamespaceId = ns.Id, NamespaceNameSnapshot = ns.Name, ProviderSnapshot = ns.Provider,
             EnvironmentSnapshot = ns.Environment, ScopeDescription = $"entity={message.EntityName}; message={message.MessageId}",
             CorrelationId = correlationId, TargetCount = 1,
@@ -207,7 +207,7 @@ public sealed class DlqReplayService : IDlqReplayService
         var status = executed.ToString().ToLowerInvariant();
         _db.ReplayHistories.Add(new ReplayHistory
         {
-            DlqMessageId = message.Id, OwnerId = ns.OwnerId, NamespaceId = ns.Id, RecoveryEntryId = entry.Value.Id,
+            DlqMessageId = message.Id, RuleId = ruleId, OwnerId = ns.OwnerId, NamespaceId = ns.Id, RecoveryEntryId = entry.Value.Id,
             MessageId = message.MessageId, SourceEntity = message.EntityName, ReplayedAt = DateTimeOffset.UtcNow,
             ReplayedBy = actor.Identity, ReplayStrategy = OriginalEntity, ReplayedToEntity = TargetOf(message),
             OutcomeStatus = status, ErrorDetails = errorMessage,
@@ -363,8 +363,8 @@ public sealed class DlqReplayService : IDlqReplayService
         DlqMessage message, Namespace ns, RecoveryActor actor, RecoveryOperationKind kind, CancellationToken cancellationToken) =>
         _gate.EvaluateAsync(
             new RecoveryEligibilityRequest(
-                ns.OwnerId, kind, actor.Kind, RecoveryTrigger.Manual, ns.Id, message.EntityName, message.BodyHash,
-                SignatureHash: null, ns.Environment,
+                ns.OwnerId, kind, actor.Kind, actor.Kind == RecoveryActorKind.Automation ? RecoveryTrigger.AutoRule : RecoveryTrigger.Manual,
+                ns.Id, message.EntityName, message.BodyHash, SignatureHash: message.SignatureHash, ns.Environment,
                 // The namespace's own cloud: whether absence can be proven is that cloud's capability.
                 Provider: ns.Provider),
             cancellationToken);
@@ -379,7 +379,30 @@ public sealed class DlqReplayService : IDlqReplayService
 
     /// <summary>The queue or topic to receive from, and the subscription when it is one.</summary>
     private static (string Entity, string? Subscription) SourceOf(DlqMessage m) =>
-        m.EntityType == ServiceBusEntityType.Subscription ? (m.TopicName ?? m.EntityName, m.EntityName) : (m.EntityName, null);
+        m.EntityType == ServiceBusEntityType.Subscription ? (m.TopicName ?? TopicPart(m.EntityName), SubscriptionPart(m)) : (m.EntityName, null);
+
+    /// <summary>
+    /// A subscription is stored as <c>topic/subscriptions/name</c> (the scanner's one spelling for every cloud), but a cloud is
+    /// asked for the subscription by its own bare name. Passing the stored path made every subscription replay fail with
+    /// "topic not found".
+    /// </summary>
+    private static string SubscriptionPart(DlqMessage m)
+    {
+        const string segment = "/subscriptions/";
+        var i = m.EntityName.IndexOf(segment, StringComparison.Ordinal);
+        if (i >= 0)
+        {
+            return m.EntityName[(i + segment.Length)..];
+        }
+
+        return m.TopicName is { } topic && m.EntityName.StartsWith(topic + "/", StringComparison.Ordinal) ? m.EntityName[(topic.Length + 1)..] : m.EntityName;
+    }
+
+    private static string TopicPart(string entityName)
+    {
+        var i = entityName.IndexOf('/', StringComparison.Ordinal);
+        return i > 0 ? entityName[..i] : entityName;
+    }
 
     /// <summary>Where it goes back to — the queue it came from, or the topic for a subscription.</summary>
     private static string TargetOf(DlqMessage m) => m.TopicName ?? m.EntityName;

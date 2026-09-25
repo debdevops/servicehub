@@ -11,6 +11,7 @@ using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Core.Security;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.Signatures;
 
 namespace ServiceHub.Infrastructure.Dlq;
 
@@ -105,6 +106,8 @@ public sealed class DlqScanner
         {
             return new NamespaceScanResult(ScanOutcome.Failed, Reason: "This build of ServiceHub has no adapter for that cloud.");
         }
+
+        await SignatureRecorder.BackfillAsync(_db, ns.Id, ct).ConfigureAwait(false);
 
         var provider = _router.Resolve(ns.Provider);
 
@@ -275,7 +278,7 @@ public sealed class DlqScanner
 
                 var bodyHash = ComputeBodyHash(msg.Body);
                 newlySeen.Add((msg, bodyHash));
-                _db.DlqMessages.Add(new DlqMessage
+                var recorded = new DlqMessage
                 {
                     MessageId = msg.MessageId,
                     SequenceNumber = msg.SequenceNumber,
@@ -297,7 +300,9 @@ public sealed class DlqScanner
                     ApplicationPropertiesJson = SerializeProperties(msg.ApplicationProperties),
                     CorrelationId = msg.CorrelationId,
                     SessionId = msg.SessionId,
-                });
+                };
+                recorded.SignatureHash = await SignatureRecorder.AssignAsync(_db, recorded, ct).ConfigureAwait(false);
+                _db.DlqMessages.Add(recorded);
                 newCount++;
             }
 

@@ -1,10 +1,14 @@
+import { Lightbulb } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
+import { columnHelp } from '../../content/columns'
+import { explainFailure } from '../../lib/analyzer'
+import { EntityCell } from './EntityCell'
 import type { DeadLetter } from '../../lib/api/deadLetters'
 import { formatAge, formatBytes, formatWhen } from '../../lib/format'
 import { DataTable, type Column, type Selection } from '../ui/DataTable'
 
 /**
- * Dead letters as a table: When · Queue · Failed because · Tries · Waiting · Size · Open.
+ * Dead letters as a table: When · Queue or topic · Failed because · Tries · Waiting · Size · Details.
  *
  * "Failed because" is the reason the cloud or the application RECORDED, and the error text that came
  * with it. It is a fact from the message, not a category ServiceHub guessed — a guess, when there is
@@ -35,47 +39,38 @@ export function MessageTable({
     return `/?${params.toString()}`
   }
 
+  const help = columnHelp.deadLetters
   const columns: Column<DeadLetter>[] = [
-    { key: 'when', header: 'When', className: 'whitespace-nowrap', render: (r) => formatWhen(r.detectedAtUtc, now) },
+    { key: 'when', header: 'When', info: help.when, className: 'whitespace-nowrap', render: (r) => formatWhen(r.detectedAtUtc, now) },
     {
       key: 'queue',
-      header: 'Queue',
-      render: (r) => (
-        <>
-          <span className="font-mono text-[13px]">{r.entityName}</span>
-          {showNamespace && <span className="block text-xs text-[var(--color-text-muted)]">{namespaceNames?.get(r.namespaceId)}</span>}
-        </>
-      ),
+      header: 'Queue or topic',
+      info: help.where,
+      width: 'min-w-[15rem] w-[24%]',
+      render: (r) => <EntityCell entityName={r.entityName} entityType={r.entityType} topicName={r.topicName} note={showNamespace ? namespaceNames?.get(r.namespaceId) : undefined} />,
     },
     {
+      // The widest column, on purpose: it is the one a person reads to decide what to do.
       key: 'reason',
       header: 'Failed because',
-      render: (r) => (
-        <>
-          <span className="inline-block rounded-full bg-[var(--color-error-light)] px-2.5 py-0.5 text-xs font-medium text-[var(--color-text)]">
-            {r.deadLetterReason ?? 'No reason recorded'}
-          </span>
-          {r.deadLetterErrorDescription && (
-            <span className="mt-1 block max-w-md truncate text-xs text-[var(--color-text-muted)]" title={r.deadLetterErrorDescription}>
-              {r.deadLetterErrorDescription}
-            </span>
-          )}
-        </>
-      ),
+      info: help.failedBecause,
+      width: 'w-[42%] min-w-[22rem]',
+      render: (r) => <FailedBecause row={r} />,
     },
-    { key: 'tries', header: 'Tries', numeric: true, render: (r) => r.deliveryCount },
-    { key: 'waiting', header: 'Waiting', className: 'whitespace-nowrap', render: (r) => formatAge(r.detectedAtUtc, now) },
-    { key: 'size', header: 'Size', numeric: true, className: 'whitespace-nowrap', render: (r) => formatBytes(r.sizeInBytes) },
+    { key: 'tries', header: 'Tries', info: help.tries, numeric: true, render: (r) => (r.deliveryCount > 0 ? r.deliveryCount : <span title="This cloud does not report how many times the message was delivered." className="text-[var(--color-text-muted)]">—</span>) },
+    { key: 'waiting', header: 'Waiting', info: help.waiting, className: 'whitespace-nowrap', render: (r) => formatAge(r.detectedAtUtc, now) },
+    { key: 'size', header: 'Size', info: help.size, numeric: true, className: 'whitespace-nowrap', render: (r) => formatBytes(r.sizeInBytes) },
     {
       key: 'open',
-      header: 'Open',
+      header: 'Details',
+      info: help.details,
       render: (r) => (
         <Link
           to={openHref(r)}
-          aria-label={`Open message ${r.messageId}`}
+          aria-label={`Details of message ${r.messageId}`}
           className="whitespace-nowrap font-medium text-[var(--color-primary-700)] hover:underline"
         >
-          Open →
+          Details →
         </Link>
       ),
     },
@@ -91,5 +86,46 @@ export function MessageTable({
       compact={compact}
       rowLabel={(r) => `Select message ${r.messageId}`}
     />
+  )
+}
+
+/**
+ * The three things a person needs to decide, in the order they read them: the recorded reason (a fact), the error text that
+ * came with it (a fact, wrapped rather than cut off), and ServiceHub's plain-English reading (a suggestion — marked as one, R3).
+ * Where the cloud gave no error text it says so instead of leaving a gap.
+ */
+function FailedBecause({ row }: { row: DeadLetter }) {
+  // Some clouds move a message to the dead-letter queue by policy and record no reason at all. Saying "no reason, no text, no
+  // reading" three times helps nobody, so this says the one thing that is known and true: it was set aside automatically after
+  // its deliveries ran out, and where to look next.
+  if (!row.deadLetterReason && !row.deadLetterErrorDescription) {
+    // Some clouds do not report how many times a message was delivered (0 means "not reported", never "never delivered").
+    const after = row.deliveryCount > 0 ? ` after ${row.deliveryCount} ${row.deliveryCount === 1 ? 'delivery' : 'deliveries'} that were never completed` : ' after its deliveries ran out'
+    return (
+      <div className="min-w-0">
+        <span className="inline-block rounded-full bg-[var(--color-surface-muted)] px-2.5 py-0.5 text-xs font-semibold text-[var(--color-text-muted)]">Reason not recorded</span>
+        <p className="mt-1 text-[12.5px] text-[var(--color-text)]">
+          Set aside automatically{after}. This cloud does not record why — open Details to read the message itself.
+        </p>
+      </div>
+    )
+  }
+
+  const reading = explainFailure(row.deadLetterReason, row.deadLetterErrorDescription, row.deliveryCount)
+  return (
+    <div className="min-w-0">
+      <span className="inline-block rounded-full bg-[var(--color-error-light)] px-2.5 py-0.5 text-xs font-semibold text-[#b91c1c]">
+        {row.deadLetterReason ?? 'Reason not recorded'}
+      </span>
+      {row.deadLetterErrorDescription ? (
+        <p className="mt-1 line-clamp-2 text-[12.5px] text-[var(--color-text)]" title={row.deadLetterErrorDescription}>{row.deadLetterErrorDescription}</p>
+      ) : (
+        <p className="mt-1 text-[12.5px] italic text-[var(--color-text-muted)]">The cloud gave no error text for this one.</p>
+      )}
+      <p className="mt-1 flex items-start gap-1.5 text-[12px] text-[var(--color-text-muted)]" title="ServiceHub’s plain-English reading of the recorded reason — a suggestion, not something the cloud reported.">
+        <Lightbulb className="mt-px h-3 w-3 shrink-0 text-[#d97706]" aria-label="Suggestion" />
+        <span>{reading.headline}</span>
+      </p>
+    </div>
   )
 }

@@ -1,4 +1,5 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
+import { keepWithinScope } from '../lib/keepWithinScope'
 import { fetchDeadLetters, fetchDeadLetterTrend, type DeadLetterQuery } from '../lib/api/deadLetters'
 import type { CloudProvider } from '../lib/api/namespaces'
 
@@ -16,7 +17,7 @@ export function useDeadLetters(query: DeadLetterQuery) {
   return useQuery({
     queryKey: deadLetterKeys.list(query),
     queryFn: () => fetchDeadLetters(query),
-    placeholderData: keepPreviousData,
+    placeholderData: keepWithinScope(query.provider),
   })
 }
 
@@ -25,6 +26,6 @@ export function useDeadLetterTrend(provider: CloudProvider, days: number) {
   return useQuery({
     queryKey: [...deadLetterKeys.all, 'trend', provider, days] as const,
     queryFn: () => fetchDeadLetterTrend(provider, days),
-    placeholderData: keepPreviousData,
+    placeholderData: keepWithinScope(provider),
   })
 }

@@ -1,4 +1,5 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepWithinScope } from '../lib/keepWithinScope'
 import { fetchReplayProposal, fetchReplays, replayMessage, type ReplayQuery } from '../lib/api/replay'
 import { deadLetterKeys } from './useDeadLetters'
 
@@ -33,5 +34,5 @@ export function useReplay() {
 }
 
 export function useReplays(query: ReplayQuery) {
-  return useQuery({ queryKey: replayKeys.list(query), queryFn: () => fetchReplays(query), placeholderData: keepPreviousData })
+  return useQuery({ queryKey: replayKeys.list(query), queryFn: () => fetchReplays(query), placeholderData: keepWithinScope(query.provider) })
 }

@@ -348,7 +348,18 @@ public sealed class NamespacesController : ApiControllerBase
             ErrorCodes.CapabilityUnavailable,
             $"This build of ServiceHub has no adapter for '{ns.Provider}', so '{ns.Name}' cannot be reached.");
 
-    private static string Kind(CloudEntity entity) => entity.EntityType.Trim().ToLowerInvariant();
+    /// <summary>
+    /// The contract's three words. An adapter may describe an entity in its own service's terms ("sns topic"); the API
+    /// answers in queue, topic or subscription — a screen indexes its wording by these and must never meet a fourth.
+    /// </summary>
+    internal static string Kind(CloudEntity entity)
+    {
+        var raw = entity.EntityType.Trim().ToLowerInvariant();
+        return raw.Contains("subscription", StringComparison.Ordinal) ? "subscription"
+            : raw.Contains("topic", StringComparison.Ordinal) ? "topic"
+            : raw.Contains("queue", StringComparison.Ordinal) ? "queue"
+            : raw;
+    }
 
     private NamespaceResponse ToResponse(Namespace ns) => new(
         ns.Id,

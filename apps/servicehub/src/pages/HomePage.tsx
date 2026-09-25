@@ -5,12 +5,13 @@ import { Welcome } from '../components/connect/Welcome'
 import { FleetCard } from '../components/FleetCard'
 import { MessageDrawer } from '../components/message/MessageDrawer'
 import { DeadLettersView } from '../components/message/DeadLettersView'
+import { ActiveMessagesTab } from '../components/message/ActiveMessagesTab'
 import { ReplayedTab } from '../components/message/ReplayedTab'
 import { QueuesNeedingAttention } from '../components/QueuesNeedingAttention'
 import { RecentActivity } from '../components/RecentActivity'
 import { RecentDeadLetters } from '../components/message/RecentDeadLetters'
-import { WorkTabs } from '../components/message/WorkTabs'
 import { useProviderScope } from '../components/provider/providerScope'
+import { columnHelp } from '../content/columns'
 import { StatTile } from '../components/ui/StatTile'
 import { useNamespaces } from '../hooks/useNamespaces'
 import { useProviderSummary } from '../hooks/useProviderSummary'
@@ -76,7 +77,7 @@ function CloudHome({
   // The work views of Home's table (D45): `?tab=dlq` is the dead letters, in place of the overview.
   if (tab === 'dlq') return <DeadLettersView provider={provider} namespaces={namespaces} />
   if (tab === 'replayed') return <ReplayedTab provider={provider} />
-  if (tab === 'active') return <NotBuiltTab tab={tab} cloud={cloud} />
+  if (tab === 'active') return <ActiveMessagesTab provider={provider} namespaces={namespaces} />
 
   return (
     <section className="px-[22px] pb-6 pt-5">
@@ -123,6 +124,7 @@ function CloudHome({
               to="/?tab=dlq"
               action="See dead letters"
               tone="red"
+              info={columnHelp.tiles.deadLetters}
               icon={Inbox}
             />
             <StatTile
@@ -133,6 +135,7 @@ function CloudHome({
               to="/?tab=active"
               action="See active messages"
               tone="blue"
+              info={columnHelp.tiles.active}
               icon={Database}
             />
           </div>
@@ -192,22 +195,4 @@ function connectionState(namespaces: readonly Namespace[]): { label: string; ok:
   if (namespaces.every((n) => n.lastConnectionTestSucceeded === true)) return { label: 'Connected', ok: true }
   if (namespaces.some((n) => n.lastConnectionTestSucceeded === false)) return { label: 'Could not connect at last check', ok: false }
   return { label: 'Not tested yet', ok: null }
-}
-
-/** Active and Replayed are views of the same table, built in their own units. Until then they say so. */
-function NotBuiltTab({ tab, cloud }: { tab: 'active'; cloud: string }) {
-  const wave = 3
-  return (
-    <section className="px-6 py-6">
-      <h1 className="text-2xl font-semibold text-[var(--color-text)]">
-        {cloud} — Active messages
-      </h1>
-      <div className="mt-4">
-        <WorkTabs current={tab} />
-      </div>
-      <p className="inline-block rounded-full bg-[var(--color-surface-muted)] px-4 py-1.5 text-sm text-[var(--color-text-muted)]">
-        Not built yet — Wave {wave}
-      </p>
-    </section>
-  )
 }

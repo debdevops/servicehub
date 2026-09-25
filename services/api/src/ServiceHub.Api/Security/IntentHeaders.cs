@@ -19,6 +19,9 @@ public static class IntentHeaders
     /// <summary>Intent for replaying one dead letter.</summary>
     public const string ReplayMessage = "replay-message";
 
+    /// <summary>Intent for starting a bulk replay from a preview.</summary>
+    public const string BulkReplay = "bulk-replay";
+
     /// <summary>Whether the request declared exactly <paramref name="expected"/>.</summary>
     public static bool Declares(HttpRequest request, string expected)
     {

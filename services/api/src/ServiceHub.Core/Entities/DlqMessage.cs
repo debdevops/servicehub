@@ -81,6 +81,9 @@ public sealed class DlqMessage
     /// <summary>The message's session id.</summary>
     public string? SessionId { get; init; }
 
+    /// <summary>The failure fingerprint hash assigned when the message was first seen (unit 3.1). Null for rows recorded before it.</summary>
+    public string? SignatureHash { get; set; }
+
     /// <summary>
     /// Where it is now. A concurrency token: two writers racing on one row (a scan and a replay) cannot
     /// both win — the loser gets <c>DbUpdateConcurrencyException</c> rather than silently overwriting.

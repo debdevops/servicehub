@@ -250,6 +250,9 @@ internal sealed class PeekLog
     private int _replays;
     public int Replays => _replays;
     public void HitReplay() => Interlocked.Increment(ref _replays);
+
+    /// <summary>The queue-or-topic and subscription the last replay asked the cloud for.</summary>
+    public (string Entity, string? Subscription)? LastReplayTarget { get; set; }
 }
 
 /// <summary>A cloud with 30 active and 30 dead-lettered messages in "orders", and a "broken" entity that fails.</summary>
@@ -296,6 +299,7 @@ internal sealed class PeekableProvider(CloudProviderType type, ProviderCapabilit
     public Task<Result<bool>> ReplayMessageAsync(Guid namespaceId, string entityName, string? subscriptionName, long sequenceNumber, string? recoveryMarker, CancellationToken cancellationToken = default)
     {
         log.HitReplay();
+        log.LastReplayTarget = (entityName, subscriptionName);
         return log.OnReplay is { } replay ? Task.FromResult(replay()) : throw new NotSupportedException();
     }
     public Task<Result> PurgeMessageAsync(Guid namespaceId, string entityName, string? subscriptionName, long sequenceNumber, bool fromDeadLetter, CancellationToken cancellationToken = default) => throw new NotSupportedException();

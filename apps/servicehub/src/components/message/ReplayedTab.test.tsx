@@ -72,7 +72,7 @@ describe('the Replayed tab', () => {
   it('links each row back to its message in the drawer', async () => {
     listMock.mockResolvedValue(page([row()]))
     renderTab()
-    const link = await screen.findByRole('link', { name: /Open message m-7/ })
+    const link = await screen.findByRole('link', { name: /Details of message m-7/ })
     expect(link).toHaveAttribute('href', expect.stringContaining('message=7'))
   })
 

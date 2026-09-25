@@ -1,3 +1,4 @@
+using ServiceHub.Infrastructure.BulkOperations;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Extensions;
@@ -47,6 +48,8 @@ builder.Services.AddOpenApi();
 builder.Services.AddAgentPlatform();
 builder.Services.AddAgent<DlqMonitorAgent>();
 builder.Services.AddAgent<RecoveryVerificationAgent>();
+builder.Services.AddAgent<BulkOperationAgent>();
+builder.Services.AddAgent<ServiceHub.Infrastructure.Rules.AutoReplayAgent>();
 
 builder.Services.AddSingleton<ServiceHub.Api.Services.PlatformEventStreamBroker>();
 

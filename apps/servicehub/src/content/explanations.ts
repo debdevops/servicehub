@@ -71,10 +71,30 @@ export const explanations = {
       {
         term: 'Why AWS looks different',
         meaning:
-          'on SQS and Pub/Sub, opening a message counts as a delivery — so ServiceHub shows counts and age there, never the message.',
+          'on SQS and Pub/Sub, opening a message counts as a delivery — so ServiceHub shows counts there, never the message.',
       },
     ],
     learnMore: 'Active vs dead letters',
+  },
+  signatures: {
+    title: "What you're looking at",
+    terms: [
+      {
+        term: 'Signature',
+        meaning:
+          'a fingerprint for one way of failing — same queue, same kind of error — so 47 messages become one thing to reason about.',
+      },
+      {
+        term: 'Replay helps?',
+        meaning:
+          'from the replays already done: how many of them stayed fixed. Timeouts usually do; missing data never does.',
+      },
+      {
+        term: 'Growing',
+        meaning: 'the recent days hold at least twice what the earlier days did, and at least three messages.',
+      },
+    ],
+    learnMore: 'Signatures and trust',
   },
   ledger: {
     title: "What you're looking at",

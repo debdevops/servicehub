@@ -151,7 +151,9 @@ function NavSection({ label, entries, bare }: { label?: string; entries: readonl
             {entry.kind === 'page' ? (
               <NavLink
                 to={entry.path}
-                end={entry.path === '/'}
+                // `end` for the roots: "/" and the Advanced Overview would otherwise match every page beneath them,
+                // leaving two rows highlighted. The design highlights exactly one.
+                end={entry.path === '/' || entry.path === ADVANCED_ROOT}
                 title={entry.description}
                 className={({ isActive }) => [itemClass, isActive ? activeClass : idleClass].join(' ')}
               >

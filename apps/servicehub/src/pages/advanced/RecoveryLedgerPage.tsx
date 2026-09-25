@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { Hash, ScrollText, ShieldCheck, TriangleAlert, X } from 'lucide-react'
 import { Attribution } from '../../components/Attribution'
+import { EntityCell } from '../../components/message/EntityCell'
+import { columnHelp } from '../../content/columns'
 import { ExplainerCard, ExplainerToggle } from '../../components/explainer/Explainer'
 import { useExplainer } from '../../components/explainer/useExplainer'
 import { DataTable, type Column } from '../../components/ui/DataTable'
@@ -151,21 +153,23 @@ export default function RecoveryLedgerPage() {
 
 function LedgerTable({ rows, selected, onSelect }: { rows: readonly LedgerEntry[]; selected: string | null; onSelect: (id: string) => void }) {
   const now = new Date()
+  const help = columnHelp.ledger
   const columns: Column<LedgerEntry>[] = [
-    { key: 'time', header: 'Time', className: 'whitespace-nowrap', render: (r) => formatWhen(r.beganAt, now) },
-    { key: 'entity', header: 'Entity', render: (r) => <span className="font-mono text-[13px]">{r.entityName}</span> },
-    { key: 'cloud', header: 'Cloud', render: (r) => (r.provider ? providerLabel[r.provider] : '—') },
-    { key: 'by', header: 'By', render: (r) => <Attribution actor={r.actor} at={r.beganAt} compact /> },
-    { key: 'what', header: 'What', className: 'whitespace-nowrap', render: (r) => `${r.kind} · 1 message` },
-    { key: 'outcome', header: 'Outcome', render: (r) => <StateChip state={r.state} /> },
-    { key: 'match', header: 'Match', render: (r) => r.confidence ?? '—' },
+    { key: 'time', header: 'Time', info: help.time, className: 'whitespace-nowrap', render: (r) => formatWhen(r.beganAt, now) },
+    { key: 'entity', header: 'Queue or topic', info: help.entity, render: (r) => <EntityCell size="sm" entityName={r.entityName} entityType={r.entityName.includes('/') ? 'subscription' : 'queue'} /> },
+    { key: 'cloud', header: 'Cloud', info: help.cloud, render: (r) => (r.provider ? providerLabel[r.provider] : '—') },
+    { key: 'by', header: 'By', info: help.by, render: (r) => <Attribution actor={r.actor} at={r.beganAt} compact /> },
+    { key: 'what', header: 'What', info: help.what, className: 'whitespace-nowrap', render: (r) => `${r.kind} · 1 message` },
+    { key: 'outcome', header: 'Outcome', info: help.outcome, render: (r) => <StateChip state={r.state} /> },
+    { key: 'match', header: 'Match', info: help.match, render: (r) => r.confidence ?? '—' },
     {
       key: 'open',
-      header: 'Open',
+      header: 'Details',
+      info: help.open,
       render: (r) => (
-        <button type="button" aria-pressed={selected === r.id} aria-label={`Open ledger entry from ${formatWhen(r.beganAt, now)}`} onClick={() => onSelect(r.id)}
+        <button type="button" aria-pressed={selected === r.id} aria-label={`Details of ledger entry from ${formatWhen(r.beganAt, now)}`} onClick={() => onSelect(r.id)}
           className="font-medium text-[var(--color-primary-700)] hover:underline">
-          Open →
+          Details →
         </button>
       ),
     },

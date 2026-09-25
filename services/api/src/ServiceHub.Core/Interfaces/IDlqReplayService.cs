@@ -25,7 +25,7 @@ public interface IDlqReplayService
     /// </summary>
     Task<Result<ReplayOutcome>> ReplayAsync(
         long dlqMessageId, Namespace ns, RecoveryActor actor, string? intentHeader, string? correlationId,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken, long? ruleId = null);
 
     /// <summary>The replays in the given namespaces, newest first — optionally only those of one dead letter.</summary>
     Task<ReplayPage> ListAsync(

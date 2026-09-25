@@ -1,4 +1,6 @@
 import { Link } from 'react-router-dom'
+import { columnHelp } from '../content/columns'
+import { InfoTip } from './ui/InfoTip'
 import type { CloudSummary } from '../lib/homeSummary'
 import type { EntityKind, Namespace } from '../lib/api/namespaces'
 
@@ -69,7 +71,7 @@ export function FleetCard({
         <ul className="grid grid-cols-2 gap-px bg-[#f3f4f6]">
           {cells.map((c) => (
             <li key={c.key} className="bg-[var(--color-surface)] px-[15px] py-[13px]">
-              <div className="text-[11px] font-semibold text-[var(--color-text-muted)]">{c.label}</div>
+              <div className="flex items-center text-[11px] font-semibold text-[var(--color-text-muted)]">{c.label}{columnHelp.glance[c.key as keyof typeof columnHelp.glance] && <InfoTip help={columnHelp.glance[(c.key === 'queue' ? 'queues' : c.key === 'topic' ? 'topics' : c.key === 'subscription' ? 'subscriptions' : c.key) as keyof typeof columnHelp.glance]} />}</div>
               <div className="tabular mt-px text-[22px] font-extrabold leading-[1.15] tracking-tight">
                 <span className="sr-only">{c.value.toLocaleString()} {kindWords[c.key as EntityKind]?.[c.value === 1 ? 0 : 1] ?? 'namespaces'}</span>
                 <span aria-hidden="true">{c.value.toLocaleString()}</span>

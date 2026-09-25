@@ -1,4 +1,5 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
+import { keepWithinScope } from '../lib/keepWithinScope'
 import { fetchLedger, fetchLedgerEntry, fetchRecoverySummary, type LedgerQuery, type RecoveryScope } from '../lib/api/recovery'
 
 export const recoveryKeys = {
@@ -10,11 +11,11 @@ export const recoveryKeys = {
 
 /** The one place "how did recoveries end?" is asked. Simple's percentage and Advanced's breakdown both read it. */
 export function useRecoverySummary(scope: RecoveryScope) {
-  return useQuery({ queryKey: recoveryKeys.summary(scope), queryFn: () => fetchRecoverySummary(scope), placeholderData: keepPreviousData })
+  return useQuery({ queryKey: recoveryKeys.summary(scope), queryFn: () => fetchRecoverySummary(scope), placeholderData: keepWithinScope(scope.provider) })
 }
 
 export function useLedger(query: LedgerQuery) {
-  return useQuery({ queryKey: recoveryKeys.ledger(query), queryFn: () => fetchLedger(query), placeholderData: keepPreviousData })
+  return useQuery({ queryKey: recoveryKeys.ledger(query), queryFn: () => fetchLedger(query), placeholderData: keepWithinScope(query.provider) })
 }
 
 export function useLedgerEntry(id: string | null) {

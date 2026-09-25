@@ -13,6 +13,7 @@ export function BulkBar({
   canSelectAll,
   onSelectAll,
   onClear,
+  onOpen,
 }: {
   count: number
   allMatching: boolean
@@ -21,6 +22,8 @@ export function BulkBar({
   canSelectAll: boolean
   onSelectAll: () => void
   onClear: () => void
+  /** Called as Replay selected opens the preview: hands the selection to the modal. */
+  onOpen?: () => void
 }) {
   const { search } = useLocation()
   const params = new URLSearchParams(search)
@@ -28,7 +31,7 @@ export function BulkBar({
   const shown = allMatching ? matchingTotal : count
 
   return (
-    <div role="region" aria-label="Selected messages" className="flex flex-wrap items-center gap-3 border-t border-[var(--color-border)] bg-[var(--color-primary-50)] px-4 py-3 text-sm">
+    <div role="region" aria-label="Selected messages" className="sticky z-20 flex flex-wrap items-center gap-3 rounded-t-xl border-b border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-4 py-2.5 text-sm shadow-[0_4px_10px_rgba(2,132,199,0.10)]" style={{ top: 'var(--header-height)' }}>
       <span className="font-medium">
         {shown.toLocaleString()} {shown === 1 ? 'message' : 'messages'} selected
       </span>
@@ -44,6 +47,7 @@ export function BulkBar({
         <span className="text-xs text-[var(--color-text-muted)]">you’ll see a preview first</span>
         <Link
           to={`/?${params.toString()}`}
+          onClick={onOpen}
           className="rounded-lg bg-[var(--color-primary-600)] px-4 py-2 font-medium text-white hover:bg-[var(--color-primary-700)]"
         >
           Replay selected…

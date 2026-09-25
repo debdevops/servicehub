@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react'
+import type { ColumnHelp } from '../../content/columns'
+import { InfoTip } from './InfoTip'
 
 export interface Column<Row> {
   readonly key: string
@@ -8,6 +10,10 @@ export interface Column<Row> {
   readonly className?: string
   /** Numbers line up. */
   readonly numeric?: boolean
+  /** What this column means. Every column with a header should carry one, so nothing on screen has to be guessed. */
+  readonly info?: ColumnHelp
+  /** A minimum width (a Tailwind class) for a column that needs room, such as the one that explains a failure. */
+  readonly width?: string
 }
 
 export interface Selection {
@@ -70,8 +76,9 @@ export function DataTable<Row>({
               </th>
             )}
             {columns.map((c) => (
-              <th key={c.key} scope="col" className={`${compact ? 'px-3' : 'px-4'} py-2 font-semibold ${c.numeric ? 'text-right' : ''}`}>
+              <th key={c.key} scope="col" className={`${compact ? 'px-3' : 'px-4'} py-2 font-semibold whitespace-nowrap ${c.numeric ? 'text-right' : ''} ${c.width ?? ''}`}>
                 {c.header}
+                {c.info && <InfoTip help={c.info} />}
               </th>
             ))}
           </tr>

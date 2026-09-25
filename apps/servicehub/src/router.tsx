@@ -2,11 +2,13 @@ import { lazy, Suspense } from 'react'
 import { createBrowserRouter, type RouteObject } from 'react-router-dom'
 import { AppLayout } from './layouts/AppLayout'
 import { HomePage } from './pages/HomePage'
+import { FleetPage } from './pages/FleetPage'
 import { PlaceholderPage } from './pages/PlaceholderPage'
 import { pages } from './nav/navigation'
 
 // Each built page is its own chunk, so the first paint carries only the shell and Home.
 const RecoveryLedgerPage = lazy(() => import('./pages/advanced/RecoveryLedgerPage'))
+const FailureSignaturesPage = lazy(() => import('./pages/advanced/FailureSignaturesPage'))
 
 /**
  * The route table, derived from the navigation array. Only PAGES are routes (D45): tabs, panels and
@@ -21,10 +23,18 @@ const RecoveryLedgerPage = lazy(() => import('./pages/advanced/RecoveryLedgerPag
  */
 function pageFor(entry: (typeof pages)[number]) {
   if (entry.id === 'home') return <HomePage />
+  if (entry.id === 'fleet') return <FleetPage />
   if (entry.id === 'ledger') {
     return (
       <Suspense fallback={<p role="status" className="px-6 py-6 text-sm">Loading…</p>}>
         <RecoveryLedgerPage />
+      </Suspense>
+    )
+  }
+  if (entry.id === 'signatures') {
+    return (
+      <Suspense fallback={<p role="status" className="px-6 py-6 text-sm">Loading…</p>}>
+        <FailureSignaturesPage />
       </Suspense>
     )
   }
