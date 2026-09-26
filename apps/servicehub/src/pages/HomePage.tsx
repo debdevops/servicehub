@@ -1,6 +1,14 @@
 import { lazy, Suspense } from 'react'
 import { CheckCircle2, Inbox, Database, TriangleAlert } from 'lucide-react'
-import { useSearchParams } from 'react-router-dom'
+import { toProblem } from '../lib/api/client'
+import { Link, useSearchParams } from 'react-router-dom'
+import { AgentBar } from '../components/agent/AgentBar'
+import { NeedsYouStrip } from '../components/pending/NeedsYouStrip'
+import { NamespaceScope } from '../components/provider/NamespaceScope'
+import { resolveScope, scopeQuery, type ScopeChoice } from '../components/provider/scopeChoice'
+import { QueueDepth } from '../components/insights/QueueDepth'
+import { RecoveryOutcomes } from '../components/insights/RecoveryOutcomes'
+import { WhyMessagesFailed } from '../components/insights/WhyMessagesFailed'
 import { Welcome } from '../components/connect/Welcome'
 import { FleetCard } from '../components/FleetCard'
 import { MessageDrawer } from '../components/message/MessageDrawer'
@@ -33,18 +41,34 @@ const TrendChart = lazy(() => import('../components/TrendChart'))
 export function HomePage() {
   const namespaces = useNamespaces()
   const { selected } = useProviderScope()
+  const [params] = useSearchParams()
 
-  if (namespaces.isError) return null // the sidebar already says it, with a retry
+  if (namespaces.isError) {
+    // The sidebar says it too, but a blank page reads as broken: say it where the person is looking.
+    return (
+      <section role="alert" className="mx-auto max-w-xl px-6 py-16 text-center">
+        <TriangleAlert className="mx-auto mb-3 h-8 w-8 text-[var(--color-warning)]" aria-hidden="true" />
+        <h1 className="text-xl font-semibold text-[var(--color-text)]">ServiceHub couldn’t load your clouds</h1>
+        <p className="mt-2 text-sm text-[var(--color-text-muted)]">{toProblem(namespaces.error).message}</p>
+        <button type="button" onClick={() => void namespaces.refetch()} className="mt-5 rounded-lg bg-[var(--color-primary-600)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--color-primary-700)]">
+          Try again
+        </button>
+      </section>
+    )
+  }
   if (!namespaces.isSuccess) return null
   if (namespaces.data.length === 0) return <Welcome />
   if (selected === null) return null
 
-  const mine = namespaces.data.filter((n) => n.provider === selected)
+  const inCloud = namespaces.data.filter((n) => n.provider === selected)
+  // `?ns=` / `?env=` narrow Home to one namespace or one environment of this cloud; anything stale is ignored.
+  const choice = resolveScope(inCloud, params)
+  const mine = choice.namespaces
   const cloudCount = connectedProviders(namespaces.data).length
   return (
     <>
       <DrawerAside>
-        <CloudHome provider={selected} namespaces={mine} otherCloudsConnected={cloudCount > 1} />
+        <CloudHome provider={selected} namespaces={mine} allInCloud={inCloud} choice={choice} otherCloudsConnected={cloudCount > 1} />
       </DrawerAside>
       <MessageDrawer />
     </>
@@ -61,10 +85,14 @@ function DrawerAside({ children }: { children: React.ReactNode }) {
 function CloudHome({
   provider,
   namespaces,
+  allInCloud,
+  choice,
   otherCloudsConnected,
 }: {
   provider: CloudProvider
   namespaces: readonly Namespace[]
+  allInCloud: readonly Namespace[]
+  choice: ScopeChoice
   otherCloudsConnected: boolean
 }) {
   const cloud = providerLabel[provider]
@@ -73,17 +101,20 @@ function CloudHome({
   const summary = useProviderSummary(namespaces)
   const connection = connectionState(namespaces)
   const chips = scopeChips(provider, namespaces)
+  const nsQuery = scopeQuery(choice)
 
   // The work views of Home's table (D45): `?tab=dlq` is the dead letters, in place of the overview.
-  if (tab === 'dlq') return <DeadLettersView provider={provider} namespaces={namespaces} />
-  if (tab === 'replayed') return <ReplayedTab provider={provider} />
-  if (tab === 'active') return <ActiveMessagesTab provider={provider} namespaces={namespaces} />
+  const picker = allInCloud.length > 1 ? <div className="px-[22px] pt-4"><NamespaceScope namespaces={allInCloud} cloud={cloud} /></div> : null
+  if (tab === 'dlq') return <>{picker}<DeadLettersView provider={provider} namespaces={namespaces} /></>
+  if (tab === 'replayed') return <>{picker}<ReplayedTab provider={provider} choice={choice} /></>
+  if (tab === 'active') return <>{picker}<ActiveMessagesTab provider={provider} namespaces={namespaces} /></>
 
   return (
     <section className="px-[22px] pb-6 pt-5">
       <header className="mb-[18px] flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-[var(--color-text)]">{cloud} — Home</h1>
+          {allInCloud.length > 1 && <NamespaceScope namespaces={allInCloud} cloud={cloud} />}
           <p className="mt-[3px] text-[13px] text-[var(--color-text-muted)]">How your {providerService[provider]} is holding up.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -99,6 +130,29 @@ function CloudHome({
           ))}
         </div>
       </header>
+
+      <div className="mb-3.5">
+        <NeedsYouStrip
+          provider={provider}
+          namespaceId={choice.ns?.id}
+          environment={choice.env ?? undefined}
+          watching={
+            namespaces.every((n) => n.capabilities?.supportsRepeatablePeek === true)
+              ? summary.status === 'ready' ? `The Agent is watching ${summary.summary.entityCounts.filter((e) => e.kind !== 'topic').reduce((n, e) => n + e.count, 0)} queues.` : 'The Agent is watching.'
+              : `ServiceHub doesn’t watch ${cloud} on its own — look at its dead letters from the Dead letters tab.`
+          }
+        />
+      </div>
+      <div className="mb-5">
+        <AgentBar
+          cloud={cloud}
+          provider={provider}
+          namespaces={namespaces}
+          queues={summary.status === 'ready' ? summary.summary.entityCounts.filter((e) => e.kind !== 'topic').reduce((n, e) => n + e.count, 0) : null}
+          namespaceId={choice.ns?.id}
+          environment={choice.env ?? undefined}
+        />
+      </div>
 
       {summary.status === 'loading' && <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading {cloud}…</p>}
 
@@ -121,7 +175,7 @@ function CloudHome({
               value={summary.summary.deadLetters}
               note="right now"
               unavailable={`${cloud} does not report message counts.`}
-              to="/?tab=dlq"
+              to={`/?tab=dlq${nsQuery}`}
               action="See dead letters"
               tone="red"
               info={columnHelp.tiles.deadLetters}
@@ -132,7 +186,7 @@ function CloudHome({
               value={summary.summary.active}
               note="right now"
               unavailable={`${cloud} does not report message counts.`}
-              to="/?tab=active"
+              to={`/?tab=active${nsQuery}`}
               action="See active messages"
               tone="blue"
               info={columnHelp.tiles.active}
@@ -140,23 +194,32 @@ function CloudHome({
             />
           </div>
           <div className="grid items-start gap-3.5 xl:grid-cols-[1.58fr_1fr]">
-            {namespaces.every((n) => n.capabilities?.supportsRepeatablePeek === true) ? (
-              <Suspense fallback={<p role="status" className="text-sm text-[var(--color-text-muted)]">Reading the trend…</p>}>
-                <TrendChart provider={provider} />
-              </Suspense>
-            ) : (
-              // A trend of what ServiceHub has seen is silence, not good news, where it does not look on its own (R5).
-              <p className="rounded-xl bg-[var(--color-surface-muted)] px-4 py-3 text-sm text-[var(--color-text-muted)]">
-                ServiceHub does not watch {cloud} for dead letters on its own, so there is no trend to draw.
-              </p>
-            )}
+            <div className="space-y-3.5">
+              {namespaces.every((n) => n.capabilities?.supportsRepeatablePeek === true) ? (
+                <Suspense fallback={<p role="status" className="text-sm text-[var(--color-text-muted)]">Reading the trend…</p>}>
+                  <TrendChart provider={provider} namespaceId={choice.ns?.id} environment={choice.env ?? undefined} />
+                </Suspense>
+              ) : (
+                // A trend of what ServiceHub has seen is silence, not good news, where it does not look on its own (R5).
+                <p className="px-1 text-[12.5px] text-[var(--color-text-muted)]">
+                  ServiceHub does not watch {cloud} for dead letters on its own, so there is no day-by-day trend.{' '}
+                  <Link to={`/?tab=dlq${nsQuery}`} className="font-medium text-[var(--color-primary-700)] hover:underline">Look at its dead letters now</Link>
+                </p>
+              )}
+              {/* The same two cards on every cloud, from data every cloud can supply. */}
+              <div className="grid gap-3.5 md:grid-cols-2">
+                <WhyMessagesFailed provider={provider} namespaceId={choice.ns?.id} environment={choice.env ?? undefined} scopeQuery={nsQuery} />
+                <RecoveryOutcomes provider={provider} namespaceId={choice.ns?.id} environment={choice.env ?? undefined} />
+              </div>
+              <QueueDepth summary={summary.summary} namespaces={namespaces} cloud={cloud} />
+            </div>
             <div className="space-y-3.5">
               <FleetCard cloud={cloud} summary={summary.summary} namespaces={namespaces} fleetHref={otherCloudsConnected ? '/fleet' : undefined} />
-              <QueuesNeedingAttention summary={summary.summary} />
+              <QueuesNeedingAttention summary={summary.summary} namespaces={namespaces} />
             </div>
           </div>
-          <RecentDeadLetters provider={provider} namespaces={namespaces} />
-          <RecentActivity />
+          <RecentDeadLetters provider={provider} namespaces={namespaces} choice={choice} />
+          <RecentActivity provider={provider} namespaceId={choice.ns?.id} environment={choice.env ?? undefined} />
         </div>
       )}
     </section>

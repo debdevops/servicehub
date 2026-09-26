@@ -34,8 +34,9 @@ public static class GcpDependencyInjection
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<ICloudMessagingProvider, GcpMessagingProvider>());
 
-        // DlqObserver/FirestoreObserverLogReader is deliberately NOT registered: the observer is a
-        // later unit, and until it is wired nothing may claim an observer is attached.
+        // Reads the DLQ observer's log (Firestore) so a canary's arrival can be confirmed (unit 4.2, ADR-0011).
+        // Registering the reader claims nothing by itself: a namespace is attested only by a confirmed canary.
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IDlqObserverLogReader, DlqObserver.FirestoreObserverLogReader>());
 
         // Register the GCP health check so the /health/dependencies endpoint validates Pub/Sub
         // connectivity. Tagged "dependencies", not "ready" — an unreachable GCP namespace is an

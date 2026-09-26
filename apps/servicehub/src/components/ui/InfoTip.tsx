@@ -48,7 +48,7 @@ export function InfoTip({ help, className = '' }: { help: ColumnHelp; className?
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         onClick={(e) => { e.stopPropagation(); setOpen((o) => !o) }}
-        className={`ml-1 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full align-middle text-[#9ca3af] transition-colors hover:text-[var(--color-primary-600)] focus-visible:text-[var(--color-primary-600)] ${open ? 'text-[var(--color-primary-600)]' : ''} ${className}`}
+        className={`-my-1 ml-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full align-middle text-[#6b7280] transition-colors hover:text-[var(--color-primary-600)] focus-visible:text-[var(--color-primary-600)] ${open ? 'text-[var(--color-primary-600)]' : ''} ${className}`}
       >
         <Info className="h-3.5 w-3.5" aria-hidden="true" />
       </button>

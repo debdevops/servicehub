@@ -88,7 +88,9 @@ public sealed class IdentityAndAuditApiTests
         me.GetProperty("authMethod").GetString().Should().Be("session");
         me.GetProperty("actor").GetProperty("isSession").GetBoolean().Should().BeTrue();
         me.GetProperty("actor").GetProperty("label").GetString().Should().Be("from this browser session");
-        me.GetProperty("effectiveRole").ValueKind.Should().Be(JsonValueKind.Null);
+        // Until the first governance grant exists (unit 5.7), everyone is Admin — never "no role", never a guess.
+        me.GetProperty("effectiveRole").GetString().Should().Be("Admin");
+        me.GetProperty("governanceActive").GetBoolean().Should().BeFalse();
     }
 
     [Fact]

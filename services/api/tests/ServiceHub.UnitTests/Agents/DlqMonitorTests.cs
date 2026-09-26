@@ -329,6 +329,31 @@ public sealed class DlqMonitorTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_person_asking_to_look_is_the_consent_the_timer_never_has()
+    {
+        var cloud = Aws();
+        cloud.Entities.Add(Queue("orders", 2));
+        cloud.DeadLetters["orders"] = [Msg(1), Msg(2)];
+        var ns = AwsNs();
+
+        await using (var db = NewDb())
+        {
+            (await Scanner(db, cloud).ScanAsync(ns, CancellationToken.None)).Outcome.Should().Be(ScanOutcome.Skipped);
+        }
+
+        cloud.PeekCalls.Should().Be(0);
+
+        await using (var db = NewDb())
+        {
+            var asked = await Scanner(db, cloud).ScanAsync(ns, CancellationToken.None, askedByPerson: true);
+            asked.Outcome.Should().Be(ScanOutcome.Scanned);
+            asked.NewMessages.Should().Be(2);
+        }
+
+        (await Rows()).Should().HaveCount(2);
+    }
+
+    [Fact]
     public async Task An_operator_can_opt_in_and_a_full_sample_never_resolves_what_lies_beyond_it()
     {
         var cloud = Aws();

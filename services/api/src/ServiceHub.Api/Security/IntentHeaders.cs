@@ -22,6 +22,30 @@ public static class IntentHeaders
     /// <summary>Intent for starting a bulk replay from a preview.</summary>
     public const string BulkReplay = "bulk-replay";
 
+    /// <summary>
+    /// Intent for looking at a namespace's dead letters now. Where a cloud has no repeatable peek the look is a
+    /// receive, which counts as a delivery attempt — so it is never triggered by a prefetch.
+    /// </summary>
+    public const string LookAtDeadLetters = "look-at-dead-letters";
+
+    /// <summary>Intent for pausing an agent — it will not run its cycles until resumed.</summary>
+    public const string PauseAgent = "pause-agent";
+
+    /// <summary>Intent for resuming a paused agent — it gives back authority, so it too must be meant.</summary>
+    public const string ResumeAgent = "resume-agent";
+
+    /// <summary>Intent for approving what an agent asked — it replays, through the one gated route.</summary>
+    public const string ApproveEscalation = "approve-escalation";
+
+    /// <summary>Intent for declining what an agent asked — recorded with the person's name and reason.</summary>
+    public const string DeclineEscalation = "decline-escalation";
+
+    /// <summary>Intent for granting a governance role.</summary>
+    public const string GrantRole = "grant-role";
+
+    /// <summary>Intent for revoking a governance role.</summary>
+    public const string RevokeRole = "revoke-role";
+
     /// <summary>Whether the request declared exactly <paramref name="expected"/>.</summary>
     public static bool Declares(HttpRequest request, string expected)
     {

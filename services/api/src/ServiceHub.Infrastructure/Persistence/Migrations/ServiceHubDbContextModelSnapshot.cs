@@ -196,6 +196,49 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                     b.ToTable("AutoReplayRules", (string)null);
                 });
 
+            modelBuilder.Entity("ServiceHub.Core.Entities.AutonomyGrant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ActionKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ConcurrencyStamp")
+                        .IsConcurrencyToken()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CurrentLevel")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SignatureHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedAtUtc")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId", "SignatureHash", "ActionKind")
+                        .IsUnique()
+                        .HasDatabaseName("IX_AutonomyGrants_Owner_SignatureHash_ActionKind");
+
+                    b.ToTable("AutonomyGrants", (string)null);
+                });
+
             modelBuilder.Entity("ServiceHub.Core.Entities.BulkOperationItem", b =>
                 {
                     b.Property<long>("Id")
@@ -434,6 +477,121 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("IX_DlqMessages_Owner_Namespace_Entity_Sequence");
 
                     b.ToTable("DlqMessages", (string)null);
+                });
+
+            modelBuilder.Entity("ServiceHub.Core.Entities.DlqObserverAttestation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DlqEntityName")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("LastCanaryMessageId")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastCanarySentAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastConfirmedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("NamespaceId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ObserverReference")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("StalenessBoundMinutes")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Enabled")
+                        .HasDatabaseName("IX_DlqObserverAttestations_Enabled");
+
+                    b.HasIndex("OwnerId", "NamespaceId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_DlqObserverAttestations_Owner_Namespace");
+
+                    b.ToTable("DlqObserverAttestations", (string)null);
+                });
+
+            modelBuilder.Entity("ServiceHub.Core.Entities.GovernanceGrant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("GrantedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("GrantedByIdentity")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("GranteeIdentity")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("GranteeKind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("NamespaceId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PillarKind")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RevokedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RevokedByIdentity")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId", "GranteeIdentity")
+                        .HasDatabaseName("IX_GovernanceGrants_OwnerId_GranteeIdentity");
+
+                    b.HasIndex("OwnerId", "NamespaceId")
+                        .HasDatabaseName("IX_GovernanceGrants_OwnerId_NamespaceId");
+
+                    b.HasIndex("OwnerId", "GranteeIdentity", "NamespaceId", "PillarKind")
+                        .IsUnique()
+                        .HasDatabaseName("IX_GovernanceGrants_ActiveScope_Unique")
+                        .HasFilter("[RevokedAt] IS NULL");
+
+                    b.ToTable("GovernanceGrants", (string)null);
                 });
 
             modelBuilder.Entity("ServiceHub.Core.Entities.Namespace", b =>

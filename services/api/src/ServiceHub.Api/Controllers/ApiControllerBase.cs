@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Security;
 using ServiceHub.Core.Constants;
 using ServiceHub.Core.Entities;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Core.Results;
@@ -66,6 +67,46 @@ public abstract class ApiControllerBase : ControllerBase
             ? result
             : Result.Failure<Namespace>(Error.NotFound(
                 ErrorCodes.Namespace.NotFound, $"Namespace with ID '{id}' was not found."));
+    }
+
+    /// <summary>
+    /// Governance (unit 5.7): null when the caller holds <paramref name="required"/> for <paramref name="namespaceId"/> (and
+    /// <paramref name="pillar"/>), otherwise a 403 <c>permission_denied</c> that says what is missing, what the caller has, and
+    /// who can grant it — never a bare 403 (IA §7). Until the first grant exists for an owner, governance is inactive and
+    /// everyone passes (the evaluator's rule, copied from 4.0.0 with its tests). A grant store that cannot be read fails closed.
+    /// </summary>
+    protected async Task<ObjectResult?> DeniedUnlessAsync(
+        GovernanceRole required, Guid? namespaceId, PillarKind? pillar, string whatFor, CancellationToken cancellationToken)
+    {
+        var evaluator = HttpContext.RequestServices.GetRequiredService<IGovernanceAccessEvaluator>();
+        var identity = Actor.Identity;
+        var verdict = await evaluator.EvaluateAsync(OwnerId, identity, required, namespaceId, pillar, cancellationToken);
+        if (verdict.IsSuccess)
+        {
+            return null;
+        }
+
+        var yours = await evaluator.GetEffectiveRoleAsync(OwnerId, identity, namespaceId, pillar, cancellationToken);
+        var grantors = await GrantorsAsync(namespaceId, cancellationToken);
+        var who = grantors.Count == 0 ? "the server's administrator" : string.Join(", ", grantors);
+        var denied = Problem(StatusCodes.Status403Forbidden, ErrorCodes.PermissionDenied,
+            $"To {whatFor} you need the {required} role{(namespaceId is null ? "" : " for this namespace")}. You have {(yours is { } r ? $"the {r} role" : "no role here")}. {who} can grant it.");
+        var problem = (ProblemDetails)denied.Value!;
+        problem.Extensions["requiredRole"] = required.ToString();
+        problem.Extensions["yourRole"] = yours?.ToString();
+        problem.Extensions["grantors"] = grantors;
+        return denied;
+    }
+
+    /// <summary>Who can grant roles here: the Admins whose grant covers the namespace (or the whole fleet), as people read them.</summary>
+    protected async Task<IReadOnlyList<string>> GrantorsAsync(Guid? namespaceId, CancellationToken cancellationToken)
+    {
+        var grants = await HttpContext.RequestServices.GetRequiredService<IGovernanceGrantService>().GetActiveGrantsAsync(OwnerId, cancellationToken);
+        return grants.IsFailure
+            ? []
+            : [.. grants.Value.Where(g => g.Role == GovernanceRole.Admin && (g.NamespaceId is null || g.NamespaceId == namespaceId))
+                .Select(g => g.GranteeIdentity == OwnerId ? "the server's owner" : RecoveryActorLabel.For(g.GranteeIdentity))
+                .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
     }
 
     /// <summary>A failure as a ProblemDetails carrying its stable code.</summary>

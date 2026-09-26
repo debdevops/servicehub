@@ -79,4 +79,25 @@ public sealed class EventsApiTests
 
         (await reader.ReadLineAsync()).Should().Be(": connected");
     }
+
+    [Fact]
+    public async Task An_escalation_reaches_the_stream_so_the_bell_and_toast_refresh_without_polling()
+    {
+        using var factory = new ServiceHubApiFactory();
+        using var watcher = factory.CreateClient();
+        using var stream = await OpenStream(watcher);
+        using var reader = new StreamReader(await stream.Content.ReadAsStreamAsync());
+
+        var bus = (ServiceHub.Core.Interfaces.IPlatformEventBus)factory.Services.GetService(typeof(ServiceHub.Core.Interfaces.IPlatformEventBus))!;
+        await bus.PublishAsync(new ServiceHub.Core.Events.PlatformEvent
+        {
+            Source = "test", Category = ServiceHub.Core.Events.EventCategories.Escalation, EventType = ServiceHub.Core.Events.EventTypes.EscalationRaised,
+            Actor = ServiceHub.Core.Entities.Namespace.SpaOwnerId,
+            Payload = new ServiceHub.Core.Events.Payloads.EscalationRaisedPayload { Kind = "agent", ReasonCode = "AGENT_STALE", Reason = "secret-free", RaisedAtUtc = DateTimeOffset.UtcNow },
+        });
+
+        var data = await ReadUntilDataAsync(reader, Patience);
+        data.Should().NotBeNull("an escalation must not wait for the 30-second poll");
+        data.Should().Contain("servicehub.escalation.raised.v1");
+    }
 }

@@ -17,6 +17,14 @@ describe('keepWithinScope', () => {
     expect(keepWithinScope<typeof previous>('azure')(previous, { queryKey: ['dead-letters', 'trend', 'azure', 14] })).toBe(previous)
   })
 
+  it('shows nothing while moving to another namespace or environment of the same cloud', () => {
+    const key = { queryKey: ['recovery', 'ledger', { provider: 'azure', environment: 'prod' }] }
+    expect(keepWithinScope<typeof previous>('azure', { environment: 'prod' })(previous, key)).toBe(previous)
+    expect(keepWithinScope<typeof previous>('azure', { environment: 'dev' })(previous, key)).toBeUndefined()
+    expect(keepWithinScope<typeof previous>('azure', { namespaceId: 'n1' })(previous, key)).toBeUndefined()
+    expect(keepWithinScope<typeof previous>('azure')(previous, key)).toBeUndefined()
+  })
+
   it('keeps nothing when there was no previous query', () => {
     expect(keepWithinScope<typeof previous>('azure')(previous, undefined)).toBeUndefined()
   })

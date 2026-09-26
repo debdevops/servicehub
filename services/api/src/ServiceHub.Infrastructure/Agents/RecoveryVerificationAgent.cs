@@ -59,7 +59,10 @@ public sealed class RecoveryVerificationAgent : IAgent
             Kind: AgentKind.Watch,
             Authority: AgentAuthority.Observes,
             Cadence: interval,
-            Notes: "It only says a replay stayed fixed where the cloud can prove the dead-letter queue stayed empty. Elsewhere the result reads 'verification required'.");
+            Notes: "It only says a replay stayed fixed where the cloud can prove the dead-letter queue stayed empty. Elsewhere the result reads 'verification required'.",
+            May: ["Close a replay's watch window with what happened", "Record that a replay stayed fixed where the cloud can prove it"],
+            MayNot: ["Replay or touch any message", "Call a replay 'verified' where the cloud cannot prove it — it says 'verification required'"],
+            LedgerActor: "System:RecoveryVerificationAgent");
     }
 
     /// <inheritdoc />

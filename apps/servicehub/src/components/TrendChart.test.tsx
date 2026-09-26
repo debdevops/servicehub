@@ -19,9 +19,9 @@ const trend = (days: number, over: Partial<DeadLetterTrend['series'][number]> = 
   })),
 })
 
-function renderChart() {
+function renderChart(scope: { namespaceId?: string; environment?: 'prod' } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><TrendChart provider="azure" /></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><TrendChart provider="azure" {...scope} /></QueryClientProvider>)
 }
 
 describe('the 7-day trend', () => {
@@ -31,9 +31,16 @@ describe('the 7-day trend', () => {
     trendMock.mockResolvedValue(trend(7))
     renderChart()
     expect(await screen.findByText(/new vs resolved, last 7 days/)).toBeInTheDocument()
-    expect(trendMock).toHaveBeenCalledWith('azure', 7)
+    expect(trendMock).toHaveBeenCalledWith('azure', 7, {})
     expect(screen.getByText(/Per day \(UTC\)/)).toBeInTheDocument()
     expect(screen.queryByText(/hour/i)).toBeNull()
+  })
+
+  it('asks for just the chosen environment, so the chart matches the scope picker', async () => {
+    trendMock.mockResolvedValue(trend(7))
+    renderChart({ environment: 'prod' })
+    await screen.findByText(/last 7 days/)
+    expect(trendMock).toHaveBeenCalledWith('azure', 7, { namespaceId: undefined, environment: 'prod' })
   })
 
   it('re-asks when the range control changes', async () => {
@@ -42,7 +49,7 @@ describe('the 7-day trend', () => {
     renderChart()
     await screen.findByText(/last 7 days/)
     await user.click(screen.getByRole('radio', { name: '30 days' }))
-    await waitFor(() => expect(trendMock).toHaveBeenLastCalledWith('azure', 30))
+    await waitFor(() => expect(trendMock).toHaveBeenLastCalledWith('azure', 30, {}))
     expect(await screen.findByText(/last 30 days/)).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: '30 days' })).toHaveAttribute('aria-checked', 'true')
   })

@@ -58,7 +58,8 @@ public enum ScanOutcome
 /// <para>
 /// AWS and Google Cloud have no repeatable peek — looking at a message counts as a delivery attempt
 /// and can dead-letter it by accident — so they are not scanned unless the operator opts in with
-/// <c>DlqMonitor:AllowDestructivePeek:{Provider}</c>.
+/// <c>DlqMonitor:AllowDestructivePeek:{Provider}</c> — or a person asks to look now
+/// (<see cref="DeadLetterLook"/>), which is how 4.0.0's on-demand browsing survives in 4.1.0.
 /// </para>
 /// </remarks>
 public sealed class DlqScanner
@@ -98,7 +99,13 @@ public sealed class DlqScanner
     }
 
     /// <summary>Scans one namespace.</summary>
-    public async Task<NamespaceScanResult> ScanAsync(Namespace ns, CancellationToken ct)
+    /// <param name="ns">The namespace.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <param name="askedByPerson">
+    /// True only when a person explicitly asked to look now and was told that, on a cloud without a repeatable
+    /// peek, looking counts as a delivery attempt. That request is the consent the automatic loop never has.
+    /// </param>
+    public async Task<NamespaceScanResult> ScanAsync(Namespace ns, CancellationToken ct, bool askedByPerson = false)
     {
         ArgumentNullException.ThrowIfNull(ns);
 
@@ -112,7 +119,8 @@ public sealed class DlqScanner
         var provider = _router.Resolve(ns.Provider);
 
         // No non-destructive peek → looking changes what is being looked at. Decided before any call.
-        if (!provider.Capabilities.SupportsRepeatablePeek
+        if (!askedByPerson
+            && !provider.Capabilities.SupportsRepeatablePeek
             && !_configuration.GetValue($"DlqMonitor:AllowDestructivePeek:{ns.Provider}", false))
         {
             return new NamespaceScanResult(

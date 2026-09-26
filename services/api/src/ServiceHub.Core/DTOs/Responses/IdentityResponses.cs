@@ -11,10 +11,16 @@ namespace ServiceHub.Core.DTOs.Responses;
 /// </param>
 /// <param name="Actor">The caller as the audit trail will record them.</param>
 /// <param name="EffectiveRole">
-/// The caller's role. Null in this build: there is no role model yet, and null means "not
-/// restricted by role", never "no access".
+/// The caller's fleet-wide governance role (unit 5.7): Viewer, Operator, Approver or Admin — Admin while governance is
+/// inactive. Null means the caller has no role at all (governance active, nothing granted).
 /// </param>
-public sealed record MeResponse(string OwnerId, string AuthMethod, ActorResponse Actor, string? EffectiveRole);
+/// <param name="GovernanceActive">True once any grant has ever existed for this owner; until then everyone is Admin.</param>
+/// <param name="Grantors">Who can grant roles fleet-wide (Admins), as people read them.</param>
+/// <param name="RecoverRole">The role for recovery actions (replay, approve…) fleet-wide.</param>
+/// <param name="NamespaceRecoverRoles">The role for recovery actions in each namespace the caller can see — a namespace grant can add to the fleet role.</param>
+public sealed record MeResponse(
+    string OwnerId, string AuthMethod, ActorResponse Actor, string? EffectiveRole, bool GovernanceActive = false, IReadOnlyList<string>? Grantors = null,
+    string? RecoverRole = null, IReadOnlyDictionary<Guid, string?>? NamespaceRecoverRoles = null);
 
 /// <summary>An actor as a person reads it.</summary>
 /// <param name="Identity">The identity string stored on audit rows.</param>

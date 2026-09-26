@@ -21,14 +21,19 @@ public sealed class RulesController : ApiControllerBase
     /// <summary>One cloud's rules, with what actually happened under each.</summary>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<RuleView>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> List([FromQuery] CloudProviderType provider, CancellationToken cancellationToken) =>
-        Ok(await _rules.ListAsync(OwnerId, provider, cancellationToken));
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> List([FromQuery] CloudProviderType? provider, CancellationToken cancellationToken) =>
+        provider is { } cloud ? Ok(await _rules.ListAsync(OwnerId, cloud, cancellationToken)) : NeedsCloud();
 
     /// <summary>Failures a rule can be created from.</summary>
     [HttpGet("sources")]
     [ProducesResponseType(typeof(IReadOnlyList<RuleSource>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> Sources([FromQuery] CloudProviderType provider, CancellationToken cancellationToken) =>
-        Ok(await _rules.SourcesAsync(OwnerId, provider, cancellationToken));
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Sources([FromQuery] CloudProviderType? provider, CancellationToken cancellationToken) =>
+        provider is { } cloud ? Ok(await _rules.SourcesAsync(OwnerId, AllowedNamespaceIds, cloud, cancellationToken)) : NeedsCloud();
+
+    // A rule belongs to one cloud, and an enum left out would quietly mean the first one — so a missing cloud is refused, never defaulted.
+    private ObjectResult NeedsCloud() => Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "Say which cloud: give a 'provider'.");
 
     /// <summary>Makes a rule. It starts on.</summary>
     [HttpPost]
@@ -36,8 +41,15 @@ public sealed class RulesController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Create([FromBody] CreateRuleRequest request, CancellationToken cancellationToken)
     {
+        if (request.Provider is not { } cloud)
+        {
+            return NeedsCloud();
+        }
+
+        // A rule starts on — it hands a machine the right to replay — so creating one is an Approver's call, like switching one on.
+        if (await DeniedUnlessAsync(GovernanceRole.Approver, null, PillarKind.Recover, "create an auto-replay rule", cancellationToken) is { } denied) return denied;
         var result = await _rules.CreateAsync(
-            OwnerId, request.Provider, request.Name, request.Reason, request.EntityName, request.SignatureHash,
+            OwnerId, cloud, request.Name, request.Reason, request.EntityName, request.SignatureHash,
             request.MaxPerHour ?? 10, request.WaitSeconds ?? 120, request.BackOff ?? true, cancellationToken);
         return result.IsFailure ? Problem(result.Error) : Created($"/api/v1/rules/{result.Value.Id}", result.Value);
     }
@@ -48,6 +60,9 @@ public sealed class RulesController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> SetEnabled(long id, [FromBody] EnabledRequest request, CancellationToken cancellationToken)
     {
+        // Switching a rule on hands a machine the right to replay: an Approver's call. Switching it off only takes that away.
+        if (await DeniedUnlessAsync(request.Enabled ? GovernanceRole.Approver : GovernanceRole.Operator, null, PillarKind.Recover,
+                request.Enabled ? "switch an auto-replay rule on" : "switch an auto-replay rule off", cancellationToken) is { } denied) return denied;
         var result = await _rules.SetEnabledAsync(OwnerId, id, request.Enabled, cancellationToken);
         return result.IsFailure ? Problem(result.Error) : Ok(result.Value);
     }
@@ -63,16 +78,21 @@ public sealed class RulesController : ApiControllerBase
             return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "Give at least one condition to test.");
         }
 
-        return Ok(await _rules.TestAsync(OwnerId, AllowedNamespaceIds, request.Provider, request.Reason, request.EntityName, request.SignatureHash, request.Days ?? 7, cancellationToken));
+        if (request.Provider is not { } cloud)
+        {
+            return NeedsCloud();
+        }
+
+        return Ok(await _rules.TestAsync(OwnerId, AllowedNamespaceIds, cloud, request.Reason, request.EntityName, request.SignatureHash, request.Days ?? 7, cancellationToken));
     }
 
     /// <summary>A new rule.</summary>
     public sealed record CreateRuleRequest(
-        CloudProviderType Provider, string Name, string? Reason, string? EntityName, string? SignatureHash, int? MaxPerHour, int? WaitSeconds, bool? BackOff);
+        CloudProviderType? Provider, string Name, string? Reason, string? EntityName, string? SignatureHash, int? MaxPerHour, int? WaitSeconds, bool? BackOff);
 
     /// <summary>On or off.</summary>
     public sealed record EnabledRequest(bool Enabled);
 
     /// <summary>A rule to test.</summary>
-    public sealed record TestRuleRequest(CloudProviderType Provider, string? Reason, string? EntityName, string? SignatureHash, int? Days);
+    public sealed record TestRuleRequest(CloudProviderType? Provider, string? Reason, string? EntityName, string? SignatureHash, int? Days);
 }

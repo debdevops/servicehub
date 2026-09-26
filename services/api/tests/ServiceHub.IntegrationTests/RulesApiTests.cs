@@ -35,6 +35,33 @@ public sealed class RulesApiTests : IDisposable
     }
 
     [Fact]
+    public async Task A_missing_cloud_is_refused_never_quietly_read_as_the_first_cloud()
+    {
+        using var host = DeadLettersApiTests.Host();
+        (await host.Client.GetAsync("/api/v1/rules")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await host.Client.GetAsync("/api/v1/rules/sources")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        await Send(host.Client, "/api/v1/rules", new { name = "No cloud", reason = "Timeout" }, HttpStatusCode.BadRequest);
+        await Send(host.Client, "/api/v1/rules/test", new { reason = "Timeout" }, HttpStatusCode.BadRequest);
+        (await host.Client.GetAsync("/api/v1/signatures/abc")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await host.Client.GetAsync("/api/v1/rules?provider=Azure")).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Paging_and_range_inputs_out_of_bounds_are_a_400_on_audit_and_signatures_like_every_other_list()
+    {
+        using var host = DeadLettersApiTests.Host();
+        foreach (var bad in new[] { "/api/v1/audit?page=0", "/api/v1/audit?pageSize=0", "/api/v1/audit?pageSize=201",
+                                    "/api/v1/signatures?days=0", "/api/v1/signatures?days=31", "/api/v1/signatures?page=0", "/api/v1/signatures?pageSize=101",
+                                    "/api/v1/signatures?sort=nope", "/api/v1/signatures/abc?provider=Azure&days=0" })
+        {
+            (await host.Client.GetAsync(bad)).StatusCode.Should().Be(HttpStatusCode.BadRequest, bad);
+        }
+
+        (await host.Client.GetAsync("/api/v1/audit?pageSize=200")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await host.Client.GetAsync("/api/v1/signatures?days=30&pageSize=100&sort=recent")).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task A_rule_needs_a_condition_and_a_sane_pace()
     {
         using var host = DeadLettersApiTests.Host();

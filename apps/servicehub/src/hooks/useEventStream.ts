@@ -5,6 +5,7 @@ import { deadLetterKeys } from './useDeadLetters'
 import { namespaceKeys } from './useNamespaces'
 import { recoveryKeys } from './useRecoverySummary'
 import { replayKeys } from './useReplay'
+import { pendingKeys } from './usePendingWork'
 
 /**
  * Keeps the app's data fresh while it is open: opens the one stream and, on any event, asks the affected queries
@@ -20,6 +21,7 @@ export function useEventStream(): void {
       void client.invalidateQueries({ queryKey: recoveryKeys.all })
       void client.invalidateQueries({ queryKey: namespaceKeys.all })
       void client.invalidateQueries({ queryKey: ['audit'] })
+      void client.invalidateQueries({ queryKey: pendingKeys.all })
     })
     return () => {
       off()

@@ -38,7 +38,7 @@ describe('Fleet Overview', () => {
         { id: 'w1', name: 'w1', displayName: 'aws-dev', provider: 'aws', environment: 'dev', watched: false, active: null, newInWindow: 0, resolvedInWindow: 0, topFailure: null, health: 'cannotTell' },
         { id: 'a1', name: 'a1', displayName: 'orders-dev', provider: 'azure', environment: 'dev', watched: true, active: 12, newInWindow: 12, resolvedInWindow: 1, topFailure: { reason: 'Timeout', count: 12 }, health: 'needsALook' },
       ],
-      topFailures: [{ provider: 'azure', reason: 'Timeout', count: 12 }],
+      topFailures: [{ provider: 'azure', environment: 'dev', reason: 'Timeout', count: 12 }],
     })
   })
 

@@ -50,7 +50,10 @@ public sealed class DlqMonitorAgent : IAgent
             Kind: AgentKind.Watch,
             Authority: AgentAuthority.Observes,
             Cadence: interval,
-            Notes: "AWS and Google Cloud are not watched automatically: looking at a message there counts as a delivery attempt and can dead-letter it by accident.");
+            Notes: "AWS and Google Cloud are not watched automatically: looking at a message there counts as a delivery attempt. A person can ask it to look now from the Dead letters tab.",
+            May: ["Read every connected Azure queue's dead letters and keep a list of them", "Group new dead letters by how they failed", "Notice when a dead letter has gone from the queue"],
+            MayNot: ["Replay, move or delete any message", "Look at AWS or Google Cloud on its own — only when a person asks", "Say a queue is empty when it could not read it"],
+            LedgerActor: "System:DlqMonitorAgent");
     }
 
     /// <inheritdoc />
@@ -108,7 +111,7 @@ public sealed class DlqMonitorAgent : IAgent
 
         var parts = new List<string>
         {
-            $"looked at {Count(scanned.Sum(s => s.Result.EntitiesExamined), "queue or subscription")} in {Count(scanned.Count, "cloud")}",
+            $"looked at {QueuesOrSubscriptions(scanned.Sum(s => s.Result.EntitiesExamined))} in {Count(scanned.Count, "cloud")}",
             $"{Count(scanned.Sum(s => s.Result.NewMessages), "new dead letter")}",
             $"{Count(scanned.Sum(s => s.Result.Resolved), "gone from the queue")}",
         };
@@ -186,6 +189,8 @@ public sealed class DlqMonitorAgent : IAgent
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
         return orphans.Count;
     }
+
+    private static string QueuesOrSubscriptions(int n) => n == 1 ? "1 queue or subscription" : $"{n} queues or subscriptions";
 
     private static string Count(int n, string noun) => $"{n} {noun}{(n == 1 ? string.Empty : "s")}";
 }

@@ -117,6 +117,27 @@ export const explanations = {
     ],
     learnMore: 'How the ledger proves itself',
   },
+  agents: {
+    title: "What you're looking at",
+    terms: [
+      {
+        term: 'Agent',
+        meaning:
+          'a named piece of background work — one watches for dead letters, one checks whether replays held, one replays what your rules allow.',
+      },
+      {
+        term: 'Acting vs watching',
+        meaning:
+          'watching agents only look and record. Only an acting agent can change anything — and only after the same safety checks you get.',
+      },
+      {
+        term: 'Pause',
+        meaning:
+          'stops an agent running its cycles, so an acting agent will not act. Its loop keeps going and nothing it did is undone. Resume it from Home.',
+      },
+    ],
+    learnMore: 'Agents in plain words',
+  },
 } as const satisfies Record<string, Explanation>
 
 export type ExplanationId = keyof typeof explanations

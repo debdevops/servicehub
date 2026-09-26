@@ -72,6 +72,12 @@ public sealed class AuditTrail : IAuditTrail
             matching = matching.Where(a => a.NamespaceId == namespaceId);
         }
 
+        if (query.ScopeNamespaceIds is { } scope)
+        {
+            var scoped = scope.ToList();
+            matching = matching.Where(a => a.NamespaceId != null && scoped.Contains(a.NamespaceId.Value));
+        }
+
         if (!string.IsNullOrWhiteSpace(query.Action))
         {
             matching = matching.Where(a => a.Action == query.Action);

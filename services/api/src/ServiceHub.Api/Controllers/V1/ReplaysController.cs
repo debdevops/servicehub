@@ -26,6 +26,7 @@ public sealed class ReplaysController : ApiControllerBase
     /// <summary>Lists replays.</summary>
     /// <param name="namespaceId">One namespace.</param>
     /// <param name="provider">One cloud — every namespace the caller has on it.</param>
+    /// <param name="environment">Only namespaces of this environment (dev, uat, prod).</param>
     /// <param name="result">Only this outcome: accepted, rejected or unknown.</param>
     /// <param name="dlqMessageId">Only the replays of this one dead letter (the drawer's watch card).</param>
     /// <param name="page">1-based.</param>
@@ -36,7 +37,7 @@ public sealed class ReplaysController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> List(
-        [FromQuery] Guid? namespaceId, [FromQuery] CloudProviderType? provider, [FromQuery] string? result, [FromQuery] long? dlqMessageId,
+        [FromQuery] Guid? namespaceId, [FromQuery] CloudProviderType? provider, [FromQuery] EnvironmentType? environment, [FromQuery] string? result, [FromQuery] long? dlqMessageId,
         [FromQuery] int? page, [FromQuery] int? pageSize, CancellationToken cancellationToken)
     {
         if (namespaceId is null && provider is null && dlqMessageId is null)
@@ -74,6 +75,11 @@ public sealed class ReplaysController : ApiControllerBase
         if (provider is { } cloud)
         {
             candidates = candidates.Where(n => n.Provider == cloud);
+        }
+
+        if (environment is { } env)
+        {
+            candidates = candidates.Where(n => n.Environment == env);
         }
 
         return Ok(await _replay.ListAsync([.. candidates.Select(n => n.Id)], result, dlqMessageId, page ?? 1, pageSize ?? 25, cancellationToken));

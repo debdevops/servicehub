@@ -11,11 +11,11 @@ export const recoveryKeys = {
 
 /** The one place "how did recoveries end?" is asked. Simple's percentage and Advanced's breakdown both read it. */
 export function useRecoverySummary(scope: RecoveryScope) {
-  return useQuery({ queryKey: recoveryKeys.summary(scope), queryFn: () => fetchRecoverySummary(scope), placeholderData: keepWithinScope(scope.provider) })
+  return useQuery({ queryKey: recoveryKeys.summary(scope), queryFn: () => fetchRecoverySummary(scope), placeholderData: keepWithinScope(scope.provider, scope) })
 }
 
 export function useLedger(query: LedgerQuery) {
-  return useQuery({ queryKey: recoveryKeys.ledger(query), queryFn: () => fetchLedger(query), placeholderData: keepWithinScope(query.provider) })
+  return useQuery({ queryKey: recoveryKeys.ledger(query), queryFn: () => fetchLedger(query), placeholderData: keepWithinScope(query.provider, query) })
 }
 
 export function useLedgerEntry(id: string | null) {

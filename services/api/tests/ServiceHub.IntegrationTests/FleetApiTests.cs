@@ -1,7 +1,10 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
+using ServiceHub.Infrastructure.Persistence;
 
 namespace ServiceHub.IntegrationTests;
 
@@ -48,6 +51,27 @@ public sealed class FleetApiTests
 
         top.Select(t => (t.GetProperty("provider").GetString(), t.GetProperty("reason").GetString(), t.GetProperty("count").GetInt32()))
             .Should().Equal(("azure", "Timeout", 4), ("azure", "Validation", 2));
+    }
+
+    [Fact]
+    public async Task Top_failures_say_which_environment_they_are_in_so_they_can_be_grouped_like_everything_else()
+    {
+        using var host = DeadLettersApiTests.Host();
+        var azure = await DeadLettersApiTests.Connect(host.Client, "azure");
+        var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
+        await DeadLettersApiTests.Seed(host, azure, CloudProviderType.Azure, 4, reason: "Timeout");
+        await DeadLettersApiTests.Seed(host, aws, CloudProviderType.Aws, 3, reason: "Timeout");
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServiceHubDbContext>();
+            typeof(Namespace).GetProperty(nameof(Namespace.Environment))!.SetValue(await db.Namespaces.FindAsync(aws), EnvironmentType.Prod);
+            await db.SaveChangesAsync();
+        }
+
+        var top = (await Overview(host.Client)).GetProperty("topFailures").EnumerateArray().ToList();
+
+        top.Select(t => (t.GetProperty("provider").GetString(), t.GetProperty("environment").GetString()?.ToLowerInvariant(), t.GetProperty("count").GetInt32()))
+            .Should().Equal(("azure", "dev", 4), ("aws", "prod", 3));
     }
 
     [Fact]

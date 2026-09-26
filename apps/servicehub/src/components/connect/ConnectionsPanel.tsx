@@ -5,6 +5,7 @@ import type { OverlayBodyProps } from '../overlays/registry'
 import { useNamespaces, useRemoveNamespace, useTestConnection } from '../../hooks/useNamespaces'
 import type { Namespace } from '../../lib/api/namespaces'
 import { providerLabel, providerService } from '../../lib/providers'
+import { environmentMeta, groupByCloudEnvironment } from '../provider/scopeChoice'
 
 const order = ['azure', 'aws', 'gcp'] as const
 
@@ -17,7 +18,7 @@ function status(ns: Namespace) {
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : 'never')
 
 /**
- * Connections (`?panel=connections`): every namespace, grouped by cloud, with whether it answered at its
+ * Connections (`?panel=connections`): every namespace, grouped by cloud, then environment, with whether it answered at its
  * last check. Test re-checks one now and says why when it fails. Remove asks twice. The credential is
  * never shown — the API never sends it (R5).
  */
@@ -43,22 +44,29 @@ export default function ConnectionsPanel({ close }: OverlayBodyProps) {
   return (
     <div className="space-y-6">
       {order.map((provider) => {
-        const mine = namespaces.data.filter((n) => n.provider === provider)
-        if (mine.length === 0) return null
+        const environments = groupByCloudEnvironment(namespaces.data.filter((n) => n.provider === provider))[0]?.environments ?? []
+        if (environments.length === 0) return null
         return (
           <section key={provider} aria-label={providerLabel[provider]}>
             <h3 className="mb-2 text-sm font-semibold text-[var(--color-text)]">
               {providerLabel[provider]} <span className="font-normal text-[var(--color-text-muted)]">· {providerService[provider]}</span>
             </h3>
+            {environments.map(({ env, items }) => (
+            <div key={env} role="group" aria-label={environmentMeta[env].label} className="mb-3 last:mb-0">
+            <h4 className="mb-1.5 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
+              <span aria-hidden="true" className="inline-block h-2 w-2 rounded-full" style={{ background: environmentMeta[env].dot }} />
+              {environmentMeta[env].label}
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal ${environmentMeta[env].chip}`}>{items.length}</span>
+            </h4>
             <ul className="space-y-2">
-              {mine.map((ns) => {
+              {items.map((ns) => {
                 const s = status(ns)
                 const testingThis = test.isPending && test.variables === ns.id
                 return (
                   <li key={ns.id} className="rounded-lg border border-[var(--color-border)] p-3 text-sm">
                     <p className="font-medium text-[var(--color-text)]">{ns.displayName ?? ns.name}</p>
                     <p className="text-xs text-[var(--color-text-muted)]">
-                      {ns.name} · {ns.environment}
+                      {ns.name}
                       {ns.awsRegion ? ` · ${ns.awsRegion}` : ''}
                       {ns.gcpProjectId ? ` · ${ns.gcpProjectId}` : ''}
                     </p>
@@ -108,6 +116,8 @@ export default function ConnectionsPanel({ close }: OverlayBodyProps) {
                 )
               })}
             </ul>
+            </div>
+            ))}
           </section>
         )
       })}

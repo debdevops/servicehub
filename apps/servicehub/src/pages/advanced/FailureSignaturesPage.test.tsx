@@ -3,15 +3,18 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import * as nsApi from '../../lib/api/namespaces'
 import * as api from '../../lib/api/signatures'
 import FailureSignaturesPage from './FailureSignaturesPage'
 
 vi.mock('../../lib/api/signatures')
+vi.mock('../../lib/api/namespaces')
 
 const sig = (over: Partial<api.Signature> = {}): api.Signature => ({
   signatureHash: 'h', provider: 'azure', reason: 'Validation', exampleError: 'Required field customerId missing', entities: ['payments-dlq'], messages: 47, activeNow: 47,
   firstSeenAt: new Date(Date.now() - 6 * 86400_000).toISOString(), lastSeenAt: new Date().toISOString(), daily: [1, 2, 3, 5, 8, 13, 15], growing: true,
-  replays: { replayed: 3, stayedFixed: 0, returned: 3, unverified: 0 }, replayVerdict: 'doesnt', ...over,
+  replays: { replayed: 3, stayedFixed: 0, returned: 3, unverified: 0 }, replayVerdict: 'doesnt',
+  namespaces: [{ id: 'n1', name: 'payments-prod', displayName: null, environment: 'prod', messages: 47 }], ...over,
 })
 
 const page = (items: api.Signature[]): api.SignaturePage => ({ items, total: items.length, page: 1, pageSize: 25, all: items.length, growing: 1, replayHelps: 0, replayDoesNotHelp: 1 })
@@ -25,7 +28,27 @@ function renderPage(initial = '/advanced/signatures') {
 }
 
 describe('Failure Signatures', () => {
-  beforeEach(() => { vi.clearAllMocks(); window.localStorage.clear() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.localStorage.clear()
+    vi.mocked(nsApi.fetchNamespaces).mockResolvedValue([
+      { id: 'p1', name: 'orders-prod', displayName: 'Orders Prod', provider: 'azure', environment: 'prod' },
+      { id: 'd1', name: 'orders-dev', displayName: 'Orders Dev', provider: 'azure', environment: 'dev' },
+      { id: 'w1', name: 'sqs', displayName: 'AWS Dev', provider: 'aws', environment: 'dev' },
+    ] as never)
+  })
+
+  it('counts over one environment or namespace when asked, and offers the choice across every cloud', async () => {
+    vi.mocked(api.fetchSignatures).mockResolvedValue(page([sig()]))
+    renderPage('/advanced/signatures?env=prod')
+
+    await screen.findByRole('table', { name: 'Failure signatures' })
+    expect(api.fetchSignatures).toHaveBeenLastCalledWith(expect.objectContaining({ environment: 'prod', namespaceId: undefined }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Namespace' }))
+    await userEvent.click(screen.getByRole('option', { name: /Orders Dev/ }))
+    await screen.findByRole('table', { name: 'Failure signatures' })
+    expect(api.fetchSignatures).toHaveBeenLastCalledWith(expect.objectContaining({ namespaceId: 'd1', environment: undefined }))
+  })
 
   it('leads with the failure in words, then messages and how replaying went, with tab counts', async () => {
     vi.mocked(api.fetchSignatures).mockResolvedValue(page([sig()]))
@@ -55,6 +78,8 @@ describe('Failure Signatures', () => {
     const detail = await screen.findByRole('complementary', { name: 'Signature details' })
     expect(within(detail).getByText(/Growing\./)).toBeInTheDocument()
     expect(within(detail).getByText(/No — 0 of 3 replays stayed fixed/)).toBeInTheDocument()
+    expect(within(detail).getByText('payments-prod')).toBeInTheDocument()
+    expect(within(detail).getByText('Production')).toBeInTheDocument()
     expect(within(detail).getByRole('button', { name: /Create an auto-replay rule from this/ })).toBeInTheDocument()
     expect(within(detail).queryByRole('button', { name: /^Create rule$/ })).not.toBeInTheDocument()
   })

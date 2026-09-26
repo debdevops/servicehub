@@ -1,4 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
+import { useMe } from '../../hooks/useIdentity'
+import { permission } from '../../lib/permissions'
+import { NotAllowed } from '../ui/NotAllowed'
 
 /**
  * Appears when messages are selected. Its one primary action goes to Bulk Replay's PREVIEW — the table
@@ -25,6 +28,7 @@ export function BulkBar({
   /** Called as Replay selected opens the preview: hands the selection to the modal. */
   onOpen?: () => void
 }) {
+  const may = permission(useMe().data, 'Operator', 'replay these messages', { recover: true })
   const { search } = useLocation()
   const params = new URLSearchParams(search)
   params.set('modal', 'bulk-replay')
@@ -44,14 +48,18 @@ export function BulkBar({
         Clear
       </button>
       <span className="ml-auto flex items-center gap-3">
-        <span className="text-xs text-[var(--color-text-muted)]">you’ll see a preview first</span>
-        <Link
-          to={`/?${params.toString()}`}
-          onClick={onOpen}
-          className="rounded-lg bg-[var(--color-primary-600)] px-4 py-2 font-medium text-white hover:bg-[var(--color-primary-700)]"
-        >
-          Replay selected…
-        </Link>
+        <span className="text-xs text-[var(--color-text-muted)]">{may.allowed ? 'you’ll see a preview first' : <NotAllowed reason={may.reason} />}</span>
+        {may.allowed ? (
+          <Link
+            to={`/?${params.toString()}`}
+            onClick={onOpen}
+            className="rounded-lg bg-[var(--color-primary-600)] px-4 py-2 font-medium text-white hover:bg-[var(--color-primary-700)]"
+          >
+            Replay selected…
+          </Link>
+        ) : (
+          <button type="button" disabled className="rounded-lg bg-[var(--color-primary-600)] px-4 py-2 font-medium text-white opacity-50">Replay selected…</button>
+        )}
       </span>
     </div>
   )

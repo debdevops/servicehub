@@ -14,6 +14,9 @@ import { useReplays } from '../../hooks/useReplay'
 import { useDeadLetter } from '../../hooks/useDeadLetter'
 import type { DeadLetterDetail } from '../../lib/api/deadLetters'
 import { explainFailure } from '../../lib/analyzer'
+import { useMe } from '../../hooks/useIdentity'
+import { permission, type Permission } from '../../lib/permissions'
+import { NotAllowed } from '../ui/NotAllowed'
 import { formatAge, formatBytes, formatWhen } from '../../lib/format'
 
 type Tab = 'overview' | 'body' | 'properties' | 'headers' | 'delivery'
@@ -96,10 +99,11 @@ export function MessageDrawer() {
 function Content({ detail, full, tab, onTab, onReplay }: { detail: DeadLetterDetail; full: boolean; tab: Tab; onTab: (t: Tab) => void; onReplay: () => void }) {
   const m = detail.item
   const now = new Date()
-  const explanation = explainFailure(m.deadLetterReason, m.deadLetterErrorDescription, m.deliveryCount)
+  const explanation = explainFailure(m.deadLetterReason, m.deadLetterErrorDescription, m.deliveryCount, { body: detail.bodyPreview, propertiesJson: detail.applicationPropertiesJson })
   const show = (t: Tab) => full || tab === t
   // The latest replay of this message, if any: while it is being watched the slot is the watch card, after that the outcome.
   const latest = useReplays({ dlqMessageId: m.id, pageSize: 1 }).data?.items[0]
+  const me = useMe()
 
   return (
     <div className="space-y-5">
@@ -152,7 +156,13 @@ function Content({ detail, full, tab, onTab, onReplay }: { detail: DeadLetterDet
             {detail.othersLikeIt > 0 && (
               <p className="mt-1 text-sm"><b>{detail.othersLikeIt} other {detail.othersLikeIt === 1 ? 'message' : 'messages'}</b> in this queue failed the same way.</p>
             )}
-            {explanation.recorded !== false && <p className="mt-1 text-xs text-[var(--color-text-muted)]">A reading of the recorded reason, not something the cloud reported.</p>}
+            {explanation.recorded !== false && (
+              <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                {explanation.readFrom
+                  ? `This cloud records no reason, so ServiceHub read the error the message carries in its ${explanation.readFrom}. A suggestion, not something the cloud reported.`
+                  : 'A reading of the recorded reason, not something the cloud reported.'}
+              </p>
+            )}
           </section>
         </>
       )}
@@ -183,7 +193,7 @@ function Content({ detail, full, tab, onTab, onReplay }: { detail: DeadLetterDet
       {show('overview') && latest && (latest.verification.status === 'watching' ? <WatchCard replay={latest} /> : <OutcomeCard replay={latest} />)}
       {show('overview') && latest && <Attribution actor={latest.actor} at={latest.replayedAt} />}
 
-      {show('overview') && <ReplayHero active={m.status === 'Active'} onReplay={onReplay} />}
+      {show('overview') && <ReplayHero active={m.status === 'Active'} onReplay={onReplay} may={permission(me.data, 'Operator', 'replay this message', { recover: true, namespaceId: m.namespaceId })} />}
       {full && <FullFooter detail={detail} />}
     </div>
   )
@@ -194,12 +204,12 @@ function Content({ detail, full, tab, onTab, onReplay }: { detail: DeadLetterDet
  * never replays by itself. When it cannot, it stays, disabled, with the reason beside it (P4).
  * Bulk Replay is not drawn: it is unit 3.2, and a button that does nothing is worse than none.
  */
-function ReplayHero({ active, onReplay }: { active: boolean; onReplay: () => void }) {
+function ReplayHero({ active, onReplay, may }: { active: boolean; onReplay: () => void; may: Permission }) {
   return (
     <div>
       <button
         type="button"
-        disabled={!active}
+        disabled={!active || !may.allowed}
         onClick={onReplay}
         aria-describedby="replay-why"
         className="flex h-[46px] w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[var(--color-primary-600)] to-[var(--color-primary-700)] text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
@@ -209,6 +219,7 @@ function ReplayHero({ active, onReplay }: { active: boolean; onReplay: () => voi
       <p id="replay-why" className="mt-1.5 text-center text-xs text-[var(--color-text-muted)]">
         {active ? 'You’ll see exactly what will happen before it runs.' : 'Already out of the dead-letter queue, so there is nothing to replay.'}
       </p>
+      <NotAllowed reason={active ? may.reason : null} />
     </div>
   )
 }

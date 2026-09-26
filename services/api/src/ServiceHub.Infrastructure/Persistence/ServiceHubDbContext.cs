@@ -64,6 +64,16 @@ public sealed class ServiceHubDbContext : DbContext
     /// <summary>What was replayed, when and by whom (W2, unit 2.7).</summary>
     public DbSet<ReplayHistory> ReplayHistories => Set<ReplayHistory>();
 
+    /// <summary>What each failure signature has earned — the one mutable row beside the ledger (W4, unit 4.1).
+    /// Every change also writes a hash-chained <see cref="RecoveryEvent"/>.</summary>
+    public DbSet<AutonomyGrant> AutonomyGrants => Set<AutonomyGrant>();
+
+    /// <summary>Per-namespace DLQ observer liveness (W4, unit 4.2, ADR-0011). Mutable, not hash-chained.</summary>
+    public DbSet<DlqObserverAttestation> DlqObserverAttestations => Set<DlqObserverAttestation>();
+
+    /// <summary>Who may do what, per namespace (W5, unit 5.7). Revoked, never deleted — history decides the fallback.</summary>
+    public DbSet<GovernanceGrant> GovernanceGrants => Set<GovernanceGrant>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -79,12 +89,16 @@ public sealed class ServiceHubDbContext : DbContext
         ConfigureRecoveryLedgerEntry(modelBuilder);
         ConfigureRecoveryEvent(modelBuilder);
         ConfigureReplayHistory(modelBuilder);
+        ConfigureAutonomyGrant(modelBuilder);
+        ConfigureDlqObserverAttestation(modelBuilder);
+        ConfigureGovernanceGrant(modelBuilder);
     }
 
     /// <inheritdoc />
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         RecoveryLedgerAppendOnlyGuard.Enforce(ChangeTracker);
+        StampAutonomyGrantConcurrencyTokens();
         return _saveChangesRetryPipeline.Execute(() => base.SaveChanges(acceptAllChangesOnSuccess));
     }
 
@@ -93,6 +107,7 @@ public sealed class ServiceHubDbContext : DbContext
     {
         // Append-only is enforced here, beneath every caller — a hand-written save cannot bypass it.
         RecoveryLedgerAppendOnlyGuard.Enforce(ChangeTracker);
+        StampAutonomyGrantConcurrencyTokens();
         return _saveChangesRetryPipeline
             .ExecuteAsync(
                 async ct => await base.SaveChangesAsync(acceptAllChangesOnSuccess, ct).ConfigureAwait(false),
@@ -139,6 +154,80 @@ public sealed class ServiceHubDbContext : DbContext
     // SQLITE_BUSY = 5, SQLITE_LOCKED = 6.
     private static bool IsBusyOrLocked(SqliteException exception) =>
         exception.SqliteErrorCode is 5 or 6;
+
+    // The grant's concurrency token is stamped here, never by a caller: a change to CurrentLevel that forgot to
+    // bump it would otherwise silently defeat the check (copied from 4.0.0's DlqDbContext).
+    private void StampAutonomyGrantConcurrencyTokens()
+    {
+        foreach (var entry in ChangeTracker.Entries<AutonomyGrant>())
+        {
+            if (entry.State is EntityState.Added or EntityState.Modified)
+            {
+                entry.Entity.ConcurrencyStamp = Guid.NewGuid();
+            }
+        }
+    }
+
+    private static void ConfigureAutonomyGrant(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<AutonomyGrant>();
+
+        entity.ToTable("AutonomyGrants");
+        entity.HasKey(e => e.Id);
+        entity.Property(e => e.OwnerId).HasMaxLength(128).IsRequired();
+        entity.Property(e => e.SignatureHash).HasMaxLength(64).IsRequired();
+        entity.Property(e => e.ActionKind).HasConversion<string>().HasMaxLength(16).IsRequired();
+        entity.Property(e => e.CurrentLevel).HasConversion<string>().HasMaxLength(16).IsRequired();
+        entity.Property(e => e.UpdatedAtUtc).HasConversion(SortableUtc);
+        entity.Property(e => e.ConcurrencyStamp).IsConcurrencyToken();
+
+        // Two evaluators both deciding a triple has newly earned a grant must not both INSERT.
+        entity.HasIndex(e => new { e.OwnerId, e.SignatureHash, e.ActionKind })
+            .IsUnique()
+            .HasDatabaseName("IX_AutonomyGrants_Owner_SignatureHash_ActionKind");
+    }
+
+    private static void ConfigureDlqObserverAttestation(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<DlqObserverAttestation>();
+
+        entity.ToTable("DlqObserverAttestations");
+        entity.HasKey(e => e.Id);
+        entity.Property(e => e.OwnerId).HasMaxLength(128).IsRequired();
+        entity.Property(e => e.ObserverReference).HasMaxLength(256);
+        entity.Property(e => e.DlqEntityName).HasMaxLength(256);
+        entity.Property(e => e.LastCanaryMessageId).HasMaxLength(128);
+        entity.Property(e => e.LastCanarySentAt).HasConversion(SortableUtcNullable);
+        entity.Property(e => e.LastConfirmedAt).HasConversion(SortableUtcNullable);
+
+        // No FK on NamespaceId — a soft reference, like every other ledger-adjacent namespace id.
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId }).IsUnique().HasDatabaseName("IX_DlqObserverAttestations_Owner_Namespace");
+        entity.HasIndex(e => e.Enabled).HasDatabaseName("IX_DlqObserverAttestations_Enabled");
+    }
+
+    private static void ConfigureGovernanceGrant(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<GovernanceGrant>();
+
+        entity.ToTable("GovernanceGrants");
+        entity.HasKey(e => e.Id);
+        entity.Property(e => e.OwnerId).HasMaxLength(128).IsRequired();
+        entity.Property(e => e.GranteeIdentity).HasMaxLength(256).IsRequired();
+        entity.Property(e => e.GranteeKind).HasConversion<string>().HasMaxLength(16).IsRequired();
+        entity.Property(e => e.Role).HasConversion<string>().HasMaxLength(16).IsRequired();
+        entity.Property(e => e.PillarKind).HasConversion<string>().HasMaxLength(16);
+        entity.Property(e => e.GrantedByIdentity).HasMaxLength(256).IsRequired();
+        entity.Property(e => e.RevokedByIdentity).HasMaxLength(256);
+        entity.Property(e => e.GrantedAt).HasConversion(SortableUtc);
+        entity.Property(e => e.RevokedAt).HasConversion(SortableUtcNullable);
+
+        // No FK on NamespaceId — a soft reference. The unique index cannot stop duplicate fleet-wide grants (NULL is distinct
+        // in SQL); the grant service checks that case in code, as 4.0.0 did.
+        entity.HasIndex(e => new { e.OwnerId, e.GranteeIdentity }).HasDatabaseName("IX_GovernanceGrants_OwnerId_GranteeIdentity");
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId }).HasDatabaseName("IX_GovernanceGrants_OwnerId_NamespaceId");
+        entity.HasIndex(e => new { e.OwnerId, e.GranteeIdentity, e.NamespaceId, e.PillarKind })
+            .IsUnique().HasFilter("[RevokedAt] IS NULL").HasDatabaseName("IX_GovernanceGrants_ActiveScope_Unique");
+    }
 
     private static void ConfigureNamespace(ModelBuilder modelBuilder)
     {

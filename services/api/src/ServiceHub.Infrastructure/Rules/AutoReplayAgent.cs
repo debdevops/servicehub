@@ -16,8 +16,9 @@ namespace ServiceHub.Infrastructure.Rules;
 /// </summary>
 /// <remarks>
 /// <para><b>It cannot act where trust has not been earned.</b> The gate's autonomy predicate lets automation through only for a
-/// failure signature with a Standing or Unattended grant, and grants arrive with unit 4.1. Until then every match is held —
-/// the rule's replays simply do not happen, and the rule says so. This agent never bypasses, softens or caches the gate.</para>
+/// failure signature with a Standing or Unattended grant, which only the Trust Evaluator writes, from verified outcomes (unit 4.1).
+/// Until a signature has earned one every match is held — the rule's replays simply do not happen, and the rule says so. This
+/// agent never bypasses, softens or caches the gate.</para>
 /// <para><b>The circuit breaker runs first</b> each cycle, so a rule that has started failing is off before it can send more.
 /// A tripped breaker is never reset by this agent.</para>
 /// </remarks>
@@ -40,7 +41,10 @@ public sealed class AutoReplayAgent : IAgent
             Kind: AgentKind.Act,
             Authority: AgentAuthority.ActsAutonomously,
             Cadence: TimeSpan.FromSeconds(30),
-            Notes: "Bounded by the eligibility gate: it never acts on a failure that has not earned unattended replay, and never in a Production namespace.");
+            Notes: "Bounded by the eligibility gate: it never acts on a failure that has not earned unattended replay, and never in a Production namespace.",
+            May: ["Replay messages matching a rule that's turned on, once that failure has earned it"],
+            MayNot: ["Replay in a Production namespace — never", "Replay where the cloud can't prove the fix held — it asks you instead", "Turn a rule back on after it stopped itself"],
+            LedgerActor: "System:AutoReplay:");
     }
 
     /// <inheritdoc />
@@ -108,6 +112,11 @@ public sealed class AutoReplayAgent : IAgent
                 {
                     holding++;
                     holdReason ??= decision.ReasonCode ?? decision.Verdict.ToString().ToUpperInvariant();
+
+                    // An Escalate becomes pending work a person can answer (5.1) — once per dead letter, never per cycle.
+                    using var holdScope = _scopes.CreateScope();
+                    await holdScope.ServiceProvider.GetRequiredService<Recovery.EscalationRecorder>()
+                        .RecordHeldReplayAsync(m, found.Value, rule, actor, decision, ct).ConfigureAwait(false);
                     continue;
                 }
 

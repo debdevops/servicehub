@@ -132,3 +132,24 @@ export async function fetchNamespaceStats(id: string): Promise<NamespaceStats> {
 export async function fetchEntities(id: string, kind?: EntityKind): Promise<EntityList> {
   return (await api.get<EntityList>(`/namespaces/${id}/entities`, { params: kind ? { kind } : undefined })).data
 }
+
+/** What one "look now" found. `countsAsDeliveryAttempt` is true where looking was a receive (no repeatable peek). */
+export interface DeadLetterLook {
+  readonly outcome: 'looked' | 'failed'
+  readonly queuesExamined: number
+  readonly newMessages: number
+  readonly resolved: number
+  readonly unconfirmed: number
+  readonly countsAsDeliveryAttempt: boolean
+  readonly reason: string | null
+  readonly lookedAtUtc: string
+}
+
+/**
+ * Looks at a namespace's dead letters now and records them. On AWS and Google Cloud this is the only way they
+ * reach the list — ServiceHub never looks there on its own, because a look counts as a delivery attempt.
+ * A slow cloud can take tens of seconds per queue (SQS long-polls), hence the longer timeout.
+ */
+export async function lookAtDeadLetters(id: string): Promise<DeadLetterLook> {
+  return (await api.post<DeadLetterLook>(`/namespaces/${id}/dead-letters/look`, undefined, { headers: withIntent(Intent.LookAtDeadLetters), timeout: 180_000 })).data
+}

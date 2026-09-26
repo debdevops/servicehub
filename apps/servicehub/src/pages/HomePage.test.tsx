@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../lib/api/namespaces'
+import { fetchRecoverySummary } from '../lib/api/recovery'
 import { fetchDeadLetters, type DeadLetter } from '../lib/api/deadLetters'
 import type { CloudProvider, Entity, Namespace, NamespaceStats } from '../lib/api/namespaces'
 import { AppLayout } from '../layouts/AppLayout'
@@ -11,23 +12,25 @@ import { HomePage } from './HomePage'
 
 vi.mock('../lib/api/namespaces')
 vi.mock('../lib/api/deadLetters')
+vi.mock('../lib/api/recovery')
 const emptyPage = { items: [], paging: { total: 0, page: 1, pageSize: 5 }, groups: [], otherReasons: null, entities: [] }
+const noReplays = { window: '7d', total: 0, states: [], byProvider: [], stayedFixedRate: null, returnedConfidence: { exact: 0, heuristic: 0 }, replaysAccepted: 0 } as never
 const mocked = vi.mocked(api)
 
 const ns = (id: string, provider: CloudProvider, over: Partial<Namespace> = {}): Namespace =>
-  ({ id, name: id, displayName: id, provider, lastConnectionTestSucceeded: true, awsRegion: null, gcpProjectId: null, ...over }) as Namespace
+  ({ id, name: id, displayName: id, provider, environment: 'dev', lastConnectionTestSucceeded: true, awsRegion: null, gcpProjectId: null, ...over }) as Namespace
 
 const stats = (namespaceId: string, over: Partial<NamespaceStats> = {}): NamespaceStats => ({
   namespaceId, entities: [{ kind: 'queue', count: 2 }], activeMessages: 10, deadLetterMessages: 4, messageCountsSupported: true, observedAt: 'now', ...over,
 })
 const entity = (dl: number | null): Entity => ({ name: 'q', kind: 'queue', activeMessages: 0, deadLetterMessages: dl, deadLetterTargetName: null })
 
-function renderHome() {
+function renderHome(url = '/?tab=overview') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
       {/* A bare "/" is where the landing rule sends two clouds to Fleet Overview; a deep link is left alone. */}
-      <MemoryRouter initialEntries={['/?tab=overview']}>
+      <MemoryRouter initialEntries={[url]}>
         <Routes>
           <Route element={<AppLayout />}>
             <Route index element={<HomePage />} />
@@ -44,6 +47,7 @@ describe('Home — one cloud, real numbers', () => {
     vi.clearAllMocks()
     window.localStorage.clear()
     vi.mocked(fetchDeadLetters).mockResolvedValue(emptyPage)
+    vi.mocked(fetchRecoverySummary).mockResolvedValue(noReplays)
     mocked.fetchEntities.mockImplementation(async (id) => ({ namespaceId: id, entities: [entity(3), entity(0)] }))
   })
 
@@ -72,6 +76,97 @@ describe('Home — one cloud, real numbers', () => {
     await screen.findByRole('heading', { name: 'Azure — Home' })
     expect(await screen.findByText(/messages are/)).toHaveTextContent('8 messages are dead-lettered in Azure')
     expect(screen.queryByText('1,008')).not.toBeInTheDocument()
+  })
+
+  it('draws the same two insight cards on a cloud with no trend, from data every cloud has', async () => {
+    mocked.fetchNamespaces.mockResolvedValue([ns('w1', 'aws', { awsRegion: 'us-east-1' })])
+    mocked.fetchNamespaceStats.mockResolvedValue(stats('w1', { deadLetterMessages: 5 }))
+    vi.mocked(fetchDeadLetters).mockResolvedValue({ ...emptyPage, groups: [{ reason: null, count: 3 }, { reason: 'Timeout', count: 2 }] } as never)
+    vi.mocked(fetchRecoverySummary).mockResolvedValue({
+      window: '7d', total: 4, stayedFixedRate: 0.5, returnedConfidence: { exact: 1, heuristic: 0 }, replaysAccepted: 4, byProvider: [],
+      states: [{ state: 'Recovered', count: 1 }, { state: 'Returned', count: 1 }, { state: 'Unverified', count: 2 }],
+    } as never)
+    renderHome('/?tab=overview')
+
+    const why = await screen.findByRole('region', { name: 'Why messages failed' })
+    expect(within(why).getByText('No reason recorded')).toBeInTheDocument()
+    expect(within(why).getByText('Timeout')).toBeInTheDocument()
+    const ended = screen.getByRole('region', { name: 'How replays ended' })
+    expect(await within(ended).findByText('50%')).toBeInTheDocument()
+    expect(within(ended).getByText(/can’t prove the queue stayed empty/)).toBeInTheDocument()
+    expect(screen.getByText(/no day-by-day trend/)).toBeInTheDocument()
+  })
+
+  it('charts queue depth on one shared scale from counts alone, and says so where the cloud cannot count', async () => {
+    mocked.fetchNamespaces.mockResolvedValue([ns('w1', 'aws')])
+    mocked.fetchNamespaceStats.mockResolvedValue(stats('w1'))
+    mocked.fetchEntities.mockResolvedValue({
+      namespaceId: 'w1',
+      entities: [
+        { name: 'orders', kind: 'queue', activeMessages: 40, deadLetterMessages: 30, deadLetterTargetName: null },
+        { name: 'idle', kind: 'queue', activeMessages: 0, deadLetterMessages: 0, deadLetterTargetName: null },
+        { name: 'events', kind: 'topic', activeMessages: null, deadLetterMessages: null, deadLetterTargetName: null },
+      ],
+    })
+    renderHome('/?tab=overview')
+
+    const card = await screen.findByRole('region', { name: 'Queue depth' })
+    expect(within(card).getByText('orders')).toBeInTheDocument()
+    expect(within(card).queryByText('idle')).not.toBeInTheDocument()
+    expect(within(card).queryByText('events')).not.toBeInTheDocument()
+    expect(within(card).getByRole('link')).toHaveAttribute('href', '/?tab=dlq&entity=orders&ns=w1')
+  })
+
+  it('names each queue with its namespace once several are in scope, so equal names are told apart', async () => {
+    mocked.fetchNamespaces.mockResolvedValue([ns('a1', 'azure'), ns('a2', 'azure', { displayName: 'Azure Two' })])
+    mocked.fetchNamespaceStats.mockImplementation(async (id) => stats(id))
+    mocked.fetchEntities.mockImplementation(async (id) => ({ namespaceId: id, entities: [{ name: 'orders', kind: 'queue', activeMessages: 5, deadLetterMessages: 1, deadLetterTargetName: null }] }))
+    renderHome('/?tab=overview')
+
+    const card = await screen.findByRole('region', { name: 'Queue depth' })
+    expect(within(card).getByText('a1 · Development / orders')).toBeInTheDocument()
+    expect(within(card).getByText('Azure Two · Development / orders')).toBeInTheDocument()
+  })
+
+  it('says so, in words, when nothing has been replayed or failed', async () => {
+    mocked.fetchNamespaces.mockResolvedValue([ns('a1', 'azure')])
+    mocked.fetchNamespaceStats.mockResolvedValue(stats('a1'))
+    renderHome('/?tab=overview')
+
+    expect(await screen.findByText(/Nothing has been replayed in Azure/)).toBeInTheDocument()
+    expect(screen.getByText(/nothing to explain/)).toBeInTheDocument()
+  })
+
+  it('narrows Home to one namespace with ?ns= and offers the choice only when there are several', async () => {
+    mocked.fetchNamespaces.mockResolvedValue([ns('a1', 'azure'), ns('a2', 'azure'), ns('w1', 'aws', { awsRegion: 'us-east-1' })])
+    mocked.fetchNamespaceStats.mockImplementation(async (id) => stats(id, { deadLetterMessages: id === 'a2' ? 5 : 4 }))
+    renderHome('/?tab=overview&ns=a2')
+
+    expect(await screen.findByText(/messages are/)).toHaveTextContent('5 messages are dead-lettered in Azure')
+    await userEvent.click(screen.getByRole('button', { name: 'Namespace' }))
+    expect(screen.getByRole('option', { name: /a2/ })).toHaveAttribute('aria-selected', 'true')
+
+    await userEvent.click(screen.getByRole('option', { name: /All namespaces/ }))
+    expect(await screen.findByText(/messages are/)).toHaveTextContent('9 messages are dead-lettered in Azure')
+  })
+
+  it('narrows Home to one environment with ?env=, grouped in the picker', async () => {
+    mocked.fetchNamespaces.mockResolvedValue([ns('a1', 'azure', { environment: 'prod' }), ns('a2', 'azure', { environment: 'dev' }), ns('a3', 'azure', { environment: 'dev' })])
+    mocked.fetchNamespaceStats.mockImplementation(async (id) => stats(id, { deadLetterMessages: 4 }))
+    renderHome('/?tab=overview&env=dev')
+
+    expect(await screen.findByText(/messages are/)).toHaveTextContent('8 messages are dead-lettered in Azure')
+    await userEvent.click(screen.getByRole('button', { name: 'Namespace' }))
+    expect(screen.getByRole('group', { name: 'Production' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Development' })).toBeInTheDocument()
+  })
+
+  it('ignores a ?ns= that belongs to another cloud', async () => {
+    mocked.fetchNamespaces.mockResolvedValue([ns('a1', 'azure'), ns('a2', 'azure'), ns('w1', 'aws')])
+    mocked.fetchNamespaceStats.mockResolvedValue(stats('a1', { deadLetterMessages: 4 }))
+    renderHome('/?tab=overview&ns=w1')
+
+    expect(await screen.findByText(/messages are/)).toHaveTextContent('8 messages are dead-lettered in Azure')
   })
 
   it('re-scopes wholly when another cloud is chosen', async () => {
@@ -137,6 +232,20 @@ describe('Home — one cloud, real numbers', () => {
     expect(within(card).getByText('1 topic')).toBeInTheDocument()
     expect(within(card).getByText('1 with dead letters')).toBeInTheDocument()
     expect(within(card).queryByText(/DLQ/)).not.toBeInTheDocument()
+  })
+
+  it('does not leave the page blank when the list of clouds cannot be loaded', async () => {
+    mocked.fetchNamespaces.mockRejectedValueOnce(new Error('AxiosError 502'))
+    renderHome()
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('couldn’t load your clouds')
+    expect(alert).not.toHaveTextContent(/502|AxiosError/)
+
+    mocked.fetchNamespaces.mockResolvedValue([ns('a1', 'azure')])
+    mocked.fetchNamespaceStats.mockResolvedValue(stats('a1'))
+    await userEvent.click(within(alert).getByRole('button', { name: 'Try again' }))
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
   })
 
   it('says plainly when the cloud cannot be read, and offers to try again', async () => {

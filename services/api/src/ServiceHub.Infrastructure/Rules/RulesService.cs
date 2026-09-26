@@ -61,10 +61,12 @@ public sealed class RulesService : IRulesService
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<RuleSource>> SourcesAsync(string ownerId, CloudProviderType provider, CancellationToken ct)
+    public async Task<IReadOnlyList<RuleSource>> SourcesAsync(string ownerId, IReadOnlySet<Guid>? allowed, CloudProviderType provider, CancellationToken ct)
     {
         var rows = await _db.NamespaceSignatures.AsNoTracking()
             .Join(_db.Namespaces.Where(n => n.OwnerId == ownerId && n.Provider == provider), s => s.NamespaceId, n => n.Id, (s, _) => s)
+            // A restricted caller is offered failures from its own namespaces only, like everywhere else.
+            .Where(s => allowed == null || allowed.Contains(s.NamespaceId))
             .OrderByDescending(s => s.LastSeenAt).Take(50).ToListAsync(ct).ConfigureAwait(false);
         return [.. rows.GroupBy(s => s.SignatureHash).Select(g => g.First() is var f
             ? new RuleSource(g.Key, f.DominantDeadletterReason, f.EntityName, g.Sum(x => x.OccurrenceCount), f.ExampleError) : null!)];

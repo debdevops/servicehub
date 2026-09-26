@@ -107,11 +107,14 @@ public sealed class ProviderWiringTests
     }
 
     [Fact]
-    public async Task TheDlqObserverReaders_AreNotWired_SoNothingClaimsAnObserverIsAttached()
+    public async Task TheDlqObserverReaders_AreWiredOnePerCloudThatNeedsOne_AndAzureNeedsNone()
     {
+        // Unit 4.2: a reader only lets a canary be confirmed; being registered claims nothing (a namespace is attested
+        // only by a confirmed canary — see DlqAbsenceProofTests).
         await using var provider = Build();
         await using var scope = provider.CreateAsyncScope();
 
-        scope.ServiceProvider.GetServices<IDlqObserverLogReader>().Should().BeEmpty();
+        scope.ServiceProvider.GetServices<IDlqObserverLogReader>().Select(r => r.Provider)
+            .Should().BeEquivalentTo([CloudProviderType.Aws, CloudProviderType.Gcp]);
     }
 }

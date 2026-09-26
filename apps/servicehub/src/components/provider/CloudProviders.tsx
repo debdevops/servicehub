@@ -13,7 +13,7 @@ const glyphColor: Record<string, string> = { azure: '#0284c7', aws: '#f97316', g
 
 export function CloudProviders({ providers }: { providers: readonly ConnectedProvider[] }) {
   const { selected, select } = useProviderScope()
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
   const navigate = useNavigate()
 
   return (
@@ -27,7 +27,8 @@ export function CloudProviders({ providers }: { providers: readonly ConnectedPro
               aria-pressed={isSelected}
               onClick={() => {
                 select(p.provider)
-                if (pathname !== '/') navigate('/')
+                // A namespace or environment scope belongs to the cloud it was chosen in, so switching clouds drops it.
+                if (pathname !== '/' || /[?&](ns|env)=/.test(search)) navigate('/')
               }}
               className={[
                 'mb-[5px] flex w-full items-center gap-[11px] rounded-[10px] border px-3 py-[9px] text-left transition-colors',

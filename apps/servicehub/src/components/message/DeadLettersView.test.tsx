@@ -5,11 +5,14 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as dl from '../../lib/api/deadLetters'
 import type { DeadLetter, DeadLetterPage } from '../../lib/api/deadLetters'
+import * as ns from '../../lib/api/namespaces'
 import type { Namespace } from '../../lib/api/namespaces'
 import { DeadLettersView } from './DeadLettersView'
 
 vi.mock('../../lib/api/deadLetters')
 const fetchMock = vi.mocked(dl.fetchDeadLetters)
+vi.mock('../../lib/api/namespaces', async (original) => ({ ...(await original<typeof ns>()), lookAtDeadLetters: vi.fn() }))
+const lookMock = vi.mocked(ns.lookAtDeadLetters)
 
 const row = (id: number, over: Partial<DeadLetter> = {}): DeadLetter => ({
   id, namespaceId: 'n1', messageId: `m-${id}`, sequenceNumber: id, entityName: 'orders', entityType: 'queue', topicName: null,
@@ -62,7 +65,7 @@ describe('the Dead letters view', () => {
       ['', 'When', 'Queue or topic', 'Failed because', 'Tries', 'Waiting', 'Size', 'Details'],
     )
     expect(within(table).getAllByRole('row')).toHaveLength(3)
-    expect(lastQuery()).toMatchObject({ provider: 'azure', status: 'active', pageSize: 25, page: 1 })
+    expect(lastQuery()).toMatchObject({ provider: 'azure', status: 'active', pageSize: 10, page: 1 })
     expect(screen.getByRole('heading', { name: /Azure — Dead letters/ })).toBeInTheDocument()
   })
 
@@ -190,9 +193,31 @@ describe('the Dead letters view', () => {
     fetchMock.mockResolvedValue(pageOf([], { groups: [] }))
     renderView('aws', [aws])
 
-    expect(await screen.findByText(/does not watch AWS for dead letters on its own/)).toBeInTheDocument()
+    expect(await screen.findByText(/doesn’t look in AWS on its own/)).toBeInTheDocument()
     expect(await screen.findByText(/That does not mean there are no dead letters/)).toBeInTheDocument()
     expect(screen.queryByText(/No dead letters in AWS/)).not.toBeInTheDocument()
+  })
+
+  it('never looks in a cloud without a repeatable peek until a person asks, and says what the look cost', async () => {
+    fetchMock.mockResolvedValue(pageOf([], { groups: [] }))
+    lookMock.mockResolvedValue({ outcome: 'looked', queuesExamined: 2, newMessages: 7, resolved: 0, unconfirmed: 0, countsAsDeliveryAttempt: true, reason: null, lookedAtUtc: '2026-09-26T10:00:00Z' })
+    renderView('aws', [aws])
+
+    expect(await screen.findByText(/counts as one delivery attempt/)).toBeInTheDocument()
+    expect(lookMock).not.toHaveBeenCalled()
+    const calls = fetchMock.mock.calls.length
+
+    await userEvent.click(screen.getByRole('button', { name: /Look at AWS’s dead letters now/ }))
+
+    expect(lookMock).toHaveBeenCalledWith('w1')
+    expect(await screen.findByText(/2 queues with dead letters: 7 new dead letters recorded/)).toBeInTheDocument()
+    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(calls)) // the list reads again
+  })
+
+  it('offers no look where ServiceHub already watches the cloud', async () => {
+    renderView()
+    await screen.findByRole('table')
+    expect(screen.queryByRole('button', { name: /dead letters now/ })).not.toBeInTheDocument()
   })
 
   it('names the namespace beside the queue only when a cloud has more than one', async () => {

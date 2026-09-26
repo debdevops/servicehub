@@ -21,7 +21,11 @@ namespace ServiceHub.Infrastructure.Agents;
 /// </remarks>
 public sealed class AgentRegistry : IAgentRegistry
 {
+    /// <summary>How many recent cycles each agent keeps — enough for a timeline and a health judgement, not a history.</summary>
+    public const int RecentCycleLimit = 30;
+
     private readonly ConcurrentDictionary<string, AgentRuntimeState> _states = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, LinkedList<AgentCycleRecord>> _cycles = new(StringComparer.Ordinal);
     private readonly IReadOnlyList<string> _order;
 
     /// <summary>Creates the registry from every agent registered in the container.</summary>
@@ -49,6 +53,33 @@ public sealed class AgentRegistry : IAgentRegistry
 
     private static AgentRuntimeState Initial(AgentDescriptor descriptor) =>
         new(descriptor, AgentHealth.Unknown, null, null, null, 0, false);
+
+    /// <inheritdoc />
+    public IReadOnlyList<AgentCycleRecord> RecentCycles(string agentId)
+    {
+        if (!_cycles.TryGetValue(agentId, out var list))
+        {
+            return [];
+        }
+
+        lock (list)
+        {
+            return [.. list];
+        }
+    }
+
+    private void Remember(string agentId, AgentCycleRecord record)
+    {
+        var list = _cycles.GetOrAdd(agentId, static _ => new LinkedList<AgentCycleRecord>());
+        lock (list)
+        {
+            list.AddFirst(record);
+            while (list.Count > RecentCycleLimit)
+            {
+                list.RemoveLast();
+            }
+        }
+    }
 
     /// <inheritdoc />
     public IReadOnlyList<AgentRuntimeState> All() =>
@@ -84,6 +115,7 @@ public sealed class AgentRegistry : IAgentRegistry
             return;
         }
 
+        Remember(agentId, new AgentCycleRecord(runUtc, result, null));
         _states[agentId] = current with
         {
             Health = current.IsPaused ? AgentHealth.Paused : HealthFrom(result, 0),
@@ -101,6 +133,7 @@ public sealed class AgentRegistry : IAgentRegistry
             return;
         }
 
+        Remember(agentId, new AgentCycleRecord(runUtc, null, reason));
         _states[agentId] = current with
         {
             Health = current.IsPaused ? AgentHealth.Paused : AgentHealth.Failing,

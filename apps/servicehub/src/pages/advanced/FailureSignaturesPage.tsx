@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Fingerprint, TriangleAlert } from 'lucide-react'
+import { usePageSize } from '../../lib/pageSize'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ExplainerCard, ExplainerToggle } from '../../components/explainer/Explainer'
 import { useExplainer } from '../../components/explainer/useExplainer'
@@ -7,7 +8,11 @@ import { HelpLabel } from '../../components/ui/InfoTip'
 import { columnHelp } from '../../content/columns'
 import { useProviderScope } from '../../components/provider/providerScope'
 import { Pager } from '../../components/ui/Pager'
-import { fetchSignatures, type Signature, type SignatureTab } from '../../lib/api/signatures'
+import { fetchSignatures, fetchSignatureTrust, type Signature, type SignatureTab } from '../../lib/api/signatures'
+import { trustWords } from '../../lib/trustWords'
+import { NamespaceScope } from '../../components/provider/NamespaceScope'
+import { environmentMeta, resolveScope } from '../../components/provider/scopeChoice'
+import { useNamespaces } from '../../hooks/useNamespaces'
 import type { CloudProvider } from '../../lib/api/namespaces'
 import { formatAge } from '../../lib/format'
 import { providerLabel } from '../../lib/providers'
@@ -36,8 +41,8 @@ function Spark({ daily, tone }: { daily: readonly number[]; tone: string }) {
 
 /**
  * Failure Signatures (Advanced): which failures are the same failure. Read-only — a rule is created on Auto Replay, and this page
- * only links there. It says what replaying has done for each signature from the ledger, and shows no autonomy level: those arrive
- * with the trust model (unit 4.1) and are added here only after it lands.
+ * only links there. It says what replaying has done for each signature from the ledger, and — from the trust model (unit 4.1) —
+ * whether ServiceHub may replay it on its own yet, and what it still needs.
  */
 export default function FailureSignaturesPage() {
   const [params, setParams] = useSearchParams()
@@ -47,13 +52,26 @@ export default function FailureSignaturesPage() {
   const days = asDays(params.get('days'))
   const sort = params.get('sort') === 'recent' ? 'recent' : 'messages'
   const page = Math.max(1, Number(params.get('page')) || 1)
+  const [pageSize, setPageSize] = usePageSize()
   const selectedHash = params.get('signature')
 
-  const list = useQuery({ queryKey: ['signatures', provider, days, tab, sort, page], queryFn: () => fetchSignatures({ provider, days, tab, sort, page }) })
+  const namespaces = useNamespaces()
+  // The cloud picks which namespaces are on offer; `?ns=` / `?env=` narrow within them. A stale one is ignored.
+  const inScope = (namespaces.data ?? []).filter((n) => !provider || n.provider === provider)
+  const choice = resolveScope(inScope, params)
+  const namespaceId = choice.ns?.id
+  const environment = choice.env ?? undefined
+  const list = useQuery({
+    queryKey: ['signatures', provider, namespaceId, environment, days, tab, sort, page, pageSize],
+    queryFn: () => fetchSignatures({ provider, namespaceId, environment, days, tab, sort, page, pageSize }),
+  })
   const change = (patch: Record<string, string | null>) =>
     setParams((c) => {
       const n = new URLSearchParams(c)
-      for (const [k, v] of Object.entries(patch)) v === null || v === '' ? n.delete(k) : n.set(k, v)
+      for (const [k, v] of Object.entries(patch)) {
+        if (v === null || v === '') n.delete(k)
+        else n.set(k, v)
+      }
       if (!('page' in patch) && !('signature' in patch)) n.delete('page')
       return n
     }, { replace: true })
@@ -77,11 +95,8 @@ export default function FailureSignaturesPage() {
           </h1>
           <p className="mt-[3px] text-[13px] text-[var(--color-text-muted)]">Failures grouped by how they fail. The Agent and the rules reason about these groups, not single messages.</p>
         </div>
-        <div className="ml-auto flex gap-3">
-          <Select label="Scope" value={provider ?? ''} onChange={(v) => change({ provider: v || null })}>
-            <option value="">All clouds</option>
-            {(['azure', 'aws', 'gcp'] as const).map((p) => <option key={p} value={p}>{providerLabel[p]}</option>)}
-          </Select>
+        <div className="ml-auto flex flex-wrap items-end gap-3">
+          {(namespaces.data?.length ?? 0) > 1 && <NamespaceScope namespaces={namespaces.data ?? []} cloud={provider ? providerLabel[provider] : 'All clouds'} cloudParam="provider" compact />}
           <Select label="Window" value={String(days)} onChange={(v) => change({ days: v === '7' ? null : v })}>
             <option value="7">Last 7 days</option><option value="14">Last 14 days</option><option value="30">Last 30 days</option>
           </Select>
@@ -115,7 +130,8 @@ export default function FailureSignaturesPage() {
                 {tab === 'all' ? 'No failures have been recorded yet. ServiceHub records them where it can look on its own; a cloud it does not watch has none to group.' : 'Nothing matches this view.'}
               </p>
             ) : (
-              <table className="w-full border-collapse text-left text-[12.5px]">
+              <div className="relative overflow-x-auto">
+              <table className="w-full min-w-[640px] border-collapse text-left text-[12.5px]">
                 <caption className="sr-only">Failure signatures</caption>
                 <thead>
                   <tr className="border-b border-[var(--color-border)] text-[10px] uppercase tracking-[0.6px] text-[var(--color-text-muted)]">
@@ -136,6 +152,11 @@ export default function FailureSignaturesPage() {
                             <button type="button" onClick={(e) => { e.stopPropagation(); change({ signature: key }) }} className="text-left font-semibold">{s.exampleError ?? 'No error text was recorded'}</button>
                           </div>
                           <div className="mt-0.5 font-mono text-[11.5px] text-[var(--color-text-muted)]">{s.entities.join(' · ')} <span className="font-sans">· {providerLabel[s.provider]}</span></div>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {[...new Set(s.namespaces.map((n) => n.environment))].map((env) => (
+                              <span key={env} className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${environmentMeta[env].chip}`}>{environmentMeta[env].label}</span>
+                            ))}
+                          </div>
                         </td>
                         <td className="tabular px-3 py-3 text-[15px] font-bold">{s.messages.toLocaleString()}</td>
                         <td className="px-3 py-3"><Spark daily={s.daily} tone={s.growing ? 'bg-[#f87171]' : 'bg-[#38bdf8]'} /></td>
@@ -145,8 +166,9 @@ export default function FailureSignaturesPage() {
                   })}
                 </tbody>
               </table>
+              </div>
             )}
-            <Pager page={data.page} pageSize={data.pageSize} total={data.total} onPage={(p) => change({ page: String(p) })} />
+            <Pager page={data.page} pageSize={data.pageSize} total={data.total} onPage={(p) => change({ page: String(p) })} onPageSize={(s) => { setPageSize(s); change({ page: null }) }} />
           </div>
           {selected && <Detail s={selected} days={days} now={now} onClose={() => change({ signature: null })} />}
         </div>
@@ -158,7 +180,7 @@ export default function FailureSignaturesPage() {
 function Select({ label, value, onChange, children }: { label: string; value: string; onChange: (v: string) => void; children: React.ReactNode }) {
   return (
     <label className="rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface)] px-[13px] py-1.5 shadow-[var(--shadow-card)]">
-      <span className="block text-[9.5px] font-bold uppercase tracking-[0.6px] text-[#9ca3af]">{label}</span>
+      <span className="block text-[9.5px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">{label}</span>
       <select value={value} onChange={(e) => onChange(e.target.value)} className="bg-transparent text-[12.5px] font-semibold">{children}</select>
     </label>
   )
@@ -198,6 +220,22 @@ function Detail({ s, days, now, onClose }: { s: Signature; days: number; now: Da
           {s.growing && <p className="mt-2 flex items-start gap-2 rounded-lg border border-[#fecaca] bg-[#fef2f2] px-3 py-2 text-[12.5px] text-[#7f1d1d]"><TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span><b>Growing.</b> The recent days hold at least twice what the earlier ones did.</span></p>}
         </Section>
         <Section title="Does replaying help?"><p>{help}</p></Section>
+        <Section title="Can ServiceHub replay it on its own?"><Earned hash={s.signatureHash} provider={s.provider} /></Section>
+        <Section title="Seen in">
+          {s.namespaces.length === 0 ? (
+            <p className="text-[var(--color-text-muted)]">No connected namespace holds it now.</p>
+          ) : (
+            <ul className="space-y-1">
+              {s.namespaces.map((n) => (
+                <li key={n.id} className="flex items-center gap-2">
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${environmentMeta[n.environment].chip}`}>{environmentMeta[n.environment].label}</span>
+                  <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{n.displayName ?? n.name}</span>
+                  <span className="tabular font-bold">{n.messages.toLocaleString()}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
         <Section title="Where">
           <p className="flex flex-wrap gap-x-4 gap-y-1 font-semibold text-[var(--color-primary-600)]">
             <button type="button" className="hover:underline" onClick={() => { select(s.provider); navigate(`/?tab=dlq&reason=${encodeURIComponent(s.reason)}`) }}>See the {s.messages} messages in Home ›</button>
@@ -208,6 +246,21 @@ function Detail({ s, days, now, onClose }: { s: Signature; days: number; now: Da
         </Section>
       </div>
     </aside>
+  )
+}
+
+/** What this failure has earned — read-only; rules and the gate are what act on it. */
+function Earned({ hash, provider }: { hash: string; provider: Signature['provider'] }) {
+  const trust = useQuery({ queryKey: ['signatures', 'trust', hash, provider], queryFn: () => fetchSignatureTrust(hash, provider) })
+  if (trust.isPending) return <p role="status" className="text-[var(--color-text-muted)]">Counting its verified replays…</p>
+  if (trust.isError) return <p className="text-[var(--color-text-muted)]">ServiceHub couldn’t read what it has earned.</p>
+  const w = trustWords(trust.data, providerLabel[provider])
+  const tone = w.answer === 'yes' ? 'bg-[var(--color-success-light)] text-[#047857]' : w.answer === 'no' ? 'bg-[var(--color-surface-muted)] text-[var(--color-text)]' : 'bg-[var(--color-warning-light)] text-[#92400e]'
+  return (
+    <p>
+      <span className={`mr-2 rounded-full px-2 py-0.5 text-[11px] font-bold uppercase ${tone}`}>{w.answer}</span>
+      {w.text}
+    </p>
   )
 }
 

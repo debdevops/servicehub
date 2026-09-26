@@ -25,4 +25,19 @@ public sealed record AgentRuntimeState(
     AgentCycleResult? LastResult,
     string? LastFailure,
     int ConsecutiveFailures,
-    bool IsPaused);
+    bool IsPaused)
+{
+    /// <summary>Failed cycles in a row at which an agent becomes pending work (unit 5.6).</summary>
+    public const int FailingThreshold = 3;
+
+    /// <summary>
+    /// True when it has not started a cycle for three cadences (at least a minute) past its last one — the one rule the
+    /// Agents page and the bell share, so they can never disagree. A paused agent is never late: it was told to wait.
+    /// </summary>
+    public bool IsLate(DateTimeOffset now) =>
+        !IsPaused && LastRunUtc is { } last
+        && now - last > TimeSpan.FromTicks(Math.Max(Descriptor.Cadence.Ticks * 3, TimeSpan.FromMinutes(1).Ticks)) + Descriptor.Cadence;
+
+    /// <summary>True when it needs a person: late, or failing cycle after cycle (and not paused).</summary>
+    public bool NeedsAPerson(DateTimeOffset now) => !IsPaused && (IsLate(now) || ConsecutiveFailures >= FailingThreshold);
+}

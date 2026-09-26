@@ -1,5 +1,6 @@
 import { useRecoverySummary } from '../../hooks/useRecoverySummary'
 import type { CloudProvider } from '../../lib/api/namespaces'
+import type { ScopeChoice } from '../provider/scopeChoice'
 
 const count = (states: readonly { state: string; count: number }[] | undefined, name: string) => states?.find((s) => s.state === name)?.count ?? 0
 
@@ -10,8 +11,8 @@ const count = (states: readonly { state: string; count: number }[] | undefined, 
  * Returned, and says how many that was — an Unverified replay is on neither side, and no checkable replay is a dash,
  * never 0% (R4, R5).
  */
-export function ReplayedNumbers({ provider }: { provider: CloudProvider }) {
-  const { data } = useRecoverySummary({ window: '24h', provider })
+export function ReplayedNumbers({ provider, choice }: { provider: CloudProvider; choice: ScopeChoice }) {
+  const { data } = useRecoverySummary({ window: '24h', provider, namespaceId: choice.ns?.id, environment: choice.env ?? undefined })
   if (!data) return null
 
   const recovered = count(data.states, 'Recovered')

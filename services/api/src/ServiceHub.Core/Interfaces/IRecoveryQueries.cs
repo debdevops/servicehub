@@ -14,6 +14,12 @@ public interface IRecoveryQueries
 
     /// <summary>One entry and its events, or null when it is not in scope.</summary>
     Task<RecoveryEntryDetail?> GetAsync(RecoveryScope scope, Guid entryId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The newest ledger events one actor recorded for one owner (unit 4.4 — an agent's timeline). An actor ending in ':'
+    /// is a prefix (an agent that records per-rule identities); otherwise it must match exactly.
+    /// </summary>
+    Task<IReadOnlyList<Entities.RecoveryEvent>> EventsByActorAsync(string ownerId, string actor, int limit, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -24,4 +30,5 @@ public sealed record RecoveryScope(
     string OwnerId,
     IReadOnlySet<Guid>? AllowedNamespaceIds,
     Guid? NamespaceId = null,
-    CloudProviderType? Provider = null);
+    CloudProviderType? Provider = null,
+    EnvironmentType? Environment = null);

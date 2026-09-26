@@ -94,7 +94,7 @@ describe('navigation', () => {
   })
 
   it('routes exactly the pages it lists — no orphan routes, no unrouted pages', () => {
-    const routed = (routes[0].children ?? []).map((child) =>
+    const routed = (routes[0].children ?? []).filter((child) => (child as { path?: string }).path !== '*').map((child) =>
       'index' in child && child.index ? '/' : `/${(child as { path: string }).path}`,
     )
 

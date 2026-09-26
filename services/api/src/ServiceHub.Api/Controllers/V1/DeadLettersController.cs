@@ -40,6 +40,7 @@ public sealed class DeadLettersController : ApiControllerBase
     /// <summary>Lists dead letters, newest first.</summary>
     /// <param name="namespaceId">One namespace. Give this, or <paramref name="provider"/>, or both.</param>
     /// <param name="provider">One cloud — every namespace the caller has on it. Never mixes clouds.</param>
+    /// <param name="environment">Only namespaces of this environment (dev, uat, prod) — the Environment level of Cloud → Environment → Namespace.</param>
     /// <param name="status">active (default), resolved or all.</param>
     /// <param name="range">How far back it was first seen: 24h, 7d, 30d, or all (default).</param>
     /// <param name="reason">Only this recorded reason.</param>
@@ -54,7 +55,7 @@ public sealed class DeadLettersController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> List(
-        [FromQuery] Guid? namespaceId, [FromQuery] CloudProviderType? provider, [FromQuery] string? status,
+        [FromQuery] Guid? namespaceId, [FromQuery] CloudProviderType? provider, [FromQuery] EnvironmentType? environment, [FromQuery] string? status,
         [FromQuery] string? range, [FromQuery] string? reason, [FromQuery] bool noReason,
         [FromQuery] string? entity, [FromQuery] string? q, [FromQuery] int? page, [FromQuery] int? pageSize,
         CancellationToken cancellationToken)
@@ -112,6 +113,11 @@ public sealed class DeadLettersController : ApiControllerBase
             candidates = candidates.Where(n => n.Provider == cloud);
         }
 
+        if (environment is { } env)
+        {
+            candidates = candidates.Where(n => n.Environment == env);
+        }
+
         var result = await _reader.ListAsync(
             new DlqListQuery(
                 [.. candidates.Select(n => n.Id)], wantedStatus, since, reason, noReason, entity, q,
@@ -133,13 +139,15 @@ public sealed class DeadLettersController : ApiControllerBase
     /// <param name="days">1–30 (default 7).</param>
     /// <param name="namespaceId">One namespace.</param>
     /// <param name="provider">One cloud — every namespace the caller has on it.</param>
+    /// <param name="environment">Only namespaces of this environment (dev, uat, prod).</param>
     /// <param name="cancellationToken">Cancellation.</param>
     [HttpGet("trend")]
     [ProducesResponseType(typeof(DeadLetterTrendResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Trend(
-        [FromQuery] int? days, [FromQuery] Guid? namespaceId, [FromQuery] CloudProviderType? provider, CancellationToken cancellationToken)
+        [FromQuery] int? days, [FromQuery] Guid? namespaceId, [FromQuery] CloudProviderType? provider, [FromQuery] EnvironmentType? environment,
+        CancellationToken cancellationToken)
     {
         if (namespaceId is null && provider is null)
         {
@@ -171,6 +179,11 @@ public sealed class DeadLettersController : ApiControllerBase
         if (provider is { } cloud)
         {
             candidates = candidates.Where(n => n.Provider == cloud);
+        }
+
+        if (environment is { } env)
+        {
+            candidates = candidates.Where(n => n.Environment == env);
         }
 
         var span = days ?? 7;
@@ -295,6 +308,7 @@ public sealed class DeadLettersController : ApiControllerBase
             return Problem(StatusCodes.Status404NotFound, ErrorCodes.Message.NotFound, $"Dead letter '{id}' was not found.");
         }
 
+        if (await DeniedUnlessAsync(GovernanceRole.Operator, ns.Id, PillarKind.Recover, "replay this message", cancellationToken) is { } denied) return denied;
         var outcome = await _replay.ReplayAsync(id, ns, Actor, IntentHeaders.ReplayMessage, HttpContext.TraceIdentifier, cancellationToken);
         return outcome.IsFailure ? Problem(outcome.Error) : Ok(outcome.Value);
     }

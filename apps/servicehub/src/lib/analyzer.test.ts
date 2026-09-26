@@ -18,3 +18,31 @@ describe('explainFailure — the one-line reading for a table row', () => {
   })
   it('never invents a reading it does not have', () => expect(headline('SomethingOdd', 'zzz')).toBe('No reading available — see the recorded reason'))
 })
+
+describe('explainFailure — when the cloud recorded nothing, the message is read instead (as 4.0.0 did)', () => {
+  it('reads an error the producer put in the properties', () => {
+    const e = explainFailure(null, null, 5, { propertiesJson: '{"shs-error-type":"Required field customerId missing"}' })
+    expect(e.failingField).toBe('customerId')
+    expect(e.readFrom).toBe('properties')
+    expect(e.recorded).not.toBe(false)
+  })
+  it('reads an error field in a JSON body', () => {
+    const e = explainFailure(null, null, 5, { body: '{"orderId":1,"error":"Downstream timed out after 30s"}' })
+    expect(e.headline).toMatch(/too long/)
+    expect(e.readFrom).toBe('body')
+  })
+  it('reads an exception line in a text body', () => {
+    const e = explainFailure(null, null, 5, { body: 'at Worker.Handle()\nSystem.InvalidOperationException: Something odd happened' })
+    expect(e.readFrom).toBe('body')
+    expect(e.headline).toContain('Something odd happened')
+  })
+  it('ignores a producer default that means nothing failed', () => {
+    const e = explainFailure(null, null, 5, { propertiesJson: '{"errorType":"none"}', body: '{"orderId":1}' })
+    expect(e.recorded).toBe(false)
+  })
+  it('never lets the message override a reason the cloud did record', () => {
+    const e = explainFailure('LockLost', 'Message lock expired', 5, { body: '{"error":"Required field customerId missing"}' })
+    expect(e.readFrom).toBeUndefined()
+    expect(e.headline).toMatch(/lost its claim/)
+  })
+})

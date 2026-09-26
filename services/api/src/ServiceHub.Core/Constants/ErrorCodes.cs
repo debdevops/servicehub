@@ -44,6 +44,9 @@ public static class ErrorCodes
     /// </summary>
     public const string IntentRequired = "intent_required";
 
+    /// <summary>The same work is already running for this resource; try again when it finishes.</summary>
+    public const string AlreadyRunning = "already_running";
+
     /// <summary>An <c>X-API-KEY</c> was presented that is not a configured key.</summary>
     public const string InvalidApiKey = "invalid_api_key";
 
@@ -220,5 +223,18 @@ public static class ErrorCodes
         /// Failed to send the message.
         /// </summary>
         public const string SendFailed = "Message.Send.Failed";
+    }
+
+    /// <summary>Codes for governance grants (unit 5.7) — values unchanged from 4.0.0.</summary>
+    public static class Governance
+    {
+        /// <summary>The grant was not found.</summary>
+        public const string NotFound = "Governance.NotFound";
+
+        /// <summary>An active grant already exists for this exact (grantee, namespace, pillar) scope.</summary>
+        public const string AlreadyExists = "Governance.AlreadyExists";
+
+        /// <summary>The caller's Governance role does not meet the action's required minimum.</summary>
+        public const string InsufficientRole = "Governance.InsufficientRole";
     }
 }

@@ -97,6 +97,26 @@ public sealed class GcpMessageReceiverExtendedTests
         await act.Should().ThrowAsync<ArgumentNullException>();
     }
 
+    [Fact]
+    public async Task PeekMessagesAsync_WhenTheSubscriptionDoesNotExist_IsNotFoundLikeAzure_NotABadGateway()
+    {
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+
+        var factory = new Mock<IGcpClientFactory>();
+        factory.Setup(f => f.GetSubscriberClientAsync(It.IsAny<Namespace>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Grpc.Core.RpcException(new Grpc.Core.Status(Grpc.Core.StatusCode.NotFound, "Resource not found")));
+
+        var sut = new GcpMessageReceiver(factory.Object, repo.Object, NullLogger<GcpMessageReceiver>.Instance);
+
+        var result = await sut.PeekMessagesAsync(new GetMessagesRequest(TestNamespaceId, "nope", null, false, 10));
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Code.Should().Be("Queue.NotFound");
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // PeekMessagesAsync — subscriber throws → ExternalService error
     // ─────────────────────────────────────────────────────────────────────────
@@ -165,7 +185,7 @@ public sealed class GcpMessageReceiverExtendedTests
 
         var factory = new Mock<IGcpClientFactory>();
         factory.Setup(f => f.GetSubscriberClientAsync(It.IsAny<Namespace>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new Grpc.Core.RpcException(new Grpc.Core.Status(Grpc.Core.StatusCode.NotFound, "Subscription not found")));
+            .ThrowsAsync(new Grpc.Core.RpcException(new Grpc.Core.Status(Grpc.Core.StatusCode.Unavailable, "gRPC unavailable")));
 
         var sut = new GcpMessageReceiver(factory.Object, repo.Object, NullLogger<GcpMessageReceiver>.Instance);
 

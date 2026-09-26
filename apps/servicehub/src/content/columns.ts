@@ -44,6 +44,7 @@ export const columnHelp = {
     time: h('Time', 'When this recovery action began.'),
     entity: h('Entity', 'The queue or subscription the recovery acted on.'),
     cloud: h('Cloud', 'Which cloud the action ran in.'),
+    namespace: h('Namespace', 'The namespace the action ran in, with its environment. Shown as recorded when it cannot be matched to exactly one connected namespace.'),
     by: h('By', 'Who or what started it: a person, a rule or an agent.'),
     what: h('What', 'The kind of action and how many messages it covered.'),
     outcome: h('Outcome', 'How it ended. Recovered means it did not come back; Unverified means it was sent but cannot be proven; Returned means it failed again. These are never counted together.'),

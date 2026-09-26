@@ -1,12 +1,14 @@
 import { useAudit } from '../hooks/useIdentity'
 import { useStreamStatus } from '../hooks/useEventStream'
 import { Attribution } from './Attribution'
+import type { CloudProvider, EnvironmentKind } from '../lib/api/namespaces'
 import { formatWhen } from '../lib/format'
 
 const words: Readonly<Record<string, string>> = {
   'Namespace.Connect': 'Connected a namespace',
   'Namespace.Remove': 'Removed a namespace',
   'Replay.Message': 'Replayed a message',
+  'DeadLetters.Look': 'Looked at dead letters',
 }
 
 /**
@@ -15,9 +17,9 @@ const words: Readonly<Record<string, string>> = {
  * right. Events do not appear here by themselves: they make the list look again (a stream is a hint, not a feed).
  * No read/unread: that is the bell's job, and the bell counts work waiting for a person.
  */
-export function RecentActivity() {
+export function RecentActivity({ provider, namespaceId, environment }: { provider?: CloudProvider; namespaceId?: string; environment?: EnvironmentKind }) {
   const status = useStreamStatus()
-  const { data, isPending, isError } = useAudit({ pageSize: 5 })
+  const { data, isPending, isError } = useAudit({ pageSize: 5, provider, namespaceId, environment })
   const now = new Date()
 
   return (

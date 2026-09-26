@@ -4,6 +4,7 @@ using ServiceHub.Core.Constants;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Core.Security;
@@ -82,6 +83,8 @@ public sealed class NamespacesController : ApiControllerBase
                 ErrorCodes.IntentRequired,
                 IntentHeaders.MissingDetail("connect this namespace", IntentHeaders.CreateNamespace));
         }
+
+        if (await DeniedUnlessAsync(GovernanceRole.Admin, null, null, "connect a cloud", cancellationToken) is { } denied) return denied;
 
         _logger.LogInformation("Connecting namespace {Name}", LogRedactor.SanitiseForLog(request.Name));
 
@@ -203,6 +206,8 @@ public sealed class NamespacesController : ApiControllerBase
             return Problem(found.Error);
         }
 
+        if (await DeniedUnlessAsync(GovernanceRole.Admin, id, null, "remove this namespace", cancellationToken) is { } denied) return denied;
+
         var deleted = await _namespaces.DeleteAsync(id, cancellationToken);
         if (deleted.IsFailure)
         {
@@ -212,6 +217,55 @@ public sealed class NamespacesController : ApiControllerBase
 
         await RecordAsync(AuditActions.NamespaceRemove, AuditActions.Success, found.Value, null, cancellationToken);
         return NoContent();
+    }
+
+    /// <summary>
+    /// Looks at the namespace's dead letters now and records what it finds, so each one can be opened, read and
+    /// replayed. This is how AWS and Google Cloud dead letters reach the list: ServiceHub never looks there on a
+    /// timer, because a look is a receive that counts as a delivery attempt — a person asking is the consent.
+    /// Requires the <c>look-at-dead-letters</c> intent header. A cloud that cannot be read is a 200 that says so.
+    /// </summary>
+    [HttpPost("{id:guid}/dead-letters/look")]
+    [ProducesResponseType(typeof(DeadLetterLookResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
+    public async Task<IActionResult> LookAtDeadLetters(Guid id, [FromServices] IDeadLetterLook look, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(look);
+        if (!IntentHeaders.Declares(Request, IntentHeaders.LookAtDeadLetters))
+        {
+            return Problem(
+                StatusCodes.Status428PreconditionRequired,
+                ErrorCodes.IntentRequired,
+                IntentHeaders.MissingDetail("look at these dead letters now", IntentHeaders.LookAtDeadLetters));
+        }
+
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        var ns = found.Value;
+        if (!_router.IsRegistered(ns.Provider))
+        {
+            return NoAdapter(ns);
+        }
+
+        // A look is a delivery attempt on some clouds, so it is a recovery action, not a read.
+        if (await DeniedUnlessAsync(GovernanceRole.Operator, ns.Id, PillarKind.Recover, "look at these dead letters", cancellationToken) is { } denied) return denied;
+
+        var result = await look.LookNowAsync(ns, cancellationToken);
+        if (result.Outcome == "busy")
+        {
+            return Problem(StatusCodes.Status409Conflict, ErrorCodes.AlreadyRunning, result.Reason ?? "Already looking.");
+        }
+
+        await RecordAsync(
+            AuditActions.DeadLettersLook, result.Outcome == "looked" ? AuditActions.Success : AuditActions.Failure,
+            ns, result.Reason, cancellationToken);
+        return Ok(result);
     }
 
     /// <summary>

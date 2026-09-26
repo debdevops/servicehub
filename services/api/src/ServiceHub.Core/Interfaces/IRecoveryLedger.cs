@@ -71,9 +71,8 @@ public interface IRecoveryLedger
     Task<bool> IsEmergencyStopActiveAsync(string ownerId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// The autonomy grant for one (owner, signature, action), or null when none was ever created.
-    /// <b>Always null until autonomy exists (unit 4.1)</b> — so the gate escalates every unattended
-    /// action, which is the honest answer while nothing has earned it.
+    /// The autonomy grant for one (owner, signature, action), or null when none was ever created — in which case the
+    /// gate escalates every unattended action, which is the honest answer while nothing has earned it (unit 4.1).
     /// </summary>
     Task<AutonomyGrant?> GetAutonomyGrantAsync(
         string ownerId, string signatureHash, Enums.RecoveryOperationKind actionKind,
@@ -100,4 +99,54 @@ public interface IRecoveryLedger
     Task<IReadOnlyList<RecoveryLedgerEntry>> FindHeuristicRecurrenceCandidatesAsync(
         string ownerId, Guid? namespaceId, string entityName, string bodyHash, DateTimeOffset beganBefore,
         CancellationToken cancellationToken = default);
+
+    // ── Trust and autonomy (unit 4.1) — every number is a deterministic query over recorded outcomes ──
+
+    /// <summary>Terminal dispositions of one signature's entries for one action kind.</summary>
+    Task<IReadOnlyDictionary<Enums.RecoveryDisposition, int>> GetDispositionCountsAsync(
+        string ownerId, string signatureHash, Enums.RecoveryOperationKind actionKind, CancellationToken cancellationToken = default);
+
+    /// <summary>The signatures that have entries of one action kind, in a stable order, at most <paramref name="limit"/>.</summary>
+    Task<IReadOnlyList<string>> GetDistinctSignatureHashesAsync(
+        string ownerId, Enums.RecoveryOperationKind actionKind, int limit = int.MaxValue, CancellationToken cancellationToken = default);
+
+    /// <summary>The cloud a signature belongs to — from its entries, else from where it was last seen; null if unknown.</summary>
+    Task<Enums.CloudProviderType?> GetSignatureProviderAsync(string ownerId, string signatureHash, CancellationToken cancellationToken = default);
+
+    /// <summary>The environment a signature belongs to — from its entries, else from where it was last seen; null if unknown.</summary>
+    Task<Enums.EnvironmentType?> GetSignatureEnvironmentAsync(string ownerId, string signatureHash, CancellationToken cancellationToken = default);
+
+    /// <summary>The namespace a signature belongs to — from its entries, else from where it was last seen; null if unknown.</summary>
+    Task<Guid?> GetSignatureNamespaceIdAsync(string ownerId, string signatureHash, CancellationToken cancellationToken = default);
+
+    /// <summary>Whether a person flagged an unsafe outcome anywhere in this owner's fleet.</summary>
+    Task<bool> HasUnsafeOutcomeFlagAsync(string ownerId, CancellationToken cancellationToken = default);
+
+    /// <summary>Whether a person flagged a duplicate business effect on one of this signature's entries.</summary>
+    Task<bool> HasDuplicateAssociationAsync(string ownerId, string signatureHash, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Moves a grant from <paramref name="previousLevel"/> to <paramref name="newLevel"/> and, in the same save,
+    /// appends a hash-chained promoted/demoted event. A Conflict when another writer already moved it.
+    /// </summary>
+    Task<Result<AutonomyGrant>> RecordAutonomyGrantTransitionAsync(
+        string ownerId, string signatureHash, Enums.RecoveryOperationKind actionKind,
+        Enums.AutonomyLevel previousLevel, Enums.AutonomyLevel newLevel, string reason, string? evidenceJson,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Records that the gate refused an automatic action and a person must decide (unit 5.1): a terminal entry with
+    /// disposition Declined plus one <c>EligibilityDeclined</c> event carrying the reason code. Nothing reaches a cloud.
+    /// </summary>
+    Task<Result<RecoveryLedgerEntry>> RecordDeclinedAsync(BeginRecoveryEntryRequest request, string reasonCode, string? detailJson, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// A person answered what the agent asked (units 5.10): appends an <c>OperatorNote</c> event to the Declined entry with the
+    /// decision — <c>approved</c> (with the replay entry it caused) or <c>declined</c> (with a required reason). Nothing is
+    /// deleted; the entry stops being pending work. A second answer to the same entry is a Conflict.
+    /// </summary>
+    Task<Result<RecoveryEvent>> RecordDecisionAsync(Guid entryId, string ownerId, RecoveryActor actor, bool approved, string? reason, Guid? replayEntryId, CancellationToken cancellationToken = default);
+
+    /// <summary>Every grant of one owner.</summary>
+    Task<IReadOnlyList<AutonomyGrant>> GetAutonomyGrantsAsync(string ownerId, CancellationToken cancellationToken = default);
 }

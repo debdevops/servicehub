@@ -4,11 +4,14 @@ import { AppLayout } from './layouts/AppLayout'
 import { HomePage } from './pages/HomePage'
 import { FleetPage } from './pages/FleetPage'
 import { PlaceholderPage } from './pages/PlaceholderPage'
+import { NotFoundPage } from './pages/NotFoundPage'
+import { RouteError } from './components/RouteError'
 import { pages } from './nav/navigation'
 
 // Each built page is its own chunk, so the first paint carries only the shell and Home.
 const RecoveryLedgerPage = lazy(() => import('./pages/advanced/RecoveryLedgerPage'))
 const FailureSignaturesPage = lazy(() => import('./pages/advanced/FailureSignaturesPage'))
+const AgentsPage = lazy(() => import('./pages/advanced/AgentsPage'))
 
 /**
  * The route table, derived from the navigation array. Only PAGES are routes (D45): tabs, panels and
@@ -38,6 +41,13 @@ function pageFor(entry: (typeof pages)[number]) {
       </Suspense>
     )
   }
+  if (entry.id === 'agents') {
+    return (
+      <Suspense fallback={<p role="status" className="px-6 py-6 text-sm">Loading…</p>}>
+        <AgentsPage />
+      </Suspense>
+    )
+  }
   return <PlaceholderPage entry={entry} />
 }
 
@@ -45,11 +55,16 @@ export const routes: RouteObject[] = [
   {
     path: '/',
     element: <AppLayout />,
-    children: pages.map((entry) => ({
-      // React Router wants the index route rather than a path of '/'.
-      ...(entry.path === '/' ? { index: true as const } : { path: entry.path.replace(/^\//, '') }),
-      element: pageFor(entry),
-    })),
+    errorElement: <RouteError />,
+    children: [
+      ...pages.map((entry) => ({
+        // React Router wants the index route rather than a path of '/'.
+        ...(entry.path === '/' ? { index: true as const } : { path: entry.path.replace(/^\//, '') }),
+        element: pageFor(entry),
+      })),
+      // An address that names no page. It is not a destination, so it is not in the navigation array.
+      { path: '*', element: <NotFoundPage /> },
+    ],
   },
 ]
 

@@ -30,21 +30,29 @@ public sealed class EventsController : ApiControllerBase
     };
 
     private readonly PlatformEventStreamBroker _broker;
+    private readonly IHostApplicationLifetime _lifetime;
 
     /// <summary>Creates the controller.</summary>
-    public EventsController(PlatformEventStreamBroker broker) =>
+    public EventsController(PlatformEventStreamBroker broker, IHostApplicationLifetime lifetime)
+    {
         _broker = broker ?? throw new ArgumentNullException(nameof(broker));
+        _lifetime = lifetime ?? throw new ArgumentNullException(nameof(lifetime));
+    }
 
     /// <summary>
     /// Opens a <c>text/event-stream</c> that pushes owner-scoped events until the client disconnects, with a
     /// comment heartbeat every 15 seconds so intermediaries keep it open.
     /// </summary>
-    /// <param name="cancellationToken">Bound to the request abort token.</param>
+    /// <param name="requestAborted">Bound to the request abort token.</param>
     [HttpGet("stream")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
-    public async Task Stream(CancellationToken cancellationToken)
+    public async Task Stream(CancellationToken requestAborted)
     {
+        // A stream never ends on its own, so it must also end when the host is stopping — otherwise one open browser tab
+        // holds the whole application up until the shutdown timeout (30 s).
+        using var stopOrLeave = CancellationTokenSource.CreateLinkedTokenSource(requestAborted, _lifetime.ApplicationStopping);
+        var cancellationToken = stopOrLeave.Token;
         using var subscription = _broker.Register(OwnerId, AllowedNamespaceIds);
         if (subscription is null)
         {

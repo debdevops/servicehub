@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { useDeadLetterTrend } from '../hooks/useDeadLetters'
 import type { TrendDay } from '../lib/api/deadLetters'
-import type { CloudProvider } from '../lib/api/namespaces'
+import type { CloudProvider, EnvironmentKind } from '../lib/api/namespaces'
 
 const RANGES = [7, 14, 30] as const
 
@@ -25,10 +25,10 @@ const dayLabel = (iso: string) => {
  * a legend (two series), a hover tooltip, and a table view for anyone the colours do not serve.
  * Loaded lazily, so the charting library is not in the initial bundle.
  */
-export default function TrendChart({ provider }: { provider: CloudProvider }) {
+export default function TrendChart({ provider, namespaceId, environment }: { provider: CloudProvider; namespaceId?: string; environment?: EnvironmentKind }) {
   const [days, setDays] = useState<(typeof RANGES)[number]>(7)
   const [table, setTable] = useState(false)
-  const { data, isPending, isError, refetch } = useDeadLetterTrend(provider, days)
+  const { data, isPending, isError, refetch } = useDeadLetterTrend(provider, days, { namespaceId, environment })
   const empty = data?.series.every((d) => d.new === 0 && d.resolved === 0) ?? false
 
   return (

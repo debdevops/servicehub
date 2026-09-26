@@ -37,7 +37,9 @@ public sealed class BulkOperationAgent : IAgent
             Kind: AgentKind.Act,
             Authority: AgentAuthority.ActsWithApproval,
             Cadence: TimeSpan.FromSeconds(2),
-            Notes: "Never starts on its own: a run begins only from a preview a person started.");
+            Notes: "Never starts on its own: a run begins only from a preview a person started.",
+            May: ["Replay the messages a person previewed and started, one at a time", "Stop after five failures in a row"],
+            MayNot: ["Start a run by itself", "Replay anything the safety checks refuse — each message is checked on its own"]);
     }
 
     /// <inheritdoc />

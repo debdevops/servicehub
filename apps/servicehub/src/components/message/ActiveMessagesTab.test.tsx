@@ -13,11 +13,11 @@ vi.mock('../../lib/api/messages')
 const ns = (provider: CloudProvider, peek: boolean): Namespace =>
   ({ id: `${provider}1`, name: provider, provider, capabilities: { supportsRepeatablePeek: peek } }) as unknown as Namespace
 
-const renderTab = (provider: CloudProvider, n: Namespace) =>
+const renderTab = (provider: CloudProvider, n: Namespace | readonly Namespace[]) =>
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <MemoryRouter initialEntries={['/?tab=active']}>
-        <ActiveMessagesTab provider={provider} namespaces={[n]} />
+        <ActiveMessagesTab provider={provider} namespaces={Array.isArray(n) ? n : [n]} />
       </MemoryRouter>
     </QueryClientProvider>,
   )
@@ -39,6 +39,23 @@ describe('Active messages tab', () => {
     expect(await screen.findByRole('table', { name: 'Active messages in orders' })).toBeInTheDocument()
     expect(screen.getByText('Details →')).toBeInTheDocument()
     expect(messages.peekMessages).toHaveBeenCalledWith('azure1', expect.objectContaining({ entity: 'orders' }))
+  })
+
+  it('names each queue with its namespace once several namespaces are in scope, and not before', async () => {
+    const named = (id: string, displayName: string) => ({ ...ns('azure', true), id, displayName }) as Namespace
+    vi.mocked(api.fetchEntities).mockImplementation(async (id) => ({ namespaceId: id, entities: [queue(2)] }))
+    vi.mocked(messages.peekMessages).mockResolvedValue({
+      namespaceId: 'x', entity: 'orders', subscription: null, deadLetter: false, messages: [],
+      paging: { requested: 25, returned: 0, nextFromSequenceNumber: null }, peek: { repeatable: true, warning: null },
+    })
+    const view = renderTab('azure', [named('a', 'Azure Prod'), named('b', 'Azure Dev')])
+
+    expect(await screen.findByRole('option', { name: 'Azure Prod / orders · 2' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Azure Dev / orders · 2' })).toBeInTheDocument()
+    view.unmount()
+
+    renderTab('azure', [named('a', 'Azure Prod')])
+    expect(await screen.findByRole('option', { name: 'orders · 2' })).toBeInTheDocument()
   })
 
   it('shows counts only, and never looks, where a look is a delivery', async () => {

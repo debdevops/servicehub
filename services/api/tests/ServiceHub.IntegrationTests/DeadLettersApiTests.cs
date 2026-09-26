@@ -142,6 +142,27 @@ public sealed class DeadLettersApiTests
     }
 
     [Fact]
+    public async Task An_environment_narrows_the_list_to_the_namespaces_in_it()
+    {
+        using var host = Host();
+        var dev = await Connect(host.Client, "azure");
+        var prod = await Connect(host.Client, "aws");
+        await Seed(host, dev, CloudProviderType.Azure, 2);
+        await Seed(host, prod, CloudProviderType.Aws, 4);
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServiceHubDbContext>();
+            typeof(Namespace).GetProperty(nameof(Namespace.Environment))!.SetValue(await db.Namespaces.FindAsync(prod), EnvironmentType.Prod);
+            await db.SaveChangesAsync();
+        }
+
+        // Same cloud, different environment: a namespace outside the environment contributes nothing.
+        (await Get(host, "?provider=Aws&environment=Prod")).GetProperty("paging").GetProperty("total").GetInt32().Should().Be(4);
+        (await Get(host, "?provider=Aws&environment=Dev")).GetProperty("paging").GetProperty("total").GetInt32().Should().Be(0);
+        (await Get(host, "?provider=Azure&environment=Dev")).GetProperty("paging").GetProperty("total").GetInt32().Should().Be(2);
+    }
+
+    [Fact]
     public async Task Rows_of_a_namespace_the_caller_does_not_have_are_never_returned_and_are_reported_as_not_found()
     {
         using var host = Host();
@@ -465,6 +486,26 @@ public sealed class DeadLettersApiTests
     }
 
     [Fact]
+    public async Task A_replay_records_the_failure_signature_it_is_earning_trust_for()
+    {
+        var (host, _, _, id) = await Seeded(() => Result<bool>.Success(true));
+        using var _ = host;
+        using (var seed = host.Services.CreateScope())
+        {
+            var db = seed.ServiceProvider.GetRequiredService<ServiceHubDbContext>();
+            (await db.DlqMessages.FindAsync(id))!.SignatureHash = "sig-orders-timeout";
+            await db.SaveChangesAsync();
+        }
+
+        (await PostReplay(host, id)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var scope = host.Services.CreateScope();
+        var entry = await scope.ServiceProvider.GetRequiredService<ServiceHubDbContext>().RecoveryLedgerEntries.SingleAsync();
+        entry.SignatureHashSnapshot.Should().Be("sig-orders-timeout",
+            "trust is counted per signature (unit 4.1) — an entry without one could never earn or lose anything");
+    }
+
+    [Fact]
     public async Task A_replay_the_cloud_refuses_is_recorded_as_failed_and_the_message_stays_put()
     {
         var (host, _, _, id) = await Seeded(() => Result<bool>.Failure(Error.NotFound("Message.NotFound", "That message is no longer in the dead-letter queue.")));
@@ -600,6 +641,35 @@ public sealed class DeadLettersApiTests
         (await host.Client.GetAsync($"/api/v1/recovery/entries/{Guid.NewGuid()}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [Fact]
+    public async Task The_recovery_ledger_narrows_to_one_namespace_or_to_the_environment_an_entry_was_made_under()
+    {
+        var azureLog = new PeekLog { OnReplay = () => Result<bool>.Success(true) };
+        var awsLog = new PeekLog { OnReplay = () => Result<bool>.Success(true) };
+        using var host = Host(azureLog, awsLog);
+        var azure = await Connect(host.Client, "azure");
+        var aws = await Connect(host.Client, "aws");
+        await Seed(host, azure, CloudProviderType.Azure, 1);
+        await Seed(host, aws, CloudProviderType.Aws, 1);
+        // Production is never replayable, so UAT is the other environment a ledger entry can be made under.
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServiceHubDbContext>();
+            typeof(Namespace).GetProperty(nameof(Namespace.Environment))!.SetValue(await db.Namespaces.FindAsync(aws), EnvironmentType.Uat);
+            await db.SaveChangesAsync();
+        }
+
+        (await PostReplay(host, await FirstId(host, azure))).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await PostReplay(host, await FirstId(host, aws))).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        async Task<int> Total(string path, string query) => (await Body(await host.Client.GetAsync($"/api/v1/recovery/{path}?window=24h&{query}"))).GetProperty("total").GetInt32();
+        (await Total("summary", "")).Should().Be(2);
+        (await Total("summary", "environment=Uat")).Should().Be(1);
+        (await Total("entries", "environment=Dev")).Should().Be(1);
+        (await Total("entries", "environment=Prod")).Should().Be(0);
+        (await Total("entries", $"namespaceId={azure}")).Should().Be(1);
+    }
+
     private static async Task<JsonElement> Verification(Handle host, long dlqMessageId)
     {
         var page = await Body(await host.Client.GetAsync($"/api/v1/replays?dlqMessageId={dlqMessageId}"));
@@ -636,6 +706,51 @@ public sealed class DeadLettersApiTests
         series.EnumerateArray().Sum(d => d.GetProperty("new").GetInt32()).Should().Be(5);
         series.EnumerateArray().Sum(d => d.GetProperty("resolved").GetInt32()).Should().Be(2);
         series.EnumerateArray().Count(d => d.GetProperty("new").GetInt32() == 0).Should().BeGreaterThanOrEqualTo(4, "empty days are zeros, not gaps");
+    }
+
+    private static async Task MakeProd(Handle host, Guid id)
+    {
+        using var scope = host.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ServiceHubDbContext>();
+        typeof(Namespace).GetProperty(nameof(Namespace.Environment))!.SetValue(await db.Namespaces.FindAsync(id), EnvironmentType.Prod);
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task The_trend_narrows_to_an_environment_like_the_list_does()
+    {
+        using var host = Host();
+        var dev = await Connect(host.Client, "azure");
+        var prod = await Connect(host.Client, "aws");
+        await Seed(host, dev, CloudProviderType.Azure, 2);
+        await Seed(host, prod, CloudProviderType.Aws, 4);
+        await MakeProd(host, prod);
+
+        async Task<int> New(string query) =>
+            (await Body(await host.Client.GetAsync($"/api/v1/dead-letters/trend?{query}"))).GetProperty("series").EnumerateArray().Sum(d => d.GetProperty("new").GetInt32());
+
+        (await New("provider=Aws&environment=Prod")).Should().Be(4);
+        (await New("provider=Aws&environment=Dev")).Should().Be(0);
+        (await New("provider=Azure&environment=Dev")).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Replays_and_the_audit_trail_narrow_to_a_cloud_and_an_environment()
+    {
+        using var host = Host();
+        var dev = await Connect(host.Client, "azure");
+        var prod = await Connect(host.Client, "aws");
+        await MakeProd(host, prod);
+
+        async Task<int> Total(string path) => (await Body(await host.Client.GetAsync(path))).GetProperty("total").GetInt32();
+
+        (await Total("/api/v1/audit")).Should().Be(2);
+        (await Total("/api/v1/audit?provider=Aws")).Should().Be(1);
+        (await Total("/api/v1/audit?environment=Prod")).Should().Be(1);
+        (await Total("/api/v1/audit?provider=Azure&environment=Prod")).Should().Be(0);
+        (await Total($"/api/v1/audit?provider=Azure&namespaceId={dev}")).Should().Be(1);
+        (await host.Client.GetAsync("/api/v1/replays?provider=Aws&environment=Prod")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await Total("/api/v1/replays?provider=Aws&environment=Dev")).Should().Be(0);
     }
 
     [Fact]

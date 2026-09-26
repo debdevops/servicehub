@@ -50,6 +50,8 @@ public sealed class PlatformEventStreamBroker
         EventTypes.BulkOperationCompleted,
         EventTypes.AutonomyGrantTransitioned,
         EventTypes.InsightDetected,
+        // 4.1.0 (unit 5.4): an agent stopped and needs a person — the toast and the bell refresh on it.
+        EventTypes.EscalationRaised,
     };
 
     private readonly ConcurrentDictionary<Guid, Connection> _connections = new();

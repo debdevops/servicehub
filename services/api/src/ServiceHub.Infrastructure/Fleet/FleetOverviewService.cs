@@ -18,7 +18,7 @@ namespace ServiceHub.Infrastructure.Fleet;
 /// </remarks>
 public sealed class FleetOverviewService : IFleetOverviewService
 {
-    private const int TopFailureRows = 8;
+    private const int TopFailureRows = 12;
 
     private readonly ServiceHubDbContext _db;
     private readonly INamespaceRepository _namespaces;
@@ -82,10 +82,11 @@ public sealed class FleetOverviewService : IFleetOverviewService
                 members.Sum(r => r.NewInWindow), members.Sum(r => r.ResolvedInWindow));
         }).OrderBy(c => c.Provider).ToList();
 
+        var envOf = connected.ToDictionary(n => n.Id, n => n.Environment);
         var topFailures = messages.Where(m => m.Status == DlqMessageStatus.Active)
-            .GroupBy(m => new { m.CloudProvider, Reason = m.DeadLetterReason ?? "Unknown" })
-            .Select(g => new FleetTopFailure(g.Key.CloudProvider, g.Key.Reason, g.Count()))
-            .OrderByDescending(f => f.Count).ThenBy(f => f.Provider).ThenBy(f => f.Reason, StringComparer.Ordinal)
+            .GroupBy(m => new { m.CloudProvider, Environment = envOf[m.NamespaceId], Reason = m.DeadLetterReason ?? "Unknown" })
+            .Select(g => new FleetTopFailure(g.Key.CloudProvider, g.Key.Environment, g.Key.Reason, g.Count()))
+            .OrderByDescending(f => f.Count).ThenBy(f => f.Provider).ThenBy(f => f.Environment).ThenBy(f => f.Reason, StringComparer.Ordinal)
             .Take(TopFailureRows).ToList();
 
         // Worst first: needs a look, then cannot tell, then healthy; deepest queue first within a word.

@@ -34,6 +34,13 @@ namespace ServiceHub.Core.Models;
 /// Optional. Where an agent behaves differently per cloud, say so here in plain words — this is
 /// where capability honesty (rule R4) reaches the Agents screen.
 /// </param>
+/// <param name="May">Optional. What it may do, one plain line each — the screen's "may" list (unit 4.5).</param>
+/// <param name="MayNot">Optional. What it never does, one plain line each. Say the limits; they are the safety story.</param>
+/// <param name="LedgerActor">
+/// Optional. The ledger actor identity this agent records its actions under (exact, or a prefix ending in ':'), so its
+/// timeline can come from the ledger rather than a new table (unit 4.4). Null for an agent that acts as the person who
+/// asked (Bulk Replay) or records nothing in the ledger.
+/// </param>
 public sealed record AgentDescriptor(
     string Id,
     string Name,
@@ -41,7 +48,10 @@ public sealed record AgentDescriptor(
     AgentKind Kind,
     AgentAuthority Authority,
     TimeSpan Cadence,
-    string? Notes = null)
+    string? Notes = null,
+    IReadOnlyList<string>? May = null,
+    IReadOnlyList<string>? MayNot = null,
+    string? LedgerActor = null)
 {
     /// <summary>
     /// True when this agent can change something outside ServiceHub. The Agents screen leads with

@@ -34,5 +34,5 @@ export function useReplay() {
 }
 
 export function useReplays(query: ReplayQuery) {
-  return useQuery({ queryKey: replayKeys.list(query), queryFn: () => fetchReplays(query), placeholderData: keepWithinScope(query.provider) })
+  return useQuery({ queryKey: replayKeys.list(query), queryFn: () => fetchReplays(query), placeholderData: keepWithinScope(query.provider, query) })
 }

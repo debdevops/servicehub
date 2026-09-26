@@ -10,8 +10,9 @@ namespace ServiceHub.UnitTests.RecoveryLedger;
 
 /// <summary>
 /// Test harness for the eligibility gate's ported tests. 4.0.0's tests drove elevation, autonomy grants
-/// and emergency stop through its full ledger; 4.1.0's ledger carries none of them yet (elevation is not
-/// shipped, autonomy is unit 4.1, emergency stop is 6.10). This wraps the REAL 4.1.0 ledger — lineage,
+/// and emergency stop through its full ledger; when this was written 4.1.0's ledger carried none of them (elevation is
+/// not shipped, emergency stop is 6.10; autonomy grants arrived later, in 4.1, and the gate's tests still set them here in
+/// memory). This wraps the REAL 4.1.0 ledger — lineage,
 /// events, entries all real — and supplies just those three external states in memory, under the
 /// method names and signatures the tests already call, so no assertion had to change.
 /// </summary>
@@ -120,6 +121,19 @@ internal sealed class EligibilityTestLedger : IRecoveryLedger
     public Task<RecoveryLedgerEntry?> FindByMarkerAsync(string ownerId, string marker, CancellationToken cancellationToken = default) => _real.FindByMarkerAsync(ownerId, marker, cancellationToken);
     public Task<IReadOnlyList<RecoveryLedgerEntry>> FindHeuristicRecurrenceCandidatesAsync(string ownerId, Guid? namespaceId, string entityName, string bodyHash, DateTimeOffset beganBefore, CancellationToken cancellationToken = default) => _real.FindHeuristicRecurrenceCandidatesAsync(ownerId, namespaceId, entityName, bodyHash, beganBefore, cancellationToken);
     public Task<bool> IsEmergencyStopActiveAsync(string ownerId, CancellationToken cancellationToken = default) => _real.IsEmergencyStopActiveAsync(ownerId, cancellationToken);
+
+    // Trust queries (unit 4.1) read real recorded outcomes; grants stay in memory above, as the gate's tests expect.
+    public Task<IReadOnlyDictionary<RecoveryDisposition, int>> GetDispositionCountsAsync(string ownerId, string signatureHash, RecoveryOperationKind actionKind, CancellationToken cancellationToken = default) => _real.GetDispositionCountsAsync(ownerId, signatureHash, actionKind, cancellationToken);
+    public Task<IReadOnlyList<string>> GetDistinctSignatureHashesAsync(string ownerId, RecoveryOperationKind actionKind, int limit = int.MaxValue, CancellationToken cancellationToken = default) => _real.GetDistinctSignatureHashesAsync(ownerId, actionKind, limit, cancellationToken);
+    public Task<CloudProviderType?> GetSignatureProviderAsync(string ownerId, string signatureHash, CancellationToken cancellationToken = default) => _real.GetSignatureProviderAsync(ownerId, signatureHash, cancellationToken);
+    public Task<EnvironmentType?> GetSignatureEnvironmentAsync(string ownerId, string signatureHash, CancellationToken cancellationToken = default) => _real.GetSignatureEnvironmentAsync(ownerId, signatureHash, cancellationToken);
+    public Task<Guid?> GetSignatureNamespaceIdAsync(string ownerId, string signatureHash, CancellationToken cancellationToken = default) => _real.GetSignatureNamespaceIdAsync(ownerId, signatureHash, cancellationToken);
+    public Task<bool> HasUnsafeOutcomeFlagAsync(string ownerId, CancellationToken cancellationToken = default) => _real.HasUnsafeOutcomeFlagAsync(ownerId, cancellationToken);
+    public Task<bool> HasDuplicateAssociationAsync(string ownerId, string signatureHash, CancellationToken cancellationToken = default) => _real.HasDuplicateAssociationAsync(ownerId, signatureHash, cancellationToken);
+    public Task<Result<RecoveryLedgerEntry>> RecordDeclinedAsync(BeginRecoveryEntryRequest request, string reasonCode, string? detailJson, CancellationToken cancellationToken = default) => _real.RecordDeclinedAsync(request, reasonCode, detailJson, cancellationToken);
+    public Task<Result<RecoveryEvent>> RecordDecisionAsync(Guid entryId, string ownerId, RecoveryActor actor, bool approved, string? reason, Guid? replayEntryId, CancellationToken cancellationToken = default) => _real.RecordDecisionAsync(entryId, ownerId, actor, approved, reason, replayEntryId, cancellationToken);
+    public Task<IReadOnlyList<AutonomyGrant>> GetAutonomyGrantsAsync(string ownerId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<AutonomyGrant>>([.. _grants.Values.Where(g => g.OwnerId == ownerId)]);
 }
 
 /// <summary>The archived tests borrow this from 4.0.0's metrics tests, which are not part of this unit.</summary>

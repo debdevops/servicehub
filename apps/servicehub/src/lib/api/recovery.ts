@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { CloudProvider } from './namespaces'
+import type { CloudProvider, EnvironmentKind } from './namespaces'
 import type { ReplayActor } from './replay'
 
 /** The enum's own names, in lifecycle order. `Recovered` means "did not return" — never "succeeded" (V2). */
@@ -40,10 +40,12 @@ export interface RecoveryScope {
   readonly window?: RecoveryWindow
   readonly provider?: CloudProvider
   readonly namespaceId?: string
+  /** Only entries made in this environment — the Environment level of the scope picker. */
+  readonly environment?: EnvironmentKind
 }
 
 const providerParam = (p: CloudProvider) => ({ azure: 'Azure', aws: 'Aws', gcp: 'Gcp' })[p]
-const scopeParams = (q: RecoveryScope) => ({ window: q.window, provider: q.provider ? providerParam(q.provider) : undefined, namespaceId: q.namespaceId })
+const scopeParams = (q: RecoveryScope) => ({ window: q.window, provider: q.provider ? providerParam(q.provider) : undefined, namespaceId: q.namespaceId, environment: q.environment })
 
 export async function fetchRecoverySummary(scope: RecoveryScope = {}): Promise<RecoverySummary> {
   return (await api.get<RecoverySummary>('/recovery/summary', { params: scopeParams(scope) })).data
@@ -52,7 +54,7 @@ export async function fetchRecoverySummary(scope: RecoveryScope = {}): Promise<R
 export interface LedgerEntry {
   readonly id: string
   readonly operationId: string
-  readonly beganAt: string
+  readonly begunAt: string
   readonly kind: 'Replay' | 'Purge' | string
   readonly entityName: string
   readonly targetEntity: string

@@ -20,7 +20,10 @@ public static class AgentServiceCollectionExtensions
 
         services.TryAddSingleton<AgentRegistry>();
         services.TryAddSingleton<IAgentRegistry>(sp => sp.GetRequiredService<AgentRegistry>());
+        // Before the host: a pause set before a restart must be in force before any cycle runs.
+        services.AddHostedService<AgentPauseRestorer>();
         services.AddHostedService<AgentHost>();
+        services.AddHostedService<AgentWatchdog>();
         return services;
     }
 

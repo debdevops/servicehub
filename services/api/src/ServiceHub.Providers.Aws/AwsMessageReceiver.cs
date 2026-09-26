@@ -6,6 +6,7 @@ using Amazon.SQS.Model;
 using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.Retry;
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
@@ -159,6 +160,12 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
             return Result.Failure<IReadOnlyList<CoreMessage>>(Error.ExternalService(
                 "AWS.SQS.Timeout", $"SQS operation timed out after {OperationTimeoutSeconds}s."));
         }
+        catch (QueueDoesNotExistException)
+        {
+            // The same answer Azure gives for a queue that is not there, so a caller never has to know which cloud it asked.
+            return Result.Failure<IReadOnlyList<CoreMessage>>(Error.NotFound(
+                ErrorCodes.Queue.NotFound, $"The queue, topic, or subscription '{request.EntityName}' was not found."));
+        }
         catch (AmazonSQSException ex)
         {
             _logger.LogError(ex, "SQS error peeking messages from {QueueName}", LogRedactor.SanitiseForLog(request.EntityName));
@@ -221,6 +228,12 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
             _logger.LogWarning("SQS DLQ peek timed out after {Seconds}s for queue {QueueName}", OperationTimeoutSeconds, LogRedactor.SanitiseForLog(request.EntityName));
             return Result.Failure<IReadOnlyList<CoreMessage>>(Error.ExternalService(
                 "AWS.SQS.Timeout", $"SQS DLQ operation timed out after {OperationTimeoutSeconds}s."));
+        }
+        catch (QueueDoesNotExistException)
+        {
+            // The same answer Azure gives for a queue that is not there, so a caller never has to know which cloud it asked.
+            return Result.Failure<IReadOnlyList<CoreMessage>>(Error.NotFound(
+                ErrorCodes.Queue.NotFound, $"The queue, topic, or subscription '{request.EntityName}' was not found."));
         }
         catch (AmazonSQSException ex)
         {

@@ -164,3 +164,24 @@ describe('AppLayout — the sidebar reflects what is connected', () => {
     expect(clouds()).toBeInTheDocument()
   })
 })
+
+describe('AppLayout — the menu on a narrow screen', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.localStorage.clear()
+  })
+
+  it('opens and closes the sidebar from a Menu button, and Esc closes it', async () => {
+    mocked.fetchNamespaces.mockResolvedValue([ns('azure', 1)])
+    renderApp()
+    const user = userEvent.setup()
+    const menu = await screen.findByRole('button', { name: 'Menu' })
+    expect(menu).toHaveAttribute('aria-expanded', 'false')
+    expect(menu).toHaveAttribute('aria-controls', 'main-nav')
+
+    await user.click(menu)
+    expect(menu).toHaveAttribute('aria-expanded', 'true')
+    await user.keyboard('{Escape}')
+    expect(menu).toHaveAttribute('aria-expanded', 'false')
+  })
+})

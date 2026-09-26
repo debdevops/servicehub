@@ -25,9 +25,10 @@ public sealed class SignaturesService : ISignaturesService
 
     /// <inheritdoc />
     public async Task<SignaturePage> ListAsync(
-        string ownerId, IReadOnlySet<Guid>? allowed, CloudProviderType? provider, int days, string? tab, string sort, int page, int pageSize, CancellationToken ct)
+        string ownerId, IReadOnlySet<Guid>? allowed, CloudProviderType? provider, int days, string? tab, string sort, int page, int pageSize, CancellationToken ct,
+        Guid? namespaceId = null, EnvironmentType? environment = null)
     {
-        var all = await BuildAsync(ownerId, allowed, provider, Math.Clamp(days, 1, 30), ct).ConfigureAwait(false);
+        var all = await BuildAsync(ownerId, allowed, provider, Math.Clamp(days, 1, 30), ct, namespaceId, environment).ConfigureAwait(false);
         IEnumerable<SignatureSummary> shown = tab switch
         {
             "growing" => all.Where(s => s.Growing),
@@ -53,18 +54,24 @@ public sealed class SignaturesService : ISignaturesService
     public async Task<SignatureSummary?> GetAsync(string ownerId, IReadOnlySet<Guid>? allowed, string hash, CloudProviderType provider, int days, CancellationToken ct) =>
         (await BuildAsync(ownerId, allowed, provider, Math.Clamp(days, 1, 30), ct).ConfigureAwait(false)).FirstOrDefault(s => s.SignatureHash == hash);
 
-    private async Task<List<SignatureSummary>> BuildAsync(string ownerId, IReadOnlySet<Guid>? allowed, CloudProviderType? provider, int days, CancellationToken ct)
+    private async Task<List<SignatureSummary>> BuildAsync(string ownerId, IReadOnlySet<Guid>? allowed, CloudProviderType? provider, int days, CancellationToken ct,
+        Guid? namespaceId = null, EnvironmentType? environment = null)
     {
-        var namespaceIds = await _db.Namespaces.AsNoTracking().Where(n => n.OwnerId == ownerId && (provider == null || n.Provider == provider))
-            .Select(n => n.Id).ToListAsync(ct).ConfigureAwait(false);
+        var scoped = await _db.Namespaces.AsNoTracking()
+            .Where(n => n.OwnerId == ownerId && (provider == null || n.Provider == provider)
+                && (namespaceId == null || n.Id == namespaceId) && (environment == null || n.Environment == environment))
+            .Select(n => new { n.Id, n.Name, n.DisplayName, n.Environment }).ToListAsync(ct).ConfigureAwait(false);
         if (allowed is not null)
         {
-            namespaceIds = [.. namespaceIds.Where(allowed.Contains)];
+            scoped = [.. scoped.Where(n => allowed.Contains(n.Id))];
         }
+
+        var namespaceIds = scoped.Select(n => n.Id).ToList();
+        var byNamespace = scoped.ToDictionary(n => n.Id);
 
         var messages = await _db.DlqMessages.AsNoTracking()
             .Where(m => m.OwnerId == ownerId && m.SignatureHash != null && namespaceIds.Contains(m.NamespaceId))
-            .Select(m => new { m.Id, m.SignatureHash, m.CloudProvider, m.EntityName, m.DetectedAtUtc, m.Status, m.DeadLetterReason, m.DeadLetterErrorDescription })
+            .Select(m => new { m.Id, m.NamespaceId, m.SignatureHash, m.CloudProvider, m.EntityName, m.DetectedAtUtc, m.Status, m.DeadLetterReason, m.DeadLetterErrorDescription })
             .ToListAsync(ct).ConfigureAwait(false);
 
         var byMessage = messages.ToDictionary(m => m.Id);
@@ -95,7 +102,11 @@ public sealed class SignaturesService : ISignaturesService
                 g.Key.Item1, g.Key.CloudProvider, first.DeadLetterReason ?? "Unknown", first.DeadLetterErrorDescription is { Length: > 300 } e ? e[..300] : first.DeadLetterErrorDescription,
                 [.. rows.Select(r => r.EntityName).Distinct().Order(StringComparer.Ordinal)], rows.Count, rows.Count(r => r.Status == DlqMessageStatus.Active),
                 first.DetectedAtUtc, newest.DetectedAtUtc, daily, recent >= 3 && recent >= 2 * Math.Max(1, earlier),
-                new SignatureReplays(mine.Count, fixedCount, returned, mine.Count - verified), verdict));
+                new SignatureReplays(mine.Count, fixedCount, returned, mine.Count - verified), verdict,
+                [.. rows.GroupBy(r => r.NamespaceId).Where(n => byNamespace.ContainsKey(n.Key))
+                    .Select(n => new SignatureNamespace(n.Key, byNamespace[n.Key].Name, byNamespace[n.Key].DisplayName, byNamespace[n.Key].Environment, n.Count()))
+                    // Production first: it is the environment a reader most needs to see it in.
+                    .OrderByDescending(n => n.Environment).ThenByDescending(n => n.Messages).ThenBy(n => n.Name, StringComparer.Ordinal)]));
         }
 
         return result;

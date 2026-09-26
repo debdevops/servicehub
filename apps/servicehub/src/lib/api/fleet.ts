@@ -38,6 +38,7 @@ export interface FleetNamespace {
 
 export interface FleetTopFailure {
   readonly provider: CloudProvider
+  readonly environment: EnvironmentKind
   readonly reason: string
   readonly count: number
 }

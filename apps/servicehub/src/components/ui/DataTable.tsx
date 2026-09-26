@@ -57,7 +57,7 @@ export function DataTable<Row>({
   const pad = compact ? 'px-3 py-2' : 'px-4 py-3'
 
   return (
-    <div className="overflow-x-auto">
+    <div className="relative overflow-x-auto">
       <table className="w-full border-collapse text-left text-sm">
         <caption className="sr-only">{caption}</caption>
         <thead>

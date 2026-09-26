@@ -21,7 +21,7 @@ function renderTab() {
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={['/?tab=replayed']}>
-        <ReplayedTab provider="azure" />
+        <ReplayedTab provider="azure" choice={{ ns: null, env: null, namespaces: [] }} />
       </MemoryRouter>
     </QueryClientProvider>,
   )

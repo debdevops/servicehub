@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { usePageSize } from '../../lib/pageSize'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { Hash, ScrollText, ShieldCheck, TriangleAlert, X } from 'lucide-react'
 import { Attribution } from '../../components/Attribution'
@@ -9,14 +10,19 @@ import { useExplainer } from '../../components/explainer/useExplainer'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { Pager } from '../../components/ui/Pager'
 import { useLedger, useLedgerEntry, useRecoverySummary } from '../../hooks/useRecoverySummary'
+import { usePendingWork } from '../../hooks/usePendingWork'
+import type { PendingWorkPage } from '../../lib/api/pendingWork'
+import { pendingRows } from '../../lib/pendingRows'
+import { PendingWorkList } from '../../components/pending/PendingWorkList'
 import { useNamespaces } from '../../hooks/useNamespaces'
+import { NamespaceScope } from '../../components/provider/NamespaceScope'
+import { namespaceTag, resolveScope } from '../../components/provider/scopeChoice'
 import { verifyChain, type ChainVerification, type EntryState, type LedgerEntry, type RecoveryWindow } from '../../lib/api/recovery'
 import { describeEvent, shortHash, stateChip, stateMeaning, stateTone } from '../../lib/ledgerWords'
 import { formatWhen } from '../../lib/format'
-import { connectedProviders, providerLabel } from '../../lib/providers'
-import type { CloudProvider } from '../../lib/api/namespaces'
+import { providerLabel } from '../../lib/providers'
+import type { CloudProvider, Namespace } from '../../lib/api/namespaces'
 
-const PAGE_SIZE = 10
 
 const windows: readonly { id: RecoveryWindow; label: string }[] = [
   { id: '24h', label: 'Last 24 hours' },
@@ -56,14 +62,20 @@ export default function RecoveryLedgerPage() {
   const namespaces = useNamespaces()
 
   const state = asState(params.get('state'))
+  // The Waiting tab (5.9) is not a ledger state: it is the pending work — every Declined entry still waiting for a person.
+  const waitingTab = params.get('state') === 'Waiting'
   const window = asWindow(params.get('window'))
   const provider = asProvider(params.get('provider'))
   const selected = params.get('entry')
   const page = Math.max(1, Number(params.get('page')) || 1)
+  const [pageSize, setPageSize] = usePageSize()
 
-  const summary = useRecoverySummary({ window, provider })
-  const ledger = useLedger({ window, provider, state, page, pageSize: PAGE_SIZE })
-  const clouds = connectedProviders(namespaces.data ?? [])
+  // The cloud picks which namespaces are on offer; `?ns=` / `?env=` narrow within them. A stale one is ignored.
+  const inScope = (namespaces.data ?? []).filter((n) => !provider || n.provider === provider)
+  const choice = resolveScope(inScope, params)
+  const narrow = { namespaceId: choice.ns?.id, environment: choice.env ?? undefined }
+  const summary = useRecoverySummary({ window, provider, ...narrow })
+  const ledger = useLedger({ window, provider, state, page, pageSize, ...narrow })
 
   const change = (patch: Record<string, string | null>) =>
     setParams((current) => {
@@ -76,6 +88,7 @@ export default function RecoveryLedgerPage() {
       return next
     }, { replace: true })
 
+  const waiting = usePendingWork({ provider, ...narrow })
   const countOf = (id: EntryState | 'All') => (id === 'All' ? summary.data?.total : summary.data?.states.find((s) => s.state === id)?.count)
 
   return (
@@ -88,14 +101,8 @@ export default function RecoveryLedgerPage() {
           </h1>
           <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">Every recovery action, who took it, the evidence, and how it ended. Append-only and tamper-evident.</p>
         </div>
-        <div className="flex gap-2 text-sm">
-          <label className="flex flex-col text-xs uppercase tracking-wide text-[var(--color-text-muted)]">
-            Scope
-            <select value={provider ?? ''} onChange={(e) => change({ provider: e.target.value })} className="mt-0.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm normal-case text-[var(--color-text)]">
-              <option value="">All clouds</option>
-              {clouds.map((c) => <option key={c.provider} value={c.provider}>{c.label} only</option>)}
-            </select>
-          </label>
+        <div className="flex flex-wrap items-end gap-2 text-sm">
+          {(namespaces.data?.length ?? 0) > 1 && <NamespaceScope namespaces={namespaces.data ?? []} cloud={provider ? providerLabel[provider] : 'All clouds'} cloudParam="provider" compact />}
           <label className="flex flex-col text-xs uppercase tracking-wide text-[var(--color-text-muted)]">
             Window
             <select value={window} onChange={(e) => change({ window: e.target.value === '24h' ? null : e.target.value })} className="mt-0.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm normal-case text-[var(--color-text)]">
@@ -110,8 +117,16 @@ export default function RecoveryLedgerPage() {
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
           <nav aria-label="Outcome" className="flex flex-wrap gap-1 border-b border-[var(--color-border)] px-2">
+            <button
+              type="button"
+              aria-current={waitingTab ? 'page' : undefined}
+              onClick={() => change({ state: 'Waiting' })}
+              className={`-mb-px border-b-2 px-3 py-2.5 text-sm ${waitingTab ? 'border-[#d97706] font-semibold' : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]'}`}
+            >
+              Waiting <span className="ml-1 rounded-full bg-[#fef3c7] px-2 py-0.5 text-xs text-[#92400e]">{waiting.data?.total ?? '…'}</span>
+            </button>
             {tabs.map((t) => {
-              const active = (t.id === 'All' && !state) || t.id === state
+              const active = !waitingTab && ((t.id === 'All' && !state) || t.id === state)
               const n = countOf(t.id)
               return (
                 <button
@@ -127,19 +142,20 @@ export default function RecoveryLedgerPage() {
             })}
           </nav>
 
-          {ledger.isPending && <p role="status" className="px-6 py-8 text-sm text-[var(--color-text-muted)]">Reading the ledger…</p>}
-          {ledger.isError && (
+          {waitingTab && <WaitingView page={waiting.data} pending={waiting.isPending} failed={waiting.isError} />}
+          {!waitingTab && ledger.isPending && <p role="status" className="px-6 py-8 text-sm text-[var(--color-text-muted)]">Reading the ledger…</p>}
+          {!waitingTab && ledger.isError && (
             <p role="alert" className="flex items-center gap-2 px-6 py-8 text-sm"><TriangleAlert className="h-4 w-4" aria-hidden="true" /> ServiceHub couldn’t read the ledger.
               <button type="button" onClick={() => void ledger.refetch()} className="text-[var(--color-primary-700)] hover:underline">Try again</button></p>
           )}
-          {ledger.data && (ledger.data.items.length === 0 ? (
+          {!waitingTab && ledger.data && (ledger.data.items.length === 0 ? (
             <p className="px-6 py-10 text-center text-sm text-[var(--color-text-muted)]">
               {state ? `No ${stateChip[state].toLowerCase()} entries in this window.` : 'No recovery actions in this window. When something is replayed, it is recorded here.'}
             </p>
           ) : (
             <>
-              <LedgerTable rows={ledger.data.items} selected={selected} onSelect={(id) => change({ entry: id })} />
-              <Pager page={ledger.data.page} pageSize={ledger.data.pageSize} total={ledger.data.total} filtered={!!state || !!provider} onPage={(p) => change({ page: String(p) })} />
+              <LedgerTable namespaces={namespaces.data ?? []} rows={ledger.data.items} selected={selected} onSelect={(id) => change({ entry: id })} />
+              <Pager page={ledger.data.page} pageSize={ledger.data.pageSize} total={ledger.data.total} filtered={!!state || !!provider} onPage={(p) => change({ page: String(p) })} onPageSize={(s) => { setPageSize(s); change({ page: null }) }} />
             </>
           ))}
           <p className="border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-muted)]">The chain starts at this server’s own genesis.</p>
@@ -151,14 +167,56 @@ export default function RecoveryLedgerPage() {
   )
 }
 
-function LedgerTable({ rows, selected, onSelect }: { rows: readonly LedgerEntry[]; selected: string | null; onSelect: (id: string) => void }) {
+/**
+ * The Waiting tab (5.9): everything the Agent stopped and asked about, with the gate's reason code — read-only. Each row's
+ * action is a LINK into Simple (the Approve modal, the rule, the agent), because Advanced never acts (ADR-0016 D3).
+ * Filterable by reason code; cloud and namespace come from the page's own scope.
+ */
+function WaitingView({ page, pending, failed }: { page: PendingWorkPage | undefined; pending: boolean; failed: boolean }) {
+  const [reason, setReason] = useState<string>('')
+  if (pending) return <p role="status" className="px-6 py-8 text-sm text-[var(--color-text-muted)]">Reading what is waiting…</p>
+  if (failed || !page) return <p role="alert" className="px-6 py-8 text-sm">ServiceHub couldn’t read what is waiting.</p>
+  const codes = [...new Set(page.items.map((i) => i.reasonCode))]
+  const rows = pendingRows(page.items.filter((i) => !reason || i.reasonCode === reason)).map((r) => ({
+    ...r,
+    action: r.action.href.startsWith('?') ? { label: r.kind === 'approval' ? 'Review in Simple ›' : 'Open in Simple ›', href: `/${r.action.href}` } : r.action,
+  }))
+  if (page.items.length === 0) {
+    return <p className="px-6 py-10 text-center text-sm text-[var(--color-text-muted)]">Nothing is waiting for a person. When the Agent stops and asks, it appears here and in the bell.</p>
+  }
+  return (
+    <div>
+      {codes.length > 1 && (
+        <label className="flex items-center gap-2 px-5 pt-3 text-xs text-[var(--color-text-muted)]">
+          Reason
+          <select value={reason} onChange={(e) => setReason(e.target.value)} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-sm text-[var(--color-text)]">
+            <option value="">All reasons</option>
+            {codes.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+      )}
+      <PendingWorkList rows={rows} now={new Date()} primaryFirst={false} />
+      <p className="border-t border-[var(--color-border)] px-5 py-2 text-xs text-[var(--color-text-muted)]">Nothing here acts: approving happens in Simple, through the same safety checks as any replay.</p>
+    </div>
+  )
+}
+
+function LedgerTable({ rows, namespaces, selected, onSelect }: { rows: readonly LedgerEntry[]; namespaces: readonly Namespace[]; selected: string | null; onSelect: (id: string) => void }) {
   const now = new Date()
+  // An entry records its namespace by name. Two clouds can each own an `orders`, so the match needs the cloud too, and an
+  // ambiguous or unknown name is shown as recorded rather than guessed at.
+  const tagOf = (r: LedgerEntry): string => {
+    if (!r.namespaceName) return '—'
+    const hits = namespaces.filter((n) => n.provider === r.provider && (n.name === r.namespaceName || n.displayName === r.namespaceName))
+    return hits.length === 1 ? namespaceTag(hits[0]) : r.namespaceName
+  }
   const help = columnHelp.ledger
   const columns: Column<LedgerEntry>[] = [
-    { key: 'time', header: 'Time', info: help.time, className: 'whitespace-nowrap', render: (r) => formatWhen(r.beganAt, now) },
+    { key: 'time', header: 'Time', info: help.time, className: 'whitespace-nowrap', render: (r) => formatWhen(r.begunAt, now) },
     { key: 'entity', header: 'Queue or topic', info: help.entity, render: (r) => <EntityCell size="sm" entityName={r.entityName} entityType={r.entityName.includes('/') ? 'subscription' : 'queue'} /> },
     { key: 'cloud', header: 'Cloud', info: help.cloud, render: (r) => (r.provider ? providerLabel[r.provider] : '—') },
-    { key: 'by', header: 'By', info: help.by, render: (r) => <Attribution actor={r.actor} at={r.beganAt} compact /> },
+    { key: 'ns', header: 'Namespace', info: help.namespace, render: (r) => tagOf(r) },
+    { key: 'by', header: 'By', info: help.by, render: (r) => <Attribution actor={r.actor} at={r.begunAt} compact /> },
     { key: 'what', header: 'What', info: help.what, className: 'whitespace-nowrap', render: (r) => `${r.kind} · 1 message` },
     { key: 'outcome', header: 'Outcome', info: help.outcome, render: (r) => <StateChip state={r.state} /> },
     { key: 'match', header: 'Match', info: help.match, render: (r) => r.confidence ?? '—' },
@@ -167,7 +225,7 @@ function LedgerTable({ rows, selected, onSelect }: { rows: readonly LedgerEntry[
       header: 'Details',
       info: help.open,
       render: (r) => (
-        <button type="button" aria-pressed={selected === r.id} aria-label={`Details of ledger entry from ${formatWhen(r.beganAt, now)}`} onClick={() => onSelect(r.id)}
+        <button type="button" aria-pressed={selected === r.id} aria-label={`Details of ledger entry from ${formatWhen(r.begunAt, now)}`} onClick={() => onSelect(r.id)}
           className="font-medium text-[var(--color-primary-700)] hover:underline">
           Details →
         </button>
@@ -229,7 +287,7 @@ function EntryPanel({ id, onClose }: { id: string | null; onClose: () => void })
       </div>
 
       <div className="space-y-4 p-4 text-sm">
-        <section aria-label="Who"><h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Who</h3><Attribution actor={e.actor} at={e.beganAt} verb={e.kind === 'Purge' ? 'Purged' : 'Replayed'} /></section>
+        <section aria-label="Who"><h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Who</h3><Attribution actor={e.actor} at={e.begunAt} verb={e.kind === 'Purge' ? 'Purged' : 'Replayed'} /></section>
 
         <section aria-label="What happened">
           <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">What happened</h3>

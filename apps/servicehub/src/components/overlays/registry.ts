@@ -20,6 +20,7 @@ export const overlayBodies: Readonly<Record<string, LazyExoticComponent<Componen
   replay: lazy(() => import('../message/ReplayModal')),
   'auto-replay': lazy(() => import('../rules/AutoReplayPanel')),
   'bulk-replay': lazy(() => import('../message/BulkReplayModal')),
+  approve: lazy(() => import('../approve/ApproveModal')),
 }
 
 /** Every modal and panel the navigation array lists — the registry test checks `overlayBodies` against it. */
@@ -29,4 +30,4 @@ export const overlayEntries = navigation.filter((e): e is OverlayEntry => e.kind
  * Extra query parameters an overlay reads (`?cloud=` preselects a cloud in Add a cloud). They belong
  * to the overlay, so closing it removes them too — otherwise a closed modal leaves debris in the URL.
  */
-export const overlayCompanionParams: readonly string[] = ['cloud', 'job', 'rule']
+export const overlayCompanionParams: readonly string[] = ['cloud', 'job', 'rule', 'group', 'entry']

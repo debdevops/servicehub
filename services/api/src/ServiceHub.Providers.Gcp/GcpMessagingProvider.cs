@@ -252,6 +252,12 @@ public sealed class GcpMessagingProvider : ICloudMessagingProvider
 
             return Result.Success<IReadOnlyList<CloudEntity>>(entities);
         }
+        catch (Grpc.Core.RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.Cancelled && ct.IsCancellationRequested)
+        {
+            // The browser navigated away mid-request. Rethrown as a cancellation so the middleware answers it quietly,
+            // instead of logging a caller leaving as a provider failure with a stack trace.
+            throw new OperationCanceledException("Pub/Sub listing cancelled by client.", ex, ct);
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Error listing GCP Pub/Sub entities for namespace {NamespaceId}", namespaceId);

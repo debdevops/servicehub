@@ -12,7 +12,7 @@ public interface IRulesService
     Task<IReadOnlyList<RuleView>> ListAsync(string ownerId, CloudProviderType provider, CancellationToken ct);
 
     /// <summary>Failures seen recently that a rule could be made from (one row per signature).</summary>
-    Task<IReadOnlyList<RuleSource>> SourcesAsync(string ownerId, CloudProviderType provider, CancellationToken ct);
+    Task<IReadOnlyList<RuleSource>> SourcesAsync(string ownerId, IReadOnlySet<Guid>? allowed, CloudProviderType provider, CancellationToken ct);
 
     /// <summary>Makes a rule. It starts on.</summary>
     Task<Result<RuleView>> CreateAsync(string ownerId, CloudProviderType provider, string name, string? reason, string? entity, string? signatureHash, int maxPerHour, int waitSeconds, bool backOff, CancellationToken ct);

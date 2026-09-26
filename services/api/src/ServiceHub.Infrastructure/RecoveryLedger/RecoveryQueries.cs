@@ -112,6 +112,12 @@ public sealed class RecoveryQueries : IRecoveryQueries
             query = query.Where(e => e.ProviderSnapshot == provider);
         }
 
+        // The environment the namespace was in when the recovery began — so the evidence stays under the label it was made under.
+        if (scope.Environment is { } environment)
+        {
+            query = query.Where(e => e.EnvironmentSnapshot == environment);
+        }
+
         if (SinceOf(window) is { } since)
         {
             query = query.Where(e => e.BegunAt >= since);
@@ -168,5 +174,16 @@ public sealed class RecoveryQueries : IRecoveryQueries
             : identity.StartsWith("System:", StringComparison.Ordinal) ? "system"
             : "user";
         return new ReplayActor(identity, kind, RecoveryActorLabel.For(identity), RecoveryActorLabel.IsSession(identity));
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<RecoveryEvent>> EventsByActorAsync(string ownerId, string actor, int limit, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(actor);
+        var events = _db.RecoveryEvents.AsNoTracking().Where(e => e.OwnerId == ownerId);
+        events = actor.EndsWith(':')
+            ? events.Where(e => e.ActorIdentity.StartsWith(actor))
+            : events.Where(e => e.ActorIdentity == actor);
+        return await events.OrderByDescending(e => e.Seq).Take(Math.Clamp(limit, 1, 200)).ToListAsync(cancellationToken).ConfigureAwait(false);
     }
 }

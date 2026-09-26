@@ -5,6 +5,7 @@ using Google.Cloud.PubSub.V1;
 using Google.Protobuf;
 using Microsoft.Extensions.Logging;
 using Polly;
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
@@ -141,6 +142,12 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
             // handling (499, no error-level log) takes over instead of this becoming a misleading 502.
             throw new OperationCanceledException("Pub/Sub peek cancelled by client.", ex, cancellationToken);
         }
+        catch (Grpc.Core.RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.NotFound)
+        {
+            // The same answer Azure gives for a queue that is not there, so a caller never has to know which cloud it asked.
+            return Result.Failure<IReadOnlyList<Message>>(Error.NotFound(
+                ErrorCodes.Queue.NotFound, $"The queue, topic, or subscription '{request.EntityName}' was not found."));
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Error peeking Pub/Sub messages from {Subscription}", LogRedactor.SanitiseForLog(request.EntityName));
@@ -209,6 +216,12 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
             }
 
             throw new OperationCanceledException("Pub/Sub DLQ peek cancelled by client.", ex, cancellationToken);
+        }
+        catch (Grpc.Core.RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.NotFound)
+        {
+            // The same answer Azure gives for a queue that is not there, so a caller never has to know which cloud it asked.
+            return Result.Failure<IReadOnlyList<Message>>(Error.NotFound(
+                ErrorCodes.Queue.NotFound, $"The queue, topic, or subscription '{subscriptionId}' was not found."));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

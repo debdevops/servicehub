@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { CloudProvider } from './namespaces'
+import type { CloudProvider, EnvironmentKind } from './namespaces'
 
 /**
  * One dead letter ServiceHub has seen — the durable list, not a live peek. There is no body here:
@@ -41,9 +41,17 @@ export interface DeadLetterPage {
 
 export type DeadLetterRange = '24h' | '7d' | '30d' | 'all'
 
+/** Narrows a cloud's trend to one namespace or one environment. */
+export interface TrendScope {
+  readonly namespaceId?: string
+  readonly environment?: EnvironmentKind
+}
+
 export interface DeadLetterQuery {
   readonly provider?: CloudProvider
   readonly namespaceId?: string
+  /** Only namespaces of this environment — the Environment level of the scope picker. */
+  readonly environment?: EnvironmentKind
   readonly status?: 'active' | 'resolved' | 'all'
   readonly range?: DeadLetterRange
   readonly reason?: string
@@ -106,6 +114,6 @@ export interface DeadLetterTrend {
   readonly series: readonly TrendDay[]
 }
 
-export async function fetchDeadLetterTrend(provider: CloudProvider, days: number): Promise<DeadLetterTrend> {
-  return (await api.get<DeadLetterTrend>('/dead-letters/trend', { params: { provider: providerParam(provider), days } })).data
+export async function fetchDeadLetterTrend(provider: CloudProvider, days: number, narrow: TrendScope = {}): Promise<DeadLetterTrend> {
+  return (await api.get<DeadLetterTrend>('/dead-letters/trend', { params: { provider: providerParam(provider), days, namespaceId: narrow.namespaceId, environment: narrow.environment } })).data
 }

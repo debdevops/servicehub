@@ -3,6 +3,8 @@ import { useSearchParams } from 'react-router-dom'
 import type { OverlayBodyProps } from '../overlays/registry'
 import { useDeadLetter } from '../../hooks/useDeadLetter'
 import { useMe } from '../../hooks/useIdentity'
+import { permission } from '../../lib/permissions'
+import { NotAllowed } from '../ui/NotAllowed'
 import { useReplay, useReplayProposal } from '../../hooks/useReplay'
 import { explainFailure } from '../../lib/analyzer'
 import type { ReplayCheck, ReplayOutcome, ReplayProposal } from '../../lib/api/replay'
@@ -47,11 +49,15 @@ export default function ReplayModal({ close }: OverlayBodyProps) {
 
   const p = proposal.data
   const explanation = message.data
-    ? explainFailure(message.data.item.deadLetterReason, message.data.item.deadLetterErrorDescription, message.data.item.deliveryCount)
+    ? explainFailure(message.data.item.deadLetterReason, message.data.item.deadLetterErrorDescription, message.data.item.deliveryCount, {
+        body: message.data.bodyPreview,
+        propertiesJson: message.data.applicationPropertiesJson,
+      })
     : null
   const mayFailAgain = !!explanation?.failingField || p.priorAttempts > 0
   const cloud = providerLabel[p.provider]
   const needAttention = p.checks.filter((c) => c.state !== 'passed').length
+  const may = permission(me.data, 'Operator', 'replay this message', { recover: true, namespaceId: message.data?.item.namespaceId })
 
   return (
     <div className="space-y-5">
@@ -135,7 +141,7 @@ export default function ReplayModal({ close }: OverlayBodyProps) {
           <button type="button" onClick={close} className="rounded-xl border border-[var(--color-border)] px-4 py-2 text-sm font-semibold">Cancel</button>
           <button
             type="button"
-            disabled={!p.canExecute || replay.isPending}
+            disabled={!p.canExecute || !may.allowed || replay.isPending}
             onClick={() => replay.mutate(p.dlqMessageId)}
             className="flex items-center gap-2 rounded-xl bg-[var(--color-primary-600)] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -143,6 +149,7 @@ export default function ReplayModal({ close }: OverlayBodyProps) {
           </button>
         </div>
       </footer>
+      <NotAllowed reason={may.reason} />
     </div>
   )
 }

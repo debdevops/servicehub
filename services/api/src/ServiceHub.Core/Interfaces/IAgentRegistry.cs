@@ -19,4 +19,7 @@ public interface IAgentRegistry
     /// it <b>will not act</b>. Returns false when no agent has that id.
     /// </summary>
     bool SetPaused(string agentId, bool paused);
+
+    /// <summary>The agent's most recent cycles, newest first (at most a few dozen, since the process started).</summary>
+    IReadOnlyList<AgentCycleRecord> RecentCycles(string agentId);
 }

@@ -1,4 +1,5 @@
 import { api } from './client'
+import type { CloudProvider, EnvironmentKind } from './namespaces'
 
 /** An actor as a person reads it. */
 export interface Actor {
@@ -17,9 +18,18 @@ export interface Me {
   /** `session` when nothing is configured; otherwise `EasyAuth`, `Oidc` or `ApiKey`. */
   readonly authMethod: string
   readonly actor: Actor
-  /** Null means "not restricted by role", never "no access". */
-  readonly effectiveRole: string | null
+  /** The fleet-wide governance role — Admin while governance is inactive. Null: governance is on and nothing is granted. */
+  readonly effectiveRole: Role | null
+  /** True once any grant has ever existed; until then everyone is Admin. */
+  readonly governanceActive?: boolean
+  /** Who can grant roles (Admins), as people read them. */
+  readonly grantors?: readonly string[]
+  /** The role for recovery actions (replay, approve…) fleet-wide, and per namespace — a namespace grant can add to it. */
+  readonly recoverRole?: Role | null
+  readonly namespaceRecoverRoles?: Readonly<Record<string, Role | null>>
 }
+
+export type Role = 'Viewer' | 'Operator' | 'Approver' | 'Admin'
 
 export async function fetchMe(): Promise<Me> {
   return (await api.get<Me>('/me')).data
@@ -52,10 +62,12 @@ export interface AuditFilter {
   readonly page?: number
   readonly pageSize?: number
   readonly namespaceId?: string
+  readonly provider?: CloudProvider
+  readonly environment?: EnvironmentKind
   readonly action?: string
 }
 
 /** The durable history Home's Recent Activity reads, newest first. */
 export async function fetchAudit(filter: AuditFilter = {}): Promise<AuditPage> {
-  return (await api.get<AuditPage>('/audit', { params: filter })).data
+  return (await api.get<AuditPage>('/audit', { params: { ...filter, provider: filter.provider ? { azure: 'Azure', aws: 'Aws', gcp: 'Gcp' }[filter.provider] : undefined } })).data
 }

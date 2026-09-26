@@ -1,8 +1,12 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { Menu } from 'lucide-react'
 import { CloudProviders } from '../components/provider/CloudProviders'
 import { ProviderScopeProvider } from '../components/provider/ProviderScopeProvider'
 import { SurfaceSwitch } from '../components/ui/SurfaceSwitch'
+import { Bell } from '../components/pending/Bell'
+import { usePendingWork } from '../hooks/usePendingWork'
+import { EscalationToast } from '../components/pending/EscalationToast'
 import { OverlayHost } from '../components/overlays/OverlayHost'
 import { useEventStream } from '../hooks/useEventStream'
 import { useNamespaces } from '../hooks/useNamespaces'
@@ -35,6 +39,17 @@ export function AppLayout() {
   const onSurface = entries.filter((e) => e.surface === surface)
   useEffect(() => rememberAdvancedPath(pathname), [pathname])
 
+  // Below the large breakpoint the sidebar is a slide-in menu; choosing anything closes it.
+  const [menuOpen, setMenuOpen] = useState(false)
+  const { search } = useLocation()
+  useEffect(() => setMenuOpen(false), [pathname, search])
+  useEffect(() => {
+    if (!menuOpen) return
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setMenuOpen(false)
+    document.addEventListener('keydown', esc)
+    return () => document.removeEventListener('keydown', esc)
+  }, [menuOpen])
+
   return (
     <ProviderScopeProvider connected={providers.map((p) => p.provider)}>
       <LandingRedirect ready={loaded} connectedCloudCount={cloudCount} />
@@ -43,6 +58,16 @@ export function AppLayout() {
           className="sticky top-0 z-20 flex items-center gap-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5"
           style={{ height: 'var(--header-height)' }}
         >
+          <button
+            type="button"
+            aria-label="Menu"
+            aria-expanded={menuOpen}
+            aria-controls="main-nav"
+            onClick={() => setMenuOpen((o) => !o)}
+            className="-ml-2 rounded-lg p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)] lg:hidden"
+          >
+            <Menu className="h-5 w-5" aria-hidden="true" />
+          </button>
           <div className="flex items-center gap-2.5">
             <span
               aria-hidden="true"
@@ -55,12 +80,13 @@ export function AppLayout() {
               <div className="text-[17px] font-extrabold leading-[1.1] tracking-tight text-[var(--color-text)]">
                 Service<span className="text-[var(--color-primary-600)]">Hub</span>
               </div>
-              <div className="whitespace-nowrap text-[10.5px] leading-[1.2] text-[var(--color-text-muted)]">
+              <div className="hidden whitespace-nowrap text-[10.5px] leading-[1.2] text-[var(--color-text-muted)] sm:block">
                 See messages. Fix issues. Keep systems moving.
               </div>
             </div>
           </div>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            {loaded && cloudCount > 0 && <Bell />}
             <SurfaceSwitch
               surface={surface}
               simpleHref={landingPath(cloudCount)}
@@ -70,9 +96,11 @@ export function AppLayout() {
         </header>
 
         <div className="flex">
+          {menuOpen && <div className="fixed inset-0 z-20 bg-black/30 lg:hidden" aria-hidden="true" onClick={() => setMenuOpen(false)} />}
           <nav
+            id="main-nav"
             aria-label="Main"
-            className="sticky shrink-0 overflow-y-auto border-r border-[var(--color-border)] bg-[var(--color-surface)] px-3 pb-[18px] pt-3.5"
+            className={`sticky shrink-0 overflow-y-auto max-lg:fixed max-lg:left-0 max-lg:z-30 max-lg:transition-transform ${menuOpen ? '' : 'max-lg:invisible max-lg:-translate-x-full'} border-r border-[var(--color-border)] bg-[var(--color-surface)] px-3 pb-[18px] pt-3.5`}
             style={{
               width: 'var(--sidebar-width)',
               top: 'var(--header-height)',
@@ -85,7 +113,7 @@ export function AppLayout() {
 
             {surface === 'simple' && (
             <div className="mb-6">
-              <h2 className="px-2 pb-[7px] pt-[18px] text-[10px] font-bold uppercase tracking-[0.9px] text-[#9ca3af]">
+              <h2 className="px-2 pb-[7px] pt-[18px] text-[10px] font-bold uppercase tracking-[0.9px] text-[var(--color-text-muted)]">
                 Clouds
               </h2>
               {namespaces.isPending && <p className="px-3 py-2 text-sm text-[var(--color-text-muted)]">Loading your clouds…</p>}
@@ -113,7 +141,7 @@ export function AppLayout() {
               <div className="mt-0.5 text-[11px] leading-[1.4] text-[var(--color-text-muted)]">
                 See messages. Fix issues. Keep your systems moving.
               </div>
-              <div className="mt-2 font-mono text-[10px] text-[#9ca3af]">
+              <div className="mt-2 font-mono text-[10px] text-[var(--color-text-muted)]">
                 v{import.meta.env.VITE_APP_VERSION}
               </div>
             </div>
@@ -126,6 +154,7 @@ export function AppLayout() {
 
         <OverlayHost connectedCloudCount={cloudCount} />
       </div>
+      {loaded && cloudCount > 0 && <EscalationToast />}
     </ProviderScopeProvider>
   )
 }
@@ -134,6 +163,13 @@ const itemClass = 'mb-0.5 flex items-center gap-[11px] rounded-[9px] px-[13px] p
 const idleClass = 'text-[#374151] hover:bg-[var(--color-primary-50)] hover:text-[var(--color-primary-700)]'
 const activeClass = 'font-semibold text-white shadow-[0_2px_6px_rgba(2,132,199,0.3)] [background:linear-gradient(100deg,#0284c7,#0369a1)]'
 
+/** The Ledger's sidebar badge: how many things wait for a person — the bell's count, from the same query (5.9). */
+function WaitingBadge() {
+  const { data } = usePendingWork()
+  if (!data?.total) return null
+  return <span className="ml-auto whitespace-nowrap rounded-full bg-[#fef3c7] px-2 py-0.5 text-[11px] font-semibold text-[#92400e]" title={`${data.total} waiting for a person`}>{data.total} waiting</span>
+}
+
 function NavSection({ label, entries, bare }: { label?: string; entries: readonly NavEntry[]; bare?: boolean }) {
   const { pathname, search } = useLocation()
   if (entries.length === 0) return null
@@ -141,7 +177,7 @@ function NavSection({ label, entries, bare }: { label?: string; entries: readonl
   return (
     <div className={bare ? '' : 'mb-6'}>
       {label && (
-        <h2 className="px-2 pb-[7px] pt-[18px] text-[10px] font-bold uppercase tracking-[0.9px] text-[#9ca3af]">
+        <h2 className="px-2 pb-[7px] pt-[18px] text-[10px] font-bold uppercase tracking-[0.9px] text-[var(--color-text-muted)]">
           {label}
         </h2>
       )}
@@ -159,6 +195,7 @@ function NavSection({ label, entries, bare }: { label?: string; entries: readonl
               >
                 <entry.icon className="h-4 w-4 shrink-0" />
                 {entry.label}
+                {entry.id === 'ledger' && <WaitingBadge />}
               </NavLink>
             ) : (
               // Tabs, panels and modals are URL states on a page, not routes (D45). Opening a panel or

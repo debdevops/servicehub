@@ -63,7 +63,7 @@ export function StatTile({
         <Link to={to} className="text-[11.5px] font-semibold text-[var(--color-primary-600)] hover:underline">
           {action} →
         </Link>
-        <span className="text-[11.5px] text-[#9ca3af]">{note}</span>
+        <span className="text-[11.5px] text-[var(--color-text-muted)]">{note}</span>
       </div>
     </div>
   )

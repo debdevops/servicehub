@@ -218,6 +218,24 @@ public sealed class GcpMessagingProviderTests
         result.Error.Code.Should().Be("NS.NotFound");
     }
 
+    [Fact]
+    public async Task ListEntitiesAsync_WhenTheClientLeavesMidCall_IsACancellation_NotAProviderFailure()
+    {
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>())).ReturnsAsync(Result.Success(ns));
+        var factory = new Mock<IGcpClientFactory>();
+        factory.Setup(f => f.GetSubscriberClientAsync(It.IsAny<Namespace>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Grpc.Core.RpcException(new Grpc.Core.Status(Grpc.Core.StatusCode.Cancelled, "Call canceled by the client.")));
+        var provider = BuildProvider(repo: repo.Object, factory: factory.Object);
+        using var gone = new CancellationTokenSource();
+        await gone.CancelAsync();
+
+        var act = () => provider.ListEntitiesAsync(TestNamespaceId, gone.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // ListEntitiesAsync — GcpProjectId missing
     // ─────────────────────────────────────────────────────────────────────────

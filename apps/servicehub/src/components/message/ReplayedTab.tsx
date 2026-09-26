@@ -1,8 +1,10 @@
+import { usePageSize } from '../../lib/pageSize'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { TriangleAlert } from 'lucide-react'
 import { Pager } from '../ui/Pager'
 import { DataTable, type Column } from '../ui/DataTable'
 import { WorkTabs } from './WorkTabs'
+import type { ScopeChoice } from '../provider/scopeChoice'
 import { ReplayedNumbers } from './ReplayedNumbers'
 import { Attribution } from '../Attribution'
 import { columnHelp } from '../../content/columns'
@@ -13,7 +15,6 @@ import type { CloudProvider } from '../../lib/api/namespaces'
 import { formatWhen } from '../../lib/format'
 import { providerLabel } from '../../lib/providers'
 
-const PAGE_SIZE = 25
 
 const results = [
   { id: '', label: 'Any result' },
@@ -55,13 +56,14 @@ function Chip({ tone, children }: { tone: 'neutral' | 'error' | 'warning' | 'suc
  * table (replayed today · stayed fixed · being watched · came back) come from the one recovery summary the
  * Advanced ledger reads too (unit 2.12).
  */
-export function ReplayedTab({ provider }: { provider: CloudProvider }) {
+export function ReplayedTab({ provider, choice }: { provider: CloudProvider; choice: ScopeChoice }) {
   const cloud = providerLabel[provider]
   const [params, setParams] = useSearchParams()
   const { search } = useLocation()
   const page = Math.max(1, Number(params.get('page')) || 1)
+  const [pageSize, setPageSize] = usePageSize()
   const result = (['accepted', 'rejected', 'unknown'] as const).find((r) => r === params.get('result'))
-  const { data, isPending, isError, refetch } = useReplays({ provider, result, page, pageSize: PAGE_SIZE })
+  const { data, isPending, isError, refetch } = useReplays({ provider, namespaceId: choice.ns?.id, environment: choice.env ?? undefined, result, page, pageSize })
   const now = new Date()
 
   const change = (patch: Record<string, string | null>) =>
@@ -108,7 +110,7 @@ export function ReplayedTab({ provider }: { provider: CloudProvider }) {
         <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">Everything that was put back, by whom, and how it went.</p>
       </header>
 
-      <ReplayedNumbers provider={provider} />
+      <ReplayedNumbers provider={provider} choice={choice} />
       <WorkTabs current="replayed" />
 
       {isPending && <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading replays…</p>}
@@ -138,7 +140,7 @@ export function ReplayedTab({ provider }: { provider: CloudProvider }) {
             ) : (
               <>
                 <DataTable caption="Replays, newest first" columns={columns} rows={data.items} rowKey={(r) => String(r.id)} />
-                <Pager page={data.page} pageSize={data.pageSize} total={data.total} filtered={!!result} onPage={(p) => change({ page: String(p) })} />
+                <Pager page={data.page} pageSize={data.pageSize} total={data.total} filtered={!!result} onPage={(p) => change({ page: String(p) })} onPageSize={(s) => { setPageSize(s); change({ page: null }) }} />
               </>
             )}
           </div>

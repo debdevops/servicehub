@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using ServiceHub.Core.Enums;
 using ServiceHub.Api.Security;
 using ServiceHub.Core.Constants;
 using ServiceHub.Core.Interfaces;
@@ -24,6 +25,7 @@ public sealed class BulkOperationsController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Preview([FromBody] PreviewRequest request, CancellationToken cancellationToken)
     {
+        if (await DeniedUnlessAsync(GovernanceRole.Operator, null, PillarKind.Recover, "prepare a bulk replay", cancellationToken) is { } denied) return denied;
         var result = await _bulk.PreviewAsync(OwnerId, AllowedNamespaceIds, Actor, request?.DlqMessageIds ?? [], cancellationToken);
         return result.IsFailure ? Problem(result.Error) : Ok(result.Value);
     }
@@ -41,6 +43,7 @@ public sealed class BulkOperationsController : ApiControllerBase
             return Problem(StatusCodes.Status400BadRequest, ErrorCodes.IntentRequired, IntentHeaders.MissingDetail("replay these messages", IntentHeaders.BulkReplay));
         }
 
+        if (await DeniedUnlessAsync(GovernanceRole.Operator, null, PillarKind.Recover, "replay these messages", cancellationToken) is { } denied) return denied;
         var result = await _bulk.StartAsync(OwnerId, request.PreviewId, request.SampleOnly, cancellationToken);
         return result.IsFailure ? Problem(result.Error) : Accepted(result.Value);
     }
@@ -61,6 +64,7 @@ public sealed class BulkOperationsController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Cancel(Guid id, CancellationToken cancellationToken)
     {
+        if (await DeniedUnlessAsync(GovernanceRole.Operator, null, PillarKind.Recover, "stop a bulk replay", cancellationToken) is { } denied) return denied;
         var result = await _bulk.CancelAsync(OwnerId, id, cancellationToken);
         return result.IsFailure ? Problem(result.Error) : Ok(result.Value);
     }

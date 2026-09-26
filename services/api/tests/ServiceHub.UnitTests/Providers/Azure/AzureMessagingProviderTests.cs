@@ -213,19 +213,60 @@ public sealed class AzureMessagingProviderTests
     }
 
     [Fact]
-    public async Task ValidateConnectionAsync_DelegatesToClientFactory()
+    public async Task ValidateConnectionAsync_DecryptsChecksTheFormatThenProbesTheNamespace()
     {
         var ns = BuildNamespace();
         var factory = new Mock<IServiceBusClientFactory>();
-        factory.Setup(f => f.CreateClientAsync(ns, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result.Success());
+        factory.Setup(f => f.ValidateConnectionString(PlainConnectionString)).Returns(Result.Success());
+        var wrapper = new Mock<IServiceBusClientWrapper>();
+        wrapper.Setup(w => w.GetQueuesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<QueueRuntimePropertiesDto>>.Success([]));
+        var cache = new Mock<IServiceBusClientCache>();
+        cache.Setup(c => c.GetOrCreate(ns.Id, PlainConnectionString)).Returns(wrapper.Object);
 
-        var provider = BuildProvider(clientFactory: factory.Object);
+        var provider = BuildProvider(clientFactory: factory.Object, protector: BuildProtector().Object, clientCache: cache.Object);
 
         var result = await provider.ValidateConnectionAsync(ns, CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        factory.Verify(f => f.CreateClientAsync(ns, It.IsAny<CancellationToken>()), Times.Once);
+        // The format check sees the decrypted string, never the stored ciphertext.
+        factory.Verify(f => f.ValidateConnectionString(PlainConnectionString), Times.Once);
+        wrapper.Verify(w => w.GetQueuesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ValidateConnectionAsync_WhenTheFormatIsWrong_FailsWithoutCallingTheNamespace()
+    {
+        var factory = new Mock<IServiceBusClientFactory>();
+        factory.Setup(f => f.ValidateConnectionString(It.IsAny<string>()))
+            .Returns(Result.Failure(Error.Validation(ErrorCodes.Namespace.ConnectionStringRequired, "not a connection string")));
+        var cache = new Mock<IServiceBusClientCache>();
+
+        var provider = BuildProvider(clientFactory: factory.Object, protector: BuildProtector().Object, clientCache: cache.Object);
+
+        var result = await provider.ValidateConnectionAsync(BuildNamespace(), CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        cache.Verify(c => c.GetOrCreate(It.IsAny<Guid>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ValidateConnectionAsync_WhenTheProbeFails_ReportsTheFailure()
+    {
+        var factory = new Mock<IServiceBusClientFactory>();
+        factory.Setup(f => f.ValidateConnectionString(It.IsAny<string>())).Returns(Result.Success());
+        var wrapper = new Mock<IServiceBusClientWrapper>();
+        wrapper.Setup(w => w.GetQueuesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IReadOnlyList<QueueRuntimePropertiesDto>>.Failure(Error.ExternalService(ErrorCodes.Queue.ListFailed, "unauthorised")));
+        var cache = new Mock<IServiceBusClientCache>();
+        cache.Setup(c => c.GetOrCreate(It.IsAny<Guid>(), It.IsAny<string>())).Returns(wrapper.Object);
+
+        var provider = BuildProvider(clientFactory: factory.Object, protector: BuildProtector().Object, clientCache: cache.Object);
+
+        var result = await provider.ValidateConnectionAsync(BuildNamespace(), CancellationToken.None);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be(ErrorCodes.Queue.ListFailed);
     }
 
     // ─────────────────────────────────────────────────────────────────────────

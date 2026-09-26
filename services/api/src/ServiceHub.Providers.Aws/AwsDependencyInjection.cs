@@ -37,8 +37,8 @@ public static class AwsDependencyInjection
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<ICloudMessagingProvider, AwsMessagingProvider>());
 
-        // DlqObserver/DynamoDbObserverLogReader is deliberately NOT registered: the observer is a
-        // later unit, and until it is wired nothing may claim an observer is attached.
+        // Reads the DLQ observer's log (DynamoDB) so a canary's arrival can be confirmed (unit 4.2, ADR-0011).
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IDlqObserverLogReader, DlqObserver.DynamoDbObserverLogReader>());
 
         // Register the AWS health check so the /health/dependencies endpoint validates SQS
         // connectivity. Tagged "dependencies", not "ready" — an unreachable AWS namespace is an

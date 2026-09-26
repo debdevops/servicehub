@@ -1,9 +1,11 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { Eye, RefreshCw } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { ExplainerCard, ExplainerToggle } from '../explainer/Explainer'
 import { useExplainer } from '../explainer/useExplainer'
+import { Pager } from '../ui/Pager'
+import { usePageSize } from '../../lib/pageSize'
 import { DataTable, type Column } from '../ui/DataTable'
 import { columnHelp } from '../../content/columns'
 import { EntityCell } from './EntityCell'
@@ -13,9 +15,11 @@ import { fetchEntities, type CloudProvider, type Entity, type Namespace } from '
 import { peekMessages, type Message } from '../../lib/api/messages'
 import { formatAge, formatBytes, formatWhen } from '../../lib/format'
 import { providerLabel } from '../../lib/providers'
+import { environmentOrder, namespaceTag } from '../provider/scopeChoice'
 import { namespaceKeys } from '../../hooks/useNamespaces'
 
-const PAGE = 25
+/** A peek is one request for up to this many of the oldest messages (the API's ceiling); the grid pages through them locally. */
+const PEEK_MAX = 100
 
 /**
  * Home's `?tab=active`: what is in flight right now. The same table as Dead letters, drawn with Active's columns.
@@ -35,7 +39,10 @@ export function ActiveMessagesTab({ provider, namespaces }: { provider: CloudPro
   })
   const rows = useMemo(
     () =>
-      namespaces.flatMap((n, i) =>
+      // Production first, then UAT, then Development — the order the scope picker uses.
+      [...namespaces.entries()]
+        .sort(([, a], [, b]) => environmentOrder.indexOf(a.environment) - environmentOrder.indexOf(b.environment))
+        .flatMap(([i, n]) =>
         (lists[i]?.data?.entities ?? []).filter((e) => e.kind === 'queue' || e.kind === 'subscription').map((e) => ({ namespace: n, entity: e })),
       ),
     [namespaces, lists],
@@ -82,19 +89,29 @@ const optionLabel = (r: Row): string => {
   return e.kind === 'subscription' && e.topic ? `${e.topic} › ${e.name} (topic subscription)` : e.name
 }
 
+const nameOf = namespaceTag
+
+/** Two namespaces can each own an `orders`; once more than one is in scope, a queue is named with its namespace. */
+const spansSeveral = (rows: readonly Row[]): boolean => new Set(rows.map((r) => r.namespace.id)).size > 1
+
 const keyOf = (r: Row) => `${r.namespace.id}|${r.entity.name}`
 
 function Browser({ rows }: { rows: readonly Row[] }) {
   const [params, setParams] = useSearchParams()
   const chosen = rows.find((r) => keyOf(r) === params.get('queue')) ?? rows.find((r) => (r.entity.activeMessages ?? 0) > 0) ?? rows[0]
   const selected = params.get('active')
+  const several = spansSeveral(rows)
+  const [pageSize, setPageSize] = usePageSize()
+  const [page, setPage] = useState(1)
 
   const peek = useQuery({
     queryKey: ['active-peek', chosen.namespace.id, chosen.entity.name],
-    queryFn: () => peekMessages(chosen.namespace.id, { ...subscriptionParts(chosen.entity.name), max: PAGE }),
+    queryFn: () => peekMessages(chosen.namespace.id, { ...subscriptionParts(chosen.entity.name), max: PEEK_MAX }),
   })
   const now = new Date()
   const messages = peek.data?.messages ?? []
+  const lastPage = Math.max(1, Math.ceil(messages.length / pageSize))
+  const shown = messages.slice((Math.min(page, lastPage) - 1) * pageSize, Math.min(page, lastPage) * pageSize)
   const open = messages.find((m) => String(m.sequenceNumber) === selected)
 
   const columns: Column<Message>[] = [
@@ -127,12 +144,12 @@ function Browser({ rows }: { rows: readonly Row[] }) {
           <select
             id="active-queue"
             value={keyOf(chosen)}
-            onChange={(e) => setParams((c) => { const n = new URLSearchParams(c); n.set('queue', e.target.value); n.delete('active'); return n })}
+            onChange={(e) => { setParams((c) => { const n = new URLSearchParams(c); n.set('queue', e.target.value); n.delete('active'); return n }); setPage(1) }}
             className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
           >
             {rows.map((r) => (
               <option key={keyOf(r)} value={keyOf(r)}>
-                {optionLabel(r)} · {r.entity.activeMessages === null ? "can't count" : r.entity.activeMessages.toLocaleString()}
+                {several ? `${nameOf(r.namespace)} / ` : ''}{optionLabel(r)} · {r.entity.activeMessages === null ? "can't count" : r.entity.activeMessages.toLocaleString()}
               </option>
             ))}
           </select>
@@ -149,10 +166,12 @@ function Browser({ rows }: { rows: readonly Row[] }) {
         {peek.data && messages.length === 0 && <p className="px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">Nothing is waiting in this queue right now.</p>}
         {messages.length > 0 && (
           <>
-            <DataTable caption={`Active messages in ${chosen.entity.name}`} columns={columns} rows={messages} rowKey={(m) => String(m.sequenceNumber)} />
+            <DataTable caption={`Active messages in ${chosen.entity.name}`} columns={columns} rows={shown} rowKey={(m) => String(m.sequenceNumber)} />
+            <Pager page={Math.min(page, lastPage)} pageSize={pageSize} total={messages.length} onPage={setPage} onPageSize={(s) => { setPageSize(s); setPage(1) }} />
             <p className="border-t border-[var(--color-border)] px-4 py-2.5 text-[12px] text-[var(--color-text-muted)]">
-              Showing the oldest {messages.length}
-              {chosen.entity.activeMessages != null ? ` of ${chosen.entity.activeMessages.toLocaleString()}` : ''}. Refreshed when you ask.
+              Peeked the oldest {messages.length}
+              {/* The queue's count and the peek are read at different moments; only say "of N" when N can still be right. */}
+              {chosen.entity.activeMessages != null && chosen.entity.activeMessages > messages.length ? ` of ${chosen.entity.activeMessages.toLocaleString()}` : ''}. Refreshed when you ask.
             </p>
           </>
         )}
@@ -200,6 +219,7 @@ function Kv({ k, v }: { k: string; v: string }) {
 }
 
 function CountsOnly({ cloud, rows }: { cloud: string; rows: readonly Row[] }) {
+  const several = spansSeveral(rows)
   return (
     <div className="space-y-3.5">
       <p className="flex items-start gap-2.5 rounded-xl border border-[#fde68a] bg-[var(--color-warning-light)] px-4 py-3 text-[13px] text-[#92400e]">
@@ -216,6 +236,7 @@ function CountsOnly({ cloud, rows }: { cloud: string; rows: readonly Row[] }) {
           rows={rows}
           rowKey={keyOf}
           columns={[
+            ...(several ? [{ key: 'ns', header: 'Namespace', render: (r: Row) => nameOf(r.namespace) }] : []),
             { key: 'q', header: 'Queue or topic', info: columnHelp.active.where, render: (r) => <EntityCell size="sm" entityName={r.entity.name} entityType={r.entity.kind} /> },
             {
               key: 'n',

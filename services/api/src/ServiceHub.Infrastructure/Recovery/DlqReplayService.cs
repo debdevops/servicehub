@@ -154,6 +154,8 @@ public sealed class DlqReplayService : IDlqReplayService
             TopicNameSnapshot = message.TopicName, SourceMessageIdSnapshot = message.MessageId,
             SourceSequenceNumberSnapshot = message.SequenceNumber, BodyHash = message.BodyHash,
             DeadLetterReasonSnapshot = message.DeadLetterReason, TargetEntity = TargetOf(message),
+            // The signature is what trust is earned against (unit 4.1): without it no outcome would ever count.
+            SignatureHashSnapshot = message.SignatureHash,
         }, CancellationToken.None);
         if (entry.IsFailure)
         {

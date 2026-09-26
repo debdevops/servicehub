@@ -160,6 +160,29 @@ public sealed class AwsMessageReceiverTests
         result.IsSuccess.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task PeekMessagesAsync_WhenTheQueueDoesNotExist_IsNotFoundLikeAzure_NotABadGateway()
+    {
+        var ns = BuildNamespace();
+        var repo = new Mock<INamespaceRepository>();
+        repo.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success(ns));
+
+        var sqsClient = new Mock<IAmazonSQS>();
+        sqsClient.Setup(s => s.GetQueueUrlAsync(It.IsAny<GetQueueUrlRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new QueueDoesNotExistException("The specified queue does not exist."));
+
+        var factory = new Mock<IAwsClientFactory>();
+        factory.Setup(f => f.GetSqsClient(It.IsAny<Namespace>())).Returns(sqsClient.Object);
+
+        var sut = new AwsMessageReceiver(factory.Object, repo.Object, NullLogger<AwsMessageReceiver>.Instance);
+
+        var result = await sut.PeekMessagesAsync(new GetMessagesRequest(ns.Id, "nope", null, false, 10), CancellationToken.None);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Code.Should().Be("Queue.NotFound");
+    }
+
     // -------------------------------------------------------------------------
     // GetVisibilityWindowStatusAsync
     // -------------------------------------------------------------------------

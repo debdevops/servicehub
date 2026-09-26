@@ -1,4 +1,7 @@
 import { useState, type ReactNode } from 'react'
+import { useMe } from '../../hooks/useIdentity'
+import { permission } from '../../lib/permissions'
+import { NotAllowed } from '../ui/NotAllowed'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { CheckCircle2, Eye, EyeOff, TriangleAlert } from 'lucide-react'
 import { useProviderScope } from '../provider/providerScope'
@@ -43,6 +46,7 @@ function parseCloud(value: string | null): CloudProvider {
  * chooses to remove it and try again, or keep it and fix it later.
  */
 export default function AddCloudModal({ close }: OverlayBodyProps) {
+  const mayConnect = permission(useMe().data, 'Admin', 'connect a cloud')
   const [params] = useSearchParams()
   const [form, setForm] = useState<CloudForm>(() => emptyForm(parseCloud(params.get('cloud'))))
   const [step, setStep] = useState<Step>({ at: 'form' })
@@ -281,10 +285,11 @@ export default function AddCloudModal({ close }: OverlayBodyProps) {
         <button type="button" onClick={close} className={secondaryButton}>
           Cancel
         </button>
-        <button type="submit" className={primaryButton}>
+        <button type="submit" className={primaryButton} disabled={!mayConnect.allowed}>
           Connect
         </button>
       </div>
+      <NotAllowed reason={mayConnect.reason} />
     </form>
   )
 }

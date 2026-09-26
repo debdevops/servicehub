@@ -65,14 +65,21 @@ public static class PersistenceServiceCollectionExtensions
         services.TryAddSingleton<IPlatformEventBus>(sp => sp.GetRequiredService<Events.InProcessPlatformEventBus>());
         services.AddHostedService(sp => sp.GetRequiredService<Events.InProcessPlatformEventBus>());
         services.TryAddScoped<IDlqMessageReader, Dlq.DlqMessageReader>();
+        services.TryAddScoped<IDeadLetterLook, Dlq.DeadLetterLook>();
         services.TryAddScoped<IRecoveryLedger, RecoveryLedger.RecoveryLedgerService>();
         services.TryAddSingleton<Telemetry.ServiceHubMetrics>();
         services.TryAddScoped<IRecoveryEligibilityGate, RecoveryLedger.RecoveryEligibilityGate>();
+        services.TryAddScoped<IRecoveryTrustScoringService, RecoveryLedger.RecoveryTrustScoringService>();
+        services.TryAddScoped<IDlqObserverAttestationService, DlqObserver.DlqObserverAttestationService>();
         services.TryAddScoped<IFleetOverviewService, Fleet.FleetOverviewService>();
         services.TryAddScoped<IBulkOperationService, BulkOperations.BulkOperationService>();
         services.TryAddScoped<IRulesService, Rules.RulesService>();
         services.TryAddScoped<ISignaturesService, Signatures.SignaturesService>();
         services.TryAddScoped<IDlqReplayService, Recovery.DlqReplayService>();
+        services.TryAddScoped<IPendingWorkService, Recovery.PendingWorkService>();
+        services.TryAddScoped<IGovernanceGrantService, Governance.GovernanceGrantService>();
+        services.TryAddScoped<IGovernanceAccessEvaluator, Governance.GovernanceAccessEvaluator>();
+        services.TryAddScoped<Recovery.EscalationRecorder>();
         services.TryAddScoped<IRecoveryQueries, RecoveryLedger.RecoveryQueries>();
         services.TryAddSingleton<IActorIdentityResolver, Identity.ActorIdentityResolver>();
 

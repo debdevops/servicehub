@@ -51,6 +51,41 @@ public sealed class SignaturesApiTests
     }
 
     [Fact]
+    public async Task Signatures_are_counted_over_one_namespace_or_one_environment_when_asked()
+    {
+        using var host = DeadLettersApiTests.Host();
+        var azure = await DeadLettersApiTests.Connect(host.Client, "azure");
+        var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
+        await DeadLettersApiTests.Seed(host, azure, CloudProviderType.Azure, 5, reason: "Timeout");
+        await DeadLettersApiTests.Seed(host, aws, CloudProviderType.Aws, 3, reason: "Validation", prefix: "v");
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServiceHubDbContext>();
+            typeof(Namespace).GetProperty(nameof(Namespace.Environment))!.SetValue(await db.Namespaces.FindAsync(aws), EnvironmentType.Prod);
+            await db.SaveChangesAsync();
+        }
+
+        await Sign(host);
+
+        (await Get(host.Client, "/api/v1/signatures")).GetProperty("total").GetInt32().Should().Be(2);
+        var prod = await Get(host.Client, "/api/v1/signatures?environment=Prod");
+        prod.GetProperty("total").GetInt32().Should().Be(1);
+        prod.GetProperty("items")[0].GetProperty("reason").GetString().Should().Be("Validation");
+        (await Get(host.Client, "/api/v1/signatures?environment=Uat")).GetProperty("total").GetInt32().Should().Be(0);
+
+        var one = await Get(host.Client, $"/api/v1/signatures?namespaceId={azure}");
+        one.GetProperty("total").GetInt32().Should().Be(1);
+        one.GetProperty("items")[0].GetProperty("messages").GetInt32().Should().Be(5);
+
+        // Each signature says where it was seen: which namespace, in which environment, and how many of its messages are there.
+        var where = (await Get(host.Client, "/api/v1/signatures?provider=aws")).GetProperty("items")[0].GetProperty("namespaces").EnumerateArray().ToList();
+        where.Should().ContainSingle();
+        where[0].GetProperty("id").GetGuid().Should().Be(aws);
+        where[0].GetProperty("environment").GetString().Should().BeOneOf("prod", "Prod");
+        where[0].GetProperty("messages").GetInt32().Should().Be(3);
+    }
+
+    [Fact]
     public async Task Replay_outcomes_come_from_the_ledger_and_unverified_is_not_counted_as_either()
     {
         using var host = DeadLettersApiTests.Host();
@@ -95,5 +130,35 @@ public sealed class SignaturesApiTests
         (await Get(host.Client, $"/api/v1/signatures/{hash}?provider=azure")).GetProperty("messages").GetInt32().Should().Be(3);
         await Get(host.Client, "/api/v1/signatures/nope?provider=azure", HttpStatusCode.NotFound);
         await Get(host.Client, "/api/v1/signatures?tab=bogus", HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task What_a_failure_has_earned_says_how_far_it_is_from_replaying_on_its_own_and_why()
+    {
+        using var host = DeadLettersApiTests.Host();
+        var azure = await DeadLettersApiTests.Connect(host.Client, "azure");
+        var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
+        await DeadLettersApiTests.Seed(host, azure, CloudProviderType.Azure, 2, reason: "Timeout");
+        await DeadLettersApiTests.Seed(host, aws, CloudProviderType.Aws, 2, reason: "Timeout", prefix: "a");
+        await Sign(host);
+
+        var azureHash = (await Get(host.Client, "/api/v1/signatures?provider=azure")).GetProperty("items")[0].GetProperty("signatureHash").GetString();
+        var awsHash = (await Get(host.Client, "/api/v1/signatures?provider=aws")).GetProperty("items")[0].GetProperty("signatureHash").GetString();
+
+        var onAzure = await Get(host.Client, $"/api/v1/signatures/{azureHash}/trust?provider=azure");
+        onAzure.GetProperty("level").GetString().Should().Be("approve", "everything starts with a person approving each replay");
+        onAzure.GetProperty("sampleSize").GetInt32().Should().Be(0);
+        onAzure.TryGetProperty("verifiedSuccessRate", out var rate).Should().BeTrue();
+        rate.ValueKind.Should().Be(JsonValueKind.Null, "no outcomes is not a rate of zero");
+        onAzure.GetProperty("nextLevel").GetString().Should().Be("standing");
+        onAzure.GetProperty("moreVerifiedNeeded").GetInt32().Should().Be(10);
+        onAzure.GetProperty("cloudCanConfirm").GetBoolean().Should().BeTrue();
+
+        var onAws = await Get(host.Client, $"/api/v1/signatures/{awsHash}/trust?provider=aws");
+        onAws.GetProperty("cloudCanConfirm").GetBoolean().Should().BeFalse();
+        onAws.GetProperty("nextLevel").ValueKind.Should().Be(JsonValueKind.Null, "a cloud that cannot confirm an outcome never earns automatic replay");
+
+        await Get(host.Client, $"/api/v1/signatures/nope/trust?provider=azure", HttpStatusCode.NotFound);
+        await Get(host.Client, $"/api/v1/signatures/{azureHash}/trust", HttpStatusCode.BadRequest);
     }
 }

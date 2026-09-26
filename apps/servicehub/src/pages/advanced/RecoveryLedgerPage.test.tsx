@@ -12,7 +12,7 @@ vi.mock('../../lib/api/namespaces')
 vi.mock('../../lib/api/recovery')
 
 const entry = (id: string, state: LedgerEntry['state'], over: Partial<LedgerEntry> = {}): LedgerEntry => ({
-  id, operationId: 'op', beganAt: '2026-09-25T10:00:00Z', kind: 'Replay', entityName: 'payments-dlq', targetEntity: 'payments', provider: 'azure', namespaceName: 'orders-dev',
+  id, operationId: 'op', begunAt: '2026-09-25T10:00:00Z', kind: 'Replay', entityName: 'payments-dlq', targetEntity: 'payments', provider: 'azure', namespaceName: 'orders-dev',
   actor: { identity: 'session', kind: 'user', label: 'from this browser session', isSession: true }, state, confidence: null, dlqMessageId: 7, closedAt: null, ...over,
 })
 
@@ -52,12 +52,32 @@ describe('the Recovery Ledger (Advanced)', () => {
     vi.mocked(api.fetchLedger).mockResolvedValue({ items: [entry('e1', 'Recovered'), entry('e2', 'Unverified')], total: 2, page: 1, pageSize: 10 })
   })
 
+  it('narrows the summary and the list to an environment, offering every namespace when no cloud is chosen', async () => {
+    vi.mocked(nsApi.fetchNamespaces).mockResolvedValue([
+      { id: 'p1', name: 'orders-prod', displayName: 'Orders Prod', provider: 'azure', environment: 'prod' },
+      { id: 'w1', name: 'sqs', displayName: 'AWS Dev', provider: 'aws', environment: 'dev' },
+    ] as never)
+    renderPage('/advanced/ledger?env=prod')
+
+    await waitFor(() => expect(api.fetchLedger).toHaveBeenLastCalledWith(expect.objectContaining({ environment: 'prod' })))
+    expect(api.fetchRecoverySummary).toHaveBeenLastCalledWith(expect.objectContaining({ environment: 'prod' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Namespace' }))
+    expect(screen.getByRole('option', { name: /AWS Dev/ })).toBeInTheDocument()
+  })
+
   it('shows every state in the tabs with its count — zeros included — and never merges Recovered with Unverified', async () => {
     renderPage()
     const nav = within(await screen.findByRole('navigation', { name: 'Outcome' }))
     expect(await nav.findByRole('button', { name: /Recovered\s*2/ })).toBeInTheDocument()
     expect(nav.getByRole('button', { name: /Unverified\s*1/ })).toBeInTheDocument()
     expect(nav.getByRole('button', { name: /Failed\s*0/ })).toBeInTheDocument()
+  })
+
+  it('shows when each entry began — never "Invalid Date" (the API names the field begunAt)', async () => {
+    renderPage()
+    await screen.findByRole('table')
+
+    expect(document.body.textContent).not.toMatch(/Invalid Date/)
   })
 
   it('states the outcome in the enum’s words in the table', async () => {

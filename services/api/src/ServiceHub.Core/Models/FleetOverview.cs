@@ -53,7 +53,7 @@ public sealed record FleetNamespace(
     FleetHealth Health);
 
 /// <summary>What sits in dead-letter queues now: one row per cloud and reason, never one sum.</summary>
-public sealed record FleetTopFailure(CloudProviderType Provider, string Reason, int Count);
+public sealed record FleetTopFailure(CloudProviderType Provider, EnvironmentType Environment, string Reason, int Count);
 
 /// <summary>The Fleet Overview read model (unit 3.5).</summary>
 public sealed record FleetOverview(

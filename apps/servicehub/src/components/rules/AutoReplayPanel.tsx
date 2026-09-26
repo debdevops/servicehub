@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react'
+import { useMe } from '../../hooks/useIdentity'
+import { permission } from '../../lib/permissions'
+import { NotAllowed } from '../ui/NotAllowed'
+import type { OverlayBodyProps } from '../overlays/registry'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Clock, Eye, Plus, Zap } from 'lucide-react'
-import type { OverlayBodyProps } from '../overlays/registry'
 import { useProviderScope } from '../provider/providerScope'
 import { createRule, fetchRules, fetchRuleSources, setRuleEnabled, testRule, type Rule, type RuleSource } from '../../lib/api/rules'
 import type { CloudProvider } from '../../lib/api/namespaces'
@@ -29,7 +32,9 @@ const paceWords = (r: Pick<Rule, 'maxPerHour' | 'waitSeconds'>) =>
  * failure and a pace — there is no rule language. Every message a rule picks still goes through the same safety checks as a
  * person's replay, so making a rule never sends anything.
  */
-export default function AutoReplayPanel(_: OverlayBodyProps) {
+// The overlay host hands every body `entry` and `close`; this panel needs neither (the host closes it).
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export default function AutoReplayPanel(_props: OverlayBodyProps) {
   const { selected } = useProviderScope()
   if (selected === null) return <p className="text-sm text-[var(--color-text-muted)]">Connect a cloud first, then Auto Replay can watch it.</p>
   return <Panel provider={selected} />
@@ -55,6 +60,9 @@ function Panel({ provider }: { provider: CloudProvider }) {
         What ServiceHub may retry on its own in <b className="text-[var(--color-text)]">{cloud}</b> — {list.length} {list.length === 1 ? 'rule' : 'rules'}, {on} on
         {stopped > 0 ? `, ${stopped} stopped itself` : ''}.
       </p>
+      <p className="-mt-2 text-[12.5px] text-[var(--color-text-muted)]">
+        Rules apply to <b className="text-[var(--color-text)]">all {cloud} namespaces</b>, whichever namespace or environment is chosen elsewhere in the app — a rule isn’t tied to one namespace.
+      </p>
       {list.length === 0 && !creating && (
         <p className="rounded-xl border border-dashed border-[var(--color-border)] px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">
           No rules yet. A rule names a failure ServiceHub has already seen, and how carefully to retry it.
@@ -75,6 +83,8 @@ function Panel({ provider }: { provider: CloudProvider }) {
 }
 
 function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }) {
+  // Switching a rule on hands a machine the right to replay (Approver); switching it off only takes that away (Operator).
+  const mayToggle = permission(useMe().data, r.enabled ? 'Operator' : 'Approver', r.enabled ? 'switch this rule off' : 'switch this rule on', { recover: true })
   const client = useQueryClient()
   const [confirmOn, setConfirmOn] = useState(false)
   const toggle = useMutation({
@@ -92,7 +102,8 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
           role="switch"
           aria-checked={r.enabled}
           aria-label={`${r.name} is ${r.enabled ? 'on' : 'off'}`}
-          disabled={toggle.isPending || tripped}
+          disabled={toggle.isPending || tripped || !mayToggle.allowed}
+          title={mayToggle.reason ?? undefined}
           onClick={() => toggle.mutate(!r.enabled)}
           className={`mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-60 ${r.enabled ? 'bg-[var(--color-success)]' : 'bg-[#d1d5db]'}`}
         >
@@ -146,6 +157,7 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
 }
 
 function NewRule({ provider, onDone }: { provider: CloudProvider; onDone: () => void }) {
+  const mayCreate = permission(useMe().data, 'Approver', 'create a rule (it starts on)', { recover: true })
   const client = useQueryClient()
   const sources = useQuery({ queryKey: ['rule-sources', provider], queryFn: () => fetchRuleSources(provider) })
   const [params] = useSearchParams()
@@ -229,8 +241,9 @@ function NewRule({ provider, onDone }: { provider: CloudProvider; onDone: () => 
       {create.isError && <p role="alert" className="text-sm text-[var(--color-error)]">ServiceHub couldn’t create the rule. Check the name and try again.</p>}
       <div className="flex justify-end gap-2">
         <button type="button" onClick={onDone} className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold">Cancel</button>
-        <button type="submit" disabled={!condition || !name.trim() || create.isPending} className="rounded-lg bg-[var(--color-primary-600)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Create and turn on</button>
+        <button type="submit" disabled={!condition || !name.trim() || create.isPending || !mayCreate.allowed} className="rounded-lg bg-[var(--color-primary-600)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Create and turn on</button>
       </div>
+      <NotAllowed reason={mayCreate.reason} />
     </form>
   )
 }

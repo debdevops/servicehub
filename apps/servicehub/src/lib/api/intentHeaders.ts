@@ -16,6 +16,11 @@ export const Intent = {
   DeleteMessage: 'delete-message',
   CreateNamespace: 'create-namespace',
   DeleteNamespace: 'delete-namespace',
+  LookAtDeadLetters: 'look-at-dead-letters',
+  PauseAgent: 'pause-agent',
+  ResumeAgent: 'resume-agent',
+  ApproveEscalation: 'approve-escalation',
+  DeclineEscalation: 'decline-escalation',
 } as const
 
 export type IntentValue = (typeof Intent)[keyof typeof Intent]

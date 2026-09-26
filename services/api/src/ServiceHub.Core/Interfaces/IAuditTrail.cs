@@ -30,6 +30,8 @@ public interface IAuditTrail
 /// <param name="OwnerId">Whose history.</param>
 /// <param name="AllowedNamespaceIds">The caller's namespace allow-list; null when unrestricted.</param>
 /// <param name="NamespaceId">Only entries about this namespace, when set.</param>
+/// <param name="ScopeNamespaceIds">Only entries about these namespaces, when set — the namespaces of a chosen cloud or environment.
+/// Entries about no namespace in particular are left out, since they belong to no cloud or environment.</param>
 /// <param name="Action">Only entries of this action, when set.</param>
 /// <param name="Page">1-based page number.</param>
 /// <param name="PageSize">Entries per page.</param>
@@ -39,7 +41,8 @@ public sealed record AuditQuery(
     Guid? NamespaceId = null,
     string? Action = null,
     int Page = 1,
-    int PageSize = 50);
+    int PageSize = 50,
+    IReadOnlySet<Guid>? ScopeNamespaceIds = null);
 
 /// <summary>One page of audit history.</summary>
 /// <param name="Items">The entries, newest first.</param>

@@ -14,6 +14,72 @@ export interface FailureExplanation {
   readonly summary: string
   /** A field the error names (`customerId`), when it names one. */
   readonly failingField: string | null
+  /**
+   * Where the text that was read came from when the cloud recorded no reason: the message's own body or its
+   * properties. Absent when the reading is of the recorded reason.
+   */
+  readonly readFrom?: 'body' | 'properties'
+}
+
+/** What the message itself carries, for when the cloud recorded nothing. */
+export interface MessageEvidence {
+  readonly body?: string | null
+  /** The application properties as stored JSON text. */
+  readonly propertiesJson?: string | null
+}
+
+// Keys a producer uses for the error it hit, whatever its naming convention (`errorType`, `error_message`, `Exception`).
+const errorKeys = ['errortype', 'exceptiontype', 'errormessage', 'errordescription', 'failurereason', 'exception', 'error']
+// A producer that stamps an error key on every message defaults it to one of these when nothing failed.
+const noErrorValues = new Set(['none', 'null', 'n/a', 'na', 'unset', 'undefined', 'false', 'ok', ''])
+
+function errorIn(record: unknown): string | null {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return null
+  const entries = Object.entries(record as Record<string, unknown>)
+  for (const key of errorKeys) {
+    for (const [k, v] of entries) {
+      // Specific names match anywhere in the key (`shs-error-type`); the bare `error`/`exception` only as the whole key.
+      const normal = k.toLowerCase().replace(/[-_\s]/g, '')
+      if (key === 'error' || key === 'exception' ? normal !== key : !normal.includes(key)) continue
+      if (typeof v === 'string' && !noErrorValues.has(v.trim().toLowerCase())) return v.trim()
+      if (v && typeof v === 'object') {
+        const nested = (v as Record<string, unknown>).message ?? (v as Record<string, unknown>).type
+        if (typeof nested === 'string' && nested.trim()) return nested.trim()
+      }
+    }
+  }
+  return null
+}
+
+function parse(json: string | null | undefined): unknown {
+  if (!json) return null
+  try {
+    return JSON.parse(json)
+  } catch {
+    return null
+  }
+}
+
+// 4.0.0's body patterns: an exception type in a stack-trace line, or a quoted error field in text that is not valid JSON.
+const bodyPatterns = [/(?:Exception|Error):\s*([^\n\r]{3,160})/, /"(?:error|exception|errorMessage)"\s*:\s*"([^"]{3,160})"/i]
+
+/**
+ * The error a message carries itself, when the cloud recorded none (AWS SQS and Google Pub/Sub dead-letter by
+ * policy and say nothing). Properties first — a producer that sets an error attribute meant it — then the body.
+ * 4.0.0's analyser did the same; without it those clouds' dead letters had no reading at all.
+ */
+export function findCarriedError(evidence: MessageEvidence | undefined): { text: string; from: 'body' | 'properties' } | null {
+  if (!evidence) return null
+  const fromProperties = errorIn(parse(evidence.propertiesJson))
+  if (fromProperties) return { text: fromProperties, from: 'properties' }
+  const body = evidence.body ?? ''
+  const fromJson = errorIn(parse(body))
+  if (fromJson) return { text: fromJson, from: 'body' }
+  for (const pattern of bodyPatterns) {
+    const found = pattern.exec(body)?.[1]?.trim()
+    if (found) return { text: found, from: 'body' }
+  }
+  return null
 }
 
 const fieldPatterns = [
@@ -32,10 +98,23 @@ export function findFailingField(description: string | null): string | null {
   return null
 }
 
-export function explainFailure(reason: string | null, description: string | null, deliveryCount: number): FailureExplanation {
+export function explainFailure(reason: string | null, description: string | null, deliveryCount: number, evidence?: MessageEvidence): FailureExplanation {
   const failingField = findFailingField(description)
   const text = `${reason ?? ''} ${description ?? ''}`.toLowerCase()
   if (!reason && !description) {
+    const carried = findCarriedError(evidence)
+    if (carried) {
+      const reading = explainFailure(null, carried.text, deliveryCount)
+      const where = carried.from === 'body' ? 'body' : 'properties'
+      return reading.headline.startsWith('No reading available')
+        ? {
+            failingField: reading.failingField,
+            readFrom: carried.from,
+            headline: `The message’s ${where} says: “${carried.text}”`,
+            summary: `This cloud records no reason, but the message carries its own error in its ${where}: “${carried.text}”. That is usually what the receiver could not handle.`,
+          }
+        : { ...reading, readFrom: carried.from }
+    }
     // A cloud that dead-letters by policy records nothing. Say what is true and where the answer usually is.
     return {
       failingField,

@@ -1,6 +1,6 @@
 import { api } from './client'
 import { Intent, withIntent } from './intentHeaders'
-import type { CloudProvider } from './namespaces'
+import type { CloudProvider, EnvironmentKind } from './namespaces'
 
 export type CheckState = 'passed' | 'warning' | 'blocked'
 
@@ -115,6 +115,9 @@ const providerParam = (p: CloudProvider) => ({ azure: 'Azure', aws: 'Aws', gcp: 
 
 export interface ReplayQuery {
   readonly provider?: CloudProvider
+  readonly namespaceId?: string
+  /** Only namespaces of this environment — the Environment level of the scope picker. */
+  readonly environment?: EnvironmentKind
   /** Only the replays of this one dead letter (the drawer). */
   readonly dlqMessageId?: number
   readonly result?: 'accepted' | 'rejected' | 'unknown'

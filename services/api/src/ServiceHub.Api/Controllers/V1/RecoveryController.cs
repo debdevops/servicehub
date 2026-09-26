@@ -31,13 +31,15 @@ public sealed class RecoveryController : ApiControllerBase
     /// <param name="window">24h (default), 7d, 30d or all.</param>
     /// <param name="provider">Only this cloud.</param>
     /// <param name="namespaceId">Only this namespace.</param>
+    /// <param name="environment">Only entries made in this environment (dev, uat, prod).</param>
     /// <param name="cancellationToken">Cancellation.</param>
     [HttpGet("summary")]
     [ProducesResponseType(typeof(RecoverySummary), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Summary(
-        [FromQuery] string? window, [FromQuery] CloudProviderType? provider, [FromQuery] Guid? namespaceId, CancellationToken cancellationToken)
+        [FromQuery] string? window, [FromQuery] CloudProviderType? provider, [FromQuery] Guid? namespaceId, CancellationToken cancellationToken,
+        [FromQuery] EnvironmentType? environment = null)
     {
         var w = string.IsNullOrWhiteSpace(window) ? "24h" : window.Trim();
         if (!RecoveryQueries.IsKnownWindow(w))
@@ -45,7 +47,7 @@ public sealed class RecoveryController : ApiControllerBase
             return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "'window' must be 24h, 7d, 30d or all.");
         }
 
-        if (await ScopeAsync(provider, namespaceId, cancellationToken) is not { } scope)
+        if (await ScopeAsync(provider, namespaceId, environment, cancellationToken) is not { } scope)
         {
             return Problem(StatusCodes.Status404NotFound, ErrorCodes.Namespace.NotFound, $"Namespace with ID '{namespaceId}' was not found.");
         }
@@ -58,6 +60,7 @@ public sealed class RecoveryController : ApiControllerBase
     /// <param name="state">Only entries in this state (the enum's own name, e.g. <c>Unverified</c>).</param>
     /// <param name="provider">Only this cloud.</param>
     /// <param name="namespaceId">Only this namespace.</param>
+    /// <param name="environment">Only entries made in this environment (dev, uat, prod).</param>
     /// <param name="page">1-based.</param>
     /// <param name="pageSize">1–100 (default 25).</param>
     /// <param name="cancellationToken">Cancellation.</param>
@@ -67,7 +70,8 @@ public sealed class RecoveryController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Entries(
         [FromQuery] string? window, [FromQuery] string? state, [FromQuery] CloudProviderType? provider, [FromQuery] Guid? namespaceId,
-        [FromQuery] int? page, [FromQuery] int? pageSize, CancellationToken cancellationToken)
+        [FromQuery] int? page, [FromQuery] int? pageSize, CancellationToken cancellationToken,
+        [FromQuery] EnvironmentType? environment = null)
     {
         var w = string.IsNullOrWhiteSpace(window) ? "24h" : window.Trim();
         if (!RecoveryQueries.IsKnownWindow(w))
@@ -91,7 +95,7 @@ public sealed class RecoveryController : ApiControllerBase
             return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "'page' starts at 1 and 'pageSize' must be between 1 and 100.");
         }
 
-        if (await ScopeAsync(provider, namespaceId, cancellationToken) is not { } scope)
+        if (await ScopeAsync(provider, namespaceId, environment, cancellationToken) is not { } scope)
         {
             return Problem(StatusCodes.Status404NotFound, ErrorCodes.Namespace.NotFound, $"Namespace with ID '{namespaceId}' was not found.");
         }
@@ -123,7 +127,7 @@ public sealed class RecoveryController : ApiControllerBase
     public async Task<IActionResult> Chain(CancellationToken cancellationToken) =>
         Ok(await _ledger.VerifyChainAsync(OwnerId, cancellationToken));
 
-    private async Task<RecoveryScope?> ScopeAsync(CloudProviderType? provider, Guid? namespaceId, CancellationToken cancellationToken)
+    private async Task<RecoveryScope?> ScopeAsync(CloudProviderType? provider, Guid? namespaceId, EnvironmentType? environment, CancellationToken cancellationToken)
     {
         if (namespaceId is { } id)
         {
@@ -135,6 +139,6 @@ public sealed class RecoveryController : ApiControllerBase
             }
         }
 
-        return new RecoveryScope(OwnerId, AllowedNamespaceIds, namespaceId, provider);
+        return new RecoveryScope(OwnerId, AllowedNamespaceIds, namespaceId, provider, environment);
     }
 }

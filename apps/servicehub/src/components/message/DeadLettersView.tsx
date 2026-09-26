@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { namespaceTag } from '../provider/scopeChoice'
+import { usePageSize } from '../../lib/pageSize'
 import { Link, useSearchParams } from 'react-router-dom'
 import { CheckCircle2, TriangleAlert } from 'lucide-react'
 import { ExplainerCard, ExplainerToggle } from '../explainer/Explainer'
@@ -7,15 +9,16 @@ import { Pager } from '../ui/Pager'
 import { BulkBar } from './BulkBar'
 import { EntityPicker } from './EntityPicker'
 import { FailureGroups, NO_REASON } from './FailureGroups'
+import { LookNow } from './LookNow'
 import { MessageTable } from './MessageTable'
 import { WorkTabs } from './WorkTabs'
 import { useDeadLetters } from '../../hooks/useDeadLetters'
 import type { DeadLetterRange } from '../../lib/api/deadLetters'
 import { bulkSelection } from '../../lib/bulkSelection'
+import { environmentMeta, resolveScope } from '../provider/scopeChoice'
 import type { CloudProvider, Namespace } from '../../lib/api/namespaces'
 import { providerLabel } from '../../lib/providers'
 
-const PAGE_SIZE = 25
 
 const ranges: readonly { id: DeadLetterRange; label: string }[] = [
   { id: 'all', label: 'All time' },
@@ -35,8 +38,11 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
   const cloud = providerLabel[provider]
   const [params, setParams] = useSearchParams()
   const explainer = useExplainer('dead-letters')
+  // `namespaces` is already narrowed by Home; this only recovers which level of scope that was.
+  const scope = resolveScope(namespaces, params)
 
   const page = Math.max(1, Number(params.get('page')) || 1)
+  const [pageSize, setPageSize] = usePageSize()
   const range = asRange(params.get('range'))
   const reasonParam = params.get('reason')
   const entity = params.get('entity') ?? undefined
@@ -44,6 +50,9 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
 
   const query = {
     provider,
+    // One namespace in scope (`?ns=`) → ask the API for just that one; a whole environment (`?env=`) → for just that environment.
+    namespaceId: scope.ns?.id,
+    environment: scope.env ?? undefined,
     status: 'active' as const,
     range,
     reason: reasonParam && reasonParam !== NO_REASON ? reasonParam : undefined,
@@ -51,7 +60,7 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
     entity,
     q: q || undefined,
     page,
-    pageSize: PAGE_SIZE,
+    pageSize,
   }
   const { data, isPending, isError, refetch } = useDeadLetters(query)
 
@@ -87,7 +96,7 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
   // Whether ServiceHub looks in this cloud on its own. Where it does not (a peek there is a delivery
   // attempt), an empty list is silence, not good news — and must not read as good news (R5).
   const watched = namespaces.every((n) => n.capabilities?.supportsRepeatablePeek === true)
-  const names = new Map(namespaces.map((n) => [n.id, n.displayName ?? n.name]))
+  const names = new Map(namespaces.map((n) => [n.id, namespaceTag(n)]))
   const total = data?.paging.total ?? 0
   const filtering = !!(reasonParam || entity || q || range !== 'all')
   const reasonLabel = reasonParam === NO_REASON ? 'with no reason recorded' : reasonParam
@@ -120,17 +129,20 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
           Messages that failed too many times and were set aside. Pick one to see why, and put it back.
         </p>
         <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-          Namespace: all in {cloud}
-          {namespaces.length > 1 ? ` (${namespaces.length})` : ''}
+          {scope.ns ? (
+            <>Namespace: {scope.ns.displayName ?? scope.ns.name}</>
+          ) : scope.env ? (
+            <>Namespaces: all {environmentMeta[scope.env].label} in {cloud} ({namespaces.length})</>
+          ) : (
+            <>
+              Namespace: all in {cloud}
+              {namespaces.length > 1 ? ` (${namespaces.length})` : ''}
+            </>
+          )}
         </p>
       </header>
 
-      {!watched && (
-        <p className="mb-4 rounded-xl bg-[var(--color-surface-muted)] px-4 py-3 text-sm text-[var(--color-text-muted)]">
-          ServiceHub does not watch {cloud} for dead letters on its own — looking at a message there counts as a delivery attempt.
-          This list shows only what has been recorded.
-        </p>
-      )}
+      {!watched && <LookNow cloud={cloud} namespaces={namespaces.filter((n) => n.capabilities?.supportsRepeatablePeek !== true)} />}
 
       {explainer.shown && <ExplainerCard id="dead-letters" onDismiss={explainer.dismiss} />}
 
@@ -206,7 +218,7 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
                   namespaceNames={names}
                   selection={{ selected: current.all ? new Set(rows.map((r) => String(r.id))) : current.ids, onToggle: toggle, onTogglePage: togglePage }}
                 />
-                <Pager page={data.paging.page} pageSize={data.paging.pageSize} total={total} filtered={filtering} onPage={(p) => change({ page: String(p) })} />
+                <Pager page={data.paging.page} pageSize={data.paging.pageSize} total={total} filtered={filtering} onPage={(p) => change({ page: String(p) })} onPageSize={(s) => { setPageSize(s); change({ page: null }) }} />
               </>
             )}
           </div>
@@ -224,7 +236,11 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
 
 function EmptyState({ cloud, filtering, watched, onClear }: { cloud: string; filtering: boolean; watched: boolean; onClear: () => void }) {
   if (!filtering && !watched) {
-    return <p className="px-6 py-10 text-center text-sm text-[var(--color-text-muted)]">Nothing has been recorded for {cloud}. That does not mean there are no dead letters.</p>
+    return (
+      <p className="px-6 py-10 text-center text-sm text-[var(--color-text-muted)]">
+        Nothing has been recorded for {cloud} yet. That does not mean there are no dead letters — use <b>Look now</b> above to ask {cloud}.
+      </p>
+    )
   }
 
   return filtering ? (

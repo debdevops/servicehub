@@ -16,6 +16,8 @@ export interface CloudSummary {
   readonly byKind: readonly { readonly kind: EntityKind; readonly count: number; readonly withDeadLetters: number | null }[]
   /** The entities holding the most dead letters, deepest first, at most five. Metadata only — no message is read. */
   readonly needingAttention: readonly Entity[]
+  /** Every entity ServiceHub listed, with the namespace it lives in, in the order the cloud gave them. Counts only — no message is read. */
+  readonly entities: readonly { readonly namespaceId: string; readonly entity: Entity }[]
 }
 
 const sumOrNull = (values: readonly (number | null)[]): number | null =>
@@ -34,6 +36,7 @@ export function summarise(stats: readonly NamespaceStats[], entities: readonly (
         const ofKind = all.filter((e) => e.kind === kind)
         return { kind, count, withDeadLetters: ofKind.some((e) => e.deadLetterMessages === null) ? null : ofKind.filter(withDl).length }
       }),
+    entities: entities.flatMap((list, i) => list.map((entity) => ({ namespaceId: stats[i]?.namespaceId ?? '', entity }))),
     needingAttention: all.filter(withDl).sort((a, b) => (b.deadLetterMessages ?? 0) - (a.deadLetterMessages ?? 0)).slice(0, 5),
     deadLetters: sumOrNull(stats.map((s) => s.deadLetterMessages)),
     active: sumOrNull(stats.map((s) => s.activeMessages)),

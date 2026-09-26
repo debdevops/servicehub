@@ -45,4 +45,7 @@ public static class EventCategories
     /// findings, correlation findings, and narrations (roadmap §5, I5 — "Push").
     /// </summary>
     public const string Insight = "insight";
+
+    /// <summary>An agent stopped and needs a person (unit 5.2).</summary>
+    public const string Escalation = "escalation";
 }
