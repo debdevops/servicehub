@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as bulk from '../../lib/api/bulk'
 import { bulkSelection } from '../../lib/bulkSelection'
 import BulkReplayModal from './BulkReplayModal'
+import { expectNoAxeViolations } from '../../test/axe'
 
 vi.mock('../../lib/api/bulk', async (orig) => ({ ...(await orig<typeof import('../../lib/api/bulk')>()), previewBulk: vi.fn(), startBulk: vi.fn(), fetchBulk: vi.fn(), cancelBulk: vi.fn() }))
 
@@ -28,6 +29,13 @@ function renderModal(initial = '/?modal=bulk-replay') {
 
 describe('Bulk Replay modal', () => {
   beforeEach(() => { vi.clearAllMocks(); bulkSelection.set({ ids: [1, 2, 3, 4, 5, 6, 7] }) })
+
+  it('has no accessibility violations (6.6)', async () => {
+    vi.mocked(bulk.previewBulk).mockResolvedValue(preview())
+    renderModal()
+    await new Promise((r) => setTimeout(r, 150))
+    await expectNoAxeViolations(document.body)
+  })
 
   it('shows the preview first, sends nothing, and lists each held-back message with its reason and remedy', async () => {
     vi.mocked(bulk.previewBulk).mockResolvedValue(preview())

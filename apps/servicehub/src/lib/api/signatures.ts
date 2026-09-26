@@ -87,3 +87,59 @@ export interface SignatureTrust {
 export async function fetchSignatureTrust(hash: string, provider: CloudProvider): Promise<SignatureTrust> {
   return (await api.get<SignatureTrust>(`/signatures/${encodeURIComponent(hash)}/trust`, { params: { provider } })).data
 }
+
+/** Authority — and why (unit 6.8): how many signatures sit at each level, and what holds the floor's population there. */
+export interface AuthoritySpread {
+  readonly total: number
+  readonly capped: boolean
+  readonly unattended: number
+  readonly standing: number
+  readonly approve: number
+  readonly held: readonly { readonly reason: 'production' | 'cannot_verify' | 'needs_evidence' | 'rate_too_low' | 'awaiting_evaluation'; readonly count: number }[]
+  readonly needs: { readonly sample: number; readonly rate: number }
+}
+
+export async function fetchAuthority(q: { provider?: CloudProvider; days: number }): Promise<AuthoritySpread> {
+  const provider = q.provider ? ({ azure: 'Azure', aws: 'Aws', gcp: 'Gcp' } as const)[q.provider] : undefined
+  return (await api.get<AuthoritySpread>('/signatures/authority', { params: { provider, days: q.days } })).data
+}
+
+export interface IncidentStory {
+  readonly signatureHash: string
+  readonly provider: CloudProvider
+  readonly reason: string | null
+  readonly firstSeenAt: string
+  readonly lastSeenAt: string
+  readonly messages: number
+  readonly stillStuck: number
+  readonly replays: number
+  readonly stayedFixed: number
+  readonly cameBackAfterReplay: number
+  readonly timeline: readonly { readonly at: string; readonly kind: 'first_seen' | 'came_back' | 'replayed' | 'purged'; readonly text: string; readonly entryId: string | null; readonly dlqMessageId: number | null }[]
+}
+
+/** One signature's story (unit 6.19), from recorded tables only. */
+export async function fetchIncident(hash: string, provider: CloudProvider): Promise<IncidentStory> {
+  return (await api.get<IncidentStory>(`/signatures/${encodeURIComponent(hash)}/incident`, { params: { provider: ({ azure: 'Azure', aws: 'Aws', gcp: 'Gcp' } as const)[provider] } })).data
+}
+
+export interface TraceResult {
+  readonly correlationId: string
+  readonly clouds: readonly string[]
+  readonly hops: readonly {
+    readonly at: string
+    readonly kind: 'dead_lettered' | 'replayed' | 'purged'
+    readonly place: { readonly provider: string; readonly namespaceName: string; readonly environment: string }
+    readonly entity: string
+    readonly dlqMessageId: number | null
+    readonly namespaceId: string
+    readonly detail: string | null
+    readonly entryId: string | null
+  }[]
+  readonly note: string
+}
+
+/** Where a message went across clouds (unit 6.19) — every recorded sighting, oldest first. Never a live look. */
+export async function fetchTrace(correlationId: string): Promise<TraceResult> {
+  return (await api.get<TraceResult>('/trace', { params: { correlationId } })).data
+}

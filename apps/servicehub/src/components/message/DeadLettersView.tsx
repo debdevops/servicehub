@@ -29,6 +29,15 @@ const ranges: readonly { id: DeadLetterRange; label: string }[] = [
 
 const asRange = (v: string | null): DeadLetterRange => (v === '24h' || v === '7d' || v === '30d' ? v : 'all')
 
+/** 4.0.0's DLQ History, as one filter (unit 6.11). `?status=` — absent means stuck now. */
+type Showing = 'active' | 'resolved' | 'all'
+const showings: readonly { id: Showing; label: string }[] = [
+  { id: 'active', label: 'Stuck now' },
+  { id: 'resolved', label: 'No longer stuck' },
+  { id: 'all', label: 'All' },
+]
+const asShowing = (v: string | null): Showing => (v === 'resolved' || v === 'all' ? v : 'active')
+
 /**
  * Home's `?tab=dlq`: what is dead-lettered in one cloud, and why — one table, with the failure groups
  * above it (D45: not a page). Every control is in the URL, so a filtered view is a link that survives a
@@ -44,6 +53,7 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
   const page = Math.max(1, Number(params.get('page')) || 1)
   const [pageSize, setPageSize] = usePageSize()
   const range = asRange(params.get('range'))
+  const showing = asShowing(params.get('status'))
   const reasonParam = params.get('reason')
   const entity = params.get('entity') ?? undefined
   const q = params.get('q') ?? ''
@@ -53,7 +63,7 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
     // One namespace in scope (`?ns=`) → ask the API for just that one; a whole environment (`?env=`) → for just that environment.
     namespaceId: scope.ns?.id,
     environment: scope.env ?? undefined,
-    status: 'active' as const,
+    status: showing,
     range,
     reason: reasonParam && reasonParam !== NO_REASON ? reasonParam : undefined,
     noReason: reasonParam === NO_REASON,
@@ -89,7 +99,7 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
 
   // Selection belongs to a filter. Change the filter and it is gone — a selection you cannot see is
   // a selection that can be acted on by mistake.
-  const signature = [reasonParam, entity, range, q].join('|')
+  const signature = [showing, reasonParam, entity, range, q].join('|')
   const [selection, setSelection] = useState<{ sig: string; ids: ReadonlySet<string>; all: boolean }>({ sig: signature, ids: new Set(), all: false })
   const current = selection.sig === signature ? selection : { sig: signature, ids: new Set<string>(), all: false }
 
@@ -98,7 +108,7 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
   const watched = namespaces.every((n) => n.capabilities?.supportsRepeatablePeek === true)
   const names = new Map(namespaces.map((n) => [n.id, namespaceTag(n)]))
   const total = data?.paging.total ?? 0
-  const filtering = !!(reasonParam || entity || q || range !== 'all')
+  const filtering = !!(reasonParam || entity || q || range !== 'all' || showing !== 'active')
   const reasonLabel = reasonParam === NO_REASON ? 'with no reason recorded' : reasonParam
   const groupTotal = (data?.groups ?? []).reduce((n, g) => n + g.count, 0) + (data?.otherReasons?.count ?? 0)
 
@@ -170,6 +180,14 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
 
           <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
             <label className="flex items-center gap-2">
+              <span className="text-[var(--color-text-muted)]">Showing</span>
+              <select value={showing} onChange={(e) => change({ status: e.target.value === 'active' ? null : e.target.value })} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5">
+                {showings.map((o) => (
+                  <option key={o.id} value={o.id}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-2">
               <span className="text-[var(--color-text-muted)]">Window</span>
               <select value={range} onChange={(e) => change({ range: e.target.value === 'all' ? null : e.target.value })} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5">
                 {ranges.map((r) => (
@@ -188,6 +206,7 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 placeholder="Search by message ID, queue or reason"
+                data-shortcut="filter"
                 className="w-72 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5"
               />
             </label>
@@ -199,7 +218,7 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
               <EmptyState cloud={cloud} filtering={filtering} watched={watched} onClear={() => setParams(new URLSearchParams({ tab: 'dlq' }), { replace: true })} />
             ) : (
               <>
-                {selectedCount > 0 && (
+                {showing === 'active' && selectedCount > 0 && (
                   <BulkBar
                     count={selectedCount}
                     allMatching={current.all}
@@ -216,7 +235,9 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
                 <MessageTable
                   rows={rows}
                   namespaceNames={names}
-                  selection={{ selected: current.all ? new Set(rows.map((r) => String(r.id))) : current.ids, onToggle: toggle, onTogglePage: togglePage }}
+                  showOutcome={showing !== 'active'}
+                  caption={showing === 'active' ? undefined : 'Dead-lettered messages and what became of them, newest first'}
+                  selection={showing !== 'active' ? undefined : { selected: current.all ? new Set(rows.map((r) => String(r.id))) : current.ids, onToggle: toggle, onTogglePage: togglePage }}
                 />
                 <Pager page={data.paging.page} pageSize={data.paging.pageSize} total={total} filtered={filtering} onPage={(p) => change({ page: String(p) })} onPageSize={(s) => { setPageSize(s); change({ page: null }) }} />
               </>

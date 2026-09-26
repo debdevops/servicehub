@@ -253,6 +253,32 @@ internal sealed class PeekLog
 
     /// <summary>The queue-or-topic and subscription the last replay asked the cloud for.</summary>
     public (string Entity, string? Subscription)? LastReplayTarget { get; set; }
+
+    /// <summary>What a purge does when a test asks for one (unit 6.15). Null keeps the old behaviour: not supported.</summary>
+    public Func<Result>? OnPurge { get; set; }
+
+    private int _purges;
+    public int Purges => _purges;
+    public void HitPurge() => Interlocked.Increment(ref _purges);
+
+    /// <summary>What the fake cloud has scheduled for later (unit 6.17).</summary>
+    public List<Message> Scheduled { get; } = [];
+
+    /// <summary>Every message a send put onto the fake cloud (unit 6.14).</summary>
+    public System.Collections.Concurrent.ConcurrentQueue<SendMessageRequest> Sent { get; } = new();
+}
+
+/// <summary>A sender that records what it was asked to send, and fails for the "broken" entity.</summary>
+internal sealed class RecordingSender(PeekLog log) : IMessageSender
+{
+    public Task<Result> SendAsync(SendMessageRequest request, CancellationToken cancellationToken = default)
+    {
+        if (request.EntityName == "broken") return Task.FromResult(Result.Failure(Error.ExternalService("fake.send", "the cloud did not answer")));
+        log.Sent.Enqueue(request);
+        return Task.FromResult(Result.Success());
+    }
+
+    public Task<Result> SendBatchAsync(IEnumerable<SendMessageRequest> requests, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 }
 
 /// <summary>A cloud with 30 active and 30 dead-lettered messages in "orders", and a "broken" entity that fails.</summary>
@@ -263,7 +289,7 @@ internal sealed class PeekableProvider(CloudProviderType type, ProviderCapabilit
     public CloudProviderType ProviderType => type;
     public ProviderCapabilities Capabilities => capabilities;
     public IMessageReceiver GetMessageReceiver() => this;
-    public IMessageSender GetMessageSender() => throw new NotSupportedException();
+    public IMessageSender GetMessageSender() => new RecordingSender(log);
     public Task<Result> ValidateConnectionAsync(Namespace ns, CancellationToken ct) => Task.FromResult(Result.Success());
     public Task<Result<IReadOnlyList<CloudEntity>>> ListEntitiesAsync(Guid namespaceId, CancellationToken ct) =>
         Task.FromResult(Result.Success<IReadOnlyList<CloudEntity>>([]));
@@ -302,6 +328,12 @@ internal sealed class PeekableProvider(CloudProviderType type, ProviderCapabilit
         log.LastReplayTarget = (entityName, subscriptionName);
         return log.OnReplay is { } replay ? Task.FromResult(replay()) : throw new NotSupportedException();
     }
-    public Task<Result> PurgeMessageAsync(Guid namespaceId, string entityName, string? subscriptionName, long sequenceNumber, bool fromDeadLetter, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    public Task<Result<IReadOnlyList<Message>>> GetScheduledMessagesAsync(Guid namespaceId, string entityName, string? subscriptionName, int maxMessages, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<Result> PurgeMessageAsync(Guid namespaceId, string entityName, string? subscriptionName, long sequenceNumber, bool fromDeadLetter, CancellationToken cancellationToken = default)
+    {
+        if (log.OnPurge is null) throw new NotSupportedException();
+        log.HitPurge();
+        return Task.FromResult(log.OnPurge());
+    }
+    public Task<Result<IReadOnlyList<Message>>> GetScheduledMessagesAsync(Guid namespaceId, string entityName, string? subscriptionName, int maxMessages, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Result.Success<IReadOnlyList<Message>>(log.Scheduled));
 }

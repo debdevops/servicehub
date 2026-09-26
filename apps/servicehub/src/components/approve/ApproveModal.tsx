@@ -1,6 +1,7 @@
 import { Bot, Check, CircleAlert, Clock, FileText, TriangleAlert, X } from 'lucide-react'
 import { useMe } from '../../hooks/useIdentity'
 import { permission } from '../../lib/permissions'
+import { UnlockHint } from '../UnlockHint'
 import { NotAllowed } from '../ui/NotAllowed'
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
@@ -115,17 +116,10 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
         </section>
       )}
 
-      {canProve === false ? (
-        <p className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-3 text-[13px]">
-          <b>{cloud} will keep asking.</b> It can’t prove a replayed message stayed fixed, so no rule may replay here on its own — a person decides each
-          time. That is the safe answer, not a fault.
-        </p>
-      ) : canProve && first.reasonCode === 'AUTONOMY_GRANT_INSUFFICIENT' ? (
-        <p className="rounded-xl border border-[#bae6fd] bg-[#f0f9ff] p-3 text-[13px]">
-          <b>Stop being asked about this kind:</b> every replay of it that is verified as fixed counts. After 10 at 95% or better, rules may replay it on
-          their own.
-        </p>
-      ) : null}
+      {/* A cloud that can't prove a fix is the real blocker whatever code the escalation carries: AWS escalations arrive as
+          AUTONOMY_GRANT_INSUFFICIENT, and "after 10 at 95%" would be a promise that cloud can never keep. */}
+      <UnlockHint code={canProve === false ? 'PROVIDER_CANNOT_VERIFY_ABSENCE' : first.reasonCode} />
+
 
       {declining && (
         <section className="rounded-xl border border-[#fecaca] bg-[#fef2f2] p-4">

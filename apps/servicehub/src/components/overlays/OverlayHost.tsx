@@ -2,7 +2,7 @@ import { Suspense } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { visibleEntries, type OverlayEntry } from '../../nav/navigation'
 import { OverlayFrame } from './OverlayFrame'
-import { overlayBodies, overlayCompanionParams } from './registry'
+import { overlayBodies, overlayCompanionParams, overlayWide } from './registry'
 
 type OverlayKind = 'modal' | 'panel'
 
@@ -51,7 +51,7 @@ export function OverlayHost({ connectedCloudCount }: { connectedCloudCount: numb
         const Body = overlayBodies[entry.id]
         const onClose = close(kind)
         return (
-          <OverlayFrame key={`${kind}:${entry.id}`} kind={kind} title={entry.label} description={entry.description} onClose={onClose}>
+          <OverlayFrame key={`${kind}:${entry.id}`} kind={kind} title={entry.label} description={entry.description} onClose={onClose} size={overlayWide.has(entry.id) ? 'wide' : 'default'}>
             {Body ? (
               <Suspense fallback={<p className="text-sm text-[var(--color-text-muted)]">Loading…</p>}>
                 <Body entry={entry} close={onClose} />

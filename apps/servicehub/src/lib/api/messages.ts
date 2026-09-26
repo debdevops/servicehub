@@ -1,4 +1,5 @@
 import { api } from './client'
+import { Intent, withIntent } from './intentHeaders'
 
 /**
  * One message, peeked live. ServiceHub never stores a message body (ADR-0004): this is read from the
@@ -93,4 +94,40 @@ export async function fetchMessage(
  */
 export function canAutoRefresh(page: Pick<PeekPage, 'peek'> | undefined): boolean {
   return page?.peek.repeatable === true
+}
+
+export interface SendInput {
+  readonly namespaceId: string
+  readonly entity: string
+  readonly isTopic: boolean
+  readonly body: string
+  readonly contentType?: string
+  readonly properties?: Readonly<Record<string, string>>
+}
+
+/** Puts one new message onto a queue or topic (unit 6.14). Refused in Production. */
+export async function sendMessage({ namespaceId, ...input }: SendInput): Promise<{ accepted: boolean; detail: string }> {
+  return (await api.post<{ accepted: boolean; detail: string }>(`/namespaces/${namespaceId}/messages`, input, { headers: withIntent(Intent.SendMessage) })).data
+}
+
+export interface ScheduledMessage {
+  readonly messageId: string
+  readonly sequenceNumber: number
+  readonly scheduledFor: string | null
+  readonly sizeInBytes: number
+  readonly contentType: string | null
+  readonly bodyPreview: string | null
+}
+
+export interface ScheduledPage {
+  readonly entity: string
+  readonly subscription: string | null
+  readonly messages: readonly ScheduledMessage[]
+  /** True when the list stopped at the cap, so there may be more. */
+  readonly capped: boolean
+}
+
+/** What is waiting to be delivered later (unit 6.17). A cloud without scheduled messages answers 409, never an empty list. */
+export async function fetchScheduled(namespaceId: string, query: { entity: string; subscription?: string }): Promise<ScheduledPage> {
+  return (await api.get<ScheduledPage>(`/namespaces/${namespaceId}/messages/scheduled`, { params: query })).data
 }

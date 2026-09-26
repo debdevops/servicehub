@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../../lib/api/agents'
 import type { Agent } from '../../lib/api/agents'
 import AgentsPage, { fold } from './AgentsPage'
+import { expectNoAxeViolations } from '../../test/axe'
 
 vi.mock('../../lib/api/agents', async (original) => ({
   ...(await original<typeof api>()),
@@ -35,6 +36,12 @@ describe('the Agents page', () => {
     vi.mocked(api.fetchAgents).mockResolvedValue(agents)
     vi.mocked(api.fetchAgentActivity).mockResolvedValue({ agentId: 'auto-replay', cyclesSinceUtc: null, items: [] })
     vi.mocked(api.pauseAgent).mockResolvedValue(agents[1])
+  })
+
+  it('has no accessibility violations (6.6)', async () => {
+    renderPage()
+    await new Promise((r) => setTimeout(r, 150))
+    await expectNoAxeViolations(document.body)
   })
 
   it('leads with the agents that can change anything, and draws any agent it is given with no code of its own', async () => {

@@ -11,7 +11,8 @@ import type { CloudProvider, Namespace } from '../../lib/api/namespaces'
  * Draws nothing when there is nothing to show: an empty box is not information.
  */
 export function RecentDeadLetters({ provider, namespaces, choice }: { provider: CloudProvider; namespaces: readonly Namespace[]; choice: ScopeChoice }) {
-  const { data } = useDeadLetters({ provider, namespaceId: choice.ns?.id, environment: choice.env ?? undefined, status: 'active', page: 1, pageSize: 5 })
+  const { data, isError, refetch } = useDeadLetters({ provider, namespaceId: choice.ns?.id, environment: choice.env ?? undefined, status: 'active', page: 1, pageSize: 5 })
+  if (isError) return <p role="alert" className="text-sm">ServiceHub couldn’t read the latest dead letters. <button type="button" onClick={() => void refetch()} className="font-medium text-[var(--color-primary-700)] hover:underline">Try again</button></p>
   if (!data || data.items.length === 0) return null
 
   return (

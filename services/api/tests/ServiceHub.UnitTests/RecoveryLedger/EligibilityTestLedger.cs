@@ -132,6 +132,7 @@ internal sealed class EligibilityTestLedger : IRecoveryLedger
     public Task<bool> HasDuplicateAssociationAsync(string ownerId, string signatureHash, CancellationToken cancellationToken = default) => _real.HasDuplicateAssociationAsync(ownerId, signatureHash, cancellationToken);
     public Task<Result<RecoveryLedgerEntry>> RecordDeclinedAsync(BeginRecoveryEntryRequest request, string reasonCode, string? detailJson, CancellationToken cancellationToken = default) => _real.RecordDeclinedAsync(request, reasonCode, detailJson, cancellationToken);
     public Task<Result<RecoveryEvent>> RecordDecisionAsync(Guid entryId, string ownerId, RecoveryActor actor, bool approved, string? reason, Guid? replayEntryId, CancellationToken cancellationToken = default) => _real.RecordDecisionAsync(entryId, ownerId, actor, approved, reason, replayEntryId, cancellationToken);
+    public Task<EmergencyStopState> GetEmergencyStopStateAsync(string ownerId, CancellationToken cancellationToken = default) => _real.GetEmergencyStopStateAsync(ownerId, cancellationToken);
     public Task<IReadOnlyList<AutonomyGrant>> GetAutonomyGrantsAsync(string ownerId, CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<AutonomyGrant>>([.. _grants.Values.Where(g => g.OwnerId == ownerId)]);
 }

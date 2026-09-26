@@ -1,3 +1,4 @@
+import { isDemo } from './demo/state'
 /**
  * The live event stream, one connection for the whole app.
  *
@@ -34,7 +35,8 @@ function setStatus(next: StreamStatus) {
 
 /** Opens the stream if it is not open. Safe to call again. Without EventSource (a test, an old browser) it stays offline. */
 export function startEventStream(): void {
-  if (source || typeof EventSource === 'undefined') return
+  // A demo has no server to stream from; its data does not change underneath anyone.
+  if (source || typeof EventSource === 'undefined' || isDemo()) return
   setStatus('connecting')
   source = new EventSource(URL)
   source.onopen = () => setStatus('live')

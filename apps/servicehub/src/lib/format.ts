@@ -1,3 +1,5 @@
+import { displayTimeZone } from './preferences'
+
 /** Small, dependable formatters. Every one takes its clock as an argument so a test never depends on "now". */
 
 export function formatBytes(bytes: number): string {
@@ -19,10 +21,13 @@ export function formatAge(fromIso: string, now: Date): string {
   return `${Math.floor(hours / 24)} d`
 }
 
-/** "10:12" for today, otherwise "Sep 22, 10:12" — local time, 24-hour. */
-export function formatWhen(iso: string, now: Date): string {
+/**
+ * "10:12" for today, otherwise "Sep 22, 10:12" — 24-hour, in the time zone chosen in Settings (the browser's own by default).
+ * `timeZone` is for tests; the app passes nothing and the preference applies.
+ */
+export function formatWhen(iso: string, now: Date, timeZone: string | undefined = displayTimeZone()): string {
   const d = new Date(iso)
-  const clock = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-  const sameDay = d.toDateString() === now.toDateString()
-  return sameDay ? clock : `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${clock}`
+  const clock = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone })
+  const day = (x: Date) => x.toLocaleDateString('en-CA', { timeZone })
+  return day(d) === day(now) ? clock : `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone })}, ${clock}`
 }

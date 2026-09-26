@@ -46,6 +46,27 @@ public static class IntentHeaders
     /// <summary>Intent for revoking a governance role.</summary>
     public const string RevokeRole = "revoke-role";
 
+    /// <summary>Intent for adding a notification channel.</summary>
+    public const string AddChannel = "add-channel";
+
+    /// <summary>Intent for removing a notification channel.</summary>
+    public const string RemoveChannel = "remove-channel";
+
+    /// <summary>Intent for switching emergency stop on or off.</summary>
+    public const string EmergencyStop = "emergency-stop";
+
+    /// <summary>Intent for purging (deleting for good) one dead letter.</summary>
+    public const string PurgeMessage = "purge-message";
+
+    /// <summary>Intent for sending one new message.</summary>
+    public const string SendMessage = "send-message";
+
+    /// <summary>Intent for taking a backup.</summary>
+    public const string CreateBackup = "create-backup";
+
+    /// <summary>Intent for staging a backup to be restored at the next start.</summary>
+    public const string RestoreBackup = "restore-backup";
+
     /// <summary>Whether the request declared exactly <paramref name="expected"/>.</summary>
     public static bool Declares(HttpRequest request, string expected)
     {

@@ -81,6 +81,14 @@ public static class PersistenceServiceCollectionExtensions
         services.TryAddScoped<IGovernanceAccessEvaluator, Governance.GovernanceAccessEvaluator>();
         services.TryAddScoped<Recovery.EscalationRecorder>();
         services.TryAddScoped<IRecoveryQueries, RecoveryLedger.RecoveryQueries>();
+        services.AddOptions<Core.Models.BackupOptions>().BindConfiguration(Core.Models.BackupOptions.SectionName);
+        services.TryAddScoped<IBackupService, Backup.BackupService>();
+        services.TryAddScoped<IAnomalyDetectionService, Insights.DeterministicAnomalyDetectionService>();
+        services.TryAddScoped<IBacklogForecastService, Insights.DeterministicBacklogForecastService>();
+        services.TryAddSingleton<ICorrelationDetectionService, Insights.DeterministicCorrelationDetectionService>();
+        services.TryAddSingleton<INarrationService, Insights.DeterministicNarrationService>();
+        services.TryAddScoped<IBackupRestore, Backup.BackupRestoreService>();
+        services.TryAddScoped<Backup.BackupRestoreService>();
         services.TryAddSingleton<IActorIdentityResolver, Identity.ActorIdentityResolver>();
 
         // Single-instance invariant (ADR-0003). Singleton, so the OS file lock is held for the
@@ -119,6 +127,10 @@ public static class PersistenceServiceCollectionExtensions
 
         var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("ServiceHub.Persistence");
         var dbPath = ServiceHubDataDirectory.ResolveDatabasePath(services.GetRequiredService<IConfiguration>());
+
+        // A restore staged by Settings → Backup (unit 6.13) goes into place now: the lock is held and nothing has opened the
+        // file yet. The schema check and migrations below then treat it like any other database.
+        ServiceHub.Infrastructure.Backup.BackupRestoreService.ApplyPendingRestore(Path.GetDirectoryName(dbPath)!, DateTimeOffset.UtcNow, logger);
 
         await using var scope = services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ServiceHubDbContext>();

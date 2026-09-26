@@ -21,8 +21,16 @@ export interface DeadLetter {
   /** What the cloud or the application recorded. A recorded fact, never a guess. */
   readonly deadLetterReason: string | null
   readonly deadLetterErrorDescription: string | null
-  readonly status: string
+  readonly status: DeadLetterStatus
+  /** When it left the queue, as recorded (unit 6.11). Null while it is still there. */
+  readonly resolvedAt?: string | null
+  /** What is known about how it left — recorded by whatever saw it happen, never inferred (R5). */
+  readonly resolutionCause?: ResolutionCause | null
 }
+
+/** The API's lifecycle words, camelCase as it sends them (a PascalCase compare once hid Replay for every message). */
+export type DeadLetterStatus = 'active' | 'replayed' | 'archived' | 'discarded' | 'replayFailed' | 'resolved' | 'replaying' | 'purging'
+export type ResolutionCause = 'replayedByServiceHub' | 'purgedByServiceHub' | 'vanishedExternally' | 'declaredByOperator' | 'unknown'
 
 export interface ReasonGroup {
   /** Null when no reason was recorded — said plainly, not hidden. */

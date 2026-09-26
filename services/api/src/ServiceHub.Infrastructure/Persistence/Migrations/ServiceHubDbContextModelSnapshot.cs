@@ -316,6 +316,9 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                         .HasMaxLength(1024)
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("Kind")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("OwnerId")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -326,6 +329,9 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("PreviewedAt")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Reason")
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("SampleOnly")
@@ -594,6 +600,64 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                     b.ToTable("GovernanceGrants", (string)null);
                 });
 
+            modelBuilder.Entity("ServiceHub.Core.Entities.InsightFinding", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ClearedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EntityName")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FirstSeenAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastSeenAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MetricsJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("NamespaceId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Severity")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("What")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId", "Kind", "Key")
+                        .HasDatabaseName("IX_InsightFindings_Owner_Kind_Key");
+
+                    b.ToTable("InsightFindings", (string)null);
+                });
+
             modelBuilder.Entity("ServiceHub.Core.Entities.Namespace", b =>
                 {
                     b.Property<Guid>("Id")
@@ -735,6 +799,58 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("IX_NamespaceSignatures_Owner_Namespace_Hash");
 
                     b.ToTable("NamespaceSignatures", (string)null);
+                });
+
+            modelBuilder.Entity("ServiceHub.Core.Entities.NotificationChannel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Format")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastDeliveredAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UrlEncrypted")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId")
+                        .HasDatabaseName("IX_NotificationChannels_OwnerId");
+
+                    b.ToTable("NotificationChannels", (string)null);
                 });
 
             modelBuilder.Entity("ServiceHub.Core.Entities.RecoveryEvent", b =>

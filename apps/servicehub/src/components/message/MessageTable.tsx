@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { columnHelp } from '../../content/columns'
 import { explainFailure } from '../../lib/analyzer'
 import { EntityCell } from './EntityCell'
-import type { DeadLetter } from '../../lib/api/deadLetters'
+import type { DeadLetter, ResolutionCause } from '../../lib/api/deadLetters'
 import { formatAge, formatBytes, formatWhen } from '../../lib/format'
 import { DataTable, type Column, type Selection } from '../ui/DataTable'
 
@@ -19,6 +19,7 @@ export function MessageTable({
   namespaceNames,
   selection,
   compact = false,
+  showOutcome = false,
   caption = 'Dead-lettered messages, newest first',
 }: {
   rows: readonly DeadLetter[]
@@ -26,6 +27,8 @@ export function MessageTable({
   namespaceNames?: ReadonlyMap<string, string>
   selection?: Selection
   compact?: boolean
+  /** History (unit 6.11): "Waiting" becomes "Now" — still stuck, or gone since when and how, as recorded. */
+  showOutcome?: boolean
   caption?: string
 }) {
   const { search } = useLocation()
@@ -46,7 +49,7 @@ export function MessageTable({
       key: 'queue',
       header: 'Queue or topic',
       info: help.where,
-      width: 'min-w-[15rem] w-[24%]',
+      width: 'min-w-[12rem] w-[24%]',
       render: (r) => <EntityCell entityName={r.entityName} entityType={r.entityType} topicName={r.topicName} note={showNamespace ? namespaceNames?.get(r.namespaceId) : undefined} />,
     },
     {
@@ -54,11 +57,13 @@ export function MessageTable({
       key: 'reason',
       header: 'Failed because',
       info: help.failedBecause,
-      width: 'w-[42%] min-w-[22rem]',
+      width: 'w-[42%] min-w-[18rem]',
       render: (r) => <FailedBecause row={r} />,
     },
     { key: 'tries', header: 'Tries', info: help.tries, numeric: true, render: (r) => (r.deliveryCount > 0 ? r.deliveryCount : <span title="This cloud does not report how many times the message was delivered." className="text-[var(--color-text-muted)]">—</span>) },
-    { key: 'waiting', header: 'Waiting', info: help.waiting, className: 'whitespace-nowrap', render: (r) => formatAge(r.detectedAtUtc, now) },
+    showOutcome
+      ? { key: 'now', header: 'Now', info: help.now, className: 'min-w-[11rem]', render: (r) => <Now row={r} now={now} /> }
+      : { key: 'waiting', header: 'Waiting', info: help.waiting, className: 'whitespace-nowrap', render: (r) => formatAge(r.detectedAtUtc, now) },
     { key: 'size', header: 'Size', info: help.size, numeric: true, className: 'whitespace-nowrap', render: (r) => formatBytes(r.sizeInBytes) },
     {
       key: 'open',
@@ -128,4 +133,34 @@ function FailedBecause({ row }: { row: DeadLetter }) {
       </p>
     </div>
   )
+}
+
+/** How it left, in words that claim no more than was recorded: absence proves it is gone, not who removed it (R5). */
+const causeWords: Readonly<Record<ResolutionCause, string>> = {
+  replayedByServiceHub: 'Replayed by ServiceHub',
+  purgedByServiceHub: 'Purged by ServiceHub',
+  vanishedExternally: 'Left the queue — ServiceHub did not see how',
+  declaredByOperator: 'Marked handled by a person',
+  unknown: 'How it left was not recorded',
+}
+
+function Now({ row, now }: { row: DeadLetter; now: Date }) {
+  switch (row.status) {
+    case 'active':
+      return <span className="whitespace-nowrap">Still stuck · {formatAge(row.detectedAtUtc, now)}</span>
+    case 'replaying':
+    case 'purging':
+      return <span className="whitespace-nowrap">{row.status === 'replaying' ? 'Being replayed' : 'Being purged'} now</span>
+    case 'archived':
+      return <span className="text-[var(--color-text-muted)]">Its namespace was removed</span>
+    default:
+      return (
+        <div className="text-[12.5px]">
+          <p className="font-medium">No longer in the queue{row.resolvedAt ? ` since ${formatWhen(row.resolvedAt, now)}` : ''}</p>
+          <p className="text-[var(--color-text-muted)]">
+            {row.resolutionCause ? causeWords[row.resolutionCause] : row.status === 'replayed' ? causeWords.replayedByServiceHub : row.status === 'discarded' ? 'Discarded on purpose' : row.status === 'replayFailed' ? 'A replay was tried and failed' : causeWords.unknown}
+          </p>
+        </div>
+      )
+  }
 }

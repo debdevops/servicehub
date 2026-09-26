@@ -7,7 +7,7 @@ using ServiceHub.Core.Interfaces;
 namespace ServiceHub.Infrastructure.Webhooks;
 
 /// <summary>
-/// Carries each <c>EscalationRaised</c> to the configured Slack / Teams / webhook channel (unit 5.5), on 4.0.0's handler pattern.
+/// Carries each <c>EscalationRaised</c> to every Slack / Teams / webhook channel the owner set up, and the configured one (units 5.5, 6.3), on 4.0.0's handler pattern.
 /// Best-effort: a delivery failure is logged and never fails the escalation — the durable pending item is the truth.
 /// </summary>
 public sealed class WebhookEscalationHandler
@@ -33,14 +33,10 @@ public sealed class WebhookEscalationHandler
 
         try
         {
-            // The notifier is scoped (a typed HttpClient): one scope per delivery.
+            // Delivery reads the owner's channels from the database: one scope per escalation.
             using var scope = _scopes.CreateScope();
-            var sent = await scope.ServiceProvider.GetRequiredService<IWebhookNotifier>().NotifyEscalationAsync(
-                p.Kind, p.ReasonCode, p.Reason, p.NamespaceName, p.Provider, p.Entity, p.EntryId, p.AgentId, cancellationToken).ConfigureAwait(false);
-            if (sent.IsFailure)
-            {
-                _logger.LogWarning("An escalation could not be delivered to the webhook: {Error}", sent.Error.Message);
-            }
+            await scope.ServiceProvider.GetRequiredService<IEscalationDelivery>()
+                .DeliverAsync(p, platformEvent.Actor ?? string.Empty, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

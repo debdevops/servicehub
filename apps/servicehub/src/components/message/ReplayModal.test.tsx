@@ -8,6 +8,7 @@ import * as replayApi from '../../lib/api/replay'
 import type { ReplayOutcome, ReplayProposal } from '../../lib/api/replay'
 import * as identity from '../../lib/api/identity'
 import ReplayModal from './ReplayModal'
+import { expectNoAxeViolations } from '../../test/axe'
 
 vi.mock('../../lib/api/deadLetters')
 vi.mock('../../lib/api/replay')
@@ -53,6 +54,12 @@ describe('the replay proposal', () => {
     vi.mocked(identity.fetchMe).mockResolvedValue({ ownerId: 'o', authMethod: 'session', effectiveRole: null, actor: { identity: 'session', kind: 'user', label: 'from this browser session', isSession: true } })
     proposalMock.mockReset()
     replayMock.mockReset()
+  })
+
+  it('has no accessibility violations (6.6)', async () => {
+    renderModal()
+    await new Promise((r) => setTimeout(r, 150))
+    await expectNoAxeViolations(document.body)
   })
 
   it('says what will happen and lists the checks before anything runs', async () => {

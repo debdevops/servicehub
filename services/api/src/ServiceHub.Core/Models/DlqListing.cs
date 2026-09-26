@@ -24,6 +24,10 @@ public sealed record DlqListQuery(
     int PageSize = 25);
 
 /// <summary>One stored dead-letter row, as a list shows it. No body: a list is not the place for one.</summary>
+/// <remarks>
+/// <paramref name="ResolvedAt"/> and <paramref name="ResolutionCause"/> are what was recorded when it left the queue
+/// (unit 6.11) — a scan that only saw it gone records <see cref="DlqResolutionCause.VanishedExternally"/>, never who removed it.
+/// </remarks>
 public sealed record DlqListItem(
     long Id,
     Guid NamespaceId,
@@ -38,7 +42,9 @@ public sealed record DlqListItem(
     long SizeInBytes,
     string? DeadLetterReason,
     string? DeadLetterErrorDescription,
-    DlqMessageStatus Status);
+    DlqMessageStatus Status,
+    DateTimeOffset? ResolvedAt = null,
+    DlqResolutionCause? ResolutionCause = null);
 
 /// <summary>How many messages share one recorded reason.</summary>
 /// <param name="Reason">The reason the cloud or the application recorded; null when none was.</param>

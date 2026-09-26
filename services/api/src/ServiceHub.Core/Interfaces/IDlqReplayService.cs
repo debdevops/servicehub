@@ -27,6 +27,14 @@ public interface IDlqReplayService
         long dlqMessageId, Namespace ns, RecoveryActor actor, string? intentHeader, string? correlationId,
         CancellationToken cancellationToken, long? ruleId = null);
 
+    /// <summary>
+    /// Purges it (unit 6.15): the same order as a replay — gate, ledger entry, cloud, outcome — and never retried. Only where
+    /// the cloud can delete one message (<c>SupportsPurge</c>); a reason is required and recorded; automation may never purge.
+    /// </summary>
+    Task<Result<ReplayOutcome>> PurgeAsync(
+        long dlqMessageId, Namespace ns, RecoveryActor actor, string reason, string? intentHeader, string? correlationId,
+        CancellationToken cancellationToken);
+
     /// <summary>The replays in the given namespaces, newest first — optionally only those of one dead letter.</summary>
     Task<ReplayPage> ListAsync(
         IReadOnlyCollection<Guid> namespaceIds, string? result, long? dlqMessageId, int page, int pageSize, CancellationToken cancellationToken);

@@ -233,6 +233,32 @@ public sealed class DeadLettersApiTests
     }
 
     [Fact]
+    public async Task A_resolved_row_carries_when_and_how_it_left_as_recorded_and_an_active_one_carries_neither()
+    {
+        using var host = Host();
+        var ns = await Connect(host.Client, "azure");
+        await Seed(host, ns, CloudProviderType.Azure, 1);
+        await Seed(host, ns, CloudProviderType.Azure, 1, status: DlqMessageStatus.Resolved, prefix: "gone");
+        var left = DateTimeOffset.UtcNow.AddHours(-2);
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServiceHubDbContext>();
+            var gone = await db.DlqMessages.SingleAsync(m => m.MessageId.StartsWith("gone"));
+            gone.ResolvedAt = left;
+            gone.ResolutionCause = DlqResolutionCause.VanishedExternally;
+            await db.SaveChangesAsync();
+        }
+
+        var items = (await Get(host, $"?namespaceId={ns}&status=all")).GetProperty("items").EnumerateArray().ToList();
+        var resolved = items.Single(i => i.GetProperty("status").GetString() == "resolved");
+        resolved.GetProperty("resolutionCause").GetString().Should().Be("vanishedExternally");
+        resolved.GetProperty("resolvedAt").GetDateTimeOffset().Should().BeCloseTo(left, TimeSpan.FromSeconds(1));
+        var active = items.Single(i => i.GetProperty("status").GetString() == "active");
+        active.GetProperty("resolvedAt").ValueKind.Should().Be(JsonValueKind.Null);
+        active.GetProperty("resolutionCause").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
     public async Task The_window_filters_by_when_a_message_was_first_seen_and_defaults_to_all_time()
     {
         using var host = Host();

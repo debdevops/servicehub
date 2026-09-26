@@ -122,3 +122,21 @@ export async function fetchLedgerEntry(id: string): Promise<LedgerEntryDetail> {
 export async function verifyChain(): Promise<ChainVerification> {
   return (await api.get<ChainVerification>('/recovery/chain')).data
 }
+
+const windowMs: Readonly<Record<RecoveryWindow, number | null>> = { '24h': 864e5, '7d': 7 * 864e5, '30d': 30 * 864e5, all: null }
+
+/**
+ * The ledger as one file the offline verifier checks (unit 6.12). Always the whole chain inside the window — never narrowed to
+ * a cloud or namespace, because leaving events out would break the chain. Resolves to the file name it saved.
+ */
+export async function exportEvidence(window: RecoveryWindow, now = new Date()): Promise<string> {
+  const ms = windowMs[window]
+  const from = ms === null ? undefined : new Date(now.getTime() - ms).toISOString()
+  const res = await api.get<Blob>('/recovery/export', { params: { from }, responseType: 'blob' })
+  const name = /filename="?([^";]+)"?/.exec(String(res.headers['content-disposition'] ?? ''))?.[1] ?? 'servicehub-evidence.json'
+  const url = URL.createObjectURL(res.data)
+  const a = Object.assign(document.createElement('a'), { href: url, download: name })
+  a.click()
+  URL.revokeObjectURL(url)
+  return name
+}

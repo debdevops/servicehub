@@ -129,6 +129,75 @@ public sealed class SignaturesController : ApiControllerBase
             canConfirm, prod, e.Reasons));
     }
 
+    /// <summary>
+    /// Authority — and why (unit 6.8): how many of the signatures seen in the window sit at each level, and for those held at
+    /// "a person approves" (the floor, not a waypoint), what holds them there. Counted from grants and recorded outcomes — the same
+    /// facts <see cref="Trust"/> reads for one signature. Read-only.
+    /// </summary>
+    /// <param name="provider">Only this cloud.</param>
+    /// <param name="days">The window, 1–30 (default 7).</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    [HttpGet("authority")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Authority([FromQuery] CloudProviderType? provider, [FromQuery] int? days, CancellationToken cancellationToken)
+    {
+        if (days is < 1 or > 30)
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "'days' must be between 1 and 30.");
+        }
+
+        const int PageSize = 100, MaxPages = 5;
+        var seen = new List<SignatureSummary>();
+        for (var page = 1; page <= MaxPages; page++)
+        {
+            var chunk = await _signatures.ListAsync(OwnerId, AllowedNamespaceIds, provider, days ?? 7, "all", "messages", page, PageSize, cancellationToken);
+            seen.AddRange(chunk.Items);
+            if (seen.Count >= chunk.Total || chunk.Items.Count == 0) break;
+        }
+
+        var grants = (await _ledger.GetAutonomyGrantsAsync(OwnerId, cancellationToken))
+            .Where(g => g.ActionKind == RecoveryOperationKind.Replay)
+            .ToDictionary(g => g.SignatureHash, g => g.CurrentLevel);
+
+        int unattended = 0, standing = 0;
+        var held = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var hash in seen.Select(s => (s.SignatureHash, s.Provider)).Distinct())
+        {
+            var level = grants.TryGetValue(hash.SignatureHash, out var l) ? l : AutonomyLevel.Approve;
+            if (level == AutonomyLevel.Unattended) { unattended++; continue; }
+            if (level == AutonomyLevel.Standing) { standing++; continue; }
+
+            string reason;
+            if (await _ledger.GetSignatureEnvironmentAsync(OwnerId, hash.SignatureHash, cancellationToken) == EnvironmentType.Prod) reason = "production";
+            else if (!ProviderCapabilities.For(hash.Provider).CanProveDlqAbsence) reason = "cannot_verify";
+            else
+            {
+                var e = await _trust.EvaluateAsync(OwnerId, hash.SignatureHash, RecoveryOperationKind.Replay, cancellationToken);
+                reason = e.IsSuccess && e.Value.SampleSize < Infrastructure.RecoveryLedger.RecoveryTrustScoringService.L4MinimumSample ? "needs_evidence"
+                    : e.IsSuccess && e.Value.VerifiedSuccessRate < Infrastructure.RecoveryLedger.RecoveryTrustScoringService.L4MinimumRate ? "rate_too_low"
+                    : "awaiting_evaluation";
+            }
+
+            held[reason] = held.GetValueOrDefault(reason) + 1;
+        }
+
+        return Ok(new
+        {
+            total = unattended + standing + held.Values.Sum(),
+            capped = seen.Count >= PageSize * MaxPages,
+            unattended,
+            standing,
+            approve = held.Values.Sum(),
+            held = held.OrderByDescending(h => h.Value).Select(h => new { reason = h.Key, count = h.Value }),
+            needs = new
+            {
+                sample = Infrastructure.RecoveryLedger.RecoveryTrustScoringService.L4MinimumSample,
+                rate = Infrastructure.RecoveryLedger.RecoveryTrustScoringService.L4MinimumRate,
+            },
+        });
+    }
+
     private static string LevelWord(AutonomyLevel level) => level switch
     {
         AutonomyLevel.Standing => "standing",

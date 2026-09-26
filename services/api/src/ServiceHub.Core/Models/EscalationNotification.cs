@@ -16,15 +16,23 @@ public sealed record EscalationNotification(
     string Kind, string ReasonCode, string Reason, string? NamespaceName, string? Provider, string? Entity, DateTimeOffset RaisedAtUtc, string? ReviewUrl)
 {
     /// <summary>"The Agent stopped and asked you" / "An agent stopped working".</summary>
-    public string Headline => Kind == "agent" ? "An agent stopped working" : "The Agent stopped and asked you";
+    public string Headline => Kind switch
+    {
+        "agent" => "An agent stopped working",
+        "test" => "Test message from ServiceHub",
+        _ => "The Agent stopped and asked you",
+    };
 
     /// <summary>"AWS · orders-dev · orders-sqs" — whatever is known, in that order.</summary>
     public string Where => string.Join(" · ", new[] { ProviderLabel(Provider), NamespaceName, Entity }.Where(s => !string.IsNullOrWhiteSpace(s)));
 
     /// <summary>What the person should do next, in words.</summary>
-    public string WhatToDo => Kind == "agent"
-        ? "Open Agents in ServiceHub to see its last error."
-        : "Open ServiceHub and review it: approve replays it through the same safety checks, or decline with a reason.";
+    public string WhatToDo => Kind switch
+    {
+        "agent" => "Open Agents in ServiceHub to see its last error.",
+        "test" => "Nothing — this only checks that the channel works.",
+        _ => "Open ServiceHub and review it: approve replays it through the same safety checks, or decline with a reason.",
+    };
 
     private static string? ProviderLabel(string? p) => p switch { "azure" => "Azure", "aws" => "AWS", "gcp" => "Google Cloud", _ => p };
 }

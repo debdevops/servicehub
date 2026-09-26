@@ -38,8 +38,9 @@ public sealed class AgentsApiTests
         var agents = (await Json(await client.GetAsync("/api/v1/agents"))).EnumerateArray().ToList();
 
         agents.Select(a => a.GetProperty("id").GetString()).Should().BeEquivalentTo(
-            ["dlq-monitor", "recovery-verification", "bulk-replay", "auto-replay", "autonomy-evaluation"],
-            "the screen can only show what the registry holds — never 4.0.0's twenty workers");
+            ["dlq-monitor", "recovery-verification", "bulk-replay", "auto-replay", "autonomy-evaluation",
+             "insights-anomaly", "insights-backlog", "insights-correlation", "insights-narration"],
+            "the screen can only show what the registry holds — never 4.0.0's twenty workers (the four Insights agents arrived with 6.18; the backup agent only when scheduled)");
         agents.Where(a => a.GetProperty("canAct").GetBoolean()).Select(a => a.GetProperty("id").GetString())
             .Should().BeEquivalentTo(["bulk-replay", "auto-replay"], "only two agents can change anything outside ServiceHub");
         foreach (var a in agents)

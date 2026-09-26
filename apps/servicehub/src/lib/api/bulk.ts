@@ -29,7 +29,11 @@ export interface BulkPreview {
   readonly stopAfterConsecutiveFailures: number
   readonly expiresInMinutes: number
   readonly canProveDlqAbsence: boolean
+  /** What the run will do to each message (unit 6.15). */
+  readonly kind?: BulkKind
 }
+
+export type BulkKind = 'replay' | 'purge'
 
 /** As the API writes it: enums are camelCase words. */
 export type BulkStatus = 'previewed' | 'running' | 'completed' | 'cancelled' | 'stopped' | 'expired'
@@ -49,14 +53,20 @@ export interface BulkProgress {
   readonly previewedAt: string
   readonly startedAt: string | null
   readonly endedAt: string | null
+  readonly kind?: BulkKind
 }
 
-export async function previewBulk(dlqMessageIds: readonly number[]): Promise<BulkPreview> {
-  return (await api.post<BulkPreview>('/bulk-operations/preview', { dlqMessageIds })).data
+export async function previewBulk(dlqMessageIds: readonly number[], purge?: { reason: string }): Promise<BulkPreview> {
+  return (await api.post<BulkPreview>('/bulk-operations/preview', purge ? { dlqMessageIds, kind: 'purge', reason: purge.reason } : { dlqMessageIds })).data
 }
 
 export async function startBulk(previewId: string, sampleOnly: boolean): Promise<BulkProgress> {
   return (await api.post<BulkProgress>('/bulk-operations', { previewId, sampleOnly }, { headers: withIntent(Intent.BulkReplay) })).data
+}
+
+/** Starts a purge preview — its own intent, and the typed word the server checks too. */
+export async function startBulkPurge(previewId: string, confirm: string): Promise<BulkProgress> {
+  return (await api.post<BulkProgress>('/bulk-operations', { previewId, confirm }, { headers: withIntent(Intent.PurgeMessage) })).data
 }
 
 export async function fetchBulk(id: string): Promise<BulkProgress> {

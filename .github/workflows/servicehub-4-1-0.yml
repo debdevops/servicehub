@@ -99,6 +99,10 @@ jobs:
       - name: Build
         run: npm run build -w apps/servicehub
 
+      - name: Bundle budget
+        # Unit 6.7: the initial chunk stays below 4.0.0's ~460 kB — enforced here, not checked by hand.
+        run: ./.github/scripts/check-bundle-budget.sh
+
       - name: Upload coverage
         if: always()
         uses: actions/upload-artifact@v4

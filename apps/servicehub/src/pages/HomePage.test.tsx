@@ -276,7 +276,7 @@ describe('Home — one cloud, real numbers', () => {
     const item = (id: number): DeadLetter => ({
       id, namespaceId: 'a1', messageId: `m-${id}`, sequenceNumber: id, entityName: 'orders', entityType: 'queue', topicName: null,
       detectedAtUtc: '2026-09-24T10:12:00Z', enqueuedTimeUtc: '2026-09-24T09:00:00Z', deliveryCount: 5, sizeInBytes: 2048,
-      deadLetterReason: 'TimedOut', deadLetterErrorDescription: null, status: 'Active',
+      deadLetterReason: 'TimedOut', deadLetterErrorDescription: null, status: 'active',
     })
     vi.mocked(fetchDeadLetters).mockResolvedValue({
       ...emptyPage, items: [1, 2, 3, 4, 5].map(item), paging: { total: 128, page: 1, pageSize: 5 },

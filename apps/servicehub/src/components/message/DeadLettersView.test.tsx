@@ -8,6 +8,7 @@ import type { DeadLetter, DeadLetterPage } from '../../lib/api/deadLetters'
 import * as ns from '../../lib/api/namespaces'
 import type { Namespace } from '../../lib/api/namespaces'
 import { DeadLettersView } from './DeadLettersView'
+import { expectNoAxeViolations } from '../../test/axe'
 
 vi.mock('../../lib/api/deadLetters')
 const fetchMock = vi.mocked(dl.fetchDeadLetters)
@@ -17,7 +18,7 @@ const lookMock = vi.mocked(ns.lookAtDeadLetters)
 const row = (id: number, over: Partial<DeadLetter> = {}): DeadLetter => ({
   id, namespaceId: 'n1', messageId: `m-${id}`, sequenceNumber: id, entityName: 'orders', entityType: 'queue', topicName: null,
   detectedAtUtc: '2026-09-24T10:12:00Z', enqueuedTimeUtc: '2026-09-24T09:00:00Z', deliveryCount: 5, sizeInBytes: 12 * 1024,
-  deadLetterReason: 'MaxDeliveryCountExceeded', deadLetterErrorDescription: 'Unexpected token', status: 'Active', ...over,
+  deadLetterReason: 'MaxDeliveryCountExceeded', deadLetterErrorDescription: 'Unexpected token', status: 'active', ...over,
 })
 
 const pageOf = (items: DeadLetter[], over: Partial<DeadLetterPage> = {}): DeadLetterPage => ({
@@ -55,6 +56,12 @@ describe('the Dead letters view', () => {
     vi.clearAllMocks()
     window.localStorage.clear()
     fetchMock.mockResolvedValue(pageOf([row(1), row(2)]))
+  })
+
+  it('has no accessibility violations (6.6)', async () => {
+    const { container } = renderView()
+    await screen.findByRole('table')
+    await expectNoAxeViolations(container)
   })
 
   it('lists the cloud’s dead letters as a real table, newest first, with a caption', async () => {
@@ -238,5 +245,34 @@ describe('the Dead letters view', () => {
     fetchMock.mockResolvedValue(pageOf([row(1)]))
     await userEvent.click(within(alert).getByRole('button', { name: 'Try again' }))
     expect(await screen.findByRole('table')).toBeInTheDocument()
+  })
+
+  it('shows history as one filter: no longer stuck rows say when and how they left, as recorded, and cannot be selected', async () => {
+    const user = userEvent.setup()
+    fetchMock.mockResolvedValue(pageOf([
+      row(1, { status: 'resolved', resolvedAt: '2026-09-25T08:00:00Z', resolutionCause: 'replayedByServiceHub' }),
+      row(2, { status: 'resolved', resolvedAt: '2026-09-25T09:00:00Z', resolutionCause: 'vanishedExternally' }),
+    ]))
+    renderView()
+    await user.selectOptions(await screen.findByLabelText('Showing'), 'resolved')
+
+    await waitFor(() => expect(lastQuery()).toMatchObject({ status: 'resolved' }))
+    expect(where()).toContain('status=resolved')
+    const table = await screen.findByRole('table', { name: /what became of them/ })
+    expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(
+      ['When', 'Queue or topic', 'Failed because', 'Tries', 'Now', 'Size', 'Details'],
+    )
+    expect(within(table).getByText('Replayed by ServiceHub')).toBeInTheDocument()
+    // Absence proves it is gone, never who removed it.
+    expect(within(table).getByText('Left the queue — ServiceHub did not see how')).toBeInTheDocument()
+    expect(within(table).queryByRole('checkbox')).not.toBeInTheDocument()
+  })
+
+  it('stuck now is the default and is not written into the link', async () => {
+    const user = userEvent.setup()
+    renderView('azure', [azure], '/?tab=dlq&status=all')
+    await user.selectOptions(await screen.findByLabelText('Showing'), 'active')
+    await waitFor(() => expect(where()).not.toContain('status='))
+    expect(lastQuery()).toMatchObject({ status: 'active' })
   })
 })

@@ -37,6 +37,8 @@ describe('navigation', () => {
     const places = (surface: 'simple' | 'advanced') => entriesOn(surface).filter((e) => e.kind !== 'tab').length
     expect(places('simple')).toBeLessThanOrEqual(SCREEN_CEILING.simple)
     expect(places('advanced')).toBeLessThanOrEqual(SCREEN_CEILING.advanced)
+    // Pinned, so adding a place is a visible change here: 11 of 12 after Send a message (6.14). One left.
+    expect(places('simple')).toBe(11)
   })
 
   it('keeps Simple to two pages — most work happens in place (D45)', () => {

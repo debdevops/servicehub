@@ -140,4 +140,20 @@ describe('the Recovery Ledger (Advanced)', () => {
     renderPage()
     expect(await screen.findByText(/No recovery actions in this window/)).toBeInTheDocument()
   })
+
+  it('exports the whole chain for the chosen window and says what was saved', async () => {
+    vi.mocked(api.exportEvidence).mockResolvedValue('servicehub-evidence-a-to-b.json')
+    renderPage('/advanced/ledger?window=7d')
+    ;(await screen.findByRole('button', { name: 'Export evidence' })).click()
+    expect(await screen.findByText('servicehub-evidence-a-to-b.json')).toBeInTheDocument()
+    expect(api.exportEvidence).toHaveBeenCalledWith('7d')
+    expect(screen.getByText(/every cloud and namespace, in chain order/)).toBeInTheDocument()
+  })
+
+  it('explains a refused export instead of failing silently', async () => {
+    vi.mocked(api.exportEvidence).mockRejectedValue({ response: { status: 403 } })
+    renderPage()
+    ;(await screen.findByRole('button', { name: 'Export evidence' })).click()
+    expect(await screen.findByRole('alert')).toHaveTextContent(/limited to some namespaces/)
+  })
 })

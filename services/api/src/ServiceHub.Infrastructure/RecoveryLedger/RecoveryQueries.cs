@@ -87,7 +87,9 @@ public sealed class RecoveryQueries : IRecoveryQueries
             ToItem(entry, operations), entry.RecoveryMarker, entry.MarkerApplied, entry.DeadLetterReasonSnapshot,
             entry.VerificationResult?.ToString(), entry.ObservationWindowEndsAt, entry.LastEventSeq,
             [.. events.Select(e => new RecoveryEventItem(
-                e.Seq, e.EventType.ToString(), e.OccurredAt, ActorOf(e.ActorIdentity), e.DetailJson, e.PrevHash, e.EntryHash))]);
+                e.Seq, e.EventType.ToString(), e.OccurredAt, ActorOf(e.ActorIdentity), e.DetailJson, e.PrevHash, e.EntryHash))],
+            // Why a person did it — a purge always carries one (unit 6.15).
+            operations.TryGetValue(entry.OperationId, out var op) ? op.Reason : null);
     }
 
     private IQueryable<RecoveryLedgerEntry> Scoped(RecoveryScope scope, string window)
@@ -186,4 +188,8 @@ public sealed class RecoveryQueries : IRecoveryQueries
             : events.Where(e => e.ActorIdentity == actor);
         return await events.OrderByDescending(e => e.Seq).Take(Math.Clamp(limit, 1, 200)).ToListAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<RecoveryEvent>> ChainAsync(string ownerId, CancellationToken cancellationToken) =>
+        await _db.RecoveryEvents.AsNoTracking().Where(e => e.OwnerId == ownerId).OrderBy(e => e.Seq).ToListAsync(cancellationToken).ConfigureAwait(false);
 }

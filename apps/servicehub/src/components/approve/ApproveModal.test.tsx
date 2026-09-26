@@ -8,6 +8,7 @@ import * as replay from '../../lib/api/replay'
 import * as identity from '../../lib/api/identity'
 import type { PendingWorkItem } from '../../lib/api/pendingWork'
 import ApproveModal from './ApproveModal'
+import { expectNoAxeViolations } from '../../test/axe'
 
 vi.mock('../../lib/api/pendingWork', async (original) => ({ ...(await original<typeof api>()), fetchPendingWork: vi.fn(), approvePending: vi.fn(), declinePending: vi.fn() }))
 vi.mock('../../lib/api/replay', async (original) => ({ ...(await original<typeof replay>()), fetchReplayProposal: vi.fn() }))
@@ -32,6 +33,12 @@ describe('Approve and Decline', () => {
     vi.mocked(replay.fetchReplayProposal).mockResolvedValue({ checks: [{ id: 'verification', label: 'AWS can’t confirm the fix held', state: 'warning', detail: 'The result will read “verification required”' }] } as never)
     vi.mocked(api.approvePending).mockResolvedValue({} as never)
     vi.mocked(identity.fetchMe).mockResolvedValue({ ownerId: 'o', authMethod: 'session', actor: { identity: 'session', kind: 'user', label: 'from this browser session', isSession: true }, effectiveRole: 'Admin', governanceActive: false })
+  })
+
+  it('has no accessibility violations (6.6)', async () => {
+    open()
+    await new Promise((r) => setTimeout(r, 150))
+    await expectNoAxeViolations(document.body)
   })
 
   it('shows a Viewer the actions disabled with the reason and who can grant it — never hidden', async () => {

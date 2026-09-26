@@ -21,6 +21,15 @@ export const Intent = {
   ResumeAgent: 'resume-agent',
   ApproveEscalation: 'approve-escalation',
   DeclineEscalation: 'decline-escalation',
+  AddChannel: 'add-channel',
+  RemoveChannel: 'remove-channel',
+  EmergencyStop: 'emergency-stop',
+  SendMessage: 'send-message',
+  PurgeMessage: 'purge-message',
+  CreateBackup: 'create-backup',
+  RestoreBackup: 'restore-backup',
+  GrantRole: 'grant-role',
+  RevokeRole: 'revoke-role',
 } as const
 
 export type IntentValue = (typeof Intent)[keyof typeof Intent]

@@ -22,6 +22,7 @@ export function useEventStream(): void {
       void client.invalidateQueries({ queryKey: namespaceKeys.all })
       void client.invalidateQueries({ queryKey: ['audit'] })
       void client.invalidateQueries({ queryKey: pendingKeys.all })
+      void client.invalidateQueries({ queryKey: ['settings'] })
     })
     return () => {
       off()

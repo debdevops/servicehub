@@ -53,6 +53,12 @@ if [ "$MODE" = "--all" ]; then
   step "Frontend lint"
   npm run lint -w apps/servicehub
 
+  step "Bundle budget (built into a temp folder, so a running API's files are untouched)"
+  BUDGET_DIR="$(mktemp -d)"
+  (cd apps/servicehub && npx vite build --outDir "$BUDGET_DIR" --emptyOutDir --logLevel error)
+  ./.github/scripts/check-bundle-budget.sh "$BUDGET_DIR"
+  rm -rf "$BUDGET_DIR"
+
   step "Roadmap board vs task cards"
   ./.github/scripts/verify-roadmap.sh
 

@@ -13,6 +13,7 @@ import {
   Plus,
   RotateCcw,
   ScrollText,
+  Send,
   Settings,
   ShieldCheck,
   Timer,
@@ -167,6 +168,11 @@ export const navigation: readonly NavEntry[] = [
     kind: 'modal', id: 'bulk-replay', label: 'Bulk Replay', value: 'bulk-replay',
     description: 'Put many messages back, with a preview first.',
     icon: ListChecks, surface: 'simple', group: 'contextual', visibility: 'connected', wave: 3,
+  },
+  {
+    kind: 'modal', id: 'send', label: 'Send a message', value: 'send',
+    description: 'Put one test message onto a queue or topic — never into production.',
+    icon: Send, surface: 'simple', group: 'contextual', visibility: 'connected', wave: 6,
   },
   {
     kind: 'modal', id: 'approve', label: 'Approve', value: 'approve',

@@ -1,11 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Menu } from 'lucide-react'
+import { Menu, Search } from 'lucide-react'
+import { CommandPalette } from '../components/search/CommandPalette'
+import { useShortcuts } from '../hooks/useShortcuts'
 import { CloudProviders } from '../components/provider/CloudProviders'
 import { ProviderScopeProvider } from '../components/provider/ProviderScopeProvider'
 import { SurfaceSwitch } from '../components/ui/SurfaceSwitch'
 import { Bell } from '../components/pending/Bell'
+import { AccountMenu } from '../components/AccountMenu'
+import { SafetyBanners } from '../components/banners/SafetyBanners'
+import { DemoBanner } from '../components/banners/DemoEntry'
 import { usePendingWork } from '../hooks/usePendingWork'
+import { rememberPage } from '../lib/preferences'
 import { EscalationToast } from '../components/pending/EscalationToast'
 import { OverlayHost } from '../components/overlays/OverlayHost'
 import { useEventStream } from '../hooks/useEventStream'
@@ -34,14 +40,18 @@ export function AppLayout() {
   const loaded = namespaces.isSuccess
 
   // The URL is the surface (ADR-0016 D2). The layout is the only place that asks — pages never do.
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
   const surface = surfaceOf(pathname)
   const onSurface = entries.filter((e) => e.surface === surface)
   useEffect(() => rememberAdvancedPath(pathname), [pathname])
+  useEffect(() => rememberPage(pathname, search), [pathname, search])
 
   // Below the large breakpoint the sidebar is a slide-in menu; choosing anything closes it.
   const [menuOpen, setMenuOpen] = useState(false)
-  const { search } = useLocation()
+  const [searchOpen, setSearchOpen] = useState(false)
+  const simpleHref = landingPath(cloudCount)
+  const advancedHref = surface === 'advanced' ? pathname : readLastAdvancedPath(ADVANCED_ROOT)
+  useShortcuts({ openSearch: useCallback(() => setSearchOpen(true), []), simpleHref, advancedHref })
   useEffect(() => setMenuOpen(false), [pathname, search])
   useEffect(() => {
     if (!menuOpen) return
@@ -54,6 +64,7 @@ export function AppLayout() {
     <ProviderScopeProvider connected={providers.map((p) => p.provider)}>
       <LandingRedirect ready={loaded} connectedCloudCount={cloudCount} />
       <div className="min-h-screen" data-surface={surface}>
+        <DemoBanner />
         <header
           className="sticky top-0 z-20 flex items-center gap-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5"
           style={{ height: 'var(--header-height)' }}
@@ -85,13 +96,26 @@ export function AppLayout() {
               </div>
             </div>
           </div>
-          <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSearchOpen(true)}
+            className="ml-auto hidden w-full max-w-[360px] items-center gap-2 rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2 text-left text-[13px] text-[var(--color-text-muted)] hover:border-[var(--color-primary-600)] md:flex"
+          >
+            <Search className="h-4 w-4" aria-hidden="true" />
+            <span className="flex-1">Search clouds, queues and places…</span>
+            <kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 text-[11px]">⌘K</kbd>
+          </button>
+          <button type="button" aria-label="Search" onClick={() => setSearchOpen(true)} className="ml-auto rounded-lg p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)] md:hidden">
+            <Search className="h-5 w-5" aria-hidden="true" />
+          </button>
+          <div className="flex items-center gap-2 md:ml-0">
             {loaded && cloudCount > 0 && <Bell />}
             <SurfaceSwitch
               surface={surface}
-              simpleHref={landingPath(cloudCount)}
-              advancedHref={surface === 'advanced' ? pathname : readLastAdvancedPath(ADVANCED_ROOT)}
+              simpleHref={simpleHref}
+              advancedHref={advancedHref}
             />
+            <AccountMenu />
           </div>
         </header>
 
@@ -148,11 +172,13 @@ export function AppLayout() {
           </nav>
 
           <main className="min-w-0 flex-1">
+            {loaded && cloudCount > 0 && <SafetyBanners />}
             <Outlet />
           </main>
         </div>
 
         <OverlayHost connectedCloudCount={cloudCount} />
+        <CommandPalette open={searchOpen} onClose={() => setSearchOpen(false)} connectedCloudCount={cloudCount} />
       </div>
       {loaded && cloudCount > 0 && <EscalationToast />}
     </ProviderScopeProvider>

@@ -19,6 +19,7 @@ export const columnHelp = {
     failedBecause: h('Failed because', 'The coloured tag is the reason the cloud or your application recorded — a fact. Under it is the error text that came with it, then ServiceHub’s plain-English reading (marked with a lightbulb — a suggestion, not something the cloud reported). If the cloud gave no error text, it says so.'),
     tries: h('Tries', 'How many times a consumer picked this message up before it was set aside. Many tries on a message that fails at once usually means the message itself is wrong; one or two usually means something else was down. A dash means this cloud does not report it.'),
     waiting: h('Waiting', 'How long it has been sitting in the dead-letter queue since ServiceHub first saw it. A long wait is not a problem by itself — nothing is lost — but old messages are worth a look first.'),
+    now: h('Now', 'Whether it is still in the dead-letter queue. If it left, when ServiceHub noticed and how, as far as anything recorded it. “Did not see how” means it is gone — drained by another tool, expired, or consumed — not that anyone fixed it.'),
     size: h('Size', 'The size of the message body. Very large messages are a common cause of timeouts and rejections.'),
     details: h('Details', 'Opens this message beside the table: why it failed, its body, its properties and its history. From there you can replay it. Nothing is changed by opening it.'),
   },

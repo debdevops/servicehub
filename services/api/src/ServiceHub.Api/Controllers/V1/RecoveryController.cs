@@ -127,6 +127,82 @@ public sealed class RecoveryController : ApiControllerBase
     public async Task<IActionResult> Chain(CancellationToken cancellationToken) =>
         Ok(await _ledger.VerifyChainAsync(OwnerId, cancellationToken));
 
+    /// <summary>
+    /// The ledger as one file anyone can check offline with <c>scripts/verify-recovery-chain.py</c> (unit 6.12). A read, so
+    /// Advanced may offer it (ADR-0016 D3).
+    /// </summary>
+    /// <remarks>
+    /// <para>Events are written exactly as they were hashed — <c>eventType</c> and <c>actorKind</c> by their enum names, not the
+    /// API's camelCase — because the verifier recomputes each hash from these fields.</para>
+    /// <para>A time range never drops an event from inside it: the ledger is appended in order, so the events in a range are one
+    /// unbroken run of the chain. A range that is not the whole chain says <c>partial: true</c> in the manifest, with where it
+    /// starts and ends.</para>
+    /// <para>The chain is one per owner, across every namespace, so a key limited to some namespaces cannot export it — it would
+    /// hand over other namespaces' evidence.</para>
+    /// </remarks>
+    /// <param name="from">Only events at or after this moment.</param>
+    /// <param name="to">Only events at or before this moment.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    [HttpGet("export")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> Export([FromQuery] DateTimeOffset? from, [FromQuery] DateTimeOffset? to, CancellationToken cancellationToken)
+    {
+        if (from is { } f && to is { } t && f > t)
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "'from' must be before 'to'.");
+        }
+
+        if (AllowedNamespaceIds is not null)
+        {
+            return Problem(StatusCodes.Status403Forbidden, ErrorCodes.PermissionDenied,
+                "The evidence ledger is one chain across every namespace, and this key is limited to some of them. Export it with a key that is not limited, or from the browser.");
+        }
+
+        var chain = await _queries.ChainAsync(OwnerId, cancellationToken);
+        var events = chain.Where(e => (from is null || e.OccurredAt >= from) && (to is null || e.OccurredAt <= to)).ToList();
+        var partial = events.Count != chain.Count;
+        var now = DateTimeOffset.UtcNow;
+        var name = $"servicehub-evidence-{(from ?? events.FirstOrDefault()?.OccurredAt ?? now):yyyyMMdd-HHmm}-to-{(to ?? now):yyyyMMdd-HHmm}.json";
+        Response.Headers.ContentDisposition = $"attachment; filename=\"{name}\"";
+
+        return Ok(new
+        {
+            manifest = new
+            {
+                kind = "servicehub-recovery-evidence",
+                exportedAt = now,
+                from,
+                to,
+                partial,
+                note = events.Count == 0
+                    ? "Nothing was recorded in this range, so there is nothing to verify."
+                    : partial
+                        ? "Part of the chain: the first event links to one before it that is not in this file. Every event inside the range is here."
+                        : "The whole chain, from its first event.",
+                chain = new { firstSeq = events.FirstOrDefault()?.Seq, lastSeq = events.LastOrDefault()?.Seq, eventsInChain = chain.Count },
+                verify = $"python3 verify-recovery-chain.py {name}",
+            },
+            events = events.Select(e => new
+            {
+                id = e.Id,
+                ownerId = e.OwnerId,
+                seq = e.Seq,
+                entryId = e.EntryId,
+                operationId = e.OperationId,
+                eventType = e.EventType.ToString(),
+                occurredAt = e.OccurredAt.ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+                actorIdentity = e.ActorIdentity,
+                actorKind = e.ActorKind.ToString(),
+                detailJson = e.DetailJson,
+                schemaVersion = e.SchemaVersion,
+                prevHash = e.PrevHash,
+                entryHash = e.EntryHash,
+            }),
+        });
+    }
+
     private async Task<RecoveryScope?> ScopeAsync(CloudProviderType? provider, Guid? namespaceId, EnvironmentType? environment, CancellationToken cancellationToken)
     {
         if (namespaceId is { } id)

@@ -1,4 +1,6 @@
 import axios, { AxiosError } from 'axios'
+import { demoAdapter } from '../demo/adapter'
+import { isDemo } from '../demo/state'
 
 /**
  * The HTTP client. One instance, one place where an API failure becomes something a screen can
@@ -36,6 +38,8 @@ sessionId.fallback = undefined as string | undefined
 
 api.interceptors.request.use((config) => {
   config.headers.set('X-ServiceHub-Session', sessionId())
+  // Demo mode (unit 6.5): the same client, answering from made-up data — nothing leaves the browser.
+  if (isDemo()) config.adapter = demoAdapter
   return config
 })
 

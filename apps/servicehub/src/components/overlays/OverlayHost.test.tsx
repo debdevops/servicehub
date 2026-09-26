@@ -32,7 +32,13 @@ describe('OverlayHost — the URL is the only switch', () => {
     renderHost('/?modal=settings')
     const dialog = screen.getByRole('dialog', { name: 'Settings' })
     expect(dialog).toHaveAttribute('data-overlay', 'modal')
-    expect(dialog).toHaveTextContent('Not built yet — Wave 6')
+  })
+
+  // Whichever overlay is still unbuilt says so, rather than opening nothing (R5). Once all are built this has nothing to check.
+  const unbuilt = overlayEntries.find((e) => !(e.id in overlayBodies) && e.visibility === 'always')
+  it.skipIf(!unbuilt)('an overlay that is not built yet opens a frame that says so', () => {
+    renderHost(`/?${unbuilt!.kind}=${unbuilt!.value}`)
+    expect(screen.getByRole('dialog', { name: unbuilt!.label })).toHaveTextContent(`Not built yet — Wave ${unbuilt!.wave}`)
   })
 
   it('opens a panel from ?panel=', () => {

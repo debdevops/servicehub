@@ -14,9 +14,9 @@ namespace ServiceHub.Api.Controllers.V1;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Read-only.</b> Nothing here moves, replays or deletes a message: anything that changes a cloud goes
-/// through the ledger and the eligibility gate (units 2.5–2.7), and those do not exist yet — so neither
-/// does a delete endpoint.
+/// <b>Read-only, except one send.</b> Nothing here moves, replays or deletes a message: anything that changes an existing
+/// message goes through the ledger and the eligibility gate (units 2.5–2.7). The one write is <see cref="Send"/> (unit 6.14):
+/// a new test message, audited, refused in Production (D46), with an intent header.
 /// </para>
 /// <para>
 /// <b>No provider is named here</b> (rule R4). Whether peeking is safe to repeat is read from
@@ -50,10 +50,16 @@ public sealed partial class MessagesController : ApiControllerBase
     private readonly INamespaceRepository _namespaces;
     private readonly ICloudProviderRouter _router;
     private readonly ILogger<MessagesController> _logger;
+    private readonly IAuditTrail _audit;
+
+    // What one test message may carry — the common case, not a bulk channel.
+    private const int MaxBodyBytes = 256 * 1024;
+    private const int MaxProperties = 20;
 
     /// <summary>Creates the controller.</summary>
-    public MessagesController(INamespaceRepository namespaces, ICloudProviderRouter router, ILogger<MessagesController> logger)
+    public MessagesController(INamespaceRepository namespaces, ICloudProviderRouter router, ILogger<MessagesController> logger, IAuditTrail audit)
     {
+        _audit = audit ?? throw new ArgumentNullException(nameof(audit));
         _namespaces = namespaces ?? throw new ArgumentNullException(nameof(namespaces));
         _router = router ?? throw new ArgumentNullException(nameof(router));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -135,6 +141,131 @@ public sealed partial class MessagesController : ApiControllerBase
             ? Problem(StatusCodes.Status404NotFound, ErrorCodes.Message.NotFound,
                 $"No message with sequence number {sequenceNumber} was found there. It may have been processed or moved.")
             : Ok(ToResponse(found));
+    }
+
+    /// <summary>
+    /// What is waiting to be delivered later on one queue or subscription (unit 6.17), soonest first. Only where the cloud has
+    /// scheduled messages at all; elsewhere a 409 that says so — never an empty list that reads as "none due". Read-only: there
+    /// is no cancel here, because cancelling changes the cloud and has no ledger route yet.
+    /// </summary>
+    /// <param name="namespaceId">The namespace.</param>
+    /// <param name="entity">The queue, or the topic when <paramref name="subscription"/> is given.</param>
+    /// <param name="subscription">The subscription, for a topic.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    [HttpGet("messages/scheduled")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Scheduled(Guid namespaceId, [FromQuery] string? entity, [FromQuery] string? subscription, CancellationToken cancellationToken)
+    {
+        var target = await ResolveAsync(namespaceId, entity, subscription, cancellationToken);
+        if (target.Failure is not null)
+        {
+            return target.Failure;
+        }
+
+        var (_, provider, name, sub) = target.Value;
+        if (!provider.Capabilities.SupportsScheduledMessages)
+        {
+            return Problem(StatusCodes.Status409Conflict, ErrorCodes.Message.ScheduledUnsupported,
+                "This cloud has no scheduled messages to list — messages here are delivered when sent (or after a short send-time delay).");
+        }
+
+        var found = await provider.GetMessageReceiver().GetScheduledMessagesAsync(namespaceId, name, sub, MaxPage, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        const int PreviewChars = 200;
+        var items = found.Value
+            .OrderBy(m => m.ScheduledEnqueueTime ?? DateTimeOffset.MaxValue)
+            .Select(m => new
+            {
+                m.MessageId, m.SequenceNumber, scheduledFor = m.ScheduledEnqueueTime, m.SizeInBytes, m.ContentType,
+                bodyPreview = m.Body is null ? null : m.Body.Length <= PreviewChars ? m.Body : m.Body[..PreviewChars] + "…",
+            })
+            .ToList();
+        return Ok(new { entity = name, subscription = sub, messages = items, capped = items.Count >= MaxPage });
+    }
+
+    /// <summary>What a send carries: one message, to one queue or topic.</summary>
+    /// <param name="Entity">The queue or topic.</param>
+    /// <param name="IsTopic">True when <paramref name="Entity"/> is a topic.</param>
+    /// <param name="Body">The body, as text.</param>
+    /// <param name="ContentType">For example <c>application/json</c>.</param>
+    /// <param name="Properties">Application properties, as text.</param>
+    public sealed record SendRequest(string? Entity, bool IsTopic, string? Body, string? ContentType, IReadOnlyDictionary<string, string>? Properties);
+
+    /// <summary>
+    /// Puts one new message onto a queue or topic (unit 6.14). Audited; refused in a Production namespace — 4.1.0 stays out of
+    /// production (D46). The answer says what the cloud accepted, and nothing more.
+    /// </summary>
+    /// <param name="namespaceId">The namespace.</param>
+    /// <param name="request">The message.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    [HttpPost("messages")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
+    public async Task<IActionResult> Send(Guid namespaceId, [FromBody] SendRequest request, CancellationToken cancellationToken)
+    {
+        if (!Security.IntentHeaders.Declares(Request, Security.IntentHeaders.SendMessage))
+        {
+            return Problem(StatusCodes.Status428PreconditionRequired, ErrorCodes.IntentRequired, Security.IntentHeaders.MissingDetail("send a message", Security.IntentHeaders.SendMessage));
+        }
+
+        if (string.IsNullOrEmpty(request?.Body))
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.Message.BodyRequired, "A message needs a body.");
+        }
+
+        if (System.Text.Encoding.UTF8.GetByteCount(request.Body) > MaxBodyBytes)
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.Message.BodyTooLarge, "The body is larger than 256 KB, more than one test message needs.");
+        }
+
+        if (request.Properties is { Count: > MaxProperties } || request.Properties?.Keys.Any(string.IsNullOrWhiteSpace) == true)
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, $"Up to {MaxProperties} properties, each with a name.");
+        }
+
+        var target = await ResolveAsync(namespaceId, request.Entity, null, cancellationToken);
+        if (target.Failure is not null)
+        {
+            return target.Failure;
+        }
+
+        var (ns, provider, name, _) = target.Value;
+        if (ns.Environment == Core.Enums.EnvironmentType.Prod)
+        {
+            return Problem(StatusCodes.Status409Conflict, ErrorCodes.CapabilityUnavailable,
+                "This namespace is marked Production. ServiceHub 4.1.0 does not send messages into production — send test messages to a Dev or UAT namespace.");
+        }
+
+        if (await DeniedUnlessAsync(Core.Enums.GovernanceRole.Operator, ns.Id, null, "send a message here", cancellationToken) is { } denied) return denied;
+
+        var sent = await provider.GetMessageSender().SendAsync(new SendMessageRequest(
+            NamespaceId: ns.Id, EntityName: name, Body: request.Body,
+            ContentType: string.IsNullOrWhiteSpace(request.ContentType) ? null : request.ContentType.Trim(),
+            ApplicationProperties: request.Properties?.ToDictionary(p => p.Key.Trim(), p => (object)p.Value),
+            IsTopic: request.IsTopic), cancellationToken);
+
+        await _audit.RecordAsync(new AuditLog
+        {
+            Id = Guid.NewGuid(), Timestamp = DateTimeOffset.UtcNow, OwnerId = OwnerId, UserIdentity = Actor.Identity,
+            Action = AuditActions.MessageSend, Outcome = sent.IsSuccess ? AuditActions.Success : AuditActions.Failure,
+            NamespaceId = ns.Id, ResourceName = name,
+            CorrelationId = HttpContext.TraceIdentifier, HttpMethod = Request.Method, HttpPath = Request.Path.Value,
+        }, cancellationToken);
+
+        if (sent.IsFailure)
+        {
+            return Problem(sent.Error);
+        }
+
+        _logger.LogInformation("Sent one message to {Entity} in namespace {NamespaceId}", LogRedactor.SanitiseForLog(name), ns.Id);
+        return Ok(new { accepted = true, entity = name, isTopic = request.IsTopic, detail = $"The cloud accepted one message onto {name}." });
     }
 
     private async Task<IActionResult> PeekAsync(

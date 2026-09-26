@@ -131,7 +131,9 @@ public sealed class BulkOperationAgent : IAgent
             {
                 try
                 {
-                    var outcome = await replay.ReplayAsync(item.DlqMessageId, ns, actor, "bulk-replay", job.Id.ToString(), CancellationToken.None).ConfigureAwait(false);
+                    var outcome = job.Kind == RecoveryOperationKind.Purge
+                        ? await replay.PurgeAsync(item.DlqMessageId, ns, actor, job.Reason ?? "", "purge-message", job.Id.ToString(), CancellationToken.None).ConfigureAwait(false)
+                        : await replay.ReplayAsync(item.DlqMessageId, ns, actor, "bulk-replay", job.Id.ToString(), CancellationToken.None).ConfigureAwait(false);
                     if (outcome.IsFailure)
                     {
                         // The gate refused at the moment of sending, or the cloud rejected before acting.

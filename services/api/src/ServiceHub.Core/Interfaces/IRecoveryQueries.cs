@@ -20,6 +20,9 @@ public interface IRecoveryQueries
     /// is a prefix (an agent that records per-rule identities); otherwise it must match exactly.
     /// </summary>
     Task<IReadOnlyList<Entities.RecoveryEvent>> EventsByActorAsync(string ownerId, string actor, int limit, CancellationToken cancellationToken);
+
+    /// <summary>Every ledger event of one owner, in chain (Seq) order — the evidence export (unit 6.12).</summary>
+    Task<IReadOnlyList<Entities.RecoveryEvent>> ChainAsync(string ownerId, CancellationToken cancellationToken);
 }
 
 /// <summary>

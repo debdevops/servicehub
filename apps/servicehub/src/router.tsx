@@ -1,3 +1,4 @@
+import { DemoEntry } from './components/banners/DemoEntry'
 import { lazy, Suspense } from 'react'
 import { createBrowserRouter, type RouteObject } from 'react-router-dom'
 import { AppLayout } from './layouts/AppLayout'
@@ -12,6 +13,7 @@ import { pages } from './nav/navigation'
 const RecoveryLedgerPage = lazy(() => import('./pages/advanced/RecoveryLedgerPage'))
 const FailureSignaturesPage = lazy(() => import('./pages/advanced/FailureSignaturesPage'))
 const AgentsPage = lazy(() => import('./pages/advanced/AgentsPage'))
+const AdvancedOverviewPage = lazy(() => import('./pages/advanced/AdvancedOverviewPage'))
 
 /**
  * The route table, derived from the navigation array. Only PAGES are routes (D45): tabs, panels and
@@ -41,6 +43,13 @@ function pageFor(entry: (typeof pages)[number]) {
       </Suspense>
     )
   }
+  if (entry.id === 'advanced-overview') {
+    return (
+      <Suspense fallback={<p role="status" className="px-6 py-6 text-sm">Loading…</p>}>
+        <AdvancedOverviewPage />
+      </Suspense>
+    )
+  }
   if (entry.id === 'agents') {
     return (
       <Suspense fallback={<p role="status" className="px-6 py-6 text-sm">Loading…</p>}>
@@ -66,6 +75,9 @@ export const routes: RouteObject[] = [
       { path: '*', element: <NotFoundPage /> },
     ],
   },
+  // Published demo URLs (unit 6.5). Outside the layout: they only switch the session into demo mode and open Home.
+  { path: '/demo/:provider', element: <DemoEntry /> },
+  { path: '/demo/:provider/*', element: <DemoEntry /> },
 ]
 
 export const router = createBrowserRouter(routes)

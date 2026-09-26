@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { usePageSize } from '../../lib/pageSize'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
-import { Hash, ScrollText, ShieldCheck, TriangleAlert, X } from 'lucide-react'
+import { Download, Hash, ScrollText, ShieldCheck, TriangleAlert, X } from 'lucide-react'
 import { Attribution } from '../../components/Attribution'
 import { EntityCell } from '../../components/message/EntityCell'
 import { columnHelp } from '../../content/columns'
@@ -17,7 +17,7 @@ import { PendingWorkList } from '../../components/pending/PendingWorkList'
 import { useNamespaces } from '../../hooks/useNamespaces'
 import { NamespaceScope } from '../../components/provider/NamespaceScope'
 import { namespaceTag, resolveScope } from '../../components/provider/scopeChoice'
-import { verifyChain, type ChainVerification, type EntryState, type LedgerEntry, type RecoveryWindow } from '../../lib/api/recovery'
+import { exportEvidence, verifyChain, type ChainVerification, type EntryState, type LedgerEntry, type RecoveryWindow } from '../../lib/api/recovery'
 import { describeEvent, shortHash, stateChip, stateMeaning, stateTone } from '../../lib/ledgerWords'
 import { formatWhen } from '../../lib/format'
 import { providerLabel } from '../../lib/providers'
@@ -109,6 +109,7 @@ export default function RecoveryLedgerPage() {
               {windows.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
             </select>
           </label>
+          <ExportEvidence window={window} />
         </div>
       </header>
 
@@ -335,5 +336,39 @@ function EntryPanel({ id, onClose }: { id: string | null; onClose: () => void })
         <p className="mt-2 text-xs text-[var(--color-text-muted)]">Links open the Simple flow that acts — nothing on this page changes anything.</p>
       </div>
     </aside>
+  )
+}
+
+/**
+ * Export evidence (unit 6.12): a read, so Advanced may offer it. The whole chain inside the window — the cloud and namespace
+ * pickers do not narrow it, because leaving events out would break the chain — and it says so.
+ */
+function ExportEvidence({ window }: { window: RecoveryWindow }) {
+  const [state, setState] = useState<{ busy: boolean; saved?: string; failed?: string }>({ busy: false })
+  const run = async () => {
+    setState({ busy: true })
+    try {
+      setState({ busy: false, saved: await exportEvidence(window) })
+    } catch (e) {
+      const status = (e as { response?: { status?: number } })?.response?.status
+      setState({ busy: false, failed: status === 403 ? 'This key can’t export the ledger: it is limited to some namespaces, and the ledger is one chain across all of them.' : 'ServiceHub couldn’t export the ledger. Nothing was changed — try again.' })
+    }
+  }
+  return (
+    <div className="flex flex-col items-end">
+      <button
+        type="button"
+        onClick={() => void run()}
+        disabled={state.busy}
+        title="Every event in this window, from every cloud and namespace, in chain order — check it anywhere with verify-recovery-chain.py."
+        className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 font-medium hover:bg-[var(--color-surface-muted)] disabled:opacity-60"
+      >
+        <Download className="h-4 w-4" aria-hidden="true" /> {state.busy ? 'Exporting…' : 'Export evidence'}
+      </button>
+      <p aria-live="polite" className="mt-1 max-w-[18rem] text-right text-[11px] text-[var(--color-text-muted)]">
+        {state.saved && <>Saved <code>{state.saved}</code> — every cloud and namespace, in chain order.</>}
+        {state.failed && <span role="alert" className="text-[var(--color-error)]">{state.failed}</span>}
+      </p>
+    </div>
   )
 }

@@ -147,6 +147,22 @@ public interface IRecoveryLedger
     /// </summary>
     Task<Result<RecoveryEvent>> RecordDecisionAsync(Guid entryId, string ownerId, RecoveryActor actor, bool approved, string? reason, Guid? replayEntryId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Switches emergency stop on or off for an owner (unit 6.10): a hash-chained EmergencyStopActivated / Cleared event.
+    /// While on, the eligibility gate lets nothing act on its own. Copied from 4.0.0.
+    /// </summary>
+    Task<Result<RecoveryOperation>> RecordEmergencyControlEventAsync(string ownerId, RecoveryActor actor, bool activate, string? reason, CancellationToken cancellationToken = default);
+
+    /// <summary>Whether emergency stop is on, and if so who switched it on, when and why — from the latest control event.</summary>
+    Task<EmergencyStopState> GetEmergencyStopStateAsync(string ownerId, CancellationToken cancellationToken = default);
+
     /// <summary>Every grant of one owner.</summary>
     Task<IReadOnlyList<AutonomyGrant>> GetAutonomyGrantsAsync(string ownerId, CancellationToken cancellationToken = default);
 }
+
+/// <summary>Emergency stop, as the banner shows it.</summary>
+/// <param name="Active">Whether it is on.</param>
+/// <param name="By">Who switched it on (or last off).</param>
+/// <param name="At">When.</param>
+/// <param name="Reason">Why, as they wrote it.</param>
+public sealed record EmergencyStopState(bool Active, string? By, DateTimeOffset? At, string? Reason);

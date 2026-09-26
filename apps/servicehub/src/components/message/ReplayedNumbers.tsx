@@ -12,8 +12,10 @@ const count = (states: readonly { state: string; count: number }[] | undefined, 
  * never 0% (R4, R5).
  */
 export function ReplayedNumbers({ provider, choice }: { provider: CloudProvider; choice: ScopeChoice }) {
-  const { data } = useRecoverySummary({ window: '24h', provider, namespaceId: choice.ns?.id, environment: choice.env ?? undefined })
-  if (!data) return null
+  const { data, isPending, isError } = useRecoverySummary({ window: '24h', provider, namespaceId: choice.ns?.id, environment: choice.env ?? undefined })
+  // Loading draws the four tiles' shape (6.1), so the table below does not jump when the numbers arrive.
+  if (isPending) return <div className="mb-4 grid gap-3 sm:grid-cols-4" aria-hidden="true">{[0, 1, 2, 3].map((i) => <div key={i} className="h-[74px] animate-pulse rounded-xl bg-[var(--color-surface-muted)]" />)}</div>
+  if (isError || !data) return <p role="alert" className="mb-4 text-sm text-[var(--color-text-muted)]">ServiceHub couldn’t read the replay numbers just now; the list below is unaffected.</p>
 
   const recovered = count(data.states, 'Recovered')
   const returned = count(data.states, 'Returned')

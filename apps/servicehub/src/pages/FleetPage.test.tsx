@@ -6,6 +6,7 @@ import * as fleetApi from '../lib/api/fleet'
 import * as api from '../lib/api/namespaces'
 import type { Namespace } from '../lib/api/namespaces'
 import { FleetPage } from './FleetPage'
+import { expectNoAxeViolations } from '../test/axe'
 
 vi.mock('../lib/api/fleet')
 vi.mock('../lib/api/namespaces')
@@ -40,6 +41,12 @@ describe('Fleet Overview', () => {
       ],
       topFailures: [{ provider: 'azure', environment: 'dev', reason: 'Timeout', count: 12 }],
     })
+  })
+
+  it('has no accessibility violations (6.6)', async () => {
+    renderFleet()
+    await new Promise((r) => setTimeout(r, 150))
+    await expectNoAxeViolations(document.body)
   })
 
   it('shows two clouds with two different capability states, each on its own numbers', async () => {

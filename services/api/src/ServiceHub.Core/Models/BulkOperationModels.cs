@@ -19,7 +19,8 @@ public sealed record BulkPreview(
     double PerSecond,
     int StopAfterConsecutiveFailures,
     int ExpiresInMinutes,
-    bool CanProveDlqAbsence);
+    bool CanProveDlqAbsence,
+    RecoveryOperationKind Kind = RecoveryOperationKind.Replay);
 
 /// <summary>Where a bulk job is, for the running view and the Replayed tab.</summary>
 public sealed record BulkProgress(
@@ -36,4 +37,5 @@ public sealed record BulkProgress(
     string? EndedReason,
     DateTimeOffset PreviewedAt,
     DateTimeOffset? StartedAt,
-    DateTimeOffset? EndedAt);
+    DateTimeOffset? EndedAt,
+    RecoveryOperationKind Kind = RecoveryOperationKind.Replay);

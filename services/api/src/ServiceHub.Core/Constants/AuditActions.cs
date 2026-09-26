@@ -27,6 +27,18 @@ public static class AuditActions
     /// <summary>The action completed.</summary>
     public const string Success = "Success";
 
+    /// <summary>A dead letter was purged (unit 6.15).</summary>
+    public const string PurgeMessage = "Purge.Message";
+
+    /// <summary>One new message was sent (unit 6.14).</summary>
+    public const string MessageSend = "Message.Send";
+
+    /// <summary>A backup was taken.</summary>
+    public const string BackupCreate = "Backup.Create";
+
+    /// <summary>A backup was staged to be restored at the next start, or unstaged.</summary>
+    public const string BackupRestore = "Backup.Restore";
+
     /// <summary>The action was attempted and failed.</summary>
     public const string Failure = "Failure";
 }

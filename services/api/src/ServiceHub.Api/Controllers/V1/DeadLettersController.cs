@@ -313,6 +313,41 @@ public sealed class DeadLettersController : ApiControllerBase
         return outcome.IsFailure ? Problem(outcome.Error) : Ok(outcome.Value);
     }
 
+    /// <summary>What a purge carries: why. It is kept with the evidence.</summary>
+    /// <param name="Reason">Why this message is being deleted for good.</param>
+    public sealed record PurgeRequest(string? Reason);
+
+    /// <summary>
+    /// Deletes one dead letter for good (unit 6.15), through the same gate and ledger as a replay — never an un-gated delete.
+    /// Only where the cloud can delete one message; a reason is required. Needs <c>X-ServiceHub-Intent: purge-message</c>.
+    /// </summary>
+    /// <param name="id">The row id from the list.</param>
+    /// <param name="request">Why.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    [HttpPost("{id:long}/purge")]
+    [ProducesResponseType(typeof(ReplayOutcome), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Purge(long id, [FromBody] PurgeRequest? request, CancellationToken cancellationToken)
+    {
+        if (!IntentHeaders.Declares(Request, IntentHeaders.PurgeMessage))
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.IntentRequired, IntentHeaders.MissingDetail("purge this message", IntentHeaders.PurgeMessage));
+        }
+
+        var ns = await VisibleNamespaceOfAsync(id, cancellationToken);
+        if (ns is null)
+        {
+            return Problem(StatusCodes.Status404NotFound, ErrorCodes.Message.NotFound, $"Dead letter '{id}' was not found.");
+        }
+
+        if (await DeniedUnlessAsync(GovernanceRole.Operator, ns.Id, PillarKind.Recover, "purge this message", cancellationToken) is { } denied) return denied;
+        var outcome = await _replay.PurgeAsync(id, ns, Actor, request?.Reason ?? "", IntentHeaders.PurgeMessage, HttpContext.TraceIdentifier, cancellationToken);
+        return outcome.IsFailure ? Problem(outcome.Error) : Ok(outcome.Value);
+    }
+
     private async Task<Namespace?> VisibleNamespaceOfAsync(long id, CancellationToken cancellationToken)
     {
         var visible = await _namespaces.GetByOwnerAsync(OwnerId, AllowedNamespaceIds, cancellationToken);

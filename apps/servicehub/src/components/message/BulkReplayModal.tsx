@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, CircleStop, Eye, Play, ShieldCheck, TriangleAlert } from 'lucide-react'
+import { Check, CircleStop, Eye, Play, ShieldCheck, Trash2, TriangleAlert } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import type { OverlayBodyProps } from '../overlays/registry'
-import { cancelBulk, fetchBulk, isEnded, previewBulk, startBulk, type BulkPreview, type BulkProgress } from '../../lib/api/bulk'
+import { cancelBulk, fetchBulk, isEnded, previewBulk, startBulk, startBulkPurge, type BulkPreview, type BulkProgress } from '../../lib/api/bulk'
+import { useNamespaces } from '../../hooks/useNamespaces'
+import { useProviderScope } from '../provider/providerScope'
 import { fetchDeadLetters } from '../../lib/api/deadLetters'
 import { BULK_LIMIT, bulkSelection } from '../../lib/bulkSelection'
 import { deadLetterKeys } from '../../hooks/useDeadLetters'
@@ -40,7 +42,8 @@ export default function BulkReplayModal({ close }: OverlayBodyProps) {
 }
 
 function Preview({ close, onStarted }: { close: () => void; onStarted: (id: string) => void }) {
-  const [state, setState] = useState<{ preview: BulkPreview } | { error: string } | { empty: true } | null>(null)
+  const [state, setState] = useState<{ preview: BulkPreview; ids: number[] } | { error: string } | { empty: true } | null>(null)
+  const [purging, setPurging] = useState(false)
   const [starting, setStarting] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
   const ran = useRef(false)
@@ -60,7 +63,8 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
           for (let page = 1; page <= pages; page++) ids.push(...(await fetchDeadLetters({ ...selection.query, page })).items.map((m) => m.id))
         }
         if (ids.length === 0) return setState({ empty: true })
-        setState({ preview: await previewBulk(ids.slice(0, BULK_LIMIT)) })
+        const capped = ids.slice(0, BULK_LIMIT)
+        setState({ preview: await previewBulk(capped), ids: capped })
       } catch {
         setState({ error: 'ServiceHub couldn’t work out what this would do, so nothing was sent.' })
       }
@@ -83,6 +87,8 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
     return <p className="text-sm text-[var(--color-text-muted)]">Choose some dead letters in the table first, then Replay selected. <button type="button" onClick={close} className="font-medium text-[var(--color-primary-700)] hover:underline">Close</button></p>
   }
   if ('error' in state) return <p role="alert" className="text-sm text-[var(--color-error)]">{state.error}</p>
+
+  if (purging) return <PurgeInstead ids={state.ids} onBack={() => setPurging(false)} onStarted={onStarted} />
 
   const p = state.preview
   const sampleAdvised = p.willReplay > 1 && p.groups.length > 0 && p.groups.filter((g) => g.willReplay > 0).every((g) => looksLikeValidation(g.reason))
@@ -145,6 +151,8 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
 
       {startError && <p role="alert" className="text-sm text-[var(--color-error)]">{startError}</p>}
 
+      <PurgeOffer onChoose={() => setPurging(true)} />
+
       <footer className="flex items-center gap-3 border-t border-[var(--color-border)] pt-4">
         <span className="flex items-center gap-1.5 text-[13px] text-[var(--color-text-muted)]"><ShieldCheck className="h-4 w-4" aria-hidden="true" /> Each message is checked again as it is sent.</span>
         <button type="button" onClick={close} className="ml-auto rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold">Cancel</button>
@@ -155,6 +163,80 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
           className="flex items-center gap-2 rounded-lg bg-[var(--color-primary-600)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
         >
           <Play className="h-4 w-4" aria-hidden="true" /> Replay {p.willReplay.toLocaleString()} {p.willReplay === 1 ? 'message' : 'messages'}
+        </button>
+      </footer>
+    </div>
+  )
+}
+
+/**
+ * "Purge instead" (unit 6.15) — only where this cloud can delete one message. Elsewhere the offer is absent and says why (R4).
+ */
+function PurgeOffer({ onChoose }: { onChoose: () => void }) {
+  const { selected } = useProviderScope()
+  const here = (useNamespaces().data ?? []).filter((n) => !selected || n.provider === selected)
+  if (here.length === 0) return null
+  return here.some((n) => n.capabilities?.supportsPurge)
+    ? <p className="text-[13px] text-[var(--color-text-muted)]">Not worth replaying? <button type="button" onClick={onChoose} className="font-semibold text-[#b91c1c] hover:underline">Purge instead…</button></p>
+    : <p className="text-[13px] text-[var(--color-text-muted)]">Purge isn’t offered here: this cloud can’t delete one message on its own.</p>
+}
+
+function PurgeInstead({ ids, onBack, onStarted }: { ids: number[]; onBack: () => void; onStarted: (id: string) => void }) {
+  const [reason, setReason] = useState('')
+  const [preview, setPreview] = useState<BulkPreview | null>(null)
+  const [confirm, setConfirm] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const check = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      setPreview(await previewBulk(ids, { reason: reason.trim() }))
+    } catch {
+      setError('ServiceHub couldn’t work out what purging these would do, so nothing was deleted.')
+    }
+    setBusy(false)
+  }
+  const go = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      onStarted((await startBulkPurge(preview!.previewId, confirm.trim())).id)
+    } catch {
+      setError('This purge could not be started — make a new preview. Nothing was deleted.')
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="space-y-4">
+      <h3 className="flex items-center gap-2 text-lg font-bold"><Trash2 className="h-5 w-5 text-[#dc2626]" aria-hidden="true" /> Purge {ids.length.toLocaleString()} {ids.length === 1 ? 'message' : 'messages'} instead</h3>
+      <p className="text-sm">Purging deletes them from the dead-letter queue <b>for good</b>. Each one goes through the same checks as a replay and gets its own ledger entry, with your reason.</p>
+      <label className="block text-sm">
+        <span className="mb-1 block font-semibold">Why?</span>
+        <input value={reason} onChange={(e) => { setReason(e.target.value); setPreview(null) }} placeholder="Recorded with your name on every one" className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2" />
+      </label>
+      {!preview && <button type="button" disabled={!reason.trim() || busy} onClick={() => void check()} className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold disabled:opacity-50">{busy ? 'Checking…' : 'Check what would be purged'}</button>}
+      {preview && (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <Box value={preview.willReplay} label="will be deleted for good" tone="amber" />
+            <Box value={preview.heldBackCount} label="held back — stays in dead letters" tone="plain" />
+          </div>
+          {preview.heldBack.slice(0, 5).map((h) => <p key={h.dlqMessageId} className="text-[13px] text-[var(--color-text-muted)]">Message {h.dlqMessageId}: {h.remedy}</p>)}
+          {preview.willReplay > 0 && (
+            <label className="block text-sm">
+              <span className="mb-1 block font-semibold">Type PURGE to confirm</span>
+              <input value={confirm} onChange={(e) => setConfirm(e.target.value)} aria-label="Type PURGE to confirm" className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2 font-mono" />
+            </label>
+          )}
+        </>
+      )}
+      {error && <p role="alert" className="text-sm text-[var(--color-error)]">{error}</p>}
+      <footer className="flex items-center gap-3 border-t border-[var(--color-border)] pt-4">
+        <button type="button" onClick={onBack} className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold">Back to replay</button>
+        <button type="button" disabled={!preview || preview.willReplay === 0 || confirm.trim() !== 'PURGE' || busy} onClick={() => void go()}
+          className="ml-auto flex items-center gap-2 rounded-lg bg-[#dc2626] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+          <Trash2 className="h-4 w-4" aria-hidden="true" /> Purge {(preview?.willReplay ?? 0).toLocaleString()}
         </button>
       </footer>
     </div>
@@ -188,9 +270,10 @@ function Progress({ p, close }: { p: BulkProgress; close: () => void }) {
   const done = p.sent + p.failed + p.unknown
   const pct = target === 0 ? 0 : Math.min(100, Math.round((done / target) * 100))
   const ended = isEnded(p.status)
+  const what = p.kind === 'purge' ? 'purge' : 'replay'
   const heading = ended
-    ? p.status === 'completed' ? 'Bulk replay finished' : p.status === 'cancelled' ? 'Bulk replay stopped' : 'Bulk replay stopped itself'
-    : `Replaying ${target.toLocaleString()} ${target === 1 ? 'message' : 'messages'}`
+    ? p.status === 'completed' ? `Bulk ${what} finished` : p.status === 'cancelled' ? `Bulk ${what} stopped` : `Bulk ${what} stopped itself`
+    : `${what === 'purge' ? 'Purging' : 'Replaying'} ${target.toLocaleString()} ${target === 1 ? 'message' : 'messages'}`
 
   return (
     <div className="space-y-5">
@@ -210,7 +293,7 @@ function Progress({ p, close }: { p: BulkProgress; close: () => void }) {
       </div>
 
       <ul className="space-y-2 text-sm">
-        <Row ok={p.failed === 0}>{p.sent.toLocaleString()} accepted by the cloud</Row>
+        <Row ok={p.failed === 0}>{p.sent.toLocaleString()} {p.kind === 'purge' ? 'deleted by the cloud' : 'accepted by the cloud'}</Row>
         <Row ok={p.failed === 0}>{p.failed.toLocaleString()} failed to send</Row>
         {p.unknown > 0 && <Row ok={false}>{p.unknown.toLocaleString()} unknown — ServiceHub lost contact; check the queue before trying again</Row>}
         {p.heldBack > 0 && <Row ok>{p.heldBack.toLocaleString()} held back — stayed in dead letters</Row>}

@@ -2,6 +2,7 @@ import { columnHelp, type ColumnHelp } from '../../content/columns'
 import { describeEntity } from '../../lib/entities'
 import { InfoTip } from '../ui/InfoTip'
 import { EntityCell } from './EntityCell'
+import { PurgeAction } from './PurgeAction'
 import { useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Copy, Download, Maximize2, Minimize2, Play, Sparkles } from 'lucide-react'
@@ -136,7 +137,7 @@ function Content({ detail, full, tab, onTab, onReplay }: { detail: DeadLetterDet
               {formatBytes(m.sizeInBytes)}{detail.contentType ? ` · ${detail.contentType}` : ''} · set aside {formatAge(m.detectedAtUtc, now)} ago
             </p>
             {m.deadLetterErrorDescription && <p className="mt-1 text-sm text-[var(--color-text-muted)]">{m.deadLetterErrorDescription}</p>}
-            {m.status === 'Resolved' && (
+            {m.status === 'resolved' && (
               <p className="mt-2 rounded-lg bg-[var(--color-surface-muted)] px-3 py-2 text-sm">
                 No longer in the dead-letter queue{detail.resolvedAt ? ` since ${formatWhen(detail.resolvedAt, now)}` : ''}. ServiceHub cannot say what became of it.
               </p>
@@ -193,7 +194,8 @@ function Content({ detail, full, tab, onTab, onReplay }: { detail: DeadLetterDet
       {show('overview') && latest && (latest.verification.status === 'watching' ? <WatchCard replay={latest} /> : <OutcomeCard replay={latest} />)}
       {show('overview') && latest && <Attribution actor={latest.actor} at={latest.replayedAt} />}
 
-      {show('overview') && <ReplayHero active={m.status === 'Active'} onReplay={onReplay} may={permission(me.data, 'Operator', 'replay this message', { recover: true, namespaceId: m.namespaceId })} />}
+      {show('overview') && <ReplayHero active={m.status === 'active'} onReplay={onReplay} may={permission(me.data, 'Operator', 'replay this message', { recover: true, namespaceId: m.namespaceId })} />}
+      {show('overview') && <PurgeAction dlqMessageId={m.id} namespaceId={m.namespaceId} active={m.status === 'active'} />}
       {full && <FullFooter detail={detail} />}
     </div>
   )

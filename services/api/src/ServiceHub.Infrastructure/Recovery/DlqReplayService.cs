@@ -246,6 +246,133 @@ public sealed class DlqReplayService : IDlqReplayService
     }
 
     /// <inheritdoc />
+    public async Task<Result<ReplayOutcome>> PurgeAsync(
+        long dlqMessageId, Namespace ns, RecoveryActor actor, string reason, string? intentHeader, string? correlationId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            return Result<ReplayOutcome>.Failure(Error.Validation("RecoveryLedger.ReasonRequired", "Say why it is being purged — the reason is kept with the evidence."));
+        }
+
+        var capabilities = _router.IsRegistered(ns.Provider) ? _router.Resolve(ns.Provider).Capabilities : ProviderCapabilities.For(ns.Provider);
+        if (!capabilities.SupportsPurge)
+        {
+            return Result<ReplayOutcome>.Failure(Error.Conflict(ErrorCodes.CapabilityUnavailable, "This cloud cannot delete one message on its own, so ServiceHub does not offer purge here."));
+        }
+
+        var message = await LoadAsync(dlqMessageId, ns, tracking: true, cancellationToken);
+        if (message is null)
+        {
+            return Result<ReplayOutcome>.Failure(Error.NotFound(ErrorCodes.Message.NotFound, $"Dead letter '{dlqMessageId}' was not found."));
+        }
+
+        if (message.Status != DlqMessageStatus.Active)
+        {
+            return Result<ReplayOutcome>.Failure(Error.Conflict(NotActive, "This message is no longer in the dead-letter queue, so there is nothing to purge."));
+        }
+
+        var decision = await EvaluateAsync(message, ns, actor, RecoveryOperationKind.Purge, cancellationToken);
+        if (decision.Verdict != EligibilityVerdict.Allow)
+        {
+            await AuditAsync(ns, actor, message, "refused", decision.ReasonCode, correlationId, cancellationToken, AuditActions.PurgeMessage);
+            var refusal = $"Purge is not allowed here ({decision.ReasonCode}).";
+            return Result<ReplayOutcome>.Failure(decision.Verdict == EligibilityVerdict.Deny
+                ? Error.Forbidden(decision.ReasonCode ?? "DENIED", refusal)
+                : Error.Conflict(decision.ReasonCode ?? "ESCALATED", refusal + " A person with approval rights has to decide."));
+        }
+
+        var (entity, subscription) = SourceOf(message);
+        var operation = await _ledger.OpenOperationAsync(new OpenRecoveryOperationRequest
+        {
+            OwnerId = ns.OwnerId, Kind = RecoveryOperationKind.Purge, Trigger = RecoveryTrigger.Manual, Actor = actor, Reason = reason.Trim(),
+            IntentHeader = intentHeader, NamespaceId = ns.Id, NamespaceNameSnapshot = ns.Name, ProviderSnapshot = ns.Provider,
+            EnvironmentSnapshot = ns.Environment, ScopeDescription = $"entity={message.EntityName}; message={message.MessageId}",
+            CorrelationId = correlationId, TargetCount = 1,
+        }, CancellationToken.None);
+        if (operation.IsFailure)
+        {
+            return Result<ReplayOutcome>.Failure(operation.Error);
+        }
+
+        var entry = await _ledger.BeginEntryAsync(new BeginRecoveryEntryRequest
+        {
+            OperationId = operation.Value.Id, OwnerId = ns.OwnerId, Actor = actor, DlqMessageId = message.Id, NamespaceId = ns.Id,
+            NamespaceNameSnapshot = ns.Name, ProviderSnapshot = ns.Provider, EnvironmentSnapshot = ns.Environment,
+            EntityNameSnapshot = message.EntityName, EntityTypeSnapshot = message.EntityType.ToString(),
+            TopicNameSnapshot = message.TopicName, SourceMessageIdSnapshot = message.MessageId,
+            SourceSequenceNumberSnapshot = message.SequenceNumber, BodyHash = message.BodyHash,
+            DeadLetterReasonSnapshot = message.DeadLetterReason, TargetEntity = message.EntityName, SignatureHashSnapshot = message.SignatureHash,
+        }, CancellationToken.None);
+        if (entry.IsFailure)
+        {
+            return Result<ReplayOutcome>.Failure(entry.Error);
+        }
+
+        RecoveryExecutionOutcome executed;
+        string? errorCode = null;
+        string? errorMessage = null;
+        try
+        {
+            var result = await _operations.PurgeMessageAsync(ns.Id, entity, subscription, message.SequenceNumber, fromDeadLetter: true, cancellationToken);
+            if (result.IsSuccess)
+            {
+                executed = RecoveryExecutionOutcome.Accepted;
+            }
+            else if (NothingCanHaveHappened(result.Error))
+            {
+                executed = RecoveryExecutionOutcome.Rejected;
+                errorCode = result.Error.Code;
+                errorMessage = LogRedactor.SanitiseForLog(result.Error.Message);
+            }
+            else
+            {
+                executed = RecoveryExecutionOutcome.Unknown;
+                errorCode = result.Error.Code;
+                errorMessage = "ServiceHub lost contact with the cloud before it could tell whether the message was deleted.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Purge of dead letter {Id} threw; recording its outcome as unknown", message.Id);
+            executed = RecoveryExecutionOutcome.Unknown;
+            errorMessage = "ServiceHub lost contact with the cloud before it could tell whether the message was deleted.";
+        }
+
+        var recorded = await _ledger.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = entry.Value.Id, OwnerId = ns.OwnerId, Actor = actor, Outcome = executed,
+            ProviderDetailJson = errorCode is null ? null : System.Text.Json.JsonSerializer.Serialize(new { errorCode }),
+        }, CancellationToken.None);
+        var final = recorded.IsSuccess ? recorded.Value : entry.Value;
+
+        if (executed == RecoveryExecutionOutcome.Accepted)
+        {
+            message.Status = DlqMessageStatus.Resolved;
+            message.ResolvedAt = DateTimeOffset.UtcNow;
+            message.ResolutionCause = DlqResolutionCause.PurgedByServiceHub;
+            try
+            {
+                await _db.SaveChangesAsync(CancellationToken.None);
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                _logger.LogWarning(ex, "Dead letter {Id} was updated by a scan while it was being purged", message.Id);
+            }
+        }
+
+        var status = executed.ToString().ToLowerInvariant();
+        await AuditAsync(ns, actor, message, status, errorCode, correlationId, CancellationToken.None, AuditActions.PurgeMessage);
+        var sentence = executed switch
+        {
+            RecoveryExecutionOutcome.Accepted => "Deleted from the dead-letter queue, for good. The reason is kept in the ledger.",
+            RecoveryExecutionOutcome.Rejected => errorMessage ?? "The cloud did not delete it; it is still in the dead-letter queue.",
+            _ => errorMessage ?? "Whether it was deleted is not known. Look at the queue before trying again.",
+        };
+        return Result<ReplayOutcome>.Success(new ReplayOutcome(entry.Value.Id, operation.Value.Id, status, final.State.ToString(), false, null, sentence, errorCode));
+    }
+
+    /// <inheritdoc />
     public async Task<ReplayPage> ListAsync(
         IReadOnlyCollection<Guid> namespaceIds, string? result, long? dlqMessageId, int page, int pageSize, CancellationToken cancellationToken)
     {
@@ -410,14 +537,15 @@ public sealed class DlqReplayService : IDlqReplayService
     private static string TargetOf(DlqMessage m) => m.TopicName ?? m.EntityName;
 
     private async Task AuditAsync(
-        Namespace ns, RecoveryActor actor, DlqMessage message, string outcome, string? error, string? correlationId, CancellationToken cancellationToken)
+        Namespace ns, RecoveryActor actor, DlqMessage message, string outcome, string? error, string? correlationId, CancellationToken cancellationToken,
+        string action = AuditActions.ReplayMessage)
     {
         try
         {
             await _audit.RecordAsync(new AuditLog
             {
                 Id = Guid.NewGuid(), Timestamp = DateTimeOffset.UtcNow, OwnerId = ns.OwnerId, UserIdentity = actor.Identity,
-                Action = AuditActions.ReplayMessage, Outcome = outcome == "accepted" ? AuditActions.Success : AuditActions.Failure, NamespaceId = ns.Id, NamespaceName = ns.Name,
+                Action = action, Outcome = outcome == "accepted" ? AuditActions.Success : AuditActions.Failure, NamespaceId = ns.Id, NamespaceName = ns.Name,
                 CloudProvider = ns.Provider.ToString().ToLowerInvariant(), Environment = ns.Environment.ToString(),
                 EntityName = message.EntityName, ResourceName = message.MessageId,
                 ErrorDetails = error is null ? (outcome == "accepted" ? null : outcome) : LogRedactor.SanitiseForLog(error), CorrelationId = correlationId,
@@ -425,7 +553,7 @@ public sealed class DlqReplayService : IDlqReplayService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogWarning(ex, "Could not record the replay of {Id} in the audit trail", message.Id);
+            _logger.LogWarning(ex, "Could not record the {Action} of {Id} in the audit trail", action, message.Id);
         }
     }
 }

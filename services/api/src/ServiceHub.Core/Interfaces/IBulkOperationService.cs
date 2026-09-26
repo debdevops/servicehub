@@ -1,3 +1,4 @@
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Models;
 using ServiceHub.Core.Results;
 
@@ -7,10 +8,11 @@ namespace ServiceHub.Core.Interfaces;
 public interface IBulkOperationService
 {
     /// <summary>Computes and stores a preview for the chosen dead letters. Nothing is sent.</summary>
-    Task<Result<BulkPreview>> PreviewAsync(string ownerId, IReadOnlySet<Guid>? allowed, RecoveryActor actor, IReadOnlyList<long> dlqMessageIds, CancellationToken ct);
+    Task<Result<BulkPreview>> PreviewAsync(string ownerId, IReadOnlySet<Guid>? allowed, RecoveryActor actor, IReadOnlyList<long> dlqMessageIds, CancellationToken ct,
+        RecoveryOperationKind kind = RecoveryOperationKind.Replay, string? reason = null);
 
     /// <summary>Starts the run from a stored preview. The only way a job runs.</summary>
-    Task<Result<BulkProgress>> StartAsync(string ownerId, Guid previewId, bool sampleOnly, CancellationToken ct);
+    Task<Result<BulkProgress>> StartAsync(string ownerId, Guid previewId, bool sampleOnly, CancellationToken ct, RecoveryOperationKind kind = RecoveryOperationKind.Replay);
 
     /// <summary>Where a job is.</summary>
     Task<Result<BulkProgress>> GetAsync(string ownerId, Guid id, CancellationToken ct);

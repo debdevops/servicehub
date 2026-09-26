@@ -50,6 +50,12 @@ public sealed class BulkOperationJob
 
     /// <summary>The messages, held back or queued.</summary>
     public List<BulkOperationItem> Items { get; init; } = [];
+
+    /// <summary>What the run does to each message: replay (the default) or purge (unit 6.15).</summary>
+    public RecoveryOperationKind Kind { get; init; } = RecoveryOperationKind.Replay;
+
+    /// <summary>Why — required for a purge, kept on every message's ledger operation.</summary>
+    public string? Reason { get; init; }
 }
 
 /// <summary>One dead letter inside a bulk job.</summary>

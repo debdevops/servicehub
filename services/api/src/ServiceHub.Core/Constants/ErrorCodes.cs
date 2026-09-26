@@ -237,4 +237,20 @@ public static class ErrorCodes
         /// <summary>The caller's Governance role does not meet the action's required minimum.</summary>
         public const string InsufficientRole = "Governance.InsufficientRole";
     }
+
+    /// <summary>Codes for backup and restore (unit 6.13) — values unchanged from 4.0.0.</summary>
+    public static class Backup
+    {
+        /// <summary>The SQLite snapshot failed its post-copy integrity check.</summary>
+        public const string IntegrityCheckFailed = "Backup.IntegrityCheckFailed";
+
+        /// <summary>The backup operation failed before or during snapshot creation.</summary>
+        public const string CreateFailed = "Backup.CreateFailed";
+
+        /// <summary>Failed to enumerate existing backups.</summary>
+        public const string ListFailed = "Backup.ListFailed";
+
+        /// <summary>A bundle was refused for restore: not this server's, a newer schema, or a chain that does not verify.</summary>
+        public const string RestoreRefused = "Backup.RestoreRefused";
+    }
 }

@@ -8,6 +8,7 @@ import * as replayApi from '../../lib/api/replay'
 import type { DeadLetterDetail } from '../../lib/api/deadLetters'
 import { explainFailure } from '../../lib/analyzer'
 import { MessageDrawer } from './MessageDrawer'
+import { expectNoAxeViolations } from '../../test/axe'
 
 vi.mock('../../lib/api/deadLetters')
 vi.mock('../../lib/api/replay')
@@ -17,7 +18,7 @@ const detail = (over: Partial<DeadLetterDetail> = {}): DeadLetterDetail => ({
   item: {
     id: 7, namespaceId: 'n1', messageId: 'm-7', sequenceNumber: 7, entityName: 'orders', entityType: 'queue', topicName: null,
     detectedAtUtc: '2026-09-24T10:12:00Z', enqueuedTimeUtc: '2026-09-24T09:00:00Z', deliveryCount: 3, sizeInBytes: 2048,
-    deadLetterReason: 'ValidationFailed', deadLetterErrorDescription: 'missing required field: customerId', status: 'Active',
+    deadLetterReason: 'ValidationFailed', deadLetterErrorDescription: 'missing required field: customerId', status: 'active',
   },
   bodyPreview: '{"orderId":1,"total":5}', bodyIsPreview: false, contentType: 'application/json', correlationId: 'c-1', sessionId: null,
   applicationPropertiesJson: '{"source":"web"}', resolvedAt: null, othersLikeIt: 0, ...over,
@@ -44,6 +45,12 @@ describe('the message drawer', () => {
   beforeEach(() => {
     fetchOne.mockReset()
     vi.mocked(replayApi.fetchReplays).mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 1 })
+  })
+
+  it('has no accessibility violations (6.6)', async () => {
+    renderDrawer()
+    await new Promise((r) => setTimeout(r, 150))
+    await expectNoAxeViolations(document.body)
   })
 
   it('draws nothing without ?message=', () => {
@@ -86,7 +93,7 @@ describe('the message drawer', () => {
   })
 
   it('keeps Replay but disables it, with the reason, when the message has left the queue', async () => {
-    fetchOne.mockResolvedValue(detail({ item: { ...detail().item, status: 'Resolved' } }))
+    fetchOne.mockResolvedValue(detail({ item: { ...detail().item, status: 'resolved' } }))
     renderDrawer()
     expect(await screen.findByRole('button', { name: /Replay this message/ })).toBeDisabled()
     expect(screen.getByText(/nothing to replay/)).toBeInTheDocument()

@@ -67,4 +67,5 @@ public sealed record RecoveryEntryDetail(
     string? VerificationResult,
     DateTimeOffset? ObservationWindowEndsAt,
     long LastEventSeq,
-    IReadOnlyList<RecoveryEventItem> Events);
+    IReadOnlyList<RecoveryEventItem> Events,
+    string? OperationReason = null);

@@ -174,7 +174,7 @@ public sealed class DlqMessageReader : IDlqMessageReader
     private static DlqListItem ToItem(DlqMessage m) => new(
         m.Id, m.NamespaceId, m.MessageId, m.SequenceNumber, m.EntityName, m.EntityType, m.TopicName,
         m.DetectedAtUtc, m.EnqueuedTimeUtc, m.DeliveryCount, m.MessageSize, m.DeadLetterReason,
-        Trim(m.DeadLetterErrorDescription), m.Status);
+        Trim(m.DeadLetterErrorDescription), m.Status, m.ResolvedAt, m.ResolutionCause);
 
     private static string? Trim(string? text) =>
         text is null || text.Length <= MaxDescription ? text : text[..MaxDescription] + "…";

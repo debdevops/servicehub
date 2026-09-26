@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
-import { Eye, RefreshCw } from 'lucide-react'
-import { useSearchParams } from 'react-router-dom'
+import { Eye, RefreshCw, Send } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { ExplainerCard, ExplainerToggle } from '../explainer/Explainer'
 import { useExplainer } from '../explainer/useExplainer'
 import { Pager } from '../ui/Pager'
@@ -11,6 +11,8 @@ import { columnHelp } from '../../content/columns'
 import { EntityCell } from './EntityCell'
 import { describeEntity, subscriptionParts } from '../../lib/entities'
 import { WorkTabs } from './WorkTabs'
+import { LiveTail } from './LiveTail'
+import { ScheduledView } from './ScheduledView'
 import { fetchEntities, type CloudProvider, type Entity, type Namespace } from '../../lib/api/namespaces'
 import { peekMessages, type Message } from '../../lib/api/messages'
 import { formatAge, formatBytes, formatWhen } from '../../lib/format'
@@ -51,8 +53,9 @@ export function ActiveMessagesTab({ provider, namespaces }: { provider: CloudPro
   return (
     <section className="px-[22px] pb-6 pt-5">
       <header className="mb-4">
-        <h1 className="flex items-center gap-2 text-2xl font-extrabold tracking-tight text-[var(--color-text)]">
+        <h1 className="flex flex-wrap items-center gap-2 text-2xl font-extrabold tracking-tight text-[var(--color-text)]">
           {cloud} — Active messages <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} />
+          <SendLink />
         </h1>
         <p className="mt-[3px] text-[13px] text-[var(--color-text-muted)]">
           {browsable
@@ -104,9 +107,13 @@ function Browser({ rows }: { rows: readonly Row[] }) {
   const [pageSize, setPageSize] = usePageSize()
   const [page, setPage] = useState(1)
 
+  const view = params.get('view') === 'live' ? 'live' : params.get('view') === 'scheduled' ? 'scheduled' : 'browse'
+  const setView = (v: string) => setParams((c) => { const n = new URLSearchParams(c); if (v === 'browse') n.delete('view'); else n.set('view', v); n.delete('active'); return n }, { replace: true })
+  const target = subscriptionParts(chosen.entity.name)
   const peek = useQuery({
     queryKey: ['active-peek', chosen.namespace.id, chosen.entity.name],
-    queryFn: () => peekMessages(chosen.namespace.id, { ...subscriptionParts(chosen.entity.name), max: PEEK_MAX }),
+    queryFn: () => peekMessages(chosen.namespace.id, { ...target, max: PEEK_MAX }),
+    enabled: view === 'browse',
   })
   const now = new Date()
   const messages = peek.data?.messages ?? []
@@ -153,14 +160,27 @@ function Browser({ rows }: { rows: readonly Row[] }) {
               </option>
             ))}
           </select>
-          <button
-            type="button"
-            onClick={() => void peek.refetch()}
-            className="ml-auto flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-[12px] font-semibold"
-          >
-            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Refresh
-          </button>
+          <div role="radiogroup" aria-label="View" className="ml-auto flex rounded-lg bg-[var(--color-surface-muted)] p-0.5 text-[12px]">
+            {([['browse', 'Browse'], ['live', 'Follow live'], ['scheduled', 'Scheduled']] as const).map(([id, label]) => (
+              <button key={id} type="button" role="radio" aria-checked={view === id} onClick={() => setView(id)}
+                className={`rounded-md px-2.5 py-1 font-semibold ${view === id ? 'bg-[var(--color-surface)] shadow-sm' : 'text-[var(--color-text-muted)]'}`}>{label}</button>
+            ))}
+          </div>
+          {view === 'browse' && (
+            <button
+              type="button"
+              onClick={() => void peek.refetch()}
+              className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-[12px] font-semibold"
+            >
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Refresh
+            </button>
+          )}
         </div>
+        {view === 'live' && <LiveTail key={keyOf(chosen)} namespaceId={chosen.namespace.id} {...target} />}
+        {view === 'scheduled' && (chosen.namespace.capabilities?.supportsScheduledMessages
+          ? <ScheduledView namespaceId={chosen.namespace.id} {...target} />
+          : <p className="px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">This cloud has no scheduled messages — messages here are delivered when they are sent.</p>)}
+        {view === 'browse' && <>
         {peek.isPending && <p role="status" className="px-4 py-3 text-sm text-[var(--color-text-muted)]">Looking…</p>}
         {peek.isError && <p role="alert" className="px-4 py-3 text-sm">ServiceHub couldn’t look at this queue just now.</p>}
         {peek.data && messages.length === 0 && <p className="px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">Nothing is waiting in this queue right now.</p>}
@@ -175,6 +195,7 @@ function Browser({ rows }: { rows: readonly Row[] }) {
             </p>
           </>
         )}
+        </>}
       </div>
       {open && <ActiveDrawer message={open} entity={chosen.entity.name} now={now} onClose={() => setParams((c) => { const n = new URLSearchParams(c); n.delete('active'); return n })} />}
     </div>
@@ -227,7 +248,7 @@ function CountsOnly({ cloud, rows }: { cloud: string; rows: readonly Row[] }) {
         <span>
           <b>On {cloud}, ServiceHub counts active messages but doesn’t open them.</b> There is no way to look at a message here
           without it counting as a delivery — watching could push a message into the dead-letter queue by itself. You’ll see
-          counts per queue instead.
+          counts per queue instead, and <b>Follow live</b> isn’t offered here for the same reason.
         </span>
       </p>
       <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
@@ -261,5 +282,17 @@ function CountsOnly({ cloud, rows }: { cloud: string; rows: readonly Row[] }) {
         />
       </div>
     </div>
+  )
+}
+
+/** Opens Send a message (6.14) over this tab, keeping the scope so the namespace in view is preselected. */
+function SendLink() {
+  const [params] = useSearchParams()
+  const next = new URLSearchParams(params)
+  next.set('modal', 'send')
+  return (
+    <Link to={`?${next}`} className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-semibold tracking-normal hover:bg-[var(--color-surface-muted)]">
+      <Send className="h-4 w-4" aria-hidden="true" /> Send a message
+    </Link>
   )
 }

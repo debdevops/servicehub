@@ -25,8 +25,10 @@ public sealed class BulkOperationsController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Preview([FromBody] PreviewRequest request, CancellationToken cancellationToken)
     {
-        if (await DeniedUnlessAsync(GovernanceRole.Operator, null, PillarKind.Recover, "prepare a bulk replay", cancellationToken) is { } denied) return denied;
-        var result = await _bulk.PreviewAsync(OwnerId, AllowedNamespaceIds, Actor, request?.DlqMessageIds ?? [], cancellationToken);
+        var purge = string.Equals(request?.Kind, "purge", StringComparison.OrdinalIgnoreCase);
+        if (await DeniedUnlessAsync(GovernanceRole.Operator, null, PillarKind.Recover, purge ? "prepare a bulk purge" : "prepare a bulk replay", cancellationToken) is { } denied) return denied;
+        var result = await _bulk.PreviewAsync(OwnerId, AllowedNamespaceIds, Actor, request?.DlqMessageIds ?? [], cancellationToken,
+            purge ? RecoveryOperationKind.Purge : RecoveryOperationKind.Replay, request?.Reason);
         return result.IsFailure ? Problem(result.Error) : Ok(result.Value);
     }
 
@@ -38,13 +40,20 @@ public sealed class BulkOperationsController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Start([FromBody] StartRequest request, CancellationToken cancellationToken)
     {
-        if (!IntentHeaders.Declares(Request, IntentHeaders.BulkReplay))
+        // A purge says so twice: its own intent, and the typed word (unit 6.15) — deleting many messages for good is never a slip.
+        var purge = IntentHeaders.Declares(Request, IntentHeaders.PurgeMessage);
+        if (!purge && !IntentHeaders.Declares(Request, IntentHeaders.BulkReplay))
         {
             return Problem(StatusCodes.Status400BadRequest, ErrorCodes.IntentRequired, IntentHeaders.MissingDetail("replay these messages", IntentHeaders.BulkReplay));
         }
 
-        if (await DeniedUnlessAsync(GovernanceRole.Operator, null, PillarKind.Recover, "replay these messages", cancellationToken) is { } denied) return denied;
-        var result = await _bulk.StartAsync(OwnerId, request.PreviewId, request.SampleOnly, cancellationToken);
+        if (purge && !string.Equals(request.Confirm, "PURGE", StringComparison.Ordinal))
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "Type PURGE to confirm. These messages will be deleted for good.");
+        }
+
+        if (await DeniedUnlessAsync(GovernanceRole.Operator, null, PillarKind.Recover, purge ? "purge these messages" : "replay these messages", cancellationToken) is { } denied) return denied;
+        var result = await _bulk.StartAsync(OwnerId, request.PreviewId, request.SampleOnly, cancellationToken, purge ? RecoveryOperationKind.Purge : RecoveryOperationKind.Replay);
         return result.IsFailure ? Problem(result.Error) : Accepted(result.Value);
     }
 
@@ -70,8 +79,8 @@ public sealed class BulkOperationsController : ApiControllerBase
     }
 
     /// <summary>The dead letters to preview.</summary>
-    public sealed record PreviewRequest(IReadOnlyList<long> DlqMessageIds);
+    public sealed record PreviewRequest(IReadOnlyList<long> DlqMessageIds, string? Kind = null, string? Reason = null);
 
     /// <summary>The preview to start.</summary>
-    public sealed record StartRequest(Guid PreviewId, bool SampleOnly = false);
+    public sealed record StartRequest(Guid PreviewId, bool SampleOnly = false, string? Confirm = null);
 }

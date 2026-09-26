@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as nsApi from '../../lib/api/namespaces'
 import * as api from '../../lib/api/signatures'
 import FailureSignaturesPage from './FailureSignaturesPage'
+import { expectNoAxeViolations } from '../../test/axe'
 
 vi.mock('../../lib/api/signatures')
 vi.mock('../../lib/api/namespaces')
@@ -36,6 +37,12 @@ describe('Failure Signatures', () => {
       { id: 'd1', name: 'orders-dev', displayName: 'Orders Dev', provider: 'azure', environment: 'dev' },
       { id: 'w1', name: 'sqs', displayName: 'AWS Dev', provider: 'aws', environment: 'dev' },
     ] as never)
+  })
+
+  it('has no accessibility violations (6.6)', async () => {
+    renderPage()
+    await new Promise((r) => setTimeout(r, 150))
+    await expectNoAxeViolations(document.body)
   })
 
   it('counts over one environment or namespace when asked, and offers the choice across every cloud', async () => {

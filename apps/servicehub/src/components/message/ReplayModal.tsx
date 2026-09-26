@@ -9,15 +9,8 @@ import { useReplay, useReplayProposal } from '../../hooks/useReplay'
 import { explainFailure } from '../../lib/analyzer'
 import type { ReplayCheck, ReplayOutcome, ReplayProposal } from '../../lib/api/replay'
 import { providerLabel } from '../../lib/providers'
+import { UnlockHint } from '../UnlockHint'
 
-/** What each gate reason code means and what to do about it. The code is the fact; this is its remedy. */
-const remedies: Readonly<Record<string, string>> = {
-  PRODUCTION_ELEVATION_REQUIRED: 'This is a production namespace. This version of ServiceHub does not replay in production.',
-  NOT_ACTIVE: 'ServiceHub has already seen this message leave the dead-letter queue.',
-  RECURRENCE_CAP_EXCEEDED: 'This message has come back too many times to be put back automatically.',
-  PROVIDER_CANNOT_VERIFY_ABSENCE: 'This cloud cannot prove the queue stayed empty.',
-  EMERGENCY_STOP_ACTIVE: 'Emergency stop is on.',
-}
 
 const hoursLabel = (h: number) => (h < 1 ? `${Math.round(h * 60)} minutes` : h === 1 ? '1 hour' : `${h} hours`)
 
@@ -116,16 +109,7 @@ export default function ReplayModal({ close }: OverlayBodyProps) {
         </div>
       </section>
 
-      {!p.canExecute && (
-        <p role="status" className="flex items-start gap-2 rounded-xl bg-[var(--color-surface-muted)] p-3 text-sm">
-          <Ban className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          <span>
-            {p.blockedCode ? remedies[p.blockedCode] ?? 'Replay is not allowed here.' : 'Replay is not allowed here.'}
-            {p.blockedCode && <span className="ml-1 font-mono text-xs text-[var(--color-text-muted)]">{p.blockedCode}</span>}
-            {p.approvable && ' A person with approval rights can decide this.'}
-          </span>
-        </p>
-      )}
+      {!p.canExecute && <UnlockHint code={p.blockedCode} approvable={p.approvable} />}
 
       {replay.isError && (
         <p role="alert" className="text-sm text-[var(--color-error)]">

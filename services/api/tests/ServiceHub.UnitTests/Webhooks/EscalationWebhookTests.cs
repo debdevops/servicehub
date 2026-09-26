@@ -57,32 +57,30 @@ public sealed class EscalationWebhookTests
         Json(new SlackWebhookFormatter().BuildEscalationPayload(agent)).Should().Contain("An agent stopped working").And.Contain("Agents");
     }
 
-    private sealed class RecordingNotifier : IWebhookNotifier
+    private sealed class RecordingDelivery : IEscalationDelivery
     {
         public int Escalations { get; private set; }
         public string? LastCode { get; private set; }
+        public string? LastOwner { get; private set; }
         public bool Throw { get; init; }
-        public Task<Result> NotifyEscalationAsync(string kind, string reasonCode, string reason, string? namespaceName, string? provider, string? entity, Guid? entryId, string? agentId, CancellationToken cancellationToken = default)
+        public Task DeliverAsync(EscalationRaisedPayload escalation, string ownerId, CancellationToken cancellationToken)
         {
             if (Throw) throw new HttpRequestException("slack is down");
-            Escalations++; LastCode = reasonCode; return Task.FromResult(Result.Success());
+            Escalations++; LastCode = escalation.ReasonCode; LastOwner = ownerId; return Task.CompletedTask;
         }
-        public Task<Result> NotifyDlqSpikeAsync(Guid namespaceId, string namespaceName, int newMessageCount, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result> NotifyAutonomyTransitionAsync(string signatureHash, ServiceHub.Core.Enums.AutonomyLevel previousLevel, ServiceHub.Core.Enums.AutonomyLevel newLevel, string reason, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result> NotifyCircuitBreakerTrippedAsync(long ruleId, string ruleName, int sampleSize, double verifiedSuccessRate, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<Result> NotifyInsightDetectedAsync(ServiceHub.Core.Enums.InsightKind kind, Guid findingId, Guid? namespaceId, string? namespaceName, string? entityName, string description, int severity, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<(bool Delivered, string? Error)> SendTestAsync(Guid channelId, string ownerId, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
-    private static (WebhookEscalationHandler Handler, RecordingNotifier Notifier) Handler(bool throws = false)
+    private static (WebhookEscalationHandler Handler, RecordingDelivery Notifier) Handler(bool throws = false)
     {
-        var notifier = new RecordingNotifier { Throw = throws };
-        var services = new ServiceCollection().AddScoped<IWebhookNotifier>(_ => notifier).BuildServiceProvider();
+        var notifier = new RecordingDelivery { Throw = throws };
+        var services = new ServiceCollection().AddScoped<IEscalationDelivery>(_ => notifier).BuildServiceProvider();
         return (new WebhookEscalationHandler(services.GetRequiredService<IServiceScopeFactory>(), NullLogger<WebhookEscalationHandler>.Instance), notifier);
     }
 
     private static PlatformEvent Escalation() => new()
     {
-        Source = "test", Category = EventCategories.Escalation, EventType = EventTypes.EscalationRaised,
+        Source = "test", Category = EventCategories.Escalation, EventType = EventTypes.EscalationRaised, Actor = "owner1",
         Payload = new EscalationRaisedPayload { Kind = "approval", ReasonCode = "AUTONOMY_GRANT_INSUFFICIENT", Reason = "x", RaisedAtUtc = DateTimeOffset.UtcNow },
     };
 
@@ -94,6 +92,7 @@ public sealed class EscalationWebhookTests
         await handler.HandleAsync(new PlatformEvent { Source = "t", Category = "dlq", EventType = EventTypes.DlqMessageDetected }, default);
         notifier.Escalations.Should().Be(1);
         notifier.LastCode.Should().Be("AUTONOMY_GRANT_INSUFFICIENT");
+        notifier.LastOwner.Should().Be("owner1", "each owner's own channels, never another's");
     }
 
     [Fact]

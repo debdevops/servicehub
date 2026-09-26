@@ -52,6 +52,14 @@ builder.Services.AddAgent<RecoveryVerificationAgent>();
 builder.Services.AddAgent<BulkOperationAgent>();
 builder.Services.AddAgent<ServiceHub.Infrastructure.Rules.AutoReplayAgent>();
 builder.Services.AddAgent<AutonomyEvaluationAgent>();
+builder.Services.AddAgent<ServiceHub.Infrastructure.Insights.AnomalyInsightAgent>();
+builder.Services.AddAgent<ServiceHub.Infrastructure.Insights.BacklogInsightAgent>();
+builder.Services.AddAgent<ServiceHub.Infrastructure.Insights.CorrelationInsightAgent>();
+builder.Services.AddAgent<ServiceHub.Infrastructure.Insights.NarrationInsightAgent>();
+if (builder.Configuration.GetValue<int>("Backup:ScheduledBackupIntervalHours") > 0)
+{
+    builder.Services.AddAgent<BackupAgent>(); // off by default (unit 6.13)
+}
 
 builder.Services.AddSingleton<ServiceHub.Api.Services.PlatformEventStreamBroker>();
 

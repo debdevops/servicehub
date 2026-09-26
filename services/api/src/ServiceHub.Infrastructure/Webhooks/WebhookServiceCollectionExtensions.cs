@@ -32,6 +32,15 @@ public static class WebhookServiceCollectionExtensions
                 AllowAutoRedirect = false,
             });
 
+        // Settings' channels (unit 6.3) share the same handler rules through one named client.
+        services.AddHttpClient(WebhookChannelSender.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(30))
+            .ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.SocketsHttpHandler
+            {
+                ConnectCallback = WebhookConnectCallback.ConnectAsync,
+                AllowAutoRedirect = false,
+            });
+        services.AddScoped<IEscalationDelivery, WebhookChannelSender>();
+
         services.AddSingleton<WebhookEscalationHandler>();
         return services;
     }

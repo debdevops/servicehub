@@ -52,8 +52,14 @@ public sealed class BulkOperationService : IBulkOperationService
 
     /// <inheritdoc />
     public async Task<Result<BulkPreview>> PreviewAsync(
-        string ownerId, IReadOnlySet<Guid>? allowed, RecoveryActor actor, IReadOnlyList<long> dlqMessageIds, CancellationToken ct)
+        string ownerId, IReadOnlySet<Guid>? allowed, RecoveryActor actor, IReadOnlyList<long> dlqMessageIds, CancellationToken ct,
+        RecoveryOperationKind kind = RecoveryOperationKind.Replay, string? reason = null)
     {
+        if (kind == RecoveryOperationKind.Purge && string.IsNullOrWhiteSpace(reason))
+        {
+            return Result<BulkPreview>.Failure(Error.Validation("RecoveryLedger.ReasonRequired", "Say why these are being purged — the reason is kept with every one."));
+        }
+
         var ids = dlqMessageIds.Distinct().ToList();
         if (ids.Count == 0)
         {
@@ -72,6 +78,7 @@ public sealed class BulkOperationService : IBulkOperationService
         var job = new BulkOperationJob
         {
             OwnerId = ownerId, ActorIdentity = actor.Identity, ActorKind = actor.Kind, PreviewedAt = _time.GetUtcNow(),
+            Kind = kind, Reason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim(),
             PerSecond = Math.Clamp(_configuration.GetValue("BulkReplay:PerSecond", DefaultPerSecond), 0.1, 50),
             StopAfterConsecutiveFailures = Math.Clamp(_configuration.GetValue("BulkReplay:StopAfterConsecutiveFailures", DefaultStopAfter), 1, 100),
         };
@@ -99,11 +106,13 @@ public sealed class BulkOperationService : IBulkOperationService
             var (state, code) =
                 ns is null ? (BulkItemState.HeldBack, "NOT_FOUND")
                 : message.Status != DlqMessageStatus.Active ? (BulkItemState.HeldBack, "NOT_ACTIVE")
+                // Purge only where the cloud can delete one message — read from capability, never a name (R4).
+                : kind == RecoveryOperationKind.Purge && !_router.Resolve(ns.Provider).Capabilities.SupportsPurge ? (BulkItemState.HeldBack, "PURGE_UNSUPPORTED")
                 : (BulkItemState.Queued, (string?)null);
 
             if (state == BulkItemState.Queued)
             {
-                var decision = await _replay.CheckEligibilityAsync(message.Id, ns!, actor, RecoveryOperationKind.Replay, ct).ConfigureAwait(false);
+                var decision = await _replay.CheckEligibilityAsync(message.Id, ns!, actor, kind, ct).ConfigureAwait(false);
                 if (decision is null)
                 {
                     (state, code) = (BulkItemState.HeldBack, "NOT_FOUND");
@@ -137,16 +146,22 @@ public sealed class BulkOperationService : IBulkOperationService
 
         return Result<BulkPreview>.Success(new BulkPreview(
             job.Id, job.Items.Count, job.Items.Count(i => i.State == BulkItemState.Queued), held.Count, groups, held,
-            job.PerSecond, job.StopAfterConsecutiveFailures, (int)PreviewLifetime.TotalMinutes, canProve));
+            job.PerSecond, job.StopAfterConsecutiveFailures, (int)PreviewLifetime.TotalMinutes, canProve, job.Kind));
     }
 
     /// <inheritdoc />
-    public async Task<Result<BulkProgress>> StartAsync(string ownerId, Guid previewId, bool sampleOnly, CancellationToken ct)
+    public async Task<Result<BulkProgress>> StartAsync(string ownerId, Guid previewId, bool sampleOnly, CancellationToken ct, RecoveryOperationKind kind = RecoveryOperationKind.Replay)
     {
         var job = await LoadAsync(ownerId, previewId, ct).ConfigureAwait(false);
         if (job is null)
         {
             return NotFound(previewId);
+        }
+
+        // The start must say what it starts: a replay intent can never set off a purge preview, nor the other way round.
+        if (job.Kind != kind)
+        {
+            return Result<BulkProgress>.Failure(Error.Conflict("BULK_KIND_MISMATCH", $"This preview is a {job.Kind.ToString().ToLowerInvariant()}, not a {kind.ToString().ToLowerInvariant()}."));
         }
 
         if (job.Status != BulkOperationStatus.Previewed)
@@ -214,7 +229,7 @@ public sealed class BulkOperationService : IBulkOperationService
         return new BulkProgress(
             job.Id, job.Status, job.Items.Count, willReplay, Count(BulkItemState.Sent), Count(BulkItemState.Failed), Count(BulkItemState.Unknown),
             Count(BulkItemState.Queued) + Count(BulkItemState.Sending), Count(BulkItemState.HeldBack), job.SampleOnly, job.EndedReason,
-            job.PreviewedAt, job.StartedAt, job.EndedAt);
+            job.PreviewedAt, job.StartedAt, job.EndedAt, job.Kind);
     }
 
     /// <summary>The words that say what to do about a held-back message.</summary>
@@ -229,6 +244,8 @@ public sealed class BulkOperationService : IBulkOperationService
         "EMERGENCY_STOP_ACTIVE" => "Emergency stop is on. Nothing is sent until it is lifted.",
         "PROVIDER_CANNOT_VERIFY_ABSENCE" => "This cloud can't prove a fix held, so ServiceHub asks a person first.",
         "AUTONOMY_GRANT_INSUFFICIENT" => "ServiceHub hasn't earned the right to replay this kind of failure on its own yet.",
+        "PURGE_UNSUPPORTED" => "This cloud cannot delete one message on its own, so it is left where it is.",
+        "PURGE_AUTOMATION_PROHIBITED" => "Only a person can purge, never an automatic rule.",
         _ => $"A safety check held it back ({reasonCode}). A person with approval rights has to decide.",
     };
 

@@ -16,6 +16,8 @@ import { useNamespaces } from '../../hooks/useNamespaces'
 import type { CloudProvider } from '../../lib/api/namespaces'
 import { formatAge } from '../../lib/format'
 import { providerLabel } from '../../lib/providers'
+import { useState } from 'react'
+import { IncidentTimeline, TraceView } from '../../components/advanced/SignatureStory'
 
 const asTab = (v: string | null): SignatureTab => (v === 'growing' || v === 'helps' || v === 'doesnt' ? v : 'all')
 const asProvider = (v: string | null): CloudProvider | undefined => (v === 'azure' || v === 'aws' || v === 'gcp' ? v : undefined)
@@ -54,6 +56,7 @@ export default function FailureSignaturesPage() {
   const page = Math.max(1, Number(params.get('page')) || 1)
   const [pageSize, setPageSize] = usePageSize()
   const selectedHash = params.get('signature')
+  const tracing = params.get('view') === 'trace'
 
   const namespaces = useNamespaces()
   // The cloud picks which namespaces are on offer; `?ns=` / `?env=` narrow within them. A stale one is ignored.
@@ -96,6 +99,12 @@ export default function FailureSignaturesPage() {
           <p className="mt-[3px] text-[13px] text-[var(--color-text-muted)]">Failures grouped by how they fail. The Agent and the rules reason about these groups, not single messages.</p>
         </div>
         <div className="ml-auto flex flex-wrap items-end gap-3">
+          <div role="radiogroup" aria-label="Page view" className="flex rounded-lg bg-[var(--color-surface-muted)] p-0.5 text-[12.5px]">
+            {([['list', 'Signatures'], ['trace', 'Trace a message']] as const).map(([id, label]) => (
+              <button key={id} type="button" role="radio" aria-checked={(id === 'trace') === tracing} onClick={() => change({ view: id === 'trace' ? 'trace' : null, signature: null })}
+                className={`rounded-md px-2.5 py-1 font-semibold ${(id === 'trace') === tracing ? 'bg-[var(--color-surface)] shadow-sm' : 'text-[var(--color-text-muted)]'}`}>{label}</button>
+            ))}
+          </div>
           {(namespaces.data?.length ?? 0) > 1 && <NamespaceScope namespaces={namespaces.data ?? []} cloud={provider ? providerLabel[provider] : 'All clouds'} cloudParam="provider" compact />}
           <Select label="Window" value={String(days)} onChange={(v) => change({ days: v === '7' ? null : v })}>
             <option value="7">Last 7 days</option><option value="14">Last 14 days</option><option value="30">Last 30 days</option>
@@ -104,10 +113,11 @@ export default function FailureSignaturesPage() {
       </header>
 
       {explainer.shown && <ExplainerCard id="signatures" onDismiss={explainer.dismiss} />}
-      {list.isPending && <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading signatures…</p>}
-      {list.isError && <p role="alert" className="text-sm text-[var(--color-error)]">ServiceHub couldn’t read the signatures just now.</p>}
+      {tracing && <TraceView />}
+      {!tracing && list.isPending && <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading signatures…</p>}
+      {!tracing && list.isError && <p role="alert" className="text-sm text-[var(--color-error)]">ServiceHub couldn’t read the signatures just now.</p>}
 
-      {data && (
+      {!tracing && data && (
         <div className="flex items-start gap-3.5">
           <div className="min-w-0 flex-1 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
             <div className="flex items-center gap-1 border-b border-[var(--color-border)] px-3">
@@ -192,6 +202,7 @@ function Detail({ s, days, now, onClose }: { s: Signature; days: number; now: Da
   const max = Math.max(1, ...s.daily)
   const r = s.replays
   const verified = r.stayedFixed + r.returned
+  const [view, setView] = useState<'summary' | 'incident'>('summary')
   const help =
     s.replayVerdict === 'unknown'
       ? r.replayed === 0
@@ -208,6 +219,13 @@ function Detail({ s, days, now, onClose }: { s: Signature; days: number; now: Da
         <span className="text-[11.5px] text-[var(--color-text-muted)]">first {formatAge(s.firstSeenAt, now)} ago · last {formatAge(s.lastSeenAt, now)} ago</span>
         <button type="button" onClick={onClose} aria-label="Close" className="text-sm text-[var(--color-text-muted)]">✕</button>
       </div>
+      <nav aria-label="Signature detail" className="flex gap-1 border-b border-[#f3f4f6] px-3">
+        {(['summary', 'incident'] as const).map((v) => (
+          <button key={v} type="button" aria-current={view === v ? 'page' : undefined} onClick={() => setView(v)}
+            className={`-mb-px border-b-2 px-2.5 py-2 text-[12.5px] font-semibold ${view === v ? 'border-[var(--color-primary-600)] text-[var(--color-primary-700)]' : 'border-transparent text-[var(--color-text-muted)]'}`}>{v === 'summary' ? 'Summary' : 'Incident'}</button>
+        ))}
+      </nav>
+      {view === 'incident' ? <div className="px-4 py-4 text-[13px]"><IncidentTimeline hash={s.signatureHash} provider={s.provider} /></div> : (
       <div className="space-y-4 px-4 py-4 text-[13px]">
         <div>
           <p className="text-[15px] font-bold">{s.exampleError ?? 'No error text was recorded'}</p>
@@ -245,6 +263,7 @@ function Detail({ s, days, now, onClose }: { s: Signature; days: number; now: Da
           <p className="mt-2 text-[12px] text-[var(--color-text-muted)]">The rule is created on Auto Replay, where it can be tested against the last 7 days. Nothing is created here.</p>
         </Section>
       </div>
+      )}
     </aside>
   )
 }

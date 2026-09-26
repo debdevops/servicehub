@@ -74,6 +74,12 @@ public sealed class ServiceHubDbContext : DbContext
     /// <summary>Who may do what, per namespace (W5, unit 5.7). Revoked, never deleted — history decides the fallback.</summary>
     public DbSet<GovernanceGrant> GovernanceGrants => Set<GovernanceGrant>();
 
+    /// <summary>Slack / Teams / webhook channels set up in Settings (W6, unit 6.3). URLs encrypted at rest.</summary>
+    public DbSet<NotificationChannel> NotificationChannels => Set<NotificationChannel>();
+
+    /// <summary>What the Insights agents noticed — the Insights tab (W6, unit 6.18).</summary>
+    public DbSet<InsightFinding> InsightFindings => Set<InsightFinding>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -92,6 +98,8 @@ public sealed class ServiceHubDbContext : DbContext
         ConfigureAutonomyGrant(modelBuilder);
         ConfigureDlqObserverAttestation(modelBuilder);
         ConfigureGovernanceGrant(modelBuilder);
+        ConfigureNotificationChannel(modelBuilder);
+        ConfigureInsightFinding(modelBuilder);
     }
 
     /// <inheritdoc />
@@ -227,6 +235,39 @@ public sealed class ServiceHubDbContext : DbContext
         entity.HasIndex(e => new { e.OwnerId, e.NamespaceId }).HasDatabaseName("IX_GovernanceGrants_OwnerId_NamespaceId");
         entity.HasIndex(e => new { e.OwnerId, e.GranteeIdentity, e.NamespaceId, e.PillarKind })
             .IsUnique().HasFilter("[RevokedAt] IS NULL").HasDatabaseName("IX_GovernanceGrants_ActiveScope_Unique");
+    }
+
+    private static void ConfigureInsightFinding(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<InsightFinding>();
+        entity.ToTable("InsightFindings");
+        entity.HasKey(e => e.Id);
+        entity.Property(e => e.OwnerId).HasMaxLength(256).IsRequired();
+        entity.Property(e => e.Kind).HasMaxLength(32).IsRequired();
+        entity.Property(e => e.Key).HasMaxLength(1024).IsRequired();
+        entity.Property(e => e.EntityName).HasMaxLength(512);
+        entity.Property(e => e.What).HasMaxLength(4000).IsRequired();
+        entity.Property(e => e.FirstSeenAt).HasConversion(SortableUtc);
+        entity.Property(e => e.LastSeenAt).HasConversion(SortableUtc);
+        entity.Property(e => e.ClearedAt).HasConversion(SortableUtcNullable);
+        entity.HasIndex(e => new { e.OwnerId, e.Kind, e.Key }).HasDatabaseName("IX_InsightFindings_Owner_Kind_Key");
+    }
+
+    private static void ConfigureNotificationChannel(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<NotificationChannel>();
+
+        entity.ToTable("NotificationChannels");
+        entity.HasKey(e => e.Id);
+        entity.Property(e => e.OwnerId).HasMaxLength(128).IsRequired();
+        entity.Property(e => e.Format).HasConversion<string>().HasMaxLength(16).IsRequired();
+        entity.Property(e => e.Label).HasMaxLength(120).IsRequired();
+        entity.Property(e => e.UrlEncrypted).IsRequired();
+        entity.Property(e => e.CreatedBy).HasMaxLength(256).IsRequired();
+        entity.Property(e => e.LastError).HasMaxLength(500);
+        entity.Property(e => e.CreatedAt).HasConversion(SortableUtc);
+        entity.Property(e => e.LastDeliveredAt).HasConversion(SortableUtcNullable);
+        entity.HasIndex(e => e.OwnerId).HasDatabaseName("IX_NotificationChannels_OwnerId");
     }
 
     private static void ConfigureNamespace(ModelBuilder modelBuilder)

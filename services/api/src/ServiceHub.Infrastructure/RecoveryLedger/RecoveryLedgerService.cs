@@ -583,6 +583,52 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     }
 
     /// <inheritdoc />
+    public async Task<Result<RecoveryOperation>> RecordEmergencyControlEventAsync(
+        string ownerId, RecoveryActor actor, bool activate, string? reason, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
+
+        var now = DateTimeOffset.UtcNow;
+        var operation = new RecoveryOperation
+        {
+            OwnerId = ownerId, Kind = RecoveryOperationKind.EmergencyControl, Trigger = RecoveryTrigger.EmergencyControl,
+            ActorIdentity = actor.Identity, ActorKind = actor.Kind, ActorScopes = actor.Scopes, Reason = reason, NamespaceId = null,
+            ScopeDescription = activate ? "emergency-stop=activate" : "emergency-stop=clear", ServiceVersion = GetServiceVersion(),
+            OpenedAt = now, TargetCount = 0,
+        };
+        _db.RecoveryOperations.Add(operation);
+
+        var eventType = activate ? RecoveryEventType.EmergencyStopActivated : RecoveryEventType.EmergencyStopCleared;
+        await AppendEventAsync(ownerId, entryId: null, operation.Id, eventType, actor, JsonSerializer.Serialize(new { reason }), cancellationToken);
+
+        await _db.SaveChangesAsync(cancellationToken);
+        return Result<RecoveryOperation>.Success(operation);
+    }
+
+    /// <inheritdoc />
+    public async Task<EmergencyStopState> GetEmergencyStopStateAsync(string ownerId, CancellationToken cancellationToken = default)
+    {
+        var latest = await _db.RecoveryEvents.AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && (e.EventType == RecoveryEventType.EmergencyStopActivated || e.EventType == RecoveryEventType.EmergencyStopCleared))
+            .OrderByDescending(e => e.Seq)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (latest is null)
+        {
+            return new EmergencyStopState(false, null, null, null);
+        }
+
+        string? reason = null;
+        if (latest.DetailJson is { Length: > 0 } json)
+        {
+            using var doc = JsonDocument.Parse(json);
+            reason = doc.RootElement.TryGetProperty("reason", out var r) ? r.GetString() : null;
+        }
+
+        return new EmergencyStopState(latest.EventType == RecoveryEventType.EmergencyStopActivated, latest.ActorIdentity, latest.OccurredAt, reason);
+    }
+
+    /// <inheritdoc />
     public async Task<Result<AutonomyGrant>> RecordAutonomyGrantTransitionAsync(
         string ownerId, string signatureHash, RecoveryOperationKind actionKind,
         AutonomyLevel previousLevel, AutonomyLevel newLevel, string reason, string? evidenceJson,

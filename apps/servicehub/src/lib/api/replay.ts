@@ -111,6 +111,11 @@ export async function replayMessage(dlqMessageId: number): Promise<ReplayOutcome
   return (await api.post<ReplayOutcome>(`/dead-letters/${dlqMessageId}/replay`, null, { headers: withIntent(Intent.ReplayMessage) })).data
 }
 
+/** Deletes one dead letter for good (unit 6.15) — through the gate and the ledger, with the reason recorded. */
+export async function purgeMessage(dlqMessageId: number, reason: string): Promise<ReplayOutcome> {
+  return (await api.post<ReplayOutcome>(`/dead-letters/${dlqMessageId}/purge`, { reason }, { headers: withIntent(Intent.PurgeMessage) })).data
+}
+
 const providerParam = (p: CloudProvider) => ({ azure: 'Azure', aws: 'Aws', gcp: 'Gcp' })[p]
 
 export interface ReplayQuery {

@@ -7,7 +7,7 @@ import { MessageTable } from './MessageTable'
 const row = (over: Partial<DeadLetter> = {}): DeadLetter => ({
   id: 1, namespaceId: 'n', messageId: 'm-1', sequenceNumber: 1, entityName: 'orders', entityType: 'queue', topicName: null,
   detectedAtUtc: '2026-09-25T10:00:00Z', enqueuedTimeUtc: '2026-09-25T09:00:00Z', deliveryCount: 10, sizeInBytes: 2048,
-  deadLetterReason: 'MaxDeliveryCountExceeded', deadLetterErrorDescription: 'Message could not be consumed after 10 delivery attempts.', status: 'Active', ...over,
+  deadLetterReason: 'MaxDeliveryCountExceeded', deadLetterErrorDescription: 'Message could not be consumed after 10 delivery attempts.', status: 'active', ...over,
 })
 
 const renderTable = (rows: DeadLetter[]) => render(<MemoryRouter><MessageTable rows={rows} /></MemoryRouter>)
