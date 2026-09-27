@@ -1,9 +1,10 @@
 import { InfoTip } from '../../components/ui/InfoTip'
 import { widgetHelp } from '../../content/widgets'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, Bot, Info, LayoutGrid, Lock, ShieldCheck, Zap } from 'lucide-react'
+import { AlertTriangle, Bot, Info, LayoutGrid, Lock, Maximize2, Minimize2, ShieldCheck, Zap } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAgents } from '../../hooks/useAgents'
+import { useMinimizable } from '../../hooks/useMinimizable'
 import { useNamespaces } from '../../hooks/useNamespaces'
 import { usePendingWork } from '../../hooks/usePendingWork'
 import { useRecoverySummary } from '../../hooks/useRecoverySummary'
@@ -108,6 +109,7 @@ const h2 = 'text-[15px] font-bold'
 
 function Attention({ provider }: { provider?: CloudProvider }) {
   const pending = usePendingWork({ provider })
+  const panel = useMinimizable('needs-your-attention-advanced')
   if (!pending.data) return pending.isError ? <p role="alert" className={card}>ServiceHub couldn’t read what needs you.</p> : null
   const groups = (['approval', 'rule', 'agent'] as const).map((kind) => ({ kind, items: pending.data.items.filter((i) => i.kind === kind) })).filter((g) => g.items.length > 0)
   if (groups.length === 0) {
@@ -116,19 +118,35 @@ function Attention({ provider }: { provider?: CloudProvider }) {
   const words = { approval: ['approval waiting', 'approvals waiting', 'See them waiting →', '/advanced/ledger?state=Waiting'], rule: ['rule stopped itself', 'rules stopped themselves', 'Open the rule →', '/?panel=rules'], agent: ['agent needs you', 'agents need you', 'All agents →', '/advanced/agents'] } as const
   return (
     <section aria-label="Needs your attention" className="overflow-hidden rounded-2xl border border-[#fcd34d] bg-[#fffbeb]">
-      <h2 className="flex items-center gap-2 border-b border-[#fde68a] px-5 py-3 text-[15px] font-bold text-[#92400e]"><AlertTriangle className="h-4 w-4" aria-hidden="true" /> Needs your attention <span className="ml-auto text-xs font-semibold">{pending.data.total} {pending.data.total === 1 ? 'thing' : 'things'}</span></h2>
-      <ul className="divide-y divide-[#fde68a]">
-        {groups.map(({ kind, items }) => {
-          const [one, many, link, to] = words[kind]
-          return (
-            <li key={kind} className="flex items-center gap-4 px-5 py-3 text-sm">
-              <span className="text-xl font-extrabold text-[#b45309]">{items.length}</span>
-              <span className="min-w-0 flex-1"><b>{items.length === 1 ? one : many}</b><span className="block truncate font-mono text-xs text-[var(--color-text-muted)]">{items.slice(0, 3).map((i) => i.entity ?? i.ruleName ?? i.agentId).filter(Boolean).join(' · ')} — {items[0].reason}</span></span>
-              <Link to={to} className="whitespace-nowrap font-semibold text-[var(--color-primary-700)] hover:underline">{link}</Link>
-            </li>
-          )
-        })}
-      </ul>
+      <h2 className="flex items-center gap-2 border-b border-[#fde68a] px-5 py-3 text-[15px] font-bold text-[#92400e]">
+        <AlertTriangle className="h-4 w-4" aria-hidden="true" /> Needs your attention
+        <span className="ml-auto flex items-center gap-3 text-xs font-semibold">
+          {pending.data.total} {pending.data.total === 1 ? 'thing' : 'things'}
+          <button
+            type="button"
+            onClick={panel.minimized ? panel.restore : panel.minimize}
+            aria-label={panel.minimized ? 'Show needs your attention' : 'Minimize needs your attention'}
+            title={panel.minimized ? 'Show' : 'Minimize'}
+            className="rounded-full p-1 font-normal text-[#92400e] hover:bg-[#fef3c7]"
+          >
+            {panel.minimized ? <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" /> : <Minimize2 className="h-3.5 w-3.5" aria-hidden="true" />}
+          </button>
+        </span>
+      </h2>
+      {!panel.minimized && (
+        <ul className="divide-y divide-[#fde68a]">
+          {groups.map(({ kind, items }) => {
+            const [one, many, link, to] = words[kind]
+            return (
+              <li key={kind} className="flex items-center gap-4 px-5 py-3 text-sm">
+                <span className="text-xl font-extrabold text-[#b45309]">{items.length}</span>
+                <span className="min-w-0 flex-1"><b>{items.length === 1 ? one : many}</b><span className="block truncate font-mono text-xs text-[var(--color-text-muted)]">{items.slice(0, 3).map((i) => i.entity ?? i.ruleName ?? i.agentId).filter(Boolean).join(' · ')} — {items[0].reason}</span></span>
+                <Link to={to} className="whitespace-nowrap font-semibold text-[var(--color-primary-700)] hover:underline">{link}</Link>
+              </li>
+            )
+          })}
+        </ul>
+      )}
     </section>
   )
 }

@@ -85,4 +85,24 @@ describe('Needs your attention', () => {
     expect(await screen.findAllByText('A rule stopped itself')).toHaveLength(3)
     expect(screen.getByText(/1 replay needs your approval/)).toBeInTheDocument()
   })
+
+  it('minimizes to its header alone, remembers that per browser, and can be restored', async () => {
+    window.localStorage.clear()
+    vi.mocked(api.fetchPendingWork).mockResolvedValue(page([item('a')]))
+    const { unmount } = wrap(<NeedsYouStrip />)
+    expect(await screen.findByText('1 replay needs your approval')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Minimize needs your attention' }))
+    expect(screen.queryByText('1 replay needs your approval')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Needs your attention' })).toBeInTheDocument()
+    unmount()
+
+    // Remembered across a remount, same as the explainer card's dismissal.
+    wrap(<NeedsYouStrip />)
+    await screen.findByRole('heading', { name: 'Needs your attention' })
+    expect(screen.queryByText('1 replay needs your approval')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Show needs your attention' }))
+    expect(await screen.findByText('1 replay needs your approval')).toBeInTheDocument()
+  })
 })

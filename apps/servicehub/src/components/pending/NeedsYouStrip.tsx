@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Bot, CheckCircle2, Clock, Zap } from 'lucide-react'
+import { Bot, CheckCircle2, Clock, Maximize2, Minimize2, Zap } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { usePendingWork } from '../../hooks/usePendingWork'
+import { useMinimizable } from '../../hooks/useMinimizable'
 import { pendingRows, type PendingRow } from '../../lib/pendingRows'
 import { formatAge } from '../../lib/format'
 import { useResolveHref } from './PendingWorkList'
@@ -21,10 +22,15 @@ const icons = {
  * Up to three cards in a row; the rest expand in place behind "+N more" — never a second page, never
  * just a hint to go open the bell. Nothing waiting: one small sentence, never a banner (unchanged from
  * the per-cloud strip this replaces).
+ *
+ * Can also be minimized (remembered per browser, via `useMinimizable`) down to its header alone —
+ * the cards themselves can take a lot of vertical space when several things are waiting, and nothing
+ * here is lost by collapsing it, just out of the way until reopened.
  */
 export function NeedsYouStrip() {
   const pending = usePendingWork()
   const [expanded, setExpanded] = useState(false)
+  const panel = useMinimizable('needs-your-attention')
 
   if (!pending.data) return null
   const rows = pendingRows(pending.data.items)
@@ -38,23 +44,40 @@ export function NeedsYouStrip() {
   }
 
   const shown = expanded ? rows : rows.slice(0, MaxCards)
+  const count = <span className="text-xs font-semibold text-[#b45309]">{rows.length} {rows.length === 1 ? 'thing' : 'things'}</span>
+
   return (
     <section aria-label="Needs your attention" className="overflow-hidden rounded-xl border border-[#fcd34d] bg-[#fffbeb]">
-      <header className="flex items-center justify-between px-4 pt-3">
+      <header className="flex items-center justify-between px-4 py-3">
         <h2 className="text-[15px] font-bold text-[#92400e]">Needs your attention</h2>
-        <span className="text-xs font-semibold text-[#b45309]">{rows.length} {rows.length === 1 ? 'thing' : 'things'}</span>
+        <div className="flex items-center gap-3">
+          {count}
+          <button
+            type="button"
+            onClick={panel.minimized ? panel.restore : panel.minimize}
+            aria-label={panel.minimized ? 'Show needs your attention' : 'Minimize needs your attention'}
+            title={panel.minimized ? 'Show' : 'Minimize'}
+            className="rounded-full p-1 text-[#92400e] hover:bg-[#fef3c7]"
+          >
+            {panel.minimized ? <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" /> : <Minimize2 className="h-3.5 w-3.5" aria-hidden="true" />}
+          </button>
+        </div>
       </header>
-      <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
-        {shown.map((row) => <NeedsYouCard key={row.key} row={row} />)}
-      </div>
-      {!expanded && rows.length > MaxCards && (
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          className="block w-full border-t border-[#fde68a] px-4 py-2 text-left text-[12.5px] font-semibold text-[#92400e] hover:bg-[#fef3c7]"
-        >
-          + {rows.length - MaxCards} more
-        </button>
+      {!panel.minimized && (
+        <>
+          <div className="grid gap-3 p-4 pt-0 sm:grid-cols-2 xl:grid-cols-3">
+            {shown.map((row) => <NeedsYouCard key={row.key} row={row} />)}
+          </div>
+          {!expanded && rows.length > MaxCards && (
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              className="block w-full border-t border-[#fde68a] px-4 py-2 text-left text-[12.5px] font-semibold text-[#92400e] hover:bg-[#fef3c7]"
+            >
+              + {rows.length - MaxCards} more
+            </button>
+          )}
+        </>
       )}
     </section>
   )

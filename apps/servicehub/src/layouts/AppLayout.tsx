@@ -101,7 +101,7 @@ export function AppLayout() {
                 Service<span className="text-[var(--color-primary-600)]">Hub</span>
               </div>
               <div className="hidden whitespace-nowrap text-[10.5px] leading-[1.2] text-[var(--color-text-muted)] sm:block">
-                See messages. Fix issues. Keep systems moving.
+                Keep messages moving.
               </div>
             </div>
           </div>
@@ -173,7 +173,7 @@ export function AppLayout() {
             <div className="mt-5 rounded-[11px] border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-3.5">
               <div className="text-[12.5px] font-bold text-[var(--color-primary-700)]">ServiceHub</div>
               <div className="mt-0.5 text-[11px] leading-[1.4] text-[var(--color-text-muted)]">
-                See messages. Fix issues. Keep your systems moving.
+                Keep messages moving.
               </div>
               <div className="mt-2 font-mono text-[10px] text-[var(--color-text-muted)]">
                 v{import.meta.env.VITE_APP_VERSION}
