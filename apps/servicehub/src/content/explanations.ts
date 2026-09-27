@@ -13,23 +13,23 @@ export interface Explanation {
 }
 
 export const explanations = {
-  fleet: {
+  home: {
     title: "What you're looking at",
     terms: [
       {
-        term: 'Fleet',
+        term: 'Namespace',
         meaning:
-          'every cloud account you have connected — each is a namespace (an Azure namespace, an AWS account and region, a Google project).',
+          'one cloud account you have connected — an Azure namespace, an AWS account and region, or a Google project. All clouds lists every one, grouped by cloud.',
+      },
+      {
+        term: 'Watched vs recorded when you look',
+        meaning:
+          'Azure is watched automatically, so its numbers update on their own. AWS and Google Cloud only know what you asked ServiceHub to look at — reading their dead letters any other way could dead-letter a message by accident.',
       },
       {
         term: 'Can confirm a fix held',
         meaning:
           'whether that cloud lets ServiceHub prove a replayed message stayed out of the dead-letter queue. Azure can; AWS and Google need the small DLQ observer.',
-      },
-      {
-        term: 'New · resolved',
-        meaning:
-          'messages that landed in a dead-letter queue today, and ones that left it — replayed or cleared. Each cloud counted on its own.',
       },
     ],
     learnMore: 'Clouds and what they can prove',

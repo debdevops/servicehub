@@ -5,15 +5,16 @@ import { useProviderScope } from './providerScope'
 /**
  * The Cloud Providers rows: exactly the clouds that are connected, nothing else (IA §3).
  *
- * Choosing one scopes Home to it. From Fleet Overview — which is cross-cloud and not scoped — that
- * also takes you to Home, because choosing a cloud from there means "show me that one".
- * The provider accent touches the selected row only; the rest of the chrome does not change.
+ * Choosing one sets `?provider=` (D48) — the same state Home's own scope tabs and cloud cards set —
+ * and takes you to Home if you were somewhere else, because choosing a cloud from the sidebar means
+ * "show me that one now". The provider accent touches the selected row only; the rest of the chrome
+ * does not change.
  */
 const glyphColor: Record<string, string> = { azure: '#0284c7', aws: '#f97316', gcp: '#22c55e' }
 
 export function CloudProviders({ providers }: { providers: readonly ConnectedProvider[] }) {
   const { selected, select } = useProviderScope()
-  const { pathname, search } = useLocation()
+  const { pathname } = useLocation()
   const navigate = useNavigate()
 
   return (
@@ -28,7 +29,7 @@ export function CloudProviders({ providers }: { providers: readonly ConnectedPro
               onClick={() => {
                 select(p.provider)
                 // A namespace or environment scope belongs to the cloud it was chosen in, so switching clouds drops it.
-                if (pathname !== '/' || /[?&](ns|env)=/.test(search)) navigate('/')
+                navigate(pathname === '/' ? `/?provider=${p.provider}` : '/')
               }}
               className={[
                 'mb-[5px] flex w-full items-center gap-[11px] rounded-[10px] border px-3 py-[9px] text-left transition-colors',

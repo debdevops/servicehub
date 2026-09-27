@@ -62,23 +62,27 @@ describe('the toast', () => {
   })
 })
 
-describe('Needs you', () => {
+describe('Needs your attention', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('is one small sentence when nothing needs anyone — never a banner', async () => {
     vi.mocked(api.fetchPendingWork).mockResolvedValue(page([], []))
-    wrap(<NeedsYouStrip provider="azure" watching="The Agent is watching 12 queues." />)
-    expect(await screen.findByText('Nothing needs you. The Agent is watching 12 queues.')).toBeInTheDocument()
-    expect(screen.queryByRole('region', { name: 'Needs you' })).not.toBeInTheDocument()
+    wrap(<NeedsYouStrip />)
+    expect(await screen.findByText('Nothing needs you right now.')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Needs your attention' })).not.toBeInTheDocument()
   })
 
-  it('shows at most three rows and points to the bell for the rest; other clouds get one line', async () => {
-    const rules = ['1', '2', '3', '4'].map((n) => item(`rule:${n}`, { kind: 'rule', entryId: null, ruleId: Number(n), ruleName: `Rule ${n}`, provider: 'azure', reasonCode: 'RULE_CIRCUIT_BREAKER' }))
-    vi.mocked(api.fetchPendingWork).mockImplementation(async (scope) =>
-      scope?.provider ? page(rules, [{ provider: 'azure', count: 4 }]) : page([...rules, item('x')], [{ provider: 'azure', count: 4 }, { provider: 'aws', count: 1 }]))
-    wrap(<NeedsYouStrip provider="azure" watching="" />)
+  it('shows at most three cards in a row, across every cloud at once, and expands the rest in place', async () => {
+    const rules = ['1', '2', '3'].map((n) => item(`rule:${n}`, { kind: 'rule', entryId: null, ruleId: Number(n), ruleName: `Rule ${n}`, provider: 'azure', reasonCode: 'RULE_CIRCUIT_BREAKER' }))
+    const awsItem = item('x', { provider: 'aws', namespaceId: 'w1', namespaceName: 'aws-dev' })
+    vi.mocked(api.fetchPendingWork).mockResolvedValue(page([...rules, awsItem], [{ provider: 'azure', count: 3 }, { provider: 'aws', count: 1 }]))
+    wrap(<NeedsYouStrip />)
     expect(await screen.findAllByText('A rule stopped itself')).toHaveLength(3)
-    expect(screen.getByText(/\+ 1 more/)).toBeInTheDocument()
-    expect(await screen.findByText(/1 replay needs your approval in AWS/)).toBeInTheDocument()
+    expect(screen.queryByText(/1 replay needs your approval/)).not.toBeInTheDocument()
+    expect(screen.getByText('+ 1 more')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByText('+ 1 more'))
+    expect(await screen.findAllByText('A rule stopped itself')).toHaveLength(3)
+    expect(screen.getByText(/1 replay needs your approval/)).toBeInTheDocument()
   })
 })

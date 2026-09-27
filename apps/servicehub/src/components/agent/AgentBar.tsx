@@ -2,18 +2,21 @@ import { Bot, Pause, Play } from 'lucide-react'
 import { useMe } from '../../hooks/useIdentity'
 import { permission } from '../../lib/permissions'
 import { NotAllowed } from '../ui/NotAllowed'
-import { Link } from 'react-router-dom'
 import { useAgents, useSetAgentsPaused } from '../../hooks/useAgents'
 import { useRecoverySummary } from '../../hooks/useRecoverySummary'
 import { usePendingWork } from '../../hooks/usePendingWork'
-import { agentLine } from '../../lib/agentLine'
+import { agentLine, agentLineAllClouds } from '../../lib/agentLine'
 import type { CloudProvider, EnvironmentKind, Namespace } from '../../lib/api/namespaces'
 
 const count = (states: readonly { state: string; count: number }[] | undefined, name: string) => states?.find((s) => s.state === name)?.count ?? 0
 
 /**
- * The Agent, where the person already is (unit 4.6): one line about THIS cloud, three numbers, one control.
+ * The Agent, where the person already is (unit 4.6): one line, three numbers, one control.
  *
+ * - Omit `cloud`/`provider` for Home's own bar (D48, O-H1): it always covers every connected cloud,
+ *   never just the scope tab someone happens to have open — something the Agent did on AWS must not
+ *   disappear because the page is showing Azure. Pass both to scope it to one cloud (used by tests only
+ *   today; Home never does).
  * - The line is computed from the namespaces' capabilities, never a cloud's name.
  * - The numbers read the same 24-hour recovery summary the Replayed tab and the Ledger read (2.12) — nothing recomputed —
  *   and "need you" is the same pending-work query as the bell and the Needs-you strip above it (5.1).
@@ -22,7 +25,7 @@ const count = (states: readonly { state: string; count: number }[] | undefined, 
  *   paused agent, including a watching one paused on the Agents page, so nothing can be paused with no way back.
  */
 export function AgentBar({ cloud, provider, namespaces, queues, namespaceId, environment }: {
-  cloud: string; provider: CloudProvider; namespaces: readonly Namespace[]; queues: number | null; namespaceId?: string; environment?: EnvironmentKind
+  cloud?: string; provider?: CloudProvider; namespaces: readonly Namespace[]; queues: number | null; namespaceId?: string; environment?: EnvironmentKind
 }) {
   const agents = useAgents()
   const summary = useRecoverySummary({ window: '24h', provider, namespaceId, environment })
@@ -31,7 +34,7 @@ export function AgentBar({ cloud, provider, namespaces, queues, namespaceId, env
   const me = useMe().data
 
   if (!agents.data) return null
-  const line = agentLine(cloud, namespaces, queues, agents.data)
+  const line = cloud ? agentLine(cloud, namespaces, queues, agents.data) : agentLineAllClouds(namespaces, queues, agents.data)
   const pausedIds = agents.data.filter((a) => a.isPaused).map((a) => a.id)
   const actingIds = agents.data.filter((a) => a.canAct && !a.isPaused).map((a) => a.id)
   const rate = summary.data?.stayedFixedRate ?? null
@@ -43,8 +46,9 @@ export function AgentBar({ cloud, provider, namespaces, queues, namespaceId, env
 
   return (
     <section
+      id="agent-bar"
       aria-label="ServiceHub Agent"
-      className="relative flex flex-wrap items-center gap-4 overflow-hidden rounded-xl px-[18px] py-[13px] text-white shadow-[0_4px_14px_rgba(3,105,161,.28)]"
+      className="relative flex flex-wrap items-center gap-4 overflow-hidden rounded-xl px-[18px] py-[13px] text-white shadow-[0_4px_14px_rgba(3,105,161,.28)] scroll-mt-[calc(var(--header-height)+16px)]"
       style={{ background: 'linear-gradient(105deg,#0c4a6e 0%,#075985 42%,#0369a1 100%)' }}
     >
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] border border-white/25 bg-white/15">
@@ -63,7 +67,6 @@ export function AgentBar({ cloud, provider, namespaces, queues, namespaceId, env
         <Stat value={pending.data ? pending.data.total.toLocaleString() : '—'} label="need you — above" warn={(pending.data?.total ?? 0) > 0} />
         <Stat value={rate === null ? '—' : `${Math.round(rate * 100)}%`} label={rate === null ? 'nothing checked yet' : 'stayed fixed'} />
       </dl>
-      <Link to="/advanced/agents" className="z-[1] whitespace-nowrap text-[11.5px] font-bold text-[#bae6fd] hover:underline">All agents →</Link>
       {pausedIds.length > 0 ? (
         <button
           type="button"

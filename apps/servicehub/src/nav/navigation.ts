@@ -6,7 +6,6 @@ import {
   Fingerprint,
   Home,
   Inbox,
-  Layers,
   LayoutGrid,
   ListChecks,
   Play,
@@ -59,8 +58,6 @@ export type NavVisibility =
   | 'always'
   /** Shown once at least one cloud is connected — there is nothing to work on before that. */
   | 'connected'
-  /** Shown only when more than one cloud is connected — it is the only cross-cloud view. */
-  | 'multiCloud'
 
 interface NavCommon {
   /** Stable id. Used by the command palette and by tests; never reused for a different screen. */
@@ -100,18 +97,15 @@ export interface OverlayEntry extends NavCommon {
 export type NavEntry = PageEntry | TabEntry | OverlayEntry
 
 export const navigation: readonly NavEntry[] = [
-  // ── Simple · pages — the only two ─────────────────────────────────────────────────────────────
-  // Home leads, then Fleet Overview — the only cross-cloud view, shown only when there is more than one
-  // cloud to compare.
+  // ── Simple · pages — the only one ─────────────────────────────────────────────────────────────
+  // Home is the single landing page (D48, 2026-09-27): with 2+ clouds it opens on "All clouds" —
+  // every namespace, divided by cloud — and a scope tab switches to one cloud's own detail, shaped by
+  // what that cloud can do. Not a second destination to learn — the whole point of D48 was that two
+  // pages for one job was the confusion, not a feature.
   {
     kind: 'page', id: 'home', label: 'Home', path: '/',
-    description: 'What needs you, and the state of the one cloud you are working in. The welcome, before anything is connected.',
+    description: 'What needs you, how every connected cloud is doing, and the detail for the one you pick. The welcome, before anything is connected.',
     icon: Home, surface: 'simple', group: 'primary', visibility: 'always', wave: 1,
-  },
-  {
-    kind: 'page', id: 'fleet', label: 'Fleet Overview', path: '/fleet',
-    description: 'Across every cloud you have connected, where is the trouble?',
-    icon: Layers, surface: 'simple', group: 'primary', visibility: 'multiCloud', wave: 3,
   },
 
   // ── Simple · work — views of Home's table and the rules panel ─────────────────────────────────
@@ -257,8 +251,6 @@ export function entriesInGroup(group: NavGroup): readonly NavEntry[] {
 export function visibleEntries(connectedCloudCount: number): readonly NavEntry[] {
   return navigation.filter((entry) => {
     switch (entry.visibility) {
-      case 'multiCloud':
-        return connectedCloudCount > 1
       case 'connected':
         return connectedCloudCount > 0
       case 'always':
@@ -268,12 +260,10 @@ export function visibleEntries(connectedCloudCount: number): readonly NavEntry[]
 }
 
 /**
- * Where a visitor lands, computed from what is connected rather than from a setting (IA §2.4).
- *
- *   0 clouds → Home, which is the welcome until something is connected (D45 — no Connect page)
- *   1 cloud  → Home, because Fleet Overview would repeat it exactly
- *   2+       → Fleet Overview, because picking one cloud for someone would be arbitrary
+ * Where a visitor lands (IA §2.4, revised 2026-09-27): always Home. There is only one page now —
+ * with more than one cloud connected, Home grows its Fleet Overview section, so there is nothing
+ * left to route to separately.
  */
-export function landingPath(connectedCloudCount: number): string {
-  return connectedCloudCount > 1 ? '/fleet' : '/'
+export function landingPath(): string {
+  return '/'
 }

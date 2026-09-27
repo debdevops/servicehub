@@ -28,3 +28,8 @@ function memoryStorage(): Storage {
   }
 }
 Object.defineProperty(window, 'localStorage', { value: memoryStorage(), configurable: true })
+
+// jsdom has no layout, so it never implemented `scrollIntoView` — every real browser has. A no-op
+// stand-in, so a component that scrolls a `#fragment` into view (the hash-scroll effect, Help's
+// `?topic=`, "Look at the Agent bar ↓") doesn't crash the tests that exercise it.
+Element.prototype.scrollIntoView ??= () => {}

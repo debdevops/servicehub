@@ -1,53 +1,88 @@
-import { TriangleAlert } from 'lucide-react'
+import { useState } from 'react'
+import { Bot, CheckCircle2, Clock, Zap } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { usePendingWork } from '../../hooks/usePendingWork'
-import type { CloudProvider, EnvironmentKind } from '../../lib/api/namespaces'
-import { pendingRows } from '../../lib/pendingRows'
-import { providerLabel } from '../../lib/providers'
-import { useProviderScope } from '../provider/providerScope'
-import { PendingWorkList } from './PendingWorkList'
+import { pendingRows, type PendingRow } from '../../lib/pendingRows'
+import { formatAge } from '../../lib/format'
+import { useResolveHref } from './PendingWorkList'
 
-const MaxRows = 3
+const MaxCards = 3
+const icons = {
+  approval: { Icon: Clock, box: 'bg-[#fffbeb] text-[#d97706]' },
+  rule: { Icon: Zap, box: 'bg-[var(--color-error-light)] text-[#dc2626]' },
+  agent: { Icon: Bot, box: 'bg-[var(--color-error-light)] text-[#dc2626]' },
+} as const
 
 /**
- * "Needs you" (5.8): the first thing Home says is whether anything needs a person, for THIS cloud — and one action for each
- * thing that does. The same pending-work query as the bell. At most three rows; the rest are the bell's job. Other clouds
- * get one line, never their rows (Home never mixes clouds). When nothing needs anyone: one small sentence, never a banner.
+ * "Needs your attention" (D48, O-H1): the first thing Home says, always across EVERY connected cloud —
+ * never just the one a scope tab happens to have open, so something waiting on AWS is never hidden
+ * because the page is showing Azure. Each card already names its own cloud (`PendingRow.where`).
+ *
+ * Up to three cards in a row; the rest expand in place behind "+N more" — never a second page, never
+ * just a hint to go open the bell. Nothing waiting: one small sentence, never a banner (unchanged from
+ * the per-cloud strip this replaces).
  */
-export function NeedsYouStrip({ provider, namespaceId, environment, watching }: {
-  provider: CloudProvider; namespaceId?: string; environment?: EnvironmentKind; watching: string
-}) {
-  const here = usePendingWork({ provider, namespaceId, environment })
-  const everywhere = usePendingWork()
-  const { select } = useProviderScope()
+export function NeedsYouStrip() {
+  const pending = usePendingWork()
+  const [expanded, setExpanded] = useState(false)
 
-  if (!here.data) return null
-  const rows = pendingRows(here.data.items)
-  const cloud = providerLabel[provider]
-  const elsewhere = (everywhere.data?.byProvider ?? []).filter((p) => p.provider !== provider && p.count > 0)
+  if (!pending.data) return null
+  const rows = pendingRows(pending.data.items)
 
-  if (rows.length === 0 && elsewhere.length === 0) {
-    return <p className="text-[13px] text-[var(--color-text-muted)]">Nothing needs you. {watching}</p>
+  if (rows.length === 0) {
+    return (
+      <p className="flex items-center gap-1.5 text-[13px] text-[var(--color-text-muted)]">
+        <CheckCircle2 className="h-4 w-4 text-[var(--color-success)]" aria-hidden="true" /> Nothing needs you right now.
+      </p>
+    )
   }
 
+  const shown = expanded ? rows : rows.slice(0, MaxCards)
   return (
-    <section aria-label="Needs you" className="overflow-hidden rounded-xl border border-[#fcd34d] bg-[#fffbeb]">
-      {rows.length > 0 && (
-        <>
-          <header className="flex items-center justify-between px-5 pt-3">
-            <h2 className="flex items-center gap-2 text-[15px] font-bold text-[#92400e]"><TriangleAlert className="h-4 w-4" aria-hidden="true" /> Needs you</h2>
-            <span className="text-xs font-semibold text-[#b45309]">{here.data.total} {here.data.total === 1 ? 'thing' : 'things'} in {cloud}</span>
-          </header>
-          <PendingWorkList rows={rows.slice(0, MaxRows)} now={new Date()} />
-          {rows.length > MaxRows && <p className="px-5 pb-2 text-xs text-[#92400e]">+ {rows.length - MaxRows} more — open the bell to see them all.</p>}
-        </>
+    <section aria-label="Needs your attention" className="overflow-hidden rounded-xl border border-[#fcd34d] bg-[#fffbeb]">
+      <header className="flex items-center justify-between px-4 pt-3">
+        <h2 className="text-[15px] font-bold text-[#92400e]">Needs your attention</h2>
+        <span className="text-xs font-semibold text-[#b45309]">{rows.length} {rows.length === 1 ? 'thing' : 'things'}</span>
+      </header>
+      <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+        {shown.map((row) => <NeedsYouCard key={row.key} row={row} />)}
+      </div>
+      {!expanded && rows.length > MaxCards && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="block w-full border-t border-[#fde68a] px-4 py-2 text-left text-[12.5px] font-semibold text-[#92400e] hover:bg-[#fef3c7]"
+        >
+          + {rows.length - MaxCards} more
+        </button>
       )}
-      {elsewhere.map((p) => (
-        <p key={p.provider} className="flex flex-wrap items-center gap-2 border-t border-[#fde68a] px-5 py-2 text-[13px] text-[#78350f]">
-          Also waiting: <b>{p.count} {p.count === 1 ? 'replay needs' : 'replays need'} your approval in {providerLabel[p.provider]}</b> — the Agent stopped and asked.
-          <Link to="/" onClick={() => select(p.provider)} className="ml-auto font-semibold text-[var(--color-primary-700)] hover:underline">Switch to {providerLabel[p.provider]} →</Link>
-        </p>
-      ))}
     </section>
+  )
+}
+
+function NeedsYouCard({ row }: { row: PendingRow }) {
+  const { Icon, box } = icons[row.kind]
+  const resolve = useResolveHref()
+
+  return (
+    <article className="flex items-start gap-3 rounded-lg border border-[#fde68a] bg-white p-3">
+      <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${box}`}><Icon className="h-4 w-4" aria-hidden="true" /></span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-bold text-[var(--color-text)]">{row.title}</p>
+        <p className="text-[12px] text-[var(--color-text-muted)]">{row.where}{row.where ? ' — ' : ''}{row.why}</p>
+        <p className="mt-0.5 text-[11px] text-[var(--color-text-muted)]">waiting {formatAge(row.since, new Date())}</p>
+        {row.kind === 'agent' ? (
+          // An agent stopping is ServiceHub's own machinery, not a cloud page — stay on Home and point at
+          // the bar that resumes it, rather than sending someone to Advanced (plan §7: never link there).
+          <a href="#agent-bar" onClick={(e) => { e.preventDefault(); document.getElementById('agent-bar')?.scrollIntoView({ block: 'center' }) }} className="mt-1.5 inline-block text-[12px] font-semibold text-[#b45309] hover:underline">
+            Look at the Agent bar ↓
+          </a>
+        ) : (
+          <Link to={resolve(row.action.href)} className="mt-1.5 inline-block text-[12px] font-semibold text-[#b45309] hover:underline">
+            {row.action.label} →
+          </Link>
+        )}
+      </div>
+    </article>
   )
 }

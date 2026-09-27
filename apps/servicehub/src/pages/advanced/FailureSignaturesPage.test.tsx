@@ -51,7 +51,7 @@ describe('Failure Signatures', () => {
 
     await screen.findByRole('table', { name: 'Failure signatures' })
     expect(api.fetchSignatures).toHaveBeenLastCalledWith(expect.objectContaining({ environment: 'prod', namespaceId: undefined }))
-    await userEvent.click(await screen.findByRole('button', { name: 'Namespace' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'All clouds · Namespace' }))
     await userEvent.click(screen.getByRole('option', { name: /Orders Dev/ }))
     await screen.findByRole('table', { name: 'Failure signatures' })
     expect(api.fetchSignatures).toHaveBeenLastCalledWith(expect.objectContaining({ namespaceId: 'd1', environment: undefined }))

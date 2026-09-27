@@ -63,7 +63,7 @@ describe('the Recovery Ledger (Advanced)', () => {
 
     await waitFor(() => expect(api.fetchLedger).toHaveBeenLastCalledWith(expect.objectContaining({ environment: 'prod' })))
     expect(api.fetchRecoverySummary).toHaveBeenLastCalledWith(expect.objectContaining({ environment: 'prod' }))
-    await userEvent.click(await screen.findByRole('button', { name: 'Namespace' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'All clouds · Namespace' }))
     expect(screen.getByRole('option', { name: /AWS Dev/ })).toBeInTheDocument()
   })
 

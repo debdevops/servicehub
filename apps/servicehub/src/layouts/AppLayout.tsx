@@ -40,16 +40,22 @@ export function AppLayout() {
   const loaded = namespaces.isSuccess
 
   // The URL is the surface (ADR-0016 D2). The layout is the only place that asks — pages never do.
-  const { pathname, search } = useLocation()
+  const { pathname, search, hash } = useLocation()
   const surface = surfaceOf(pathname)
   const onSurface = entries.filter((e) => e.surface === surface)
   useEffect(() => rememberAdvancedPath(pathname), [pathname])
   useEffect(() => rememberPage(pathname, search), [pathname, search])
+  // A client-side route change never auto-scrolls to a `#fragment` the way a full page load does (e.g.
+  // "Look at the Agent bar" on a Needs-you card, which points at `#agent-bar` further up Home).
+  useEffect(() => {
+    if (!hash) return
+    document.getElementById(hash.slice(1))?.scrollIntoView({ block: 'start' })
+  }, [pathname, hash])
 
   // Below the large breakpoint the sidebar is a slide-in menu; choosing anything closes it.
   const [menuOpen, setMenuOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
-  const simpleHref = landingPath(cloudCount)
+  const simpleHref = landingPath()
   const advancedHref = surface === 'advanced' ? pathname : readLastAdvancedPath(ADVANCED_ROOT)
   useShortcuts({ openSearch: useCallback(() => setSearchOpen(true), []), simpleHref, advancedHref })
   useEffect(() => setMenuOpen(false), [pathname, search])
@@ -62,7 +68,7 @@ export function AppLayout() {
 
   return (
     <ProviderScopeProvider connected={providers.map((p) => p.provider)}>
-      <LandingRedirect ready={loaded} connectedCloudCount={cloudCount} />
+      <LandingRedirect ready={loaded} />
       <div className="min-h-screen" data-surface={surface}>
         <DemoBanner />
         <header

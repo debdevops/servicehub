@@ -124,7 +124,7 @@ export function NamespaceScope({
     <div ref={root} className={`relative inline-block ${compact ? '' : 'mt-3'}`}>
       <button
         type="button"
-        aria-label="Namespace"
+        aria-label={`${cloud} · Namespace`}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listId}

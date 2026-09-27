@@ -24,7 +24,7 @@ function renderApp(initial: string) {
       <MemoryRouter initialEntries={[initial]}>
         <Routes>
           <Route element={<AppLayout />}>
-            {['/', '/fleet', '/advanced', '/advanced/ledger', '/advanced/agents', '/advanced/signatures'].map((path) => (
+            {['/', '/advanced', '/advanced/ledger', '/advanced/agents', '/advanced/signatures'].map((path) => (
               <Route key={path} path={path} element={<Where />} />
             ))}
           </Route>
@@ -89,11 +89,11 @@ describe('the Simple | Advanced switch', () => {
     expect(sidebar().queryByRole('link', { name: /Dead letters/ })).not.toBeInTheDocument()
   })
 
-  it('sends Simple to Fleet Overview when two clouds are connected, as a landing does', async () => {
+  it('sends Simple to Home regardless of how many clouds are connected — Fleet Overview lives on it now, not at a separate address', async () => {
     mocked.fetchNamespaces.mockResolvedValue([ns('azure'), ns('aws')])
     renderApp('/advanced')
     await sidebar().findByRole('link', { name: /Agents/ })
-    await waitFor(() => expect(switchLink('Simple')).toHaveAttribute('href', '/fleet'))
+    await waitFor(() => expect(switchLink('Simple')).toHaveAttribute('href', '/'))
   })
 
   it('agrees with a pasted URL: the sidebar follows the path alone', async () => {

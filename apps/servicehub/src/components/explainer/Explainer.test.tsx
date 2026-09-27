@@ -54,7 +54,7 @@ describe('the explainer', () => {
   })
 
   it('offers no learn-more link until Help exists', () => {
-    render(<ExplainerCard id="fleet" onDismiss={() => {}} />)
+    render(<ExplainerCard id="home" onDismiss={() => {}} />)
     expect(screen.queryByText(/Clouds and what they can prove/)).not.toBeInTheDocument()
   })
 })

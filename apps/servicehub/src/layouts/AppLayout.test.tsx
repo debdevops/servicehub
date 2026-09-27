@@ -26,7 +26,6 @@ function renderApp(initial = '/') {
         <Routes>
           <Route element={<AppLayout />}>
             <Route index element={<Where />} />
-            <Route path="fleet" element={<Where />} />
           </Route>
         </Routes>
       </MemoryRouter>
@@ -78,27 +77,25 @@ describe('AppLayout — the sidebar reflects what is connected', () => {
     expect(screen.queryByRole('link', { name: /Fleet Overview/ })).not.toBeInTheDocument()
   })
 
-  it('lands on Fleet Overview for two clouds — once, so Home stays reachable', async () => {
+  it('lands on Home for two clouds too — Fleet Overview is a section of it now, not a second page', async () => {
     mocked.fetchNamespaces.mockResolvedValue([ns('azure'), ns('aws')])
     renderApp()
 
-    await waitFor(() => expect(where()).toBe('/fleet'))
-
-    await userEvent.click(screen.getByRole('link', { name: 'Home' }))
-    expect(where()).toBe('/')
+    await waitFor(() => expect(where()).toBe('/'))
+    expect(screen.queryByRole('link', { name: /Fleet Overview/ })).not.toBeInTheDocument()
   })
 
   it('leaves a deep link where it points', async () => {
     mocked.fetchNamespaces.mockResolvedValue([ns('azure'), ns('aws')])
     renderApp('/?tab=dlq')
 
-    await screen.findByRole('link', { name: /Fleet Overview/ })
+    await screen.findByRole('link', { name: /Dead letters/ })
     expect(where()).toBe('/?tab=dlq')
   })
 
   it('remembers the chosen cloud and tints only the accent', async () => {
     mocked.fetchNamespaces.mockResolvedValue([ns('azure'), ns('aws')])
-    renderApp('/fleet')
+    renderApp('/?ns=azure-1')
 
     const aws = await within(await screen.findByRole('list', { name: 'Connected clouds' })).findByRole('button', { name: /AWS/ })
     expect(aws).toHaveAttribute('aria-pressed', 'false')
@@ -108,7 +105,9 @@ describe('AppLayout — the sidebar reflects what is connected', () => {
     expect(aws).toHaveAttribute('aria-pressed', 'true')
     expect(window.localStorage.getItem('servicehub.provider')).toBe('aws')
     expect(document.documentElement.dataset.provider).toBe('aws')
-    expect(where()).toBe('/') // Fleet is not scoped; choosing a cloud from it means "show me that one"
+    // D48: choosing a cloud from Home sets `?provider=` — the same scope a cloud card or a scope tab
+    // sets — never a bare `/`, which would mean "All clouds".
+    expect(where()).toBe('/?provider=aws')
   })
 
   it('restores the remembered cloud on the next visit', async () => {

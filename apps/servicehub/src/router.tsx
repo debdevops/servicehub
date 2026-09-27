@@ -1,9 +1,8 @@
 import { DemoEntry } from './components/banners/DemoEntry'
 import { lazy, Suspense } from 'react'
-import { createBrowserRouter, type RouteObject } from 'react-router-dom'
+import { createBrowserRouter, Navigate, type RouteObject } from 'react-router-dom'
 import { AppLayout } from './layouts/AppLayout'
 import { HomePage } from './pages/HomePage'
-import { FleetPage } from './pages/FleetPage'
 import { PlaceholderPage } from './pages/PlaceholderPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { RouteError } from './components/RouteError'
@@ -28,7 +27,6 @@ const AdvancedOverviewPage = lazy(() => import('./pages/advanced/AdvancedOvervie
  */
 function pageFor(entry: (typeof pages)[number]) {
   if (entry.id === 'home') return <HomePage />
-  if (entry.id === 'fleet') return <FleetPage />
   if (entry.id === 'ledger') {
     return (
       <Suspense fallback={<p role="status" className="px-6 py-6 text-sm">Loading…</p>}>
@@ -71,6 +69,9 @@ export const routes: RouteObject[] = [
         ...(entry.path === '/' ? { index: true as const } : { path: entry.path.replace(/^\//, '') }),
         element: pageFor(entry),
       })),
+      // Fleet Overview merged into Home (D48, 2026-09-27): an old bookmark or link to `/fleet` lands on
+      // Home rather than 404ing — every cloud it wanted is right there in "All clouds".
+      { path: 'fleet', element: <Navigate to="/" replace /> },
       // An address that names no page. It is not a destination, so it is not in the navigation array.
       { path: '*', element: <NotFoundPage /> },
     ],

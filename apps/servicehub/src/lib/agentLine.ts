@@ -36,3 +36,12 @@ export function agentLine(cloud: string, namespaces: readonly Namespace[], queue
   const partly = status === 'partly-paused' ? ` · ${paused.map((a) => a.name).join(', ')} paused` : ''
   return { status, text: `${watching} · ${acts}${partly}` }
 }
+
+/**
+ * The Agent bar's line when Home shows every connected cloud at once (D48, O-H1) — the same
+ * computation as {@link agentLine}, worded for "your clouds" rather than one named cloud, since the
+ * bar itself is never scoped to whichever cloud tab happens to be selected.
+ */
+export function agentLineAllClouds(namespaces: readonly Namespace[], queues: number | null, agents: readonly Agent[]): AgentLine {
+  return agentLine('your clouds', namespaces, queues, agents)
+}

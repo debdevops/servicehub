@@ -23,19 +23,20 @@ const ORDER: readonly EntryState[] = ['Returned', 'ExecutionFailed', 'ExecutionU
  * Ledger's. "Stayed fixed" counts only what was PROVEN either way: an Unverified replay is on neither side of the rate (V1),
  * and where nothing was proven the card says so instead of showing a percentage.
  */
-export function RecoveryOutcomes({ provider, namespaceId, environment }: { provider: CloudProvider; namespaceId?: string; environment?: EnvironmentKind }) {
+export function RecoveryOutcomes({ provider, namespaceId, environment, window = '7d' }: { provider: CloudProvider; namespaceId?: string; environment?: EnvironmentKind; window?: '24h' | '7d' }) {
   const cloud = providerLabel[provider]
-  const { data, isPending, isError } = useRecoverySummary({ window: '7d', provider, namespaceId, environment })
+  const { data, isPending, isError } = useRecoverySummary({ window, provider, namespaceId, environment })
 
   const parts = ORDER.map((s) => ({ state: s, count: data?.states.find((x) => x.state === s)?.count ?? 0 })).filter((p) => p.count > 0)
   const total = parts.reduce((n, p) => n + p.count, 0)
   const rate = data?.stayedFixedRate
+  const period = window === '24h' ? 'last 24 hours' : 'last 7 days'
 
   return (
-    <InsightCard title="How replays ended" help={widgetHelp.replayOutcomes} note="last 7 days">
+    <InsightCard title="How replays ended" help={widgetHelp.replayOutcomes} note={period}>
       {isPending && <p role="status" className="text-[13px] text-[var(--color-text-muted)]">Reading the ledger…</p>}
       {isError && <p role="alert" className="text-[13px] text-[var(--color-text-muted)]">ServiceHub couldn’t read the ledger just now.</p>}
-      {data && total === 0 && <p className="text-[13px] text-[var(--color-text-muted)]">Nothing has been replayed in {cloud} in the last 7 days.</p>}
+      {data && total === 0 && <p className="text-[13px] text-[var(--color-text-muted)]">Nothing has been replayed in {cloud} in the {period}.</p>}
       {data && total > 0 && (
         <>
           <p className="flex items-baseline gap-2">

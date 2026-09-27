@@ -1,13 +1,18 @@
 import { Search } from 'lucide-react'
-import { useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { helpAnswers, shortcuts } from '../../content/help'
 
 /**
  * Help (unit 6.4, `?panel=help`): "How do I…" with a search box, the everyday and setting-up questions, and the keyboard
  * shortcuts — over whatever you were doing. Each answer is a few sentences and a link into the product; never a tour.
+ *
+ * `?panel=help&topic=<id>` (2026-09-27, Home's capability "Why?" links) opens directly on that answer, expanded —
+ * so a card that says "Can't confirm fixes yet · Why?" lands on the explanation, not a search box.
  */
 export default function HelpPanel() {
+  const [params] = useSearchParams()
+  const topic = params.get('topic')
   const [q, setQ] = useState('')
   const { pathname, search } = useLocation()
   const resolve = (href: string) => {
@@ -19,6 +24,13 @@ export default function HelpPanel() {
   }
   const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean)
   const matching = helpAnswers.filter((a) => words.every((w) => `${a.question} ${a.answer}`.toLowerCase().includes(w)))
+
+  useEffect(() => {
+    if (!topic) return
+    document.getElementById(`help-${topic}`)?.scrollIntoView({ block: 'start' })
+    // Only on open — a later search should not keep yanking the panel back to this topic.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <div className="space-y-5 text-sm">
@@ -36,8 +48,8 @@ export default function HelpPanel() {
             <h3 className="mb-1 text-[10.5px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">{group}</h3>
             <ul className="divide-y divide-[var(--color-border)] rounded-xl border border-[var(--color-border)]">
               {items.map((a) => (
-                <li key={a.id}>
-                  <details open={words.length > 0 && items.length <= 2}>
+                <li key={a.id} id={`help-${a.id}`}>
+                  <details open={a.id === topic || (words.length > 0 && items.length <= 2)}>
                     <summary className="cursor-pointer px-4 py-2.5 font-semibold">{a.question}</summary>
                     <div className="px-4 pb-3 text-[var(--color-text-muted)]">
                       <p>{a.answer}</p>

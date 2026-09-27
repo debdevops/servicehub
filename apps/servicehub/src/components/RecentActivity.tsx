@@ -6,15 +6,7 @@ import { useStreamStatus } from '../hooks/useEventStream'
 import { Attribution } from './Attribution'
 import type { CloudProvider, EnvironmentKind } from '../lib/api/namespaces'
 import { formatWhen } from '../lib/format'
-
-const words: Readonly<Record<string, string>> = {
-  'Namespace.Connect': 'Connected a namespace',
-  'Namespace.Remove': 'Removed a namespace',
-  'Replay.Message': 'Replayed a message',
-  'DeadLetters.Look': 'Looked at dead letters',
-  'Replay.Bulk': 'Bulk replay',
-  'Message.Purge': 'Purged a message',
-}
+import { auditActionWords as words } from '../lib/auditWords'
 
 /**
  * Recent Activity: what has been recorded, newest first, from the durable audit trail. It is labelled "Live" only

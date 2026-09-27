@@ -37,12 +37,12 @@ describe('navigation', () => {
     const places = (surface: 'simple' | 'advanced') => entriesOn(surface).filter((e) => e.kind !== 'tab').length
     expect(places('simple')).toBeLessThanOrEqual(SCREEN_CEILING.simple)
     expect(places('advanced')).toBeLessThanOrEqual(SCREEN_CEILING.advanced)
-    // Pinned, so adding a place is a visible change here: 11 of 12 after Send a message (6.14). One left.
-    expect(places('simple')).toBe(11)
+    // Pinned, so adding a place is a visible change here: 10 of 12 after Fleet Overview merged into Home (2026-09-27).
+    expect(places('simple')).toBe(10)
   })
 
-  it('keeps Simple to two pages — most work happens in place (D45)', () => {
-    expect(pages.filter((p) => p.surface === 'simple').map((p) => p.id)).toEqual(['home', 'fleet'])
+  it('keeps Simple to one page — most work happens in place (D45, revised 2026-09-27: Fleet Overview is a section of Home, not a second page)', () => {
+    expect(pages.filter((p) => p.surface === 'simple').map((p) => p.id)).toEqual(['home'])
   })
 
   it('gives Advanced pages only — nothing on the Advanced surface opens a modal that acts (ADR-0016 D3)', () => {
@@ -83,44 +83,42 @@ describe('navigation', () => {
     expect(surfaceOf('/advanced')).toBe('advanced')
     expect(surfaceOf('/advanced/ledger')).toBe('advanced')
     expect(surfaceOf('/advancedish')).toBe('simple')
-    expect(surfaceOf('/fleet')).toBe('simple')
     expect(surfaceOf('/')).toBe('simple')
   })
 
   it('carries every tab, panel and modal in the URL', () => {
     const byId = (id: string) => navigation.find((e) => e.id === id)!
     expect(hrefOf(byId('dlq'))).toBe('/?tab=dlq')
-    expect(hrefOf(byId('auto-replay'), '/fleet')).toBe('/fleet?panel=rules')
+    expect(hrefOf(byId('auto-replay'), '/')).toBe('/?panel=rules')
     expect(hrefOf(byId('add-cloud'))).toBe('/?modal=add-cloud')
     expect(hrefOf(byId('ledger'))).toBe('/advanced/ledger')
   })
 
   it('routes exactly the pages it lists — no orphan routes, no unrouted pages', () => {
-    const routed = (routes[0].children ?? []).filter((child) => (child as { path?: string }).path !== '*').map((child) =>
+    // `fleet` is kept as a redirect-only route (old bookmarks land on Home's Fleet Overview section, 2026-09-27) —
+    // like `*`, it is not a page, so it is excluded the same way.
+    const routed = (routes[0].children ?? []).filter((child) => !['*', 'fleet'].includes((child as { path?: string }).path ?? '')).map((child) =>
       'index' in child && child.index ? '/' : `/${(child as { path: string }).path}`,
     )
 
     expect([...routed].sort()).toEqual([...pages.map((p) => p.path)].sort())
   })
 
-  it('shows the work only once a cloud is connected, and Fleet Overview only when there are two', () => {
+  it('shows the work only once a cloud is connected', () => {
     const idsWith = (count: number) => visibleEntries(count).map((e) => e.id)
 
     expect(idsWith(0)).toEqual(expect.arrayContaining(['home', 'add-cloud', 'settings', 'help']))
     expect(idsWith(0)).not.toContain('dlq')
     expect(idsWith(1)).toContain('dlq')
-    expect(idsWith(1)).not.toContain('fleet')
-    expect(idsWith(2)).toContain('fleet')
+    expect(idsWith(2)).toContain('dlq')
   })
 
-  it('lands where the connected clouds say, not where a setting says', () => {
-    expect(landingPath(0)).toBe('/') // Home is the welcome — there is no Connect page (D45)
-    expect(landingPath(1)).toBe('/')
-    expect(landingPath(3)).toBe('/fleet')
+  it('always lands on Home — Fleet Overview is a section of it now, not a second destination (revised 2026-09-27)', () => {
+    expect(landingPath()).toBe('/') // Home is the welcome — there is no Connect page (D45)
   })
 
-  it('leads the primary group with Fleet Overview, then Home', () => {
+  it('leads the primary group with Home, the only Simple page', () => {
     const primary = navigation.filter((e) => e.group === 'primary').map((e) => e.id)
-    expect(primary).toEqual(['home', 'fleet'])
+    expect(primary).toEqual(['home'])
   })
 })

@@ -18,4 +18,10 @@ describe('HelpPanel', () => {
     expect(screen.getByText('Replay many at once')).toBeInTheDocument()
     expect(screen.queryByText('Replay a dead-lettered message')).not.toBeInTheDocument()
   })
+
+  it('?topic= opens straight on that answer, expanded (Home’s "Why?" links, 2026-09-27)', () => {
+    render(<MemoryRouter initialEntries={['/?panel=help&topic=verification-required']}><HelpPanel /></MemoryRouter>)
+    const details = screen.getByText('Why does AWS or Google Cloud say "Verification required"?').closest('details')
+    expect(details).toHaveAttribute('open')
+  })
 })
