@@ -154,7 +154,7 @@ public sealed class BackupRestoreService : IBackupRestore
     /// At start, before the first connection: moves a staged restore into place. The database it replaces — with its
     /// write-ahead log, which would otherwise be replayed into the restored file — is kept beside it, never deleted.
     /// </summary>
-    /// <returns>The kept file's path, or null when nothing was staged.</returns>
+    /// <returns>The kept file's path; null when nothing was staged or there was no database to replace.</returns>
     public static string? ApplyPendingRestore(string dataDirectory, DateTimeOffset now, ILogger logger)
     {
         var pending = Path.Combine(dataDirectory, PendingFileName);
@@ -162,6 +162,7 @@ public sealed class BackupRestoreService : IBackupRestore
 
         var live = Path.Combine(dataDirectory, ServiceHubDataDirectory.DatabaseFileName);
         var kept = $"{live}.before-restore-{now:yyyyMMdd-HHmmss}";
+        var replaced = File.Exists(live);
         foreach (var suffix in new[] { "", "-wal", "-shm" })
         {
             if (File.Exists(live + suffix)) File.Move(live + suffix, kept + suffix);
@@ -169,8 +170,15 @@ public sealed class BackupRestoreService : IBackupRestore
 
         File.Move(pending, live);
         File.Delete(Path.Combine(dataDirectory, PendingMarkerName));
-        logger.LogWarning("Restored the staged backup. The database it replaced is kept at {Kept}", kept);
-        return kept;
+        if (replaced)
+        {
+            logger.LogWarning("Restored the staged backup. The database it replaced is kept at {Kept}", kept);
+            return kept;
+        }
+
+        // A fresh data directory (a new container): there was nothing to keep, so the log must not claim otherwise.
+        logger.LogWarning("Restored the staged backup into an empty data directory.");
+        return null;
     }
 
     private async Task<RestoreCheckItem> VerifyChainsAsync(string snapshot, CancellationToken cancellationToken)

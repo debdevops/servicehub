@@ -12,7 +12,7 @@ describe('Follow live', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
-  it('looks from the last message it saw, puts arrivals on top, and stops looking while paused', async () => {
+  it('skips what is already waiting, then shows only arrivals — newest on top — and stops looking while paused', async () => {
     const peek = vi.mocked(api.peekMessages)
     peek.mockResolvedValueOnce(page(1, 2)).mockResolvedValueOnce(page(3)).mockResolvedValue(page())
     render(<LiveTail namespaceId="n" entity="orders" />)
@@ -21,8 +21,9 @@ describe('Follow live', () => {
 
     await act(async () => { await vi.advanceTimersByTimeAsync(TAIL_EVERY_MS) })
     expect(peek).toHaveBeenLastCalledWith('n', expect.objectContaining({ from: 3 }))
+    // #1 and #2 were already waiting: they belong to Browse, not to "what arrived" (found live: the backlog was shown as arrivals).
     const items = within(screen.getByRole('list', { name: 'Arrived messages' })).getAllByRole('listitem')
-    expect(items.map((li) => li.textContent)).toEqual([expect.stringContaining('#3'), expect.stringContaining('#2'), expect.stringContaining('#1')])
+    expect(items.map((li) => li.textContent)).toEqual([expect.stringContaining('#3')])
 
     act(() => screen.getByRole('button', { name: /Pause/ }).click())
     const calls = peek.mock.calls.length
@@ -39,5 +40,12 @@ describe('Follow live', () => {
     const calls = peek.mock.calls.length
     await act(async () => { await vi.advanceTimersByTimeAsync(TAIL_EVERY_MS * 3) })
     expect(peek.mock.calls.length).toBe(calls)
+  })
+  it('says how many were already waiting when nothing has arrived yet', async () => {
+    vi.mocked(api.peekMessages).mockResolvedValueOnce(page(1, 2, 3)).mockResolvedValue(page())
+    render(<LiveTail namespaceId="n" entity="orders" />)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(screen.getByText(/3 already waiting are under/)).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Arrived messages' })).not.toBeInTheDocument()
   })
 })

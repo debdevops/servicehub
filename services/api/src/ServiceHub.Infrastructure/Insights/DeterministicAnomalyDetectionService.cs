@@ -15,6 +15,8 @@ namespace ServiceHub.Infrastructure.Insights;
 /// every number here is derived from <see cref="ServiceHubDbContext.DlqMessages"/> counts, reproducible
 /// by anyone re-running the same query (roadmap §5.B, I3).
 /// </summary>
+/// <remarks>Copied from 4.0.0 (unit 6.18). Adapted only where 4.1.0 differs: the recommended actions name 4.1.0's screens
+/// (Failure Signatures, Auto Replay) instead of 4.0.0's, which no longer exist — found in the live pass.</remarks>
 public sealed class DeterministicAnomalyDetectionService : IAnomalyDetectionService
 {
     /// <summary>Number of trailing windows (equal in length to the current window) used as the baseline.</summary>
@@ -161,8 +163,8 @@ public sealed class DeterministicAnomalyDetectionService : IAnomalyDetectionServ
             ? new[]
             {
                 "Review recent producer/consumer deployments for this entity.",
-                "Check DLQ Intelligence for a newly dominant failure signature.",
-                "Consider scoping an AutoReplayRule if the cause looks transient.",
+                "Check Failure Signatures (Advanced) for a newly dominant failure.",
+                "If the cause looks transient, an Auto Replay rule can retry it (Simple → Auto Replay).",
             }
             : new[]
             {

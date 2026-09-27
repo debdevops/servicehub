@@ -15,6 +15,8 @@ namespace ServiceHub.Infrastructure.Insights;
 /// <see cref="ServiceHubDbContext.DlqMessages"/> counts, reproducible by anyone re-running the same
 /// query (roadmap §5.E, P4).
 /// </summary>
+/// <remarks>Copied from 4.0.0 (unit 6.18). Adapted only where 4.1.0 differs: the recommended actions name 4.1.0's screens
+/// (Failure Signatures, Auto Replay) instead of 4.0.0's, which no longer exist — found in the live pass.</remarks>
 public sealed class DeterministicBacklogForecastService : IBacklogForecastService
 {
     /// <summary>Number of equal-length trailing buckets used to fit the growth-rate trend.</summary>
@@ -180,7 +182,7 @@ public sealed class DeterministicBacklogForecastService : IBacklogForecastServic
         {
             "Review recent producer/consumer deployments for this entity.",
             "Consider scheduling a bulk replay or scaling remediation before the threshold is reached.",
-            "Check DLQ Intelligence for a newly dominant failure signature driving the growth.",
+            "Check Failure Signatures (Advanced) for a newly dominant failure driving the growth.",
         };
 
         return BacklogForecast.Create(

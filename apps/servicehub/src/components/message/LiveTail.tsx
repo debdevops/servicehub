@@ -7,6 +7,8 @@ import { formatBytes, formatWhen } from '../../lib/format'
 export const TAIL_EVERY_MS = 3000
 export const TAIL_KEEP = 200
 const TAIL_PAGE = 50
+/** How far the first look walks to find the end of the queue (50 × 40 = 2,000 waiting messages). */
+const MAX_SKIP_PAGES = 40
 
 /**
  * Follow live (unit 6.16): watch messages arrive. It looks only while this view is open and not paused, a page at a time from
@@ -19,17 +21,37 @@ export function LiveTail({ namespaceId, entity, subscription }: { namespaceId: s
   const [failed, setFailed] = useState(false)
   const [lastLook, setLastLook] = useState<Date | null>(null)
   const cursor = useRef<number | undefined>(undefined)
+  // The first look walks to the end of what is already waiting — that backlog is on Browse — so only arrivals show here.
+  const [waiting, setWaiting] = useState<number | null>(null)
 
   useEffect(() => {
     cursor.current = undefined
     setSeen([])
+    setWaiting(null)
   }, [namespaceId, entity, subscription])
 
   useEffect(() => {
     if (paused) return
     let stopped = false
+    const skipBacklog = async () => {
+      let skipped = 0
+      for (let i = 0; i < MAX_SKIP_PAGES; i++) {
+        const page = await peekMessages(namespaceId, { entity, subscription, max: TAIL_PAGE, from: cursor.current })
+        if (page.messages.length === 0) break
+        skipped += page.messages.length
+        cursor.current = Math.max(...page.messages.map((m) => m.sequenceNumber)) + 1
+        if (page.messages.length < TAIL_PAGE) break
+      }
+      cursor.current ??= 0
+      if (!stopped) setWaiting(skipped)
+    }
     const look = async () => {
       try {
+        if (cursor.current === undefined) {
+          await skipBacklog()
+          if (!stopped) { setFailed(false); setLastLook(new Date()) }
+          return
+        }
         const page = await peekMessages(namespaceId, { entity, subscription, max: TAIL_PAGE, from: cursor.current })
         if (stopped) return
         setFailed(false)
@@ -66,7 +88,9 @@ export function LiveTail({ namespaceId, entity, subscription }: { namespaceId: s
       </div>
       {failed && <p role="alert" className="px-4 py-2 text-sm">ServiceHub couldn’t look just now; it will try again.</p>}
       {seen.length === 0 ? (
-        <p className="px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">Nothing has arrived yet. New messages appear here as they come in.</p>
+        <p className="px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">
+          {waiting === null ? 'Finding the end of the queue…' : <>Nothing has arrived since you started following. New messages appear here as they come in.{waiting > 0 && <> The {waiting.toLocaleString()} already waiting are under <b>Browse</b>.</>}</>}
+        </p>
       ) : (
         <ul aria-label="Arrived messages" aria-live="polite" className="max-h-[60vh] divide-y divide-[var(--color-border)] overflow-y-auto">
           {seen.map((m) => (

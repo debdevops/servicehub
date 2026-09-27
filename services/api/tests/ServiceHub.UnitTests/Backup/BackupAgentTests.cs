@@ -43,7 +43,9 @@ public sealed class BackupAgentTests
     public async Task A_cycle_takes_one_backup_and_a_failed_one_is_a_failed_cycle_not_a_quiet_one()
     {
         var (agent, service) = Create(1, Result.Success(Manifest()));
-        (await agent.ExecuteCycleAsync(default)).Summary.Should().Contain("20260926-120000Z");
+        var cycle = await agent.ExecuteCycleAsync(default);
+        cycle.Summary.Should().Contain("20260926-120000Z");
+        cycle.Changed.Should().Be(0, "an Observes agent must report no changes — the host fails it otherwise");
         service.Verify(s => s.CreateBackupAsync(It.IsAny<CancellationToken>()), Times.Once);
 
         var (failing, _) = Create(1, Result.Failure<BackupManifest>(Error.Internal("Backup.CreateFailed", "disk full")));

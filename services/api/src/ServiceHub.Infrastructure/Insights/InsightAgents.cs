@@ -83,7 +83,9 @@ public abstract class InsightAgent : IAgent
         }
 
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
-        return new AgentCycleResult(namespaces.Value.Count, added + byKey.Count, $"{noticed.Count} current, {added} new, {byKey.Count} cleared");
+        // Changed stays 0: recording what it noticed is observing (like the Dead-letter Monitor recording dead letters). The host
+        // treats any change reported by an Observes agent as a contract violation — and it would be one.
+        return new AgentCycleResult(namespaces.Value.Count, 0, $"{noticed.Count} current, {added} new, {byKey.Count} cleared");
     }
 
     /// <summary>Anomalies over the last day against the four days before it, for every namespace.</summary>

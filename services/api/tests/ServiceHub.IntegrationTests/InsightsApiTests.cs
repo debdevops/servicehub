@@ -11,8 +11,9 @@ namespace ServiceHub.IntegrationTests;
 /// <summary>Insights (unit 6.18): a real spike becomes a finding with its numbers, and clears when it stops being true.</summary>
 public sealed class InsightsApiTests
 {
+    // Asserts the host's contract too: an Observes agent reports no changes (it failed live on real data when it did).
     private static async Task Cycle(DeadLettersApiTests.Handle host, string id) =>
-        await host.Services.GetServices<IAgent>().Single(a => a.Descriptor.Id == id).ExecuteCycleAsync(default);
+        (await host.Services.GetServices<IAgent>().Single(a => a.Descriptor.Id == id).ExecuteCycleAsync(default)).Changed.Should().Be(0);
 
     [Fact]
     public async Task A_spike_is_found_with_the_numbers_behind_it_narrated_as_a_suggestion_and_cleared_when_it_passes()

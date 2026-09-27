@@ -41,6 +41,6 @@ public sealed class BackupAgent : IAgent
         var result = await scope.ServiceProvider.GetRequiredService<IBackupService>().CreateBackupAsync(ct).ConfigureAwait(false);
         return result.IsFailure
             ? throw new InvalidOperationException("The scheduled backup did not complete.")
-            : new AgentCycleResult(1, 1, $"backup {result.Value.BackupId} taken");
+            : new AgentCycleResult(1, 0, $"backup {result.Value.BackupId} taken"); // Observes: writing a backup changes nothing it watches
     }
 }
