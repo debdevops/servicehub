@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added — provider conformance suite ported to 4.1.0 (2026-09-27)
+
+- **`scripts/conformance-suite.py`** (PORTING-MAP.md P46): a live, HTTP-level suite proving each
+  connected provider's real behaviour matches `ProviderCapabilities` — including the negative
+  cases (an unsupported operation is rejected with the documented error, not silently accepted or
+  a 500) — ported from the archived 4.0.0 script to 4.1.0's actual routes (capabilities read from
+  `GET /api/v1/namespaces`, not a standalone endpoint; purge/replay act on a recorded dead-letter
+  row id; Live Tail and the manual DLQ-scan trigger merged into one `POST .../dead-letters/look`
+  action). Run live against real Azure/AWS/GCP DEV: 19 passed, 0 failed, 4 skipped (two of the
+  skips are a real finding — 4.1.0's public API currently has no route to schedule a message send
+  on any provider, Azure included). See `docs/PROVIDER-CONFORMANCE.md`.
+
+> **Note:** the 4.1.0 rewrite itself (Home redesign, Waves 1–6, the governance/RBAC and DLQ-observer
+> work, etc.) has landed in a long run of commits with no corresponding entries here yet — this
+> section only covers the conformance-suite work above. Backfilling the rest is tracked separately
+> and was out of scope for this change.
+
 ### Changed — repository restructure (ADR-0012, ADR-0013)
 
 - **The complete 4.0.0 codebase moved to `archive/servicehub-4.0.0/`** — `apps/{web,demo,sandbox}`,

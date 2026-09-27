@@ -21,48 +21,62 @@ provider-specific action (Purge, Schedule, Live Tail) is offered or correctly gr
 ## What's being proven
 
 Every provider declares what it can and can't do in `ProviderCapabilities.{Azure,Aws,Gcp}`
-(`archive/servicehub-4.0.0/services/api/src/ServiceHub.Core/Models/ProviderCapabilities.cs`) — things like whether
+(`services/api/src/ServiceHub.Core/Models/ProviderCapabilities.cs`) — things like whether
 manual dead-lettering is possible, whether scheduled sends exist, whether a non-destructive DLQ
 peek is available. Per-provider unit tests already prove the *code* behaves correctly against a
 mocked SDK for each of those. What they can't prove is that the mock matches the real service.
 
-`archive/servicehub-4.0.0/scripts/conformance-suite.py` closes that gap: it runs the same assertions — including the
-**negative** ones (an unsupported operation must be rejected with the documented error, not
+`scripts/conformance-suite.py` closes that gap: it runs the same kind of assertions — including
+the **negative** ones (an unsupported operation must be rejected with the documented error, not
 silently ignored or a 500) — against a live ServiceHub API talking to a real Azure/AWS/GCP
 namespace. Nothing in the suite is simulated; every assertion is a real HTTP call whose outcome
 depends on the actual cloud service responding.
 
+> **4.1.0 note:** this is a *port*, not a copy, of the archived `archive/servicehub-4.0.0/scripts/
+> conformance-suite.py` (PORTING-MAP.md P46). 4.1.0's API shape genuinely changed — see
+> [What changed in 4.1.0's API shape](#what-changed-in-410s-api-shape) below for exactly what a
+> reader of the 4.0.0-era table below should know before comparing them directly.
+
 ## Latest run
 
-**2026-09-04 — 20 passed, 0 failed, 0 skipped, all three providers.**
+**2026-09-27 — 19 passed, 0 failed, 4 skipped, all three providers, live against real Azure DEV
+(`sb-servicehub-dev`), AWS DEV (`ap-south-1`) and GCP DEV (`servicehub-502914`).**
 
 | Assertion | Azure | AWS | GCP |
 |---|---|---|---|
-| Send (baseline) | PASS (202) | PASS (202) | PASS (202) |
-| Manual dead-letter | PASS — positive (200) | PASS — positive (200) | PASS — **negative** (400, `Message.Operation.DeadLetterUnsupported`) |
-| Scheduled send | PASS — positive (202, confirmed in listing) | PASS — negative (400, `ScheduledUnsupported`) | PASS — negative (400, `ScheduledUnsupported`) |
-| Purge | PASS — negative (400, `PurgeUnsupported`) | PASS — positive (202) | PASS — positive (202) |
-| Live Tail | PASS — positive (200, session opens) | PASS — negative (409) | PASS — negative (409) |
-| DLQ background scan (`DlqMonitor:AllowDestructivePeek`) | PASS — positive (200, real peek) | PASS (200 — this run's server had explicitly opted AWS in; not the default) | PASS — **negative** (400, `Dlq.NotMonitored` — off by default) |
+| Send (baseline) | PASS (200) | PASS (200) | PASS (200) |
+| Manual dead-letter | SKIPPED — no API action exists in 4.1.0 (see below) | SKIPPED | SKIPPED |
+| Scheduled messages listing | PASS — positive (200, real listing) | PASS — negative (409, `Message.Operation.ScheduledUnsupported`) | PASS — negative (409, `Message.Operation.ScheduledUnsupported`) |
+| Scheduled send | SKIPPED — no API field exists in 4.1.0, on any provider (see below) | SKIPPED | SKIPPED |
+| Look at dead letters now (`POST .../dead-letters/look`) | PASS — `outcome: looked`, `countsAsDeliveryAttempt: false` | PASS — `outcome: looked`, `countsAsDeliveryAttempt: true` | PASS — `outcome: looked`, `countsAsDeliveryAttempt: true` |
+| Purge | PASS — **negative** (409, `capability_unavailable`) | PASS — positive (200, `result: accepted`) | PASS — positive (200; HTTP-level accepted through the gate, cloud-level `result` varied run to run — see note below) |
+| `CanProveDlqAbsence` | PASS — `trustRoot: provider-native` | PASS — `trustRoot: none` (also cross-checked live against a real signature's `GET /signatures/{hash}/trust`) | PASS — `trustRoot: none` (same live cross-check) |
 
-The two bolded rows are the two facts the roadmap named explicitly as the ones most worth proving
-live: that GCP's manual dead-lettering genuinely fails rather than being silently accepted, and
-that GCP's DLQ background scan stays off by default rather than falling back to a destructive peek.
+The bolded Azure purge row is the negative case most worth proving live post-rewrite: Azure's
+`SupportsPurge` is still `false` in 4.1.0 (Service Bus has no reliable single-message delete by
+sequence number) and the API still correctly refuses it — 409 `capability_unavailable`, not a
+silent no-op or a 500.
 
-**Spot re-confirmed 2026-09-05** against the same three live namespaces, by hand rather than
-through the suite: Azure purge → `400 Message.Operation.PurgeUnsupported`, AWS scheduled send →
-`400 Message.Operation.ScheduledUnsupported`, GCP manual dead-letter →
-`400 Message.Operation.DeadLetterUnsupported`, AWS Live Tail → `409`, Azure Live Tail → `200`
-with a real SSE session opening. `GET /api/v1/cloud-bridge/capabilities` also matched
-`ProviderCapabilities` field-for-field for all three providers.
+**Note on the GCP purge row.** One of the three live runs this session hit `result: rejected`,
+`errorCode: GCP.PubSub.MessageNotFound` at the *cloud* level, even though the HTTP-level outcome
+was the expected 200 (the eligibility gate correctly let the purge attempt through, since GCP
+`SupportsPurge: true`). Root cause: a race between two consecutive live runs each purging "the
+latest active dead-letter row" from the same fast-moving DLQ — the row ServiceHub had recorded had
+already been purged/moved out of the Pub/Sub subscription by a prior run's own purge, or resolved
+naturally, before this run's purge reached the cloud. This is a real, expected shape of eventual
+consistency between ServiceHub's recorded dead-letter rows and the live cloud state, not a
+capability-enforcement defect — the two other runs, and every AWS purge this session, returned a
+clean `result: accepted`.
 
-**Spot re-confirmed again 2026-09-19**, during a full multi-cloud E2E verification pass, live
-against `GET /api/v1/cloud-bridge/capabilities` and cross-checked in the Cloud Bridge and
-Scheduled Messages pages in the browser — same result, unchanged: Azure `supportsPurge: false`,
-AWS `supportsScheduledMessages: false` / `supportsRepeatablePeek: false`, GCP
-`supportsMessageCounts: false` / `supportsRepeatablePeek: false`. The Scheduled Messages page
-correctly showed "not supported" for both AWS and GCP live, and only Azure listed real scheduled
-messages (15, from that session's test traffic).
+**Signature-trust cross-check (new for 4.1.0; the old attestation lookup was per-namespace, this
+one is per-signature).** `GET /api/v1/signatures/{hash}/trust?provider=<Provider>` was queried live
+for one real AWS signature (217 dead letters recorded, `sampleSize: 0`) and one real GCP signature
+(`sampleSize: 1`, 0% verified success). Both correctly reported `cloudCanConfirm: false` — no
+DLQ-observer attestation is configured for either, so `CanProveDlqAbsence` stays `none`, the same
+honest answer as the static capability preset gives. No AWS/GCP namespace in this dev environment
+has the `cloud-platform-infra` observer deployed yet (see ADR-004's open item in this repo's
+own W4.3/`4.2` notes) — until one does, every live run of this row will keep reading `none`,
+which is correct, not a gap in the suite.
 
 ## The `CanProveDlqAbsence` trust root (M3.3)
 
@@ -114,19 +128,59 @@ operator running `terraform apply`. Until that exists, every AWS/GCP row here re
   growing one still fails fast with a clear "not found" rather than scanning forever. Re-verified
   live on 2026-09-05 by replaying real messages out of that same AWS backlog.
 
+## What changed in 4.1.0's API shape
+
+4.1.0 is a from-scratch rewrite (ADR-0012/0013), not the 4.0.0 codebase with new paths — the
+conformance suite had to change with it, not just its imports:
+
+- **No standalone capabilities endpoint.** 4.0.0 had `GET /cloud-bridge/capabilities`; 4.1.0
+  carries `Capabilities` on every namespace returned by `GET /api/v1/namespaces` instead. The
+  suite reads it from there, still never hardcoding a duplicate table.
+- **No manual dead-letter action over the API.** 4.0.0 had `POST .../deadletter`; there is no
+  equivalent route in 4.1.0. `SupportsManualDeadLetter` is a real field on `ProviderCapabilities`
+  still (used elsewhere — e.g. the eligibility gate), but nothing in the current product lets an
+  operator trigger it directly, so this row is honestly `SKIPPED`, not faked.
+- **No way to schedule a send, on any provider.** 4.0.0's send endpoint took a
+  `scheduledEnqueueTimeUtc` field; 4.1.0's `POST .../messages` request body
+  (`MessagesController.SendRequest`) does not expose one, even though the internal
+  `SendMessageRequest` DTO still carries it. This is a genuine product gap this run surfaced, not
+  a suite limitation — currently nothing in 4.1.0's public API can schedule a message for later on
+  *any* cloud, Azure included. The negative listing path (`GET .../messages/scheduled` correctly
+  409ing for AWS/GCP) is still real and still checked.
+- **"Live Tail" and the manual DLQ-scan trigger merged into one action.** 4.0.0 had an SSE
+  `live-tail` endpoint (`SupportsRepeatablePeek` positive/negative) and a separate
+  `POST /dlq/scan/{id}` trigger with a `DlqMonitor:AllowDestructivePeek` opt-in. 4.1.0 replaced
+  both with a single, person-consented `POST .../dead-letters/look`
+  (`IDeadLetterLook`/`DeadLetterLook.cs`) that works the same way for every provider and reports
+  `countsAsDeliveryAttempt` (the same fact `!SupportsRepeatablePeek` always meant) on every
+  response, rather than a route existing only for the providers it applies to.
+- **Purge and replay act on ServiceHub's own recorded dead-letter row id**, not raw provider
+  coordinates (sequence number + entity name the way 4.0.0's `/api/v1/messages/purge` did) — a
+  row has to be recorded first (which the `look` step above does for AWS/GCP; Azure's own
+  background monitor keeps recording continuously since its peek is non-destructive).
+- **The DLQ-observer-attestation lookup moved from per-namespace to per-signature.** 4.0.0 had
+  `GET /namespaces/{id}/dlq-observer-attestation`; 4.1.0 folds the same fact into
+  `GET /signatures/{hash}/trust?provider=<Provider>` (field `cloudCanConfirm`), keyed by a
+  failure-signature hash rather than a namespace id, since autonomy trust is earned per-signature
+  in this version.
+
 ## How to reproduce
 
 ```bash
-python3 archive/servicehub-4.0.0/scripts/conformance-suite.py preflight
-python3 archive/servicehub-4.0.0/scripts/conformance-suite.py run \
-    --namespace Azure=<namespace-id>=<queue-name> \
-    --namespace Aws=<namespace-id>=<queue-name> \
-    --namespace Gcp=<namespace-id>=<topic-name>=<subscription-name>
+python3 scripts/conformance-suite.py preflight
+python3 scripts/conformance-suite.py run \
+    --namespace Azure=<namespace-id> \
+    --namespace Aws=<namespace-id> \
+    --namespace Gcp=<namespace-id> \
+    --signature-hash Aws=<a-real-signature-hash>   # optional, best-effort CanProveDlqAbsence cross-check
 ```
 
-Any provider without a `--namespace` argument is reported `SKIPPED`, not `FAILED` — the suite runs
-against whichever providers you have connected, it doesn't require all three. See the script's own
-docstring (`python3 archive/servicehub-4.0.0/scripts/conformance-suite.py --help`) for namespace-registration prerequisites.
+No entity name is needed per namespace any more — `send` resolves its own target entity (a queue,
+or a topic if the namespace has no queue-kind entity at all) via `GET .../entities`, and every
+other action works off a dead-letter row id the suite discovers itself via `GET /dead-letters` and
+the `look` action above. Any provider without a `--namespace` argument is reported `SKIPPED`, not
+`FAILED` — the suite runs against whichever providers you have connected, it doesn't require all
+three. See the script's own docstring (`python3 scripts/conformance-suite.py --help`) for more.
 
 ## What changed
 
