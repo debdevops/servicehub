@@ -3,7 +3,7 @@ import { useMe } from '../../hooks/useIdentity'
 import { permission } from '../../lib/permissions'
 import { NotAllowed } from '../ui/NotAllowed'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { CheckCircle2, Eye, EyeOff, TriangleAlert } from 'lucide-react'
+import { CheckCircle2, CircleHelp, Eye, EyeOff, ShieldCheck, TriangleAlert } from 'lucide-react'
 import { useProviderScope } from '../provider/providerScope'
 import type { OverlayBodyProps } from '../overlays/registry'
 import { useConnectNamespace, useRemoveNamespace, useTestConnection } from '../../hooks/useNamespaces'
@@ -178,6 +178,8 @@ export default function AddCloudModal({ close }: OverlayBodyProps) {
         ))}
       </div>
 
+      <WhereToFind cloud={form.cloud} />
+
       <Field label="Name" hint="What you'll see in ServiceHub.">
         {(id) => <input id={id} className={inputClass} value={form.displayName} onChange={(e) => set('displayName', e.target.value)} placeholder="orders-dev" autoComplete="off" />}
       </Field>
@@ -192,8 +194,13 @@ export default function AddCloudModal({ close }: OverlayBodyProps) {
             </label>
           ))}
         </div>
-        {form.environment === 'prod' && (
-          <p className="mt-1 text-xs text-[var(--color-text-muted)]">Production is watched only — every replay there needs a person.</p>
+        {form.environment === 'dev' ? (
+          <p className="mt-1 text-xs text-[var(--color-text-muted)]">Development is the right place to start: get comfortable here before connecting anything that carries real traffic.</p>
+        ) : (
+          <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+            {form.environment === 'prod' ? 'Production is watched only — every replay there needs a person. ' : ''}
+            New to ServiceHub? Connect a Development namespace first.
+          </p>
         )}
       </fieldset>
 
@@ -291,6 +298,58 @@ export default function AddCloudModal({ close }: OverlayBodyProps) {
       </div>
       <NotAllowed reason={mayConnect.reason} />
     </form>
+  )
+}
+
+const steps: Record<CloudProvider, { title: string; items: readonly ReactNode[] }> = {
+  azure: {
+    title: 'Where do I get the Service Bus connection string?',
+    items: [
+      <>In the Azure portal open your <b>Service Bus namespace</b>.</>,
+      <>Choose <b>Settings → Shared access policies</b>. Prefer a policy made just for ServiceHub over <code>RootManageSharedAccessKey</code>.</>,
+      <>Give it <b>Listen</b> to watch, and <b>Send</b> as well if you want to replay. It needs no <b>Manage</b>.</>,
+      <>Open the policy and copy the <b>Primary connection string</b> — it starts <code>Endpoint=sb://</code>.</>,
+    ],
+  },
+  aws: {
+    title: 'Where do I get the AWS access key?',
+    items: [
+      <>In the AWS console open <b>IAM → Users</b> and create a user just for ServiceHub (not your own).</>,
+      <>Attach a policy with only the SQS permissions listed below, limited to the queues you want watched.</>,
+      <>Open the user’s <b>Security credentials → Create access key</b> and copy the <b>Access key ID</b> and the <b>Secret access key</b> — AWS shows the secret once.</>,
+      <>Use the region your queues are in, for example <code>us-east-1</code>.</>,
+    ],
+  },
+  gcp: {
+    title: 'Where do I get the service-account key?',
+    items: [
+      <>In the Google Cloud console open <b>IAM &amp; Admin → Service accounts</b> and create one just for ServiceHub.</>,
+      <>Grant it only the Pub/Sub roles listed below, on the project you want watched.</>,
+      <>Open the account, then <b>Keys → Add key → Create new key → JSON</b>. A file downloads.</>,
+      <>Choose that file here, and type the <b>Project ID</b> shown on the console’s project picker.</>,
+    ],
+  },
+}
+
+/** A DevOps person may not know where any of this lives — the one place ServiceHub is asked for a secret is the place to say so. */
+function WhereToFind({ cloud }: { cloud: CloudProvider }) {
+  const guide = steps[cloud]
+  return (
+    <details className="group rounded-lg border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-3 py-2 text-sm">
+      <summary className="flex items-center gap-2 font-medium text-[var(--color-primary-700)]">
+        <CircleHelp className="h-4 w-4 shrink-0" aria-hidden="true" /> {guide.title}
+      </summary>
+      <ol className="mt-2 list-decimal space-y-1 pl-5 text-[13px] text-[var(--color-text)]">
+        {guide.items.map((item, i) => <li key={i}>{item}</li>)}
+      </ol>
+      <p className="mt-2.5 flex items-start gap-2 border-t border-[var(--color-primary-200)] pt-2 text-[12.5px] text-[var(--color-text-muted)]">
+        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-success)]" aria-hidden="true" />
+        <span>
+          The credential is encrypted with AES-256-GCM the moment it reaches the server, is never shown again, and is never sent to anyone but {providerLabel[cloud]}.
+          Use a credential made for ServiceHub with the fewest permissions that work, and rotate it if it is ever shared.
+        </span>
+      </p>
+    </details>
   )
 }
 

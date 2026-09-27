@@ -114,3 +114,36 @@ body {
 [data-surface='advanced'] main table th {
   padding-block: 0.25rem;
 }
+
+/*
+ * Anything a person can press says so before they press it: a hand cursor and a small change on hover, everywhere
+ * (buttons, links, tabs, selects, checkboxes). One rule here instead of a hover class on each control, so a new control
+ * cannot forget it. Disabled controls get the "not allowed" cursor and no change, so they never look pressable.
+ */
+a[href],
+button:not(:disabled),
+[role='button']:not([aria-disabled='true']),
+[role='tab'],
+[role='menuitem'],
+summary,
+select:not(:disabled),
+label:has(input[type='checkbox']),
+label:has(input[type='radio']),
+input[type='checkbox']:not(:disabled),
+input[type='radio']:not(:disabled) {
+  cursor: pointer;
+}
+button:disabled,
+[aria-disabled='true'] {
+  cursor: not-allowed;
+}
+button:not(:disabled):hover,
+[role='button']:not([aria-disabled='true']):hover {
+  filter: brightness(0.94);
+}
+@media (prefers-reduced-motion: no-preference) {
+  a[href],
+  button {
+    transition: filter 120ms ease, background-color 120ms ease;
+  }
+}

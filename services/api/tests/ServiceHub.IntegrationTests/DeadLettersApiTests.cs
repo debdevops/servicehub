@@ -65,7 +65,7 @@ public sealed class DeadLettersApiTests
     private static readonly DateTimeOffset Now = DateTimeOffset.UtcNow;
 
     internal static async Task Seed(Handle host, Guid namespaceId, CloudProviderType provider, int count, string? reason = "MaxDeliveryCountExceeded",
-        string entity = "orders", TimeSpan? age = null, DlqMessageStatus status = DlqMessageStatus.Active, string prefix = "m")
+        string entity = "orders", TimeSpan? age = null, DlqMessageStatus status = DlqMessageStatus.Active, string prefix = "m", string? errorText = null)
     {
         using var scope = host.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ServiceHubDbContext>();
@@ -78,7 +78,7 @@ public sealed class DeadLettersApiTests
                 MessageId = $"{prefix}-{entity}-{reason}-{i}", SequenceNumber = Random.Shared.NextInt64(), BodyHash = "empty",
                 NamespaceId = namespaceId, CloudProvider = provider, OwnerId = owner, EntityName = entity, EntityType = ServiceBusEntityType.Queue,
                 EnqueuedTimeUtc = seen, DetectedAtUtc = seen, DeadLetterReason = reason, DeliveryCount = 5, MessageSize = 2048,
-                BodyPreview = "SECRET-BODY-TEXT", Status = status,
+                BodyPreview = "SECRET-BODY-TEXT", Status = status, DeadLetterErrorDescription = errorText,
             });
         }
 
@@ -289,6 +289,17 @@ public sealed class DeadLettersApiTests
         (await Count("m-orders")).Should().Be(2, "message id");
         (await Count("%")).Should().Be(1, "a percent sign is a percent sign, not a wildcard");
         (await Count("SECRET-BODY-TEXT")).Should().Be(0, "bodies are not searchable");
+    }
+
+    [Fact]
+    public async Task Search_finds_text_in_the_recorded_error_description()
+    {
+        using var host = Host();
+        var ns = await Connect(host.Client, "azure");
+        await Seed(host, ns, CloudProviderType.Azure, 2, "DownstreamUnavailable", "orders", errorText: "InventoryService returned 503 Service Unavailable");
+
+        // A person searching "503" is looking for the error text, which is where a status code lives — not the reason name.
+        (await Get(host, $"?namespaceId={ns}&q=503")).GetProperty("paging").GetProperty("total").GetInt32().Should().Be(2);
     }
 
     [Fact]

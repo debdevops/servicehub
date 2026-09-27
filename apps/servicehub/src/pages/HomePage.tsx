@@ -78,7 +78,7 @@ export function HomePage() {
 /** Makes room for the message drawer beside the page: it docks at the right, so the page must not sit under it. */
 function DrawerAside({ children }: { children: React.ReactNode }) {
   const [params] = useSearchParams()
-  const docked = params.get('message') !== null && params.get('view') !== 'full'
+  const docked = (params.get('message') !== null && params.get('view') !== 'full') || (params.get('tab') === 'active' && params.get('active') !== null)
   return <div className={docked ? 'xl:pr-[462px]' : undefined}>{children}</div>
 }
 
@@ -104,7 +104,7 @@ function CloudHome({
   const nsQuery = scopeQuery(choice)
 
   // The work views of Home's table (D45): `?tab=dlq` is the dead letters, in place of the overview.
-  const picker = allInCloud.length > 1 ? <div className="px-[22px] pt-4"><NamespaceScope namespaces={allInCloud} cloud={cloud} /></div> : null
+  const picker = allInCloud.length > 0 ? <div className="px-[22px] pt-4"><NamespaceScope namespaces={allInCloud} cloud={cloud} /></div> : null
   if (tab === 'dlq') return <>{picker}<DeadLettersView provider={provider} namespaces={namespaces} /></>
   if (tab === 'replayed') return <>{picker}<ReplayedTab provider={provider} choice={choice} /></>
   if (tab === 'active') return <>{picker}<ActiveMessagesTab provider={provider} namespaces={namespaces} /></>
@@ -169,7 +169,7 @@ function CloudHome({
       {summary.status === 'ready' && (
         <div className="space-y-5">
           <Verdict cloud={cloud} summary={summary.summary} />
-          <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3.5 sm:grid-cols-2">
             <StatTile
               label="Dead letters"
               value={summary.summary.deadLetters}
@@ -216,10 +216,10 @@ function CloudHome({
             <div className="space-y-3.5">
               <FleetCard cloud={cloud} summary={summary.summary} namespaces={namespaces} fleetHref={otherCloudsConnected ? '/fleet' : undefined} />
               <QueuesNeedingAttention summary={summary.summary} namespaces={namespaces} />
+              <RecentActivity provider={provider} namespaceId={choice.ns?.id} environment={choice.env ?? undefined} />
             </div>
           </div>
           <RecentDeadLetters provider={provider} namespaces={namespaces} choice={choice} />
-          <RecentActivity provider={provider} namespaceId={choice.ns?.id} environment={choice.env ?? undefined} />
         </div>
       )}
     </section>

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import type { ColumnHelp } from '../../content/columns'
 import { InfoTip } from './InfoTip'
 
@@ -39,6 +39,7 @@ export function DataTable<Row>({
   selection,
   compact = false,
   rowLabel,
+  groupBy,
 }: {
   /** Says what the table is; visually hidden. */
   caption: string
@@ -49,6 +50,8 @@ export function DataTable<Row>({
   compact?: boolean
   /** Names a row for its checkbox: "Select message m-1". */
   rowLabel?: (row: Row) => string
+  /** Names the group a row belongs to (for example "Azure › orders-dev"). Rows must already be in group order; a heading row is drawn where the group changes. */
+  groupBy?: (row: Row) => string
 }) {
   const pageKeys = rows.map(rowKey)
   const selectedOnPage = selection ? pageKeys.filter((k) => selection.selected.has(k)).length : 0
@@ -84,12 +87,19 @@ export function DataTable<Row>({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => {
+          {rows.map((row, i) => {
             const key = rowKey(row)
+            const group = groupBy?.(row)
+            const heading = group !== undefined && (i === 0 || groupBy?.(rows[i - 1]!) !== group)
             const isSelected = selection?.selected.has(key) ?? false
             return (
+              <Fragment key={key}>
+              {heading && (
+                <tr className="bg-[var(--color-surface-muted)]">
+                  <th scope="colgroup" colSpan={columns.length + (selection ? 1 : 0)} className="px-4 py-1.5 text-left text-[11px] font-bold uppercase tracking-wide text-[var(--color-text-muted)]">{group}</th>
+                </tr>
+              )}
               <tr
-                key={key}
                 aria-selected={selection ? isSelected : undefined}
                 className={`border-b border-[var(--color-border)] last:border-b-0 ${isSelected ? 'bg-[var(--color-primary-50)]' : 'hover:bg-[var(--color-surface-muted)]'}`}
               >
@@ -109,6 +119,7 @@ export function DataTable<Row>({
                   </td>
                 ))}
               </tr>
+              </Fragment>
             )
           })}
         </tbody>

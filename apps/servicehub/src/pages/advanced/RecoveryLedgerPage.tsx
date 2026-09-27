@@ -1,3 +1,4 @@
+import { useDeadLetter } from '../../hooks/useDeadLetter'
 import { useState } from 'react'
 import { usePageSize } from '../../lib/pageSize'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
@@ -49,8 +50,8 @@ const asProvider = (v: string | null): CloudProvider | undefined => (v === 'azur
 
 /**
  * The Recovery Ledger (Advanced): every recovery action, its evidence and how it ended — readable, filterable and
- * verifiable, with NO way to act (ADR-0016 D3). "Replay again" is a link into the Simple flow, which is where
- * acting happens and is gated; nothing on this page changes anything, not even a write-off.
+ * verifiable. Acting happens in place (ADR-0016 D3, amended 2026-09-27): Replay and Approve open the Simple modals over this
+ * page, with the same gate and permissions. There is still no write-off or purge here.
  *
  * State, window, scope and the open entry are all in the URL, so the Advanced Overview's bar can deep-link
  * (`?state=Unverified`) and a filtered view survives a refresh. The tab counts come from the same summary Simple's
@@ -170,7 +171,7 @@ export default function RecoveryLedgerPage() {
 
 /**
  * The Waiting tab (5.9): everything the Agent stopped and asked about, with the gate's reason code — read-only. Each row's
- * action is a LINK into Simple (the Approve modal, the rule, the agent), because Advanced never acts (ADR-0016 D3).
+ * action opens in place (the Approve modal, the rule panel) or goes to the agent — same gate as in Simple (ADR-0016 D3 amended).
  * Filterable by reason code; cloud and namespace come from the page's own scope.
  */
 function WaitingView({ page, pending, failed }: { page: PendingWorkPage | undefined; pending: boolean; failed: boolean }) {
@@ -180,7 +181,7 @@ function WaitingView({ page, pending, failed }: { page: PendingWorkPage | undefi
   const codes = [...new Set(page.items.map((i) => i.reasonCode))]
   const rows = pendingRows(page.items.filter((i) => !reason || i.reasonCode === reason)).map((r) => ({
     ...r,
-    action: r.action.href.startsWith('?') ? { label: r.kind === 'approval' ? 'Review in Simple ›' : 'Open in Simple ›', href: `/${r.action.href}` } : r.action,
+    action: r.action.href.startsWith('?') ? { label: r.kind === 'approval' ? 'Review ›' : 'Open ›', href: r.action.href } : r.action,
   }))
   if (page.items.length === 0) {
     return <p className="px-6 py-10 text-center text-sm text-[var(--color-text-muted)]">Nothing is waiting for a person. When the Agent stops and asks, it appears here and in the bell.</p>
@@ -197,7 +198,7 @@ function WaitingView({ page, pending, failed }: { page: PendingWorkPage | undefi
         </label>
       )}
       <PendingWorkList rows={rows} now={new Date()} primaryFirst={false} />
-      <p className="border-t border-[var(--color-border)] px-5 py-2 text-xs text-[var(--color-text-muted)]">Nothing here acts: approving happens in Simple, through the same safety checks as any replay.</p>
+      <p className="border-t border-[var(--color-border)] px-5 py-2 text-xs text-[var(--color-text-muted)]">Approving opens right here and goes through the same safety checks as any replay.</p>
     </div>
   )
 }
@@ -233,7 +234,10 @@ function LedgerTable({ rows, namespaces, selected, onSelect }: { rows: readonly 
       ),
     },
   ]
-  return <DataTable caption="Recovery ledger entries, newest first" columns={columns} rows={rows} rowKey={(r) => r.id} compact />
+  // Grouped Cloud › Namespace (the page's rows, newest first within each group), so a person reads one namespace at a time.
+  const groupOf = (r: LedgerEntry) => `${r.provider ? providerLabel[r.provider] : 'Unknown cloud'} › ${tagOf(r)}`
+  const grouped = [...rows].sort((a, b) => groupOf(a).localeCompare(groupOf(b)))
+  return <DataTable caption="Recovery ledger entries, grouped by cloud and namespace, newest first" columns={columns} rows={grouped} rowKey={(r) => r.id} compact groupBy={groupOf} />
 }
 
 export function StateChip({ state }: { state: EntryState }) {
@@ -246,6 +250,8 @@ export function StateChip({ state }: { state: EntryState }) {
 function EntryPanel({ id, onClose }: { id: string | null; onClose: () => void }) {
   const { data, isPending, isError } = useLedgerEntry(id)
   const { search } = useLocation()
+  // Whether the message is still stuck decides if "replay again" means anything: a replayed message has left the queue.
+  const source = useDeadLetter(data?.entry.dlqMessageId ?? null).data?.item
   const [chain, setChain] = useState<{ busy: boolean; result?: ChainVerification; failed?: boolean }>({ busy: false })
 
   if (id === null) {
@@ -263,7 +269,6 @@ function EntryPanel({ id, onClose }: { id: string | null; onClose: () => void })
     if (e.dlqMessageId !== null) next.set('message', String(e.dlqMessageId))
     return `/?${next.toString()}`
   }
-  void search
 
   const check = async () => {
     setChain({ busy: true })
@@ -331,9 +336,14 @@ function EntryPanel({ id, onClose }: { id: string | null; onClose: () => void })
       <div className="border-t border-[var(--color-border)] p-4 text-sm">
         <div className="flex flex-wrap gap-4 font-medium">
           {e.dlqMessageId !== null && <Link to={homeParams('replayed')} className="text-[var(--color-primary-700)] hover:underline">Open in Home →</Link>}
-          {e.dlqMessageId !== null && <Link to={homeParams('dlq')} className="text-[var(--color-primary-700)] hover:underline">Replay again →</Link>}
+          {e.dlqMessageId !== null && source?.status === 'active' && <Link to={`?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(search)), modal: 'replay', message: String(e.dlqMessageId) })}`} className="text-[var(--color-primary-700)] hover:underline">Replay…</Link>}
         </div>
-        <p className="mt-2 text-xs text-[var(--color-text-muted)]">Links open the Simple flow that acts — nothing on this page changes anything.</p>
+        {e.dlqMessageId !== null && source && source.status !== 'active' && (
+          <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+            This message is no longer in the dead-letter queue, so there is nothing to replay. If it failed again it is a new dead letter with its own entry.
+          </p>
+        )}
+        <p className="mt-2 text-xs text-[var(--color-text-muted)]">Replay opens over this page and runs the same safety checks as anywhere else; “Open in Home” leaves for Simple.</p>
       </div>
     </aside>
   )

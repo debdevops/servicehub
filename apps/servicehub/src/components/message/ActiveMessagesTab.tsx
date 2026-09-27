@@ -11,6 +11,7 @@ import { columnHelp } from '../../content/columns'
 import { EntityCell } from './EntityCell'
 import { describeEntity, subscriptionParts } from '../../lib/entities'
 import { WorkTabs } from './WorkTabs'
+import { OverlayFrame } from '../overlays/OverlayFrame'
 import { LiveTail } from './LiveTail'
 import { ScheduledView } from './ScheduledView'
 import { fetchEntities, type CloudProvider, type Entity, type Namespace } from '../../lib/api/namespaces'
@@ -22,6 +23,8 @@ import { namespaceKeys } from '../../hooks/useNamespaces'
 
 /** A peek is one request for up to this many of the oldest messages (the API's ceiling); the grid pages through them locally. */
 const PEEK_MAX = 100
+/** How often the browse list looks again by itself. */
+const REFRESH_MS = 15_000
 
 /**
  * Home's `?tab=active`: what is in flight right now. The same table as Dead letters, drawn with Active's columns.
@@ -106,6 +109,7 @@ function Browser({ rows }: { rows: readonly Row[] }) {
   const several = spansSeveral(rows)
   const [pageSize, setPageSize] = usePageSize()
   const [page, setPage] = useState(1)
+  const [autoRefresh, setAutoRefresh] = useState(true)
 
   const view = params.get('view') === 'live' ? 'live' : params.get('view') === 'scheduled' ? 'scheduled' : 'browse'
   const setView = (v: string) => setParams((c) => { const n = new URLSearchParams(c); if (v === 'browse') n.delete('view'); else n.set('view', v); n.delete('active'); return n }, { replace: true })
@@ -114,6 +118,8 @@ function Browser({ rows }: { rows: readonly Row[] }) {
     queryKey: ['active-peek', chosen.namespace.id, chosen.entity.name],
     queryFn: () => peekMessages(chosen.namespace.id, { ...target, max: PEEK_MAX }),
     enabled: view === 'browse',
+    // Looking is free here, so the list keeps itself current; the button is for "now".
+    refetchInterval: autoRefresh ? REFRESH_MS : false,
   })
   const now = new Date()
   const messages = peek.data?.messages ?? []
@@ -167,13 +173,19 @@ function Browser({ rows }: { rows: readonly Row[] }) {
             ))}
           </div>
           {view === 'browse' && (
-            <button
-              type="button"
-              onClick={() => void peek.refetch()}
-              className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-[12px] font-semibold"
-            >
-              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Refresh
-            </button>
+            <>
+              <label className="flex items-center gap-1.5 text-[12px] text-[var(--color-text-muted)]">
+                <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} /> Auto-refresh every {REFRESH_MS / 1000}s
+              </label>
+              <button
+                type="button"
+                onClick={() => void peek.refetch()}
+                disabled={peek.isFetching}
+                className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-[12px] font-semibold"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${peek.isFetching ? 'animate-spin' : ''}`} aria-hidden="true" /> {peek.isFetching ? 'Refreshing…' : 'Refresh'}
+              </button>
+            </>
           )}
         </div>
         {view === 'live' && <LiveTail key={keyOf(chosen)} namespaceId={chosen.namespace.id} {...target} />}
@@ -191,7 +203,7 @@ function Browser({ rows }: { rows: readonly Row[] }) {
             <p className="border-t border-[var(--color-border)] px-4 py-2.5 text-[12px] text-[var(--color-text-muted)]">
               Peeked the oldest {messages.length}
               {/* The queue's count and the peek are read at different moments; only say "of N" when N can still be right. */}
-              {chosen.entity.activeMessages != null && chosen.entity.activeMessages > messages.length ? ` of ${chosen.entity.activeMessages.toLocaleString()}` : ''}. Refreshed when you ask.
+              {chosen.entity.activeMessages != null && chosen.entity.activeMessages > messages.length ? ` of ${chosen.entity.activeMessages.toLocaleString()}` : ''}. {autoRefresh ? `Refreshes every ${REFRESH_MS / 1000} seconds, or when you ask.` : 'Refreshed when you ask.'}
             </p>
           </>
         )}
@@ -203,30 +215,30 @@ function Browser({ rows }: { rows: readonly Row[] }) {
 }
 
 function ActiveDrawer({ message, entity, now, onClose }: { message: Message; entity: string; now: Date; onClose: () => void }) {
+  // The same docked side panel a dead letter opens in, so Details behaves alike on every tab.
   return (
-    <aside aria-label="Active message" className="w-[380px] shrink-0 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
-      <div className="flex items-center justify-between border-b border-[#f3f4f6] px-4 py-3">
-        <span className="rounded-full bg-[var(--color-primary-100)] px-3 py-0.5 text-[12px] font-bold text-[var(--color-primary-700)]">In flight</span>
-        <button type="button" onClick={onClose} className="text-sm text-[var(--color-text-muted)]" aria-label="Close">✕</button>
+    <OverlayFrame kind="panel" size="drawer" docked title="Message details" onClose={onClose}>
+      <div className="space-y-4">
+        <span className="inline-block rounded-full bg-[var(--color-primary-100)] px-3 py-0.5 text-[12px] font-bold text-[var(--color-primary-700)]">In flight</span>
+        <p className="text-[13px]">
+          <b className="font-mono">{entity}</b> · delivery <b>{message.deliveryCount}</b> · {formatBytes(message.sizeInBytes)}
+          {message.contentType ? ` · ${message.contentType}` : ''} · {formatAge(message.enqueuedTime, now)} old
+        </p>
+        <div>
+          <div className="text-[10.5px] font-bold uppercase tracking-wide text-[var(--color-text-muted)]">Message body</div>
+          <pre className="mt-1.5 max-h-[50vh] min-h-24 overflow-auto whitespace-pre-wrap rounded-lg bg-[#0f172a] p-3 text-[12px] leading-relaxed text-[#e2e8f0]">{message.body ?? '(no body)'}</pre>
+        </div>
+        <dl className="space-y-1 text-[12.5px]">
+          <Kv k="Message ID" v={message.messageId} />
+          {message.correlationId && <Kv k="Correlation ID" v={message.correlationId} />}
+          <Kv k="Enqueued" v={formatWhen(message.enqueuedTime, now)} />
+        </dl>
+        <p className="flex items-start gap-2 rounded-lg border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-3 py-2.5 text-[12.5px]">
+          <Eye className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-primary-700)]" aria-hidden="true" />
+          <span>Active messages are for looking. <b>Nothing here can be replayed</b> — it hasn’t failed yet.</span>
+        </p>
       </div>
-      <p className="px-4 pt-3 text-[13px]">
-        <b className="font-mono">{entity}</b> · delivery <b>{message.deliveryCount}</b> · {formatBytes(message.sizeInBytes)}
-        {message.contentType ? ` · ${message.contentType}` : ''} · {formatAge(message.enqueuedTime, now)} old
-      </p>
-      <div className="px-4 pt-3">
-        <div className="text-[10.5px] font-bold uppercase tracking-wide text-[var(--color-text-muted)]">Message body</div>
-        <pre className="mt-1.5 max-h-56 overflow-auto rounded-lg bg-[#0f172a] p-3 text-[12px] leading-relaxed text-[#e2e8f0]">{message.body ?? '(no body)'}</pre>
-      </div>
-      <dl className="space-y-1 px-4 py-3 text-[12.5px]">
-        <Kv k="Message ID" v={message.messageId} />
-        {message.correlationId && <Kv k="Correlation ID" v={message.correlationId} />}
-        <Kv k="Enqueued" v={formatWhen(message.enqueuedTime, now)} />
-      </dl>
-      <p className="mx-4 mb-4 flex items-start gap-2 rounded-lg border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-3 py-2.5 text-[12.5px]">
-        <Eye className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-primary-700)]" aria-hidden="true" />
-        <span>Active messages are for looking. <b>Nothing here can be replayed</b> — it hasn’t failed yet.</span>
-      </p>
-    </aside>
+    </OverlayFrame>
   )
 }
 
@@ -234,7 +246,7 @@ function Kv({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex justify-between gap-3">
       <dt className="text-[var(--color-text-muted)]">{k}</dt>
-      <dd className="truncate font-semibold">{v}</dd>
+      <dd className="min-w-0 break-all text-right font-semibold">{v}</dd>
     </div>
   )
 }

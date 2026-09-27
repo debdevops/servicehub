@@ -18,7 +18,7 @@ export function MessageTable({
   rows,
   namespaceNames,
   selection,
-  compact = false,
+  compact = true,
   showOutcome = false,
   caption = 'Dead-lettered messages, newest first',
 }: {
@@ -127,10 +127,10 @@ function FailedBecause({ row }: { row: DeadLetter }) {
       ) : (
         <p className="mt-1 text-[12.5px] italic text-[var(--color-text-muted)]">The cloud gave no error text for this one.</p>
       )}
-      <p className="mt-1 flex items-start gap-1.5 text-[12px] text-[var(--color-text-muted)]" title="ServiceHub’s plain-English reading of the recorded reason — a suggestion, not something the cloud reported.">
+      {reading.headline !== 'No reading available — see the recorded reason' && <p className="mt-0.5 flex items-start gap-1.5 text-[12px] text-[var(--color-text-muted)]" title="ServiceHub’s plain-English reading of the recorded reason — a suggestion, not something the cloud reported.">
         <Lightbulb className="mt-px h-3 w-3 shrink-0 text-[#d97706]" aria-label="Suggestion" />
         <span>{reading.headline}</span>
-      </p>
+      </p>}
     </div>
   )
 }

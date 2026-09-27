@@ -1,3 +1,4 @@
+import { widgetHelp } from '../content/widgets'
 import { Link } from 'react-router-dom'
 import { columnHelp } from '../content/columns'
 import { InfoTip } from './ui/InfoTip'
@@ -58,7 +59,7 @@ export function FleetCard({
   return (
     <section aria-label={`${cloud} at a glance`} className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
       <div className="flex items-center justify-between border-b border-[#f3f4f6] px-4 py-[13px]">
-        <h2 className="text-[13.5px] font-bold text-[#1f2937]">{cloud} at a glance</h2>
+        <h2 className="flex items-center text-[13.5px] font-bold text-[#1f2937]">{cloud} at a glance<InfoTip help={widgetHelp.glance} /></h2>
         {fleetHref && (
           <Link to={fleetHref} className="text-[11.5px] font-semibold text-[var(--color-primary-600)] hover:underline">
             Compare with your other clouds →

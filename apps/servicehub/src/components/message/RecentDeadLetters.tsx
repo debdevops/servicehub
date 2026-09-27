@@ -1,3 +1,5 @@
+import { InfoTip } from '../ui/InfoTip'
+import { widgetHelp } from '../../content/widgets'
 import { Link } from 'react-router-dom'
 import { namespaceTag, scopeQuery, type ScopeChoice } from '../provider/scopeChoice'
 import { MessageTable } from './MessageTable'
@@ -18,7 +20,7 @@ export function RecentDeadLetters({ provider, namespaces, choice }: { provider: 
   return (
     <section aria-label="Latest dead letters" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
       <div className="flex items-center justify-between px-4 py-3">
-        <h2 className="text-sm font-semibold text-[var(--color-text)]">Latest dead letters</h2>
+        <h2 className="flex items-center text-sm font-semibold text-[var(--color-text)]">Latest dead letters<InfoTip help={widgetHelp.latest} /></h2>
         <Link to={`/?tab=dlq${scopeQuery(choice)}`} className="text-sm font-medium text-[var(--color-primary-700)] hover:underline">
           See all {data.paging.total.toLocaleString()} →
         </Link>

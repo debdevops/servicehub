@@ -1,3 +1,4 @@
+import { widgetHelp } from '../../content/widgets'
 import { Check, CircleHelp, Minus, RotateCcw, TriangleAlert } from 'lucide-react'
 import { useRecoverySummary } from '../../hooks/useRecoverySummary'
 import type { EntryState } from '../../lib/api/recovery'
@@ -31,7 +32,7 @@ export function RecoveryOutcomes({ provider, namespaceId, environment }: { provi
   const rate = data?.stayedFixedRate
 
   return (
-    <InsightCard title="How replays ended" note="last 7 days">
+    <InsightCard title="How replays ended" help={widgetHelp.replayOutcomes} note="last 7 days">
       {isPending && <p role="status" className="text-[13px] text-[var(--color-text-muted)]">Reading the ledger…</p>}
       {isError && <p role="alert" className="text-[13px] text-[var(--color-text-muted)]">ServiceHub couldn’t read the ledger just now.</p>}
       {data && total === 0 && <p className="text-[13px] text-[var(--color-text-muted)]">Nothing has been replayed in {cloud} in the last 7 days.</p>}

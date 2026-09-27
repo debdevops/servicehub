@@ -22,6 +22,9 @@ public sealed record BulkPreview(
     bool CanProveDlqAbsence,
     RecoveryOperationKind Kind = RecoveryOperationKind.Replay);
 
+/// <summary>A message the run tried and could not send: which one, where, and in words why.</summary>
+public sealed record BulkProblem(long DlqMessageId, string EntityName, string State, string? ReasonCode, string Why);
+
 /// <summary>Where a bulk job is, for the running view and the Replayed tab.</summary>
 public sealed record BulkProgress(
     Guid Id,
@@ -38,4 +41,5 @@ public sealed record BulkProgress(
     DateTimeOffset PreviewedAt,
     DateTimeOffset? StartedAt,
     DateTimeOffset? EndedAt,
-    RecoveryOperationKind Kind = RecoveryOperationKind.Replay);
+    RecoveryOperationKind Kind = RecoveryOperationKind.Replay,
+    IReadOnlyList<BulkProblem>? Problems = null);

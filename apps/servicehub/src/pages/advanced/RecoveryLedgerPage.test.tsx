@@ -5,11 +5,13 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as nsApi from '../../lib/api/namespaces'
 import * as api from '../../lib/api/recovery'
+import * as dlApi from '../../lib/api/deadLetters'
 import type { LedgerEntry, LedgerEntryDetail, RecoverySummary, StateCount } from '../../lib/api/recovery'
 import RecoveryLedgerPage from './RecoveryLedgerPage'
 
 vi.mock('../../lib/api/namespaces')
 vi.mock('../../lib/api/recovery')
+vi.mock('../../lib/api/deadLetters')
 
 const entry = (id: string, state: LedgerEntry['state'], over: Partial<LedgerEntry> = {}): LedgerEntry => ({
   id, operationId: 'op', begunAt: '2026-09-25T10:00:00Z', kind: 'Replay', entityName: 'payments-dlq', targetEntity: 'payments', provider: 'azure', namespaceName: 'orders-dev',
@@ -102,6 +104,7 @@ describe('the Recovery Ledger (Advanced)', () => {
 
   it('opens an entry: who, what happened, the evidence — and links out rather than acting', async () => {
     vi.mocked(api.fetchLedgerEntry).mockResolvedValue(detail(entry('e1', 'Recovered')))
+    vi.mocked(dlApi.fetchDeadLetter).mockResolvedValue({ item: { id: 7, status: 'resolved' } } as dlApi.DeadLetterDetail)
     const user = userEvent.setup()
     renderPage()
     const buttons = await screen.findAllByRole('button', { name: /Details of ledger entry/ })
@@ -110,7 +113,9 @@ describe('the Recovery Ledger (Advanced)', () => {
     expect(await panel.findByText('did not return')).toBeInTheDocument()
     expect(panel.getByText('Replay begun')).toBeInTheDocument()
     expect(panel.getByText(/Sent, and accepted by Azure/)).toBeInTheDocument()
-    expect(panel.getByRole('link', { name: /Replay again/ })).toHaveAttribute('href', expect.stringContaining('message=7'))
+    // The message was replayed, so it has left the queue: no "replay again" link, and it says why.
+    expect(await panel.findByText(/no longer in the dead-letter queue/)).toBeInTheDocument()
+    expect(panel.queryByRole('link', { name: /Replay/ })).toBeNull()
     // Nothing on this page acts: no replay/write-off/purge button anywhere.
     expect(screen.queryByRole('button', { name: /^(Replay|Write off|Purge|Delete)/i })).toBeNull()
   })

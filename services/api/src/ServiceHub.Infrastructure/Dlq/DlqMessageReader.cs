@@ -152,7 +152,8 @@ public sealed class DlqMessageReader : IDlqMessageReader
             source = source.Where(m =>
                 EF.Functions.Like(m.MessageId, like, "\\")
                 || EF.Functions.Like(m.EntityName, like, "\\")
-                || (m.DeadLetterReason != null && EF.Functions.Like(m.DeadLetterReason, like, "\\")));
+                || (m.DeadLetterReason != null && EF.Functions.Like(m.DeadLetterReason, like, "\\"))
+                || (m.DeadLetterErrorDescription != null && EF.Functions.Like(m.DeadLetterErrorDescription, like, "\\")));
         }
 
         if (includeReason)

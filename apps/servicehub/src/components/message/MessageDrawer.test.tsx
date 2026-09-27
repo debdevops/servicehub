@@ -152,7 +152,7 @@ describe('the message drawer', () => {
     const user = userEvent.setup()
     const { unmount } = renderDrawer()
     await screen.findByText('ValidationFailed')
-    expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Copy body' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Raw' }))
     expect(screen.getByRole('button', { name: 'Raw' })).toHaveAttribute('aria-pressed', 'true')
     unmount()

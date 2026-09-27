@@ -88,8 +88,9 @@ export function ReplayedTab({ provider, choice }: { provider: CloudProvider; cho
   const columns: Column<ReplayListItem>[] = [
     { key: 'when', header: 'Replayed', info: help.replayed, className: 'whitespace-nowrap', render: (r) => formatWhen(r.replayedAt, now) },
     { key: 'from', header: 'Queue or topic', info: help.from, render: (r) => <EntityCell entityName={r.sourceEntity} entityType={r.sourceEntity.includes('/') ? 'subscription' : 'queue'} /> },
+    { key: 'msg', header: 'Message', className: 'whitespace-nowrap font-mono text-[12px]', render: (r) => r.messageId },
+    { key: 'to', header: 'Sent back to', render: (r) => r.targetEntity },
     { key: 'by', header: 'By', info: help.by, render: (r) => <Attribution actor={r.actor} at={r.replayedAt} compact /> },
-    { key: 'count', header: 'Messages', info: help.messages, numeric: true, render: () => 1 },
     { key: 'result', header: 'Result', info: help.result, width: 'min-w-[11rem]', render: (r) => <ResultChip row={r} /> },
     {
       key: 'open',
@@ -139,7 +140,7 @@ export function ReplayedTab({ provider, choice }: { provider: CloudProvider; cho
               </p>
             ) : (
               <>
-                <DataTable caption="Replays, newest first" columns={columns} rows={data.items} rowKey={(r) => String(r.id)} />
+                <DataTable caption="Replays, newest first" columns={columns} rows={data.items} rowKey={(r) => String(r.id)} compact />
                 <Pager page={data.page} pageSize={data.pageSize} total={data.total} filtered={!!result} onPage={(p) => change({ page: String(p) })} onPageSize={(s) => { setPageSize(s); change({ page: null }) }} />
               </>
             )}

@@ -228,8 +228,30 @@ public sealed class DlqReplayService : IDlqReplayService
         }
         catch (DbUpdateConcurrencyException ex)
         {
-            // A scan resolved the row first. The ledger holds the truth either way.
+            // A scan resolved the row first. The ledger holds the truth either way — but the failed save also carried
+            // this replay's history row, and losing it made a replay vanish from the Replayed list. Take the scan's
+            // version of the message, put ours on top, and save again so the history row is always written.
             _logger.LogWarning(ex, "Dead letter {Id} was updated by a scan while it was being replayed", message.Id);
+            try
+            {
+                foreach (var conflicted in ex.Entries)
+                {
+                    await conflicted.ReloadAsync(CancellationToken.None);
+                }
+
+                if (executed == RecoveryExecutionOutcome.Accepted)
+                {
+                    message.Status = DlqMessageStatus.Resolved;
+                    message.ResolvedAt ??= DateTimeOffset.UtcNow;
+                    message.ResolutionCause = DlqResolutionCause.ReplayedByServiceHub;
+                }
+
+                await _db.SaveChangesAsync(CancellationToken.None);
+            }
+            catch (Exception retry)
+            {
+                _logger.LogError(retry, "Dead letter {Id}: the replay's history row could not be saved after a scan conflict", message.Id);
+            }
         }
 
         await AuditAsync(ns, actor, message, status, errorCode, correlationId, CancellationToken.None);

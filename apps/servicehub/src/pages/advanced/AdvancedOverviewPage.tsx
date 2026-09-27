@@ -1,3 +1,5 @@
+import { InfoTip } from '../../components/ui/InfoTip'
+import { widgetHelp } from '../../content/widgets'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Bot, Info, LayoutGrid, Lock, ShieldCheck, Zap } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
@@ -43,7 +45,7 @@ const heldWords: Readonly<Record<AuthoritySpread['held'][number]['reason'], { te
 
 /**
  * Advanced Overview (unit 6.8): the control plane — what happened, why it was decided, what needs a person — broken down,
- * never rounded off. Every panel reads one named endpoint; none can act (ADR-0016 D3), so every "do" is a link into Simple.
+ * never rounded off. Every panel reads one named endpoint; none adds authority (ADR-0016 D3, amended): a "do" opens the same Simple modal in place.
  */
 export default function AdvancedOverviewPage() {
   const [params, setParams] = useSearchParams()
@@ -186,7 +188,7 @@ function Authority({ provider, days }: { provider?: CloudProvider; days: number 
   const bar = (n: number, color: string) => <span aria-hidden="true" className="inline-block h-3 rounded" style={{ width: `${Math.max(6, (n / max) * 100)}px`, background: color }} />
   return (
     <section aria-label="Authority — and why" className={card}>
-      <h2 className={h2}>Authority — and why</h2>
+      <h2 className={`${h2} flex items-center`}>Authority — and why<InfoTip help={widgetHelp.auth} /></h2>
       <p className="text-xs text-[var(--color-text-muted)]">What each failure may do on its own — and what holds it there.{a ? ` ${a.total} signatures seen.` : ''}</p>
       {q.isPending && <p role="status" className="mt-2 text-sm text-[var(--color-text-muted)]">Counting…</p>}
       {q.isError && <p role="alert" className="mt-2 text-sm">ServiceHub couldn’t read authority.</p>}
@@ -220,7 +222,7 @@ function Agents() {
   const paused = agents.filter((a) => a.isPaused).length
   return (
     <section aria-label="Agents" className={card}>
-      <h2 className={h2}>Agents</h2>
+      <h2 className={`${h2} flex items-center`}>Agents<InfoTip help={widgetHelp.agents} /></h2>
       <p className="mt-2"><span className="text-3xl font-extrabold">{agents.length}</span> <span className="text-sm text-[var(--color-text-muted)]">agents registered in this build</span></p>
       <ul className="mt-2 space-y-1 text-sm">
         <li><b className="text-[#b45309]">{acting}</b> acting — the only ones that can change anything</li>
@@ -241,7 +243,7 @@ function Capability() {
   const clouds: readonly CloudProvider[] = ['azure', 'aws', 'gcp']
   return (
     <section aria-label="Capability" className={card}>
-      <h2 className={h2}>Capability — what each cloud can prove</h2>
+      <h2 className={`${h2} flex items-center`}>Capability — what each cloud can prove<InfoTip help={widgetHelp.cap} /></h2>
       <ul className="mt-2 divide-y divide-[var(--color-border)] text-sm">
         {clouds.map((c) => {
           const here = namespaces.filter((n) => n.provider === c)
@@ -268,7 +270,7 @@ function WhatChanged() {
   const now = new Date()
   return (
     <section aria-label="What changed" className={card}>
-      <h2 className={h2}>What changed — autonomy transitions</h2>
+      <h2 className={`${h2} flex items-center`}>What changed — autonomy transitions<InfoTip help={widgetHelp.changed} /></h2>
       {q.isError && <p role="alert" className="mt-2 text-sm">ServiceHub couldn’t read the transitions.</p>}
       {q.data && changes.length === 0 && <p className="mt-2 text-sm text-[var(--color-text-muted)]">No failure has earned or lost automatic replay yet.</p>}
       {changes.length > 0 && (

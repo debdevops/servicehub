@@ -1,3 +1,4 @@
+import { widgetHelp } from '../../content/widgets'
 import { Link } from 'react-router-dom'
 import { useDeadLetters } from '../../hooks/useDeadLetters'
 import type { CloudProvider, EnvironmentKind } from '../../lib/api/namespaces'
@@ -37,7 +38,7 @@ export function WhyMessagesFailed({
   const max = Math.max(1, ...shown.map((g) => g.count))
 
   return (
-    <InsightCard title="Why messages failed" note={total > 0 ? `${total.toLocaleString()} dead-lettered` : undefined}>
+    <InsightCard title="Why messages failed" help={widgetHelp.whyFailed} note={total > 0 ? `${total.toLocaleString()} dead-lettered` : undefined}>
       {isPending && <p role="status" className="text-[13px] text-[var(--color-text-muted)]">Reading {cloud}…</p>}
       {isError && <p role="alert" className="text-[13px] text-[var(--color-text-muted)]">ServiceHub couldn’t read the reasons just now.</p>}
       {data && total === 0 && <p className="text-[13px] text-[var(--color-text-muted)]">Nothing is dead-lettered in {cloud} right now, so there is nothing to explain.</p>}

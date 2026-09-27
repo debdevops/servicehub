@@ -133,7 +133,7 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
     <section className="px-6 py-6">
       <header className="mb-4">
         <h1 className="flex items-center gap-2 text-2xl font-semibold text-[var(--color-text)]">
-          {cloud} — Dead letters <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} />
+          {cloud} — Dead letters
         </h1>
         <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
           Messages that failed too many times and were set aside. Pick one to see why, and put it back.
@@ -205,11 +205,12 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
                 type="search"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
-                placeholder="Search by message ID, queue or reason"
+                placeholder="Search ID, queue, reason, error"
                 data-shortcut="filter"
-                className="w-72 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5"
+                className="w-80 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5"
               />
             </label>
+            <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} />
             <span className="ml-auto text-xs text-[var(--color-text-muted)]">Newest first</span>
           </div>
 

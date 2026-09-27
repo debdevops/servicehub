@@ -48,7 +48,7 @@ of the rejected *"simple mode flag"* (`GUARDRAILS.md` §2.2), whose cost was eve
 twice. Shared *components* — the message drawer, the Outcome Card, the table — are fine; shared
 *pages* are not.
 
-### D3 — Advanced in 4.1.0 is read-only, and adds no authority
+### D3 — Advanced in 4.1.0 is read-only, and adds no authority _(amended 2026-09-27: it may open the Simple modals in place — see the end)_
 
 Advanced shows more about data the Simple loop already produces. **It has no action of its own.**
 Replay, approval, pause and rule changes happen in the shared drawer and flows the Simple surface
@@ -146,3 +146,17 @@ D5 stand unchanged.**
 
 The navigation array gives every entry a **kind** (`page` · `tab` · `panel` · `modal`); only pages
 are routes. That is what lets the design keep changing: a new destination of any kind is one entry.
+
+## Amendment (2026-09-27) — D3: Advanced may act in place
+
+**Owner decision, after reviewing 4.1.0 in use:** sending someone from an Advanced page to Simple to act
+broke the flow (the link landed on a message that could no longer be replayed, with the button disabled).
+Advanced may now **open the same Simple modals and panels in place** — Replay, Approve, and Auto Replay —
+over the Advanced page, without navigating away.
+
+What does **not** change: Advanced adds **no authority**. The modals are the very same components, so every
+action still goes through the same API endpoints, the same permission checks, the same intent headers and the
+same eligibility gate as when started from Simple. Nothing new can be done; the same things can be done from
+where the person already is. Advanced still has no write-off, purge or bulk action of its own, and the
+navigation ceiling (pages only, Advanced 4) is unchanged — overlays are opened by URL state and are not
+Advanced entries.

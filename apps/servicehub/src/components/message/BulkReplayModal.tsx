@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, CircleStop, Eye, Play, ShieldCheck, Trash2, TriangleAlert } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import type { OverlayBodyProps } from '../overlays/registry'
 import { cancelBulk, fetchBulk, isEnded, previewBulk, startBulk, startBulkPurge, type BulkPreview, type BulkProgress } from '../../lib/api/bulk'
 import { useNamespaces } from '../../hooks/useNamespaces'
 import { useProviderScope } from '../provider/providerScope'
-import { fetchDeadLetters } from '../../lib/api/deadLetters'
+import { fetchDeadLetter, fetchDeadLetters } from '../../lib/api/deadLetters'
+import { providerLabel } from '../../lib/providers'
+import { namespaceTag } from '../provider/scopeChoice'
 import { BULK_LIMIT, bulkSelection } from '../../lib/bulkSelection'
 import { deadLetterKeys } from '../../hooks/useDeadLetters'
 import { replayKeys } from '../../hooks/useReplay'
@@ -96,7 +98,7 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
   return (
     <div className="space-y-5">
       <div>
-        <h3 className="text-lg font-bold">Replay {p.selected.toLocaleString()} {p.selected === 1 ? 'message' : 'messages'}</h3>
+        <h3 className="text-lg font-bold">{p.selected === 1 ? 'Replay 1 message' : `Bulk replay · ${p.selected.toLocaleString()} messages`}</h3>
         <div className="mt-2"><Steps at={1} /></div>
         <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-[var(--color-surface-muted)] px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide"><Eye className="h-3 w-3" aria-hidden="true" /> Preview — nothing has run yet</p>
       </div>
@@ -141,6 +143,8 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
         </p>
       )}
 
+      <SelectedMessages ids={state.ids} heldBack={p.heldBack.map((h) => h.dlqMessageId)} />
+
       <section aria-label="How it will run">
         <h4 className="mb-2 text-[11px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">How it will run</h4>
         <div className="grid grid-cols-2 gap-3">
@@ -148,6 +152,11 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
           <Info title="Stops by itself if…">{p.stopAfterConsecutiveFailures} sends in a row aren’t accepted.</Info>
         </div>
       </section>
+
+      <p className="flex items-start gap-2.5 rounded-xl border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-3.5 py-2.5 text-[13px]">
+        <Eye className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-primary-700)]" aria-hidden="true" />
+        <span>After they are sent back, ServiceHub <b>watches</b> each one. Where the cloud can prove a message stayed fixed, its Recovery Ledger evidence can raise trust toward L4 and L5, and later fixes of the same kind may not need a person. That is a suggestion, not a promise — nothing is approved for you.</span>
+      </p>
 
       {startError && <p role="alert" className="text-sm text-[var(--color-error)]">{startError}</p>}
 
@@ -166,6 +175,45 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
         </button>
       </footer>
     </div>
+  )
+}
+
+/** What is about to be sent, and where to — one row per message, so a person can check before anything runs. */
+function SelectedMessages({ ids, heldBack }: { ids: readonly number[]; heldBack: readonly number[] }) {
+  const SHOWN = 20
+  const namespaces = useNamespaces().data ?? []
+  const results = useQueries({ queries: ids.slice(0, SHOWN).map((id) => ({ queryKey: ['dead-letter', id], queryFn: () => fetchDeadLetter(id), staleTime: 30_000 })) })
+  const held = new Set(heldBack)
+  return (
+    <section aria-label="Messages that will be replayed">
+      <h4 className="mb-2 text-[11px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">
+        Where each one goes {ids.length > SHOWN && <span className="normal-case tracking-normal">— first {SHOWN} of {ids.length.toLocaleString()}</span>}
+      </h4>
+      <div className="max-h-56 overflow-auto rounded-xl border border-[var(--color-border)]">
+        <table className="w-full text-left text-[12.5px]">
+          <caption className="sr-only">Selected messages and where each will be sent back</caption>
+          <thead className="sticky top-0 bg-[var(--color-surface-muted)] text-[11px] uppercase tracking-wide text-[var(--color-text-muted)]">
+            <tr><th scope="col" className="px-3 py-1.5">Message</th><th scope="col" className="px-3 py-1.5">Sent back to</th><th scope="col" className="px-3 py-1.5">Cloud · namespace</th><th scope="col" className="px-3 py-1.5">Failed because</th></tr>
+          </thead>
+          <tbody>
+            {results.map((r, i) => {
+              const id = ids[i]
+              const m = r.data?.item
+              if (!m) return <tr key={id} className="border-t border-[var(--color-border)]"><td colSpan={4} className="px-3 py-1.5 text-[var(--color-text-muted)]">{r.isError ? `Message ${id} could not be read` : `Reading message ${id}…`}</td></tr>
+              const ns = namespaces.find((n) => n.id === m.namespaceId)
+              return (
+                <tr key={id} className="border-t border-[var(--color-border)]">
+                  <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[11.5px]" title={m.messageId}>{m.messageId.length > 18 ? `${m.messageId.slice(0, 16)}…` : m.messageId}{held.has(id) && <span className="ml-1.5 rounded-full bg-[var(--color-warning-light)] px-1.5 text-[10px] font-bold text-[#78350f]">held back</span>}</td>
+                  <td className="px-3 py-1.5">{m.topicName ?? m.entityName}</td>
+                  <td className="px-3 py-1.5 whitespace-nowrap">{ns ? `${providerLabel[ns.provider]} · ${namespaceTag(ns)}` : '—'}</td>
+                  <td className="px-3 py-1.5">{m.deadLetterReason ?? 'Not recorded'}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
   )
 }
 
@@ -272,7 +320,7 @@ function Progress({ p, close }: { p: BulkProgress; close: () => void }) {
   const ended = isEnded(p.status)
   const what = p.kind === 'purge' ? 'purge' : 'replay'
   const heading = ended
-    ? p.status === 'completed' ? `Bulk ${what} finished` : p.status === 'cancelled' ? `Bulk ${what} stopped` : `Bulk ${what} stopped itself`
+    ? p.status === 'completed' ? (p.sent === 0 && p.failed + p.unknown > 0 ? `Bulk ${what} failed — nothing was sent back` : p.failed + p.unknown > 0 ? `Bulk ${what} finished with problems` : `Bulk ${what} finished`) : p.status === 'cancelled' ? `Bulk ${what} stopped` : `Bulk ${what} stopped itself`
     : `${what === 'purge' ? 'Purging' : 'Replaying'} ${target.toLocaleString()} ${target === 1 ? 'message' : 'messages'}`
 
   return (
@@ -284,20 +332,33 @@ function Progress({ p, close }: { p: BulkProgress; close: () => void }) {
 
       <div>
         <div className="flex items-baseline justify-between text-sm">
-          <b>{done.toLocaleString()} of {target.toLocaleString()} sent</b>
+          <b>{done.toLocaleString()} of {target.toLocaleString()} tried</b>
           {!ended && <span className="text-[var(--color-text-muted)]">{p.remaining.toLocaleString()} to go</span>}
         </div>
         <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-[var(--color-surface-muted)]" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Bulk replay progress">
-          <div className="h-full rounded-full bg-[var(--color-primary-600)] transition-all" style={{ width: `${pct}%` }} />
+          <div className={`h-full rounded-full transition-all ${p.failed + p.unknown > 0 && p.sent === 0 ? 'bg-[var(--color-error)]' : 'bg-[var(--color-primary-600)]'}`} style={{ width: `${pct}%` }} />
         </div>
       </div>
 
       <ul className="space-y-2 text-sm">
-        <Row ok={p.failed === 0}>{p.sent.toLocaleString()} {p.kind === 'purge' ? 'deleted by the cloud' : 'accepted by the cloud'}</Row>
+        <Row ok={p.sent > 0 || p.failed + p.unknown === 0}>{p.sent.toLocaleString()} {p.kind === 'purge' ? 'deleted by the cloud' : 'accepted by the cloud'}</Row>
         <Row ok={p.failed === 0}>{p.failed.toLocaleString()} failed to send</Row>
         {p.unknown > 0 && <Row ok={false}>{p.unknown.toLocaleString()} unknown — ServiceHub lost contact; check the queue before trying again</Row>}
         {p.heldBack > 0 && <Row ok>{p.heldBack.toLocaleString()} held back — stayed in dead letters</Row>}
       </ul>
+
+      {p.problems && p.problems.length > 0 && (
+        <section aria-label="Why some did not go" className="space-y-1.5">
+          <h4 className="text-[11px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">Why some did not go</h4>
+          <ul className="space-y-1.5">
+            {p.problems.map((x) => (
+              <li key={x.dlqMessageId} className="rounded-xl border border-[#fecaca] bg-[var(--color-error-light)] px-3.5 py-2 text-[13px]">
+                <b>Message {x.dlqMessageId}</b> <span className="text-[var(--color-text-muted)]">({x.entityName})</span> — {x.why}{x.reasonCode && <span className="ml-1 font-mono text-[11px] opacity-70">{x.reasonCode}</span>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {p.endedReason && <p className="rounded-xl border border-[#fde68a] bg-[var(--color-warning-light)] px-3.5 py-2.5 text-[13px] text-[#78350f]">{p.endedReason}</p>}
 

@@ -26,13 +26,14 @@ export function OverlayHost({ connectedCloudCount }: { connectedCloudCount: numb
     return offered.find((e): e is OverlayEntry => e.kind === kind && e.value === value)
   }
 
-  const close = (kind: OverlayKind) => () => {
+  const close = (kind: OverlayKind, id: string) => () => {
     // Replace, so the closed state is not a second history entry that Back would reopen.
     setParams(
       (current) => {
         const next = new URLSearchParams(current)
         next.delete(kind)
-        if (!next.has('modal') && !next.has('panel')) overlayCompanionParams.forEach((name) => next.delete(name))
+        if (!next.has('modal') && !next.has('panel')) // `entry` is the Approve modal's, but it is also the Recovery Ledger's selected entry: only Approve may clear it.
+        overlayCompanionParams.forEach((name) => { if (name !== 'entry' || id === 'approve') next.delete(name) })
         return next
       },
       { replace: true },
@@ -49,7 +50,7 @@ export function OverlayHost({ connectedCloudCount }: { connectedCloudCount: numb
     <>
       {open.map(({ kind, entry }) => {
         const Body = overlayBodies[entry.id]
-        const onClose = close(kind)
+        const onClose = close(kind, entry.id)
         return (
           <OverlayFrame key={`${kind}:${entry.id}`} kind={kind} title={entry.label} description={entry.description} onClose={onClose} size={overlayWide.has(entry.id) ? 'wide' : 'default'}>
             {Body ? (

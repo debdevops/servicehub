@@ -59,7 +59,7 @@ describe('Bulk Replay modal', () => {
 
     expect(bulk.startBulk).toHaveBeenCalledWith('p1', false)
     await waitFor(() => expect(screen.getByTestId('url')).toHaveTextContent('job=job1'))
-    expect(await screen.findByText('2 of 6 sent')).toBeInTheDocument()
+    expect(await screen.findByText('2 of 6 tried')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Stop now' })).toBeInTheDocument()
   })
 

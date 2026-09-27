@@ -35,7 +35,7 @@ import {
  * investigate (ADR-0016). Advanced paths live under /advanced; there is no mode flag.
  */
 
-/** Simple gives the answer and the action. Advanced gives the investigation, read-only in 4.1.0. */
+/** Simple gives the answer and the action. Advanced gives the investigation, adds no authority of its own; actions open the Simple modals in place (ADR-0016 D3 amended). */
 export type Surface = 'simple' | 'advanced'
 
 /** Where every Advanced path lives. */
@@ -101,17 +101,17 @@ export type NavEntry = PageEntry | TabEntry | OverlayEntry
 
 export const navigation: readonly NavEntry[] = [
   // ── Simple · pages — the only two ─────────────────────────────────────────────────────────────
-  // Fleet Overview leads, because it is the only cross-cloud view and Home is deliberately one
-  // cloud. It appears only when there is more than one cloud to compare.
-  {
-    kind: 'page', id: 'fleet', label: 'Fleet Overview', path: '/fleet',
-    description: 'Across every cloud you have connected, where is the trouble?',
-    icon: Layers, surface: 'simple', group: 'primary', visibility: 'multiCloud', wave: 3,
-  },
+  // Home leads, then Fleet Overview — the only cross-cloud view, shown only when there is more than one
+  // cloud to compare.
   {
     kind: 'page', id: 'home', label: 'Home', path: '/',
     description: 'What needs you, and the state of the one cloud you are working in. The welcome, before anything is connected.',
     icon: Home, surface: 'simple', group: 'primary', visibility: 'always', wave: 1,
+  },
+  {
+    kind: 'page', id: 'fleet', label: 'Fleet Overview', path: '/fleet',
+    description: 'Across every cloud you have connected, where is the trouble?',
+    icon: Layers, surface: 'simple', group: 'primary', visibility: 'multiCloud', wave: 3,
   },
 
   // ── Simple · work — views of Home's table and the rules panel ─────────────────────────────────
@@ -180,7 +180,7 @@ export const navigation: readonly NavEntry[] = [
     icon: ShieldCheck, surface: 'simple', group: 'contextual', visibility: 'connected', wave: 5,
   },
 
-  // ── Advanced — four read-only pages (ADR-0016, D45) ───────────────────────────────────────────
+  // ── Advanced — four pages, which open the Simple modals in place to act (ADR-0016, D45) ───────────────────────────────────────────
   // Each arrives in the wave that produces its data. None of them can act: replay and approval
   // happen in Simple's modals; an agent's pause is the one control Advanced carries.
   {

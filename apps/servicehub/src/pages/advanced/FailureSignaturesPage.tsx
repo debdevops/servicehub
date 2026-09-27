@@ -1,3 +1,4 @@
+import { Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Fingerprint, TriangleAlert } from 'lucide-react'
 import { usePageSize } from '../../lib/pageSize'
@@ -152,10 +153,14 @@ export default function FailureSignaturesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.items.map((s) => {
+                  {[...data.items].sort((a, b) => a.provider.localeCompare(b.provider)).map((s, i, all) => {
                     const key = `${s.provider}:${s.signatureHash}`
                     return (
-                      <tr key={key} aria-selected={key === selectedHash} className={`cursor-pointer border-b border-[#f3f4f6] ${key === selectedHash ? 'bg-[var(--color-primary-50)]' : 'hover:bg-[var(--color-surface-muted)]'}`} onClick={() => change({ signature: key })}>
+                      <Fragment key={key}>
+                      {(i === 0 || all[i - 1]!.provider !== s.provider) && (
+                        <tr className="bg-[var(--color-surface-muted)]"><th scope="colgroup" colSpan={4} className="px-4 py-1.5 text-left text-[11px] font-bold uppercase tracking-wide text-[var(--color-text-muted)]">{providerLabel[s.provider]}</th></tr>
+                      )}
+                      <tr aria-selected={key === selectedHash} className={`cursor-pointer border-b border-[#f3f4f6] ${key === selectedHash ? 'bg-[var(--color-primary-50)]' : 'hover:bg-[var(--color-surface-muted)]'}`} onClick={() => change({ signature: key })}>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
                             <span className="rounded-full bg-[var(--color-error-light)] px-2.5 py-0.5 text-[11px] font-bold text-[#b91c1c]">{s.reason}</span>
@@ -172,6 +177,7 @@ export default function FailureSignaturesPage() {
                         <td className="px-3 py-3"><Spark daily={s.daily} tone={s.growing ? 'bg-[#f87171]' : 'bg-[#38bdf8]'} /></td>
                         <td className="px-3 py-3">{replayWords(s)}</td>
                       </tr>
+                      </Fragment>
                     )
                   })}
                 </tbody>
@@ -258,7 +264,7 @@ function Detail({ s, days, now, onClose }: { s: Signature; days: number; now: Da
           <p className="flex flex-wrap gap-x-4 gap-y-1 font-semibold text-[var(--color-primary-600)]">
             <button type="button" className="hover:underline" onClick={() => { select(s.provider); navigate(`/?tab=dlq&reason=${encodeURIComponent(s.reason)}`) }}>See the {s.messages} messages in Home ›</button>
             <Link className="hover:underline" to={`/advanced/ledger?provider=${s.provider}`}>Ledger entries ›</Link>
-            <button type="button" className="hover:underline" onClick={() => { select(s.provider); navigate(`/?panel=rules&rule=${s.signatureHash}`) }}>Create an auto-replay rule from this ›</button>
+            <button type="button" className="hover:underline" onClick={() => { select(s.provider); navigate(`?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(window.location.search)), panel: 'rules', rule: s.signatureHash })}`) }}>Create an auto-replay rule from this ›</button>
           </p>
           <p className="mt-2 text-[12px] text-[var(--color-text-muted)]">The rule is created on Auto Replay, where it can be tested against the last 7 days. Nothing is created here.</p>
         </Section>

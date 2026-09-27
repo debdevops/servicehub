@@ -6,6 +6,7 @@ import { ExplainerCard, ExplainerToggle } from '../components/explainer/Explaine
 import { useExplainer } from '../components/explainer/useExplainer'
 import { Pager } from '../components/ui/Pager'
 import { usePageSize } from '../lib/pageSize'
+import { widgetHelp } from '../content/widgets'
 import { HelpLabel, InfoTip } from '../components/ui/InfoTip'
 import { columnHelp } from '../content/columns'
 import { NamespaceScope } from '../components/provider/NamespaceScope'
@@ -64,12 +65,15 @@ export function FleetPage() {
         <div>
           <h1 className="flex items-center gap-2.5 text-2xl font-extrabold tracking-tight text-[var(--color-text)]">
             <BarChart3 className="h-6 w-6 text-[var(--color-primary-600)]" aria-hidden="true" />
-            Fleet Overview <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} />
+            Fleet Overview
           </h1>
           <p className="mt-[3px] text-[13px] text-[var(--color-text-muted)]">
             Every cloud you’ve connected, side by side. Each cloud keeps its own numbers — nothing here is added across clouds.
           </p>
-          {list.length > 1 && <NamespaceScope namespaces={list} cloud="All clouds" cloudParam="cloud" />}
+          <div className="flex flex-wrap items-center gap-2">
+            {list.length > 1 && <NamespaceScope namespaces={list} cloud="All clouds" cloudParam="cloud" />}
+            <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} />
+          </div>
         </div>
         <label className="ml-auto rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface)] px-[13px] py-1.5 shadow-[var(--shadow-card)]">
           <span className="block text-[9.5px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">Window</span>
@@ -95,27 +99,40 @@ export function FleetPage() {
 
       {fleet.data && (
         <div className="space-y-3.5">
-          <div className="grid gap-3.5 md:grid-cols-2 xl:grid-cols-3">
-            {clouds.map((c) => (
-              <CloudCard key={c.provider} cloud={c} liveOf={liveOf} rows={rows} window={window} scoped={scoped} />
-            ))}
-            {!scoped && missing.map((p) => (
-              <Link
-                key={p}
-                to="?modal=add-cloud"
-                className="flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-[#d1d5db] p-6 text-center hover:bg-[var(--color-surface-muted)]"
-              >
-                <Plus className="h-5 w-5 text-[var(--color-text-muted)]" aria-hidden="true" />
-                <span className="text-[15px] font-bold">Add a cloud</span>
-                <span className="text-[13px] text-[var(--color-text-muted)]">{providerLabel[p]} isn’t connected.</span>
-              </Link>
-            ))}
-          </div>
-
-          <div className="grid items-start gap-3.5 xl:grid-cols-[1.9fr_1fr]">
-            <NamespaceTable rows={rows} liveOf={liveOf} />
-            <TopFailures failures={scoped ? fleet.data.topFailures.filter((f) => clouds.some((c) => c.provider === f.provider) && (!choice.env && !choice.ns ? true : f.environment === (choice.env ?? choice.ns?.environment))) : fleet.data.topFailures} narrowedToNamespace={choice.ns !== null} />
-          </div>
+          {(() => {
+            const failures = (
+              <TopFailures failures={scoped ? fleet.data.topFailures.filter((f) => clouds.some((c) => c.provider === f.provider) && (!choice.env && !choice.ns ? true : f.environment === (choice.env ?? choice.ns?.environment))) : fleet.data.topFailures} narrowedToNamespace={choice.ns !== null} />
+            )
+            // One cloud in view: its card and the top failures share the first row, so no strip of the page sits empty beside a lone card.
+            const alone = clouds.length === 1 && (scoped || missing.length === 0)
+            return (
+              <>
+                <div className={alone ? 'grid items-start gap-3.5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]' : 'grid gap-3.5 md:grid-cols-2 xl:grid-cols-3'}>
+                  {clouds.map((c) => (
+                    <CloudCard key={c.provider} cloud={c} liveOf={liveOf} rows={rows} window={window} scoped={scoped} />
+                  ))}
+                  {!scoped && missing.map((p) => (
+                    <Link
+                      key={p}
+                      to="?modal=add-cloud"
+                      className="flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-[#d1d5db] p-6 text-center hover:bg-[var(--color-surface-muted)]"
+                    >
+                      <Plus className="h-5 w-5 text-[var(--color-text-muted)]" aria-hidden="true" />
+                      <span className="text-[15px] font-bold">Add a cloud</span>
+                      <span className="text-[13px] text-[var(--color-text-muted)]">{providerLabel[p]} isn’t connected.</span>
+                    </Link>
+                  ))}
+                  {alone && failures}
+                </div>
+                {alone ? <NamespaceTable rows={rows} liveOf={liveOf} /> : (
+                  <div className="grid items-start gap-3.5 xl:grid-cols-[1.9fr_1fr]">
+                    <NamespaceTable rows={rows} liveOf={liveOf} />
+                    {failures}
+                  </div>
+                )}
+              </>
+            )
+          })()}
         </div>
       )}
     </section>
@@ -210,7 +227,7 @@ function NamespaceTable({ rows, liveOf }: { rows: readonly FleetNamespace[]; liv
   return (
     <section aria-label="Namespaces" className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
       <div className="flex items-center justify-between px-5 py-4">
-        <h2 className="text-[15px] font-bold">Namespaces</h2>
+        <h2 className="flex items-center text-[15px] font-bold">Namespaces<InfoTip help={widgetHelp.fleetNs} /></h2>
         <span className="text-[12.5px] text-[var(--color-text-muted)]">{rows.length} {rows.length === 1 ? 'namespace' : 'namespaces'} · by cloud, then environment, worst first</span>
       </div>
       <div className="relative overflow-x-auto">
@@ -290,7 +307,7 @@ function TopFailures({ failures, narrowedToNamespace }: { failures: readonly Fle
   const tree = groupByCloudEnvironment(failures)
   return (
     <section aria-label="Top failures" className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
-      <h2 className="border-b border-[#f3f4f6] px-5 py-4 text-[15px] font-bold">Top failures in dead-letter queues</h2>
+      <h2 className="border-b border-[#f3f4f6] px-5 py-4 text-[15px] font-bold"><span className="inline-flex items-center">Top failures in dead-letter queues<InfoTip help={widgetHelp.fleetFail} /></span></h2>
       {failures.length === 0 ? (
         <p className="px-5 py-4 text-[13px] text-[var(--color-text-muted)]">Nothing recorded in a dead-letter queue right now.</p>
       ) : (
@@ -305,7 +322,7 @@ function TopFailures({ failures, narrowedToNamespace }: { failures: readonly Fle
                     {environmentMeta[env].label}
                   </h4>
                   <ul className="mt-1.5 space-y-2.5">
-                    {items.map((f) => (
+                    {items.slice(0, 4).map((f) => (
                       <li key={f.reason}>
                         <div className="flex items-center gap-2 text-[12.5px]">
                           <span className="rounded-full bg-[var(--color-error-light)] px-2.5 py-0.5 text-[11px] font-bold text-[#b91c1c]">{f.reason}</span>
@@ -315,6 +332,7 @@ function TopFailures({ failures, narrowedToNamespace }: { failures: readonly Fle
                       </li>
                     ))}
                   </ul>
+                  {items.length > 4 && <p className="mt-1.5 text-[11.5px] text-[var(--color-text-muted)]">+ {items.length - 4} more {items.length - 4 === 1 ? 'reason' : 'reasons'} — see them on Home’s Dead letters tab</p>}
                 </div>
               ))}
             </div>

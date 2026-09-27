@@ -1,3 +1,5 @@
+import { InfoTip } from './ui/InfoTip'
+import { widgetHelp } from '../content/widgets'
 import { useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { useDeadLetterTrend } from '../hooks/useDeadLetters'
@@ -34,7 +36,7 @@ export default function TrendChart({ provider, namespaceId, environment }: { pro
   return (
     <section aria-label="Dead letters, new versus resolved" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
       <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-base font-semibold">Dead letters — new vs resolved, last {days} days</h2>
+        <h2 className="flex items-center text-base font-semibold">Dead letters — new vs resolved, last {days} days<InfoTip help={widgetHelp.trend} /></h2>
         <div className="flex items-center gap-2 text-sm">
           <div role="radiogroup" aria-label="Range" className="flex overflow-hidden rounded-lg border border-[var(--color-border)]">
             {RANGES.map((r) => (

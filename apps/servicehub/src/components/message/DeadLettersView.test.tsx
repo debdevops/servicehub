@@ -135,7 +135,7 @@ describe('the Dead letters view', () => {
 
   it('searches after a pause, in the URL, and never offers a body search', async () => {
     renderView()
-    const box = await screen.findByPlaceholderText('Search by message ID, queue or reason')
+    const box = await screen.findByPlaceholderText('Search ID, queue, reason, error')
 
     await userEvent.type(box, 'billing')
 

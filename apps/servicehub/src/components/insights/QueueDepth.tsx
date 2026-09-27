@@ -1,3 +1,4 @@
+import { widgetHelp } from '../../content/widgets'
 import { Link } from 'react-router-dom'
 import { namespaceTag } from '../provider/scopeChoice'
 import type { Namespace } from '../../lib/api/namespaces'
@@ -31,7 +32,7 @@ export function QueueDepth({ summary, namespaces, cloud }: { summary: CloudSumma
   const max = Math.max(1, ...shown.flatMap((r) => [r.entity.activeMessages ?? 0, r.entity.deadLetterMessages ?? 0]))
 
   return (
-    <InsightCard title="Queue depth" note={rows.length > 0 ? `${shown.length} of ${rows.length} with messages` : undefined}>
+    <InsightCard title="Queue depth" help={widgetHelp.queueDepth} note={rows.length > 0 ? `${shown.length} of ${rows.length} with messages` : undefined}>
       {!canCount ? (
         <p className="text-[13px] text-[var(--color-text-muted)]">{cloud} does not report message counts, so ServiceHub can’t chart how deep its queues are.</p>
       ) : shown.length === 0 ? (

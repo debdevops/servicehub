@@ -36,4 +36,4 @@ export const overlayEntries = navigation.filter((e): e is OverlayEntry => e.kind
 export const overlayCompanionParams: readonly string[] = ['cloud', 'job', 'rule', 'group', 'entry']
 
 /** Overlays drawn wider than the default (a two-column design). Everything else keeps the frame's default width. */
-export const overlayWide: ReadonlySet<string> = new Set(['settings'])
+export const overlayWide: ReadonlySet<string> = new Set(['settings', 'bulk-replay'])

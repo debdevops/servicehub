@@ -5,7 +5,7 @@ import { EntityCell } from './EntityCell'
 import { PurgeAction } from './PurgeAction'
 import { useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Copy, Download, Maximize2, Minimize2, Play, Sparkles } from 'lucide-react'
+import { Check, Copy, Download, Maximize2, Minimize2, Play, Sparkles } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { OverlayFrame } from '../overlays/OverlayFrame'
 import { OutcomeCard } from '../OutcomeCard'
@@ -275,10 +275,10 @@ function BodyBlock({ detail, field }: { detail: DeadLetterDetail; field: string 
               <button type="button" aria-pressed={raw} onClick={() => setRaw(true)} className={`px-2 py-0.5 ${raw ? 'bg-[var(--color-surface-muted)] font-semibold' : ''}`}>Raw</button>
             </div>
           )}
-          <button type="button" onClick={() => void navigator.clipboard?.writeText(text)} className="font-medium text-[var(--color-primary-700)] hover:underline">Copy</button>
+          <CopyIcon value={text} label="Copy body" />
         </div>
       </div>
-      <pre className="max-h-72 overflow-auto rounded-xl bg-slate-900 p-3 font-mono text-xs leading-5 text-slate-100">
+      <pre className="max-h-[55vh] min-h-32 overflow-auto rounded-xl bg-slate-900 p-3 font-mono text-xs leading-5 text-slate-100">
         {lines.map((line, i) => (
           <span key={i}>
             {i === insertAt && (
@@ -297,6 +297,26 @@ function BodyBlock({ detail, field }: { detail: DeadLetterDetail; field: string 
         <p className="mt-1 text-xs text-[var(--color-text-muted)]">Only the first {text.length} characters of {formatBytes(detail.item.sizeInBytes)} are kept.</p>
       )}
     </section>
+  )
+}
+
+/** A copy control that is an icon, and says it worked (a check for a moment) instead of leaving a person unsure. */
+function CopyIcon({ value, label }: { value: string; label: string }) {
+  const [done, setDone] = useState(false)
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={done ? 'Copied' : label}
+      onClick={() => {
+        void navigator.clipboard?.writeText(value)
+        setDone(true)
+        setTimeout(() => setDone(false), 1500)
+      }}
+      className="rounded-md p-1 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)] hover:text-[var(--color-text)]"
+    >
+      {done ? <Check className="h-3.5 w-3.5 text-[var(--color-success)]" aria-hidden="true" /> : <Copy className="h-3.5 w-3.5" aria-hidden="true" />}
+    </button>
   )
 }
 
@@ -364,7 +384,7 @@ function pretty(text: string, isPreview: boolean): string {
 function Row({ label, help, children }: { label: string; help?: ColumnHelp; children: ReactNode }) {
   return (
     <>
-      <dt className="text-[var(--color-text-muted)]">{label}{help && <InfoTip help={help} />}</dt>
+      <dt className="min-w-0 break-words text-[var(--color-text-muted)]">{label}{help && <InfoTip help={help} />}</dt>
       <dd className="min-w-0 break-all">{children}</dd>
     </>
   )
@@ -375,12 +395,10 @@ function Details({ detail, now }: { detail: DeadLetterDetail; now: Date }) {
   return (
     <section aria-label="Details">
       <h3 className="mb-1 text-sm font-semibold">Details</h3>
-      <dl className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-1 text-sm">
+      <dl className="grid grid-cols-[150px_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
         <Row label="Message ID" help={columnHelp.drawer.messageId}>
           <span className="font-mono text-[13px]">{m.messageId}</span>{' '}
-          <button type="button" aria-label="Copy message ID" onClick={() => void navigator.clipboard?.writeText(m.messageId)} className="align-middle text-[var(--color-text-muted)] hover:text-[var(--color-text)]">
-            <Copy className="inline h-3.5 w-3.5" aria-hidden="true" />
-          </button>
+          <CopyIcon value={m.messageId} label="Copy message ID" />
         </Row>
         <Row label="Queue or topic" help={columnHelp.drawer.where}><EntityCell size="sm" entityName={m.entityName} entityType={m.entityType} topicName={m.topicName} /></Row>
         <Row label="Enqueued" help={columnHelp.drawer.enqueued}>{formatWhen(m.enqueuedTimeUtc, now)}</Row>
@@ -406,7 +424,7 @@ function Properties({ json }: { json: string | null }) {
       {entries.length === 0 ? (
         <p className="text-sm text-[var(--color-text-muted)]">This message carried no application properties.</p>
       ) : (
-        <dl className="grid grid-cols-[minmax(90px,140px)_1fr] gap-x-3 gap-y-1 text-sm">
+        <dl className="grid grid-cols-[minmax(110px,170px)_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
           {entries.map(([k, v]) => (
             <Row key={k} label={k}>{typeof v === 'string' ? v : JSON.stringify(v)}</Row>
           ))}
@@ -426,7 +444,7 @@ function Headers({ detail }: { detail: DeadLetterDetail }) {
   return (
     <section aria-label="Headers">
       <h3 className="mb-1 text-sm font-semibold">Headers</h3>
-      <dl className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-1 text-sm">
+      <dl className="grid grid-cols-[150px_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
         {items.map(([k, v]) => (
           <Row key={k} label={k}>{v ?? <span className="text-[var(--color-text-muted)]">none</span>}</Row>
         ))}
@@ -440,7 +458,7 @@ function Delivery({ detail, now }: { detail: DeadLetterDetail; now: Date }) {
   return (
     <section aria-label="Delivery">
       <h3 className="mb-1 text-sm font-semibold">Delivery</h3>
-      <dl className="grid grid-cols-[150px_1fr] gap-x-3 gap-y-1 text-sm">
+      <dl className="grid grid-cols-[170px_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
         <Row label="Delivery attempts">{m.deliveryCount}</Row>
         <Row label="Enqueued" help={columnHelp.drawer.enqueued}>{formatWhen(m.enqueuedTimeUtc, now)}</Row>
         <Row label="First seen set aside">{formatWhen(m.detectedAtUtc, now)}</Row>

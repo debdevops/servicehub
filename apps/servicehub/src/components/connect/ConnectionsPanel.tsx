@@ -29,6 +29,7 @@ export default function ConnectionsPanel({ close }: OverlayBodyProps) {
   const { search } = useLocation()
   const [results, setResults] = useState<Record<string, string>>({})
   const [confirming, setConfirming] = useState<string | null>(null)
+  const [typed, setTyped] = useState('')
 
   if (namespaces.isPending) return <p role="status" className="text-sm text-[var(--color-text-muted)]">Loading your connections…</p>
   if (namespaces.isError) return <p role="alert" className="text-sm text-[var(--color-error)]">Couldn’t load your connections.</p>
@@ -80,18 +81,28 @@ export default function ConnectionsPanel({ close }: OverlayBodyProps) {
                         <p className="text-sm text-[var(--color-text)]">
                           Remove <b>{ns.displayName ?? ns.name}</b>? ServiceHub stops watching it. The cloud itself is not touched.
                         </p>
+                        <label className="mt-2 block text-xs text-[var(--color-text-muted)]">
+                          Type <b className="font-mono text-[var(--color-text)]">{ns.displayName ?? ns.name}</b> to confirm
+                          <input
+                            value={typed}
+                            onChange={(e) => setTyped(e.target.value)}
+                            aria-label={`Type ${ns.displayName ?? ns.name} to confirm`}
+                            className="mt-1 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 font-mono text-sm text-[var(--color-text)]"
+                          />
+                        </label>
                         <div className="mt-3 flex justify-end gap-2">
                           <button
                             type="button"
-                            onClick={() => setConfirming(null)}
+                            onClick={() => { setConfirming(null); setTyped('') }}
                             className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--color-surface-muted)]"
                           >
                             Cancel
                           </button>
                           <button
                             type="button"
-                            onClick={() => remove.mutate(ns.id, { onSuccess: () => { setConfirming(null); if ((namespaces.data?.length ?? 0) <= 1) close() } })}
-                            className="rounded-md bg-[var(--color-error)] px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+                            disabled={typed.trim() !== (ns.displayName ?? ns.name) || remove.isPending}
+                            onClick={() => remove.mutate(ns.id, { onSuccess: () => { setConfirming(null); setTyped(''); if ((namespaces.data?.length ?? 0) <= 1) close() } })}
+                            className="rounded-md bg-[var(--color-error)] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
                           >
                             Remove connection
                           </button>
@@ -107,7 +118,7 @@ export default function ConnectionsPanel({ close }: OverlayBodyProps) {
                         >
                           {testingThis ? 'Testing…' : 'Test connection'}
                         </button>
-                        <button type="button" onClick={() => setConfirming(ns.id)} className="whitespace-nowrap text-xs text-[var(--color-text-muted)] hover:text-[var(--color-error)] hover:underline">
+                        <button type="button" onClick={() => { setTyped(''); setConfirming(ns.id) }} className="whitespace-nowrap rounded-md bg-[var(--color-error)] px-3 py-1.5 text-xs font-medium text-white">
                           Remove
                         </button>
                       </div>

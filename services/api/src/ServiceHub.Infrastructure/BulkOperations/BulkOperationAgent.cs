@@ -139,11 +139,13 @@ public sealed class BulkOperationAgent : IAgent
                         // The gate refused at the moment of sending, or the cloud rejected before acting.
                         item.State = BulkItemState.Failed;
                         item.ReasonCode = outcome.Error.Code;
+                        item.Remedy = outcome.Error.Message;
                     }
                     else
                     {
                         item.RecoveryEntryId = outcome.Value.EntryId;
                         item.ReasonCode = outcome.Value.ErrorCode;
+                        item.Remedy = outcome.Value.Result == "accepted" ? null : outcome.Value.Message;
                         item.State = outcome.Value.Result switch
                         {
                             "accepted" => BulkItemState.Sent,

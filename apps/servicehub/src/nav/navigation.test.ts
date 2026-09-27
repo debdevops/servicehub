@@ -42,7 +42,7 @@ describe('navigation', () => {
   })
 
   it('keeps Simple to two pages — most work happens in place (D45)', () => {
-    expect(pages.filter((p) => p.surface === 'simple').map((p) => p.id)).toEqual(['fleet', 'home'])
+    expect(pages.filter((p) => p.surface === 'simple').map((p) => p.id)).toEqual(['home', 'fleet'])
   })
 
   it('gives Advanced pages only — nothing on the Advanced surface opens a modal that acts (ADR-0016 D3)', () => {
@@ -121,6 +121,6 @@ describe('navigation', () => {
 
   it('leads the primary group with Fleet Overview, then Home', () => {
     const primary = navigation.filter((e) => e.group === 'primary').map((e) => e.id)
-    expect(primary).toEqual(['fleet', 'home'])
+    expect(primary).toEqual(['home', 'fleet'])
   })
 })

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
-import { Menu, Search } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
+import { ChevronLeft, ChevronRight, Menu, Search } from 'lucide-react'
 import { CommandPalette } from '../components/search/CommandPalette'
 import { useShortcuts } from '../hooks/useShortcuts'
 import { CloudProviders } from '../components/provider/CloudProviders'
@@ -96,6 +96,7 @@ export function AppLayout() {
               </div>
             </div>
           </div>
+          <HistoryButtons />
           <button
             type="button"
             onClick={() => setSearchOpen(true)}
@@ -242,4 +243,32 @@ function overlayHref(entry: OverlayEntry, pathname: string, search: string): str
   const params = new URLSearchParams(search)
   params.set(entry.kind, entry.value)
   return `${pathname}?${params.toString()}`
+}
+
+/**
+ * Back and forward, in the app (as in 4.0.0), so a person is never sent to the browser's own arrows. They walk the same
+ * history the browser keeps. Back is off on the first page of the visit; forward is off until you have gone back.
+ * React Router numbers each entry (`history.state.idx`), so both are known without guessing.
+ */
+function HistoryButtons() {
+  const navigate = useNavigate()
+  const navType = useNavigationType()
+  useLocation() // re-render on every navigation so the arrows track it
+  const furthest = useRef(0)
+  const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0
+  // A new page (push) wipes what was "ahead"; going back or a same-page filter change (replace) leaves it in place.
+  if (navType === 'PUSH' || idx > furthest.current) furthest.current = idx
+  const canBack = idx > 0
+  const canForward = idx < furthest.current
+  const cls = 'rounded-lg p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)] disabled:opacity-40'
+  return (
+    <div className="flex items-center" role="group" aria-label="History">
+      <button type="button" aria-label="Back" title="Back" disabled={!canBack} onClick={() => navigate(-1)} className={cls}>
+        <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+      </button>
+      <button type="button" aria-label="Forward" title="Forward" disabled={!canForward} onClick={() => navigate(1)} className={cls}>
+        <ChevronRight className="h-5 w-5" aria-hidden="true" />
+      </button>
+    </div>
+  )
 }
