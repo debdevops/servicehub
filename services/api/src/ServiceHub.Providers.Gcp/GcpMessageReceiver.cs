@@ -367,7 +367,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
     private const string RecoveryMarkerAttribute = "x-servicehub-recovery-id";
 
     /// <inheritdoc/>
-    public async Task<Result<bool>> ReplayMessageAsync(
+    public async Task<Result<ReplayExecutionResult>> ReplayMessageAsync(
         Guid namespaceId,
         string entityName,
         string? subscriptionName,
@@ -377,7 +377,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
     {
         var nsResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken).ConfigureAwait(false);
         if (nsResult.IsFailure)
-            return Result<bool>.Failure(nsResult.Error);
+            return Result<ReplayExecutionResult>.Failure(nsResult.Error);
 
         var baseSubscriptionId = subscriptionName ?? entityName;
 
@@ -391,7 +391,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
                 nsResult.Value, baseSubscriptionId, cancellationToken).ConfigureAwait(false);
             if (dlqSubscriptionId is null || sourceTopicId is null)
             {
-                return Result<bool>.Failure(Error.Validation("GCP.PubSub.NoDlq",
+                return Result<ReplayExecutionResult>.Failure(Error.Validation("GCP.PubSub.NoDlq",
                     $"Subscription {baseSubscriptionId} has no dead-letter subscription to replay from."));
             }
 
@@ -403,7 +403,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
                 .ConfigureAwait(false);
             if (target is null)
             {
-                return Result<bool>.Failure(Error.NotFound("GCP.PubSub.MessageNotFound",
+                return Result<ReplayExecutionResult>.Failure(Error.NotFound("GCP.PubSub.MessageNotFound",
                     $"Message {sequenceNumber} not found in DLQ subscription {dlqSubscriptionId}."));
             }
 
@@ -424,7 +424,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
                 markerApplied = true;
             }
 
-            await publisher.PublishAsync(republished).ConfigureAwait(false);
+            var publishedMessageId = await publisher.PublishAsync(republished).ConfigureAwait(false);
 
             // Acknowledge = permanently remove the DLQ copy now that a fresh one has been published.
             await dlqSubscriber.AcknowledgeAsync(new AcknowledgeRequest
@@ -436,12 +436,15 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
             _logger.LogInformation(
                 "Replayed Pub/Sub message {Seq} from {DlqSubscription} to topic {Topic}",
                 sequenceNumber, LogRedactor.SanitiseForLog(dlqSubscriptionId), LogRedactor.SanitiseForLog(sourceTopicId));
-            return Result<bool>.Success(markerApplied);
+            // publishedMessageId is the replayed message's new identity — the key a GCP DLQ
+            // observer's log is looked up by if this message dead-letters again, to prove (or
+            // disprove) that this specific replay stayed fixed (unit 4.2).
+            return Result<ReplayExecutionResult>.Success(new ReplayExecutionResult(markerApplied, publishedMessageId));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Error replaying Pub/Sub message {Seq} for {Subscription}", sequenceNumber, LogRedactor.SanitiseForLog(baseSubscriptionId));
-            return Result<bool>.Failure(Error.ExternalService("GCP.PubSub.ReplayFailed", ex.Message));
+            return Result<ReplayExecutionResult>.Failure(Error.ExternalService("GCP.PubSub.ReplayFailed", ex.Message));
         }
     }
 

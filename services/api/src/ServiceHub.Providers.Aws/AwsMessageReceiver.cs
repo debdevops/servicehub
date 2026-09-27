@@ -420,7 +420,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
     }
 
     /// <inheritdoc/>
-    public async Task<Result<bool>> ReplayMessageAsync(
+    public async Task<Result<ReplayExecutionResult>> ReplayMessageAsync(
         Guid namespaceId,
         string entityName,
         string? subscriptionName,
@@ -433,7 +433,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
 
         var nsResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken).ConfigureAwait(false);
         if (nsResult.IsFailure)
-            return Result<bool>.Failure(nsResult.Error);
+            return Result<ReplayExecutionResult>.Failure(nsResult.Error);
 
         var sqs = _clientFactory.GetSqsClient(nsResult.Value);
 
@@ -443,7 +443,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
             var dlqUrl = await ResolveDlqUrlAsync(sqs, sourceUrl, cancellationToken).ConfigureAwait(false);
 
             if (dlqUrl is null)
-                return Result<bool>.Failure(Error.Validation("AWS.SQS.NoDlq",
+                return Result<ReplayExecutionResult>.Failure(Error.Validation("AWS.SQS.NoDlq",
                     $"Queue {entityName} has no DLQ configured."));
 
             // Sequence numbers are derived from the stable SQS MessageId, so the target
@@ -452,7 +452,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
             if (target is null)
             {
                 _logger.LogWarning("Message with sequence {Seq} not found in DLQ for {QueueName}", sequenceNumber, LogRedactor.SanitiseForLog(entityName));
-                return Result<bool>.Failure(Error.NotFound("AWS.SQS.MessageNotFound",
+                return Result<ReplayExecutionResult>.Failure(Error.NotFound("AWS.SQS.MessageNotFound",
                     $"Message {sequenceNumber} was not found in the DLQ — it may have been consumed, replayed, or expired."));
             }
 
@@ -483,7 +483,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
             // then treats the aborted call as a safe-to-retry failure). Matches the same
             // "must complete" contract already used immediately after this call returns for
             // Recovery Ledger/DlqMessage-status persistence.
-            await sqs.SendMessageAsync(new SqsSend
+            var sendResponse = await sqs.SendMessageAsync(new SqsSend
             {
                 QueueUrl = sourceUrl,
                 MessageBody = target.Body,
@@ -511,18 +511,21 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                     "SQS replay ambiguous for message {Seq} on {QueueName}: send to source queue succeeded but " +
                     "delete from DLQ failed — the message may now be duplicated if retried",
                     sequenceNumber, LogRedactor.SanitiseForLog(entityName));
-                return Result<bool>.Failure(Error.Conflict("AWS.SQS.ReplayAmbiguous",
+                return Result<ReplayExecutionResult>.Failure(Error.Conflict("AWS.SQS.ReplayAmbiguous",
                     $"Message was sent to the source queue but could not be deleted from the DLQ: {ex.Message}. " +
                     "Do not retry without first checking for a duplicate in the source queue."));
             }
 
             _logger.LogInformation("Replayed message {Seq} from DLQ to {QueueName}", sequenceNumber, LogRedactor.SanitiseForLog(entityName));
-            return Result<bool>.Success(markerApplied);
+            // sendResponse.MessageId is the replayed message's new identity in the source queue —
+            // the key an AWS DLQ observer's log is looked up by if this message dead-letters
+            // again, to prove (or disprove) that this specific replay stayed fixed (unit 4.2).
+            return Result<ReplayExecutionResult>.Success(new ReplayExecutionResult(markerApplied, sendResponse.MessageId));
         }
         catch (AmazonSQSException ex)
         {
             _logger.LogError(ex, "SQS error replaying message {Seq} for {QueueName}", sequenceNumber, LogRedactor.SanitiseForLog(entityName));
-            return Result<bool>.Failure(Error.ExternalService("AWS.SQS.ReplayFailed", ex.Message));
+            return Result<ReplayExecutionResult>.Failure(Error.ExternalService("AWS.SQS.ReplayFailed", ex.Message));
         }
         catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
         {
@@ -533,7 +536,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
             // pre-mutation scan/lock phase, which still honors the caller's token) skips that
             // persistence entirely, leaving the claim stuck until the next server restart.
             _logger.LogError(ex, "Unexpected error replaying message {Seq} for {QueueName}", sequenceNumber, LogRedactor.SanitiseForLog(entityName));
-            return Result<bool>.Failure(Error.Internal("AWS.SQS.UnexpectedError",
+            return Result<ReplayExecutionResult>.Failure(Error.Internal("AWS.SQS.UnexpectedError",
                 "An unexpected error occurred while replaying the message."));
         }
     }

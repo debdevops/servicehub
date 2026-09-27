@@ -61,10 +61,12 @@ public interface IMessageReceiver
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
-    /// A result indicating success or failure. On success, the value is whether
-    /// <paramref name="recoveryMarker"/> was actually applied to the replayed message.
+    /// A result indicating success or failure. On success, the value carries whether
+    /// <paramref name="recoveryMarker"/> was actually applied, and the replayed message's new
+    /// provider-assigned ID where the provider has one to report (see
+    /// <see cref="Models.ReplayExecutionResult"/>).
     /// </returns>
-    Task<Result<bool>> ReplayMessageAsync(
+    Task<Result<Models.ReplayExecutionResult>> ReplayMessageAsync(
         Guid namespaceId,
         string entityName,
         string? subscriptionName,

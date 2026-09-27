@@ -70,6 +70,9 @@ export function AppLayout() {
     <ProviderScopeProvider connected={providers.map((p) => p.provider)}>
       <LandingRedirect ready={loaded} />
       <div className="min-h-screen" data-surface={surface}>
+        {/* One shared slot, above everything, full width — never split across the header/sidebar
+            boundary. Order when more than one is true: emergency › paused › demo (unit 6.10). */}
+        {loaded && cloudCount > 0 && <SafetyBanners />}
         <DemoBanner />
         <header
           className="sticky top-0 z-20 flex items-center gap-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5"
@@ -179,7 +182,6 @@ export function AppLayout() {
           </nav>
 
           <main className="min-w-0 flex-1">
-            {loaded && cloudCount > 0 && <SafetyBanners />}
             <Outlet />
           </main>
         </div>

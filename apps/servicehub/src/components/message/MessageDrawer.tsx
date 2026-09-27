@@ -19,6 +19,7 @@ import { useMe } from '../../hooks/useIdentity'
 import { permission, type Permission } from '../../lib/permissions'
 import { NotAllowed } from '../ui/NotAllowed'
 import { formatAge, formatBytes, formatWhen } from '../../lib/format'
+import { resolutionWords } from '../../lib/resolutionWords'
 
 type Tab = 'overview' | 'body' | 'properties' | 'headers' | 'delivery'
 const tabs: readonly { id: Tab; label: string }[] = [
@@ -139,7 +140,7 @@ function Content({ detail, full, tab, onTab, onReplay }: { detail: DeadLetterDet
             {m.deadLetterErrorDescription && <p className="mt-1 text-sm text-[var(--color-text-muted)]">{m.deadLetterErrorDescription}</p>}
             {m.status === 'resolved' && (
               <p className="mt-2 rounded-lg bg-[var(--color-surface-muted)] px-3 py-2 text-sm">
-                No longer in the dead-letter queue{detail.resolvedAt ? ` since ${formatWhen(detail.resolvedAt, now)}` : ''}. ServiceHub cannot say what became of it.
+                No longer in the dead-letter queue{detail.resolvedAt ? ` since ${formatWhen(detail.resolvedAt, now)}` : ''}. {resolutionWords(m)}.
               </p>
             )}
           </section>

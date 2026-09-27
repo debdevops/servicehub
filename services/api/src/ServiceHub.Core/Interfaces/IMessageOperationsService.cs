@@ -82,11 +82,13 @@ public interface IMessageOperationsService
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
-    /// A result indicating success or failure. On success, the value is whether the marker was
-    /// actually applied — false whenever <paramref name="recoveryEntryId"/> was null, stamping
-    /// was disabled/unsupported, or the provider refused it (e.g. SQS's 10-attribute cap).
+    /// A result indicating success or failure. On success, the value carries whether the marker
+    /// was actually applied — false whenever <paramref name="recoveryEntryId"/> was null,
+    /// stamping was disabled/unsupported, or the provider refused it (e.g. SQS's 10-attribute
+    /// cap) — and the replayed message's new provider-assigned ID where the provider has one to
+    /// report (see <see cref="Models.ReplayExecutionResult"/>).
     /// </returns>
-    Task<Result<bool>> ReplayMessageAsync(
+    Task<Result<Models.ReplayExecutionResult>> ReplayMessageAsync(
         Guid namespaceId,
         string entityName,
         string? subscriptionName,

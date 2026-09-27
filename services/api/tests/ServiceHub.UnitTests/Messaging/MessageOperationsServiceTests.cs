@@ -10,6 +10,7 @@ using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Routing;
 using ServiceHub.Infrastructure.Messaging;
 using ServiceHub.Core.Results;
@@ -260,7 +261,7 @@ public class MessageOperationsServiceTests
         var (svc, nsRepo, providerMock, senderMock, receiverMock, ns) = CreateServiceWithProvider(providerType);
 
         receiverMock.Setup(r => r.ReplayMessageAsync(ns.Id, "queue", null, 123L, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(Result<bool>.Success(true));
+            .ReturnsAsync(Result<ReplayExecutionResult>.Success(new ReplayExecutionResult(true, null)));
 
         var res = await svc.ReplayMessageAsync(ns.Id, "queue", null, 123L);
 
@@ -277,7 +278,7 @@ public class MessageOperationsServiceTests
         string? capturedMarker = null;
         receiverMock.Setup(r => r.ReplayMessageAsync(ns.Id, "queue", null, 123L, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .Callback<Guid, string, string?, long, string?, CancellationToken>((_, _, _, _, marker, _) => capturedMarker = marker)
-            .ReturnsAsync(Result<bool>.Success(true));
+            .ReturnsAsync(Result<ReplayExecutionResult>.Success(new ReplayExecutionResult(true, null)));
 
         await svc.ReplayMessageAsync(ns.Id, "queue", null, 123L, entryId);
 
@@ -296,7 +297,7 @@ public class MessageOperationsServiceTests
         string? capturedMarker = "not-yet-set";
         receiverMock.Setup(r => r.ReplayMessageAsync(ns.Id, "queue", null, 123L, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .Callback<Guid, string, string?, long, string?, CancellationToken>((_, _, _, _, marker, _) => capturedMarker = marker)
-            .ReturnsAsync(Result<bool>.Success(true));
+            .ReturnsAsync(Result<ReplayExecutionResult>.Success(new ReplayExecutionResult(true, null)));
 
         await svc.ReplayMessageAsync(ns.Id, "queue", null, 123L, entryId);
 
@@ -311,7 +312,7 @@ public class MessageOperationsServiceTests
         string? capturedMarker = "not-yet-set";
         receiverMock.Setup(r => r.ReplayMessageAsync(ns.Id, "queue", null, 123L, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .Callback<Guid, string, string?, long, string?, CancellationToken>((_, _, _, _, marker, _) => capturedMarker = marker)
-            .ReturnsAsync(Result<bool>.Success(true));
+            .ReturnsAsync(Result<ReplayExecutionResult>.Success(new ReplayExecutionResult(true, null)));
 
         await svc.ReplayMessageAsync(ns.Id, "queue", null, 123L, recoveryEntryId: null);
 
@@ -332,7 +333,7 @@ public class MessageOperationsServiceTests
         string? capturedMarker = "not-yet-set";
         receiverMock.Setup(r => r.ReplayMessageAsync(ns.Id, "queue", null, 123L, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .Callback<Guid, string, string?, long, string?, CancellationToken>((_, _, _, _, marker, _) => capturedMarker = marker)
-            .ReturnsAsync(Result<bool>.Success(true));
+            .ReturnsAsync(Result<ReplayExecutionResult>.Success(new ReplayExecutionResult(true, null)));
 
         var providerMock = new Mock<ICloudMessagingProvider>();
         providerMock.SetupGet(p => p.ProviderType).Returns(CloudProviderType.Azure);

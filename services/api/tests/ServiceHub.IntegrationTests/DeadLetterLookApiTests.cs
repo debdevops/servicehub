@@ -193,7 +193,7 @@ internal sealed class LookableCloud : ICloudMessagingProvider, IMessageReceiver
     public Task<Result<IReadOnlyList<Message>>> PeekMessagesAsync(GetMessagesRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<Result<long>> GetMessageCountAsync(Guid namespaceId, string entityName, string? subscriptionName = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<Result<int>> DeadLetterMessagesAsync(DeadLetterRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    public Task<Result<bool>> ReplayMessageAsync(Guid namespaceId, string entityName, string? subscriptionName, long sequenceNumber, string? recoveryMarker, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<Result<ReplayExecutionResult>> ReplayMessageAsync(Guid namespaceId, string entityName, string? subscriptionName, long sequenceNumber, string? recoveryMarker, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<Result> PurgeMessageAsync(Guid namespaceId, string entityName, string? subscriptionName, long sequenceNumber, bool fromDeadLetter, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<Result<IReadOnlyList<Message>>> GetScheduledMessagesAsync(Guid namespaceId, string entityName, string? subscriptionName, int maxMessages, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 }

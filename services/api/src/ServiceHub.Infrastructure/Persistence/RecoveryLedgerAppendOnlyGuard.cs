@@ -29,6 +29,7 @@ public static class RecoveryLedgerAppendOnlyGuard
         nameof(RecoveryLedgerEntry.ClosedAt),
         nameof(RecoveryLedgerEntry.RecoveryMarker),
         nameof(RecoveryLedgerEntry.MarkerApplied),
+        nameof(RecoveryLedgerEntry.ReplayedProviderMessageId),
     };
 
     /// <summary>

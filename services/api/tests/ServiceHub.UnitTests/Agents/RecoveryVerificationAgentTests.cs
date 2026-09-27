@@ -53,7 +53,7 @@ public sealed class RecoveryVerificationAgentTests : IDisposable
     private static Namespace AzureNs() =>
         Namespace.Create("orders-dev", "Endpoint=sb://orders-dev.servicebus.windows.net/;SharedAccessKeyName=servicehub;SharedAccessKey=secret-value==", ownerId: Owner).Value;
 
-    private async Task<Guid> Observing(Namespace? ns, TimeSpan windowEndsIn)
+    private async Task<Guid> Observing(Namespace? ns, TimeSpan windowEndsIn, string? replayedProviderMessageId = null)
     {
         await using var db = NewDb();
         var ledger = new RecoveryLedgerService(db);
@@ -65,7 +65,11 @@ public sealed class RecoveryVerificationAgentTests : IDisposable
         {
             OperationId = op.Id, OwnerId = Owner, Actor = Actor, NamespaceId = ns?.Id, BodyHash = "h", TargetEntity = "orders",
         })).Value;
-        await ledger.RecordExecutionAsync(new RecordExecutionRequest { EntryId = entry.Id, OwnerId = Owner, Actor = Actor, Outcome = RecoveryExecutionOutcome.Accepted });
+        await ledger.RecordExecutionAsync(new RecordExecutionRequest
+        {
+            EntryId = entry.Id, OwnerId = Owner, Actor = Actor, Outcome = RecoveryExecutionOutcome.Accepted,
+            ReplayedProviderMessageId = replayedProviderMessageId,
+        });
 
         var tracked = await db.RecoveryLedgerEntries.SingleAsync(e => e.Id == entry.Id);
         tracked.ObservationWindowEndsAt = DateTimeOffset.UtcNow + windowEndsIn;
@@ -73,7 +77,9 @@ public sealed class RecoveryVerificationAgentTests : IDisposable
         return entry.Id;
     }
 
-    private RecoveryVerificationAgent Agent(Namespace? ns, ProviderCapabilities? capabilities, CloudProviderType type = CloudProviderType.Azure)
+    private RecoveryVerificationAgent Agent(
+        Namespace? ns, ProviderCapabilities? capabilities, CloudProviderType type = CloudProviderType.Azure,
+        IDlqObserverAttestationService? attestationService = null, IDlqObserverLogReader? logReader = null)
     {
         var repo = new Mock<INamespaceRepository>();
         IReadOnlyList<Namespace> all = ns is null ? [] : [ns];
@@ -84,6 +90,14 @@ public sealed class RecoveryVerificationAgentTests : IDisposable
                 : Result<Namespace>.Failure(Error.NotFound("Namespace.NotFound", "gone")));
 
         var services = new ServiceCollection();
+        if (attestationService is not null)
+        {
+            services.AddSingleton(attestationService);
+        }
+        if (logReader is not null)
+        {
+            services.AddSingleton(logReader);
+        }
         services.AddScoped(_ => NewDb());
         services.AddScoped<IRecoveryLedger>(sp => new RecoveryLedgerService(sp.GetRequiredService<ServiceHubDbContext>()));
         services.AddSingleton(repo.Object);
@@ -157,10 +171,11 @@ public sealed class RecoveryVerificationAgentTests : IDisposable
 
         // The namespace list still names it (so the owner is swept), but it can no longer be loaded.
         var agent = Agent(ns, ProviderCapabilities.Azure);
-        var (outcome, reason) = await RecoveryVerificationAgent.DetermineCoverageAsync(
+        var (outcome, reason, confidence) = await RecoveryVerificationAgent.DetermineCoverageAsync(
             await Entry(id), Mock.Of<INamespaceRepository>(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()) ==
                 Task.FromResult(Result<Namespace>.Failure(Error.NotFound("x", "gone")))),
-            new CloudProviderRouter([]), CancellationToken.None);
+            new CloudProviderRouter([]), attestationService: null, logReaders: null,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance, CancellationToken.None);
 
         outcome.Should().Be(RecoveryObservationOutcome.ObservationUnavailable);
         reason.Should().Be("NAMESPACE_DEREGISTERED");
@@ -194,5 +209,97 @@ public sealed class RecoveryVerificationAgentTests : IDisposable
         await Agent(ns, ProviderCapabilities.Azure).ExecuteCycleAsync(CancellationToken.None);
 
         (await Entry(id)).State.Should().Be(RecoveryEntryState.Returned);
+    }
+
+    // Unit 4.2's fix: an AWS/GCP namespace whose static capability cannot prove absence can still
+    // be verified once its DLQ observer is attested live AND the replay's own new provider-assigned
+    // ID (ReplayedProviderMessageId, unset before 4.2) is looked up in that observer's log —
+    // liveness alone is not proof for THIS message, so both must hold.
+
+    private static Namespace AwsNs() =>
+        Namespace.Create("sqs.us-east-1.amazonaws.com", "AKIAIOSFODNN7EXAMPLE:wJalrXUtnFEMI/K7MDENGbPxRfiCYEXAMPLEKEY",
+            provider: CloudProviderType.Aws, awsRegion: "us-east-1", ownerId: Owner).Value;
+
+    private sealed class FakeAttestation(bool live) : IDlqObserverAttestationService
+    {
+        public Task<DlqObserverAttestation?> GetAsync(string ownerId, Guid namespaceId, CancellationToken ct) =>
+            Task.FromResult<DlqObserverAttestation?>(new DlqObserverAttestation
+            {
+                OwnerId = ownerId, NamespaceId = namespaceId, Enabled = live, ObserverReference = "observations-table",
+                StalenessBoundMinutes = 60, LastConfirmedAt = live ? DateTimeOffset.UtcNow : null,
+            });
+        public Task<bool> IsLiveAsync(string ownerId, Guid namespaceId, CancellationToken ct) => Task.FromResult(live);
+        public Task<Result<DlqObserverAttestation>> ConfigureAsync(string ownerId, Guid namespaceId, bool enabled, string? observerReference, string? dlqEntityName, int stalenessBoundMinutes, CancellationToken ct) => throw new NotSupportedException();
+        public Task<Result<DlqObserverAttestation>> RecordCanarySentAsync(string ownerId, Guid namespaceId, string canaryMessageId, CancellationToken ct) => throw new NotSupportedException();
+        public Task<Result<DlqObserverAttestation>> RecordCanaryConfirmedAsync(string ownerId, Guid namespaceId, CancellationToken ct) => throw new NotSupportedException();
+        public Task<IReadOnlyList<DlqObserverAttestation>> GetAllEnabledAsync(CancellationToken ct) => throw new NotSupportedException();
+    }
+
+    private sealed class FakeLogReader(CloudProviderType provider, ISet<string> arrivedMessageIds) : IDlqObserverLogReader
+    {
+        public CloudProviderType Provider => provider;
+        public Task<bool> HasRecordedArrivalAsync(Namespace ns, string observerReference, string messageId, CancellationToken ct) =>
+            Task.FromResult(arrivedMessageIds.Contains(messageId));
+    }
+
+    [Fact]
+    public async Task An_attested_observer_confirming_absence_verifies_a_replay_the_static_capability_alone_cannot()
+    {
+        var ns = AwsNs();
+        var id = await Observing(ns, TimeSpan.FromMinutes(-1), replayedProviderMessageId: "new-msg-id");
+
+        await Agent(ns, ProviderCapabilities.Aws, CloudProviderType.Aws,
+            attestationService: new FakeAttestation(live: true),
+            logReader: new FakeLogReader(CloudProviderType.Aws, arrivedMessageIds: new HashSet<string>())
+        ).ExecuteCycleAsync(CancellationToken.None);
+
+        (await Entry(id)).State.Should().Be(RecoveryEntryState.Recovered);
+    }
+
+    [Fact]
+    public async Task An_attested_observer_that_saw_the_replay_return_reports_it_returned_not_recovered()
+    {
+        var ns = AwsNs();
+        var id = await Observing(ns, TimeSpan.FromMinutes(-1), replayedProviderMessageId: "new-msg-id");
+
+        await Agent(ns, ProviderCapabilities.Aws, CloudProviderType.Aws,
+            attestationService: new FakeAttestation(live: true),
+            logReader: new FakeLogReader(CloudProviderType.Aws, arrivedMessageIds: new HashSet<string> { "new-msg-id" })
+        ).ExecuteCycleAsync(CancellationToken.None);
+
+        var entry = await Entry(id);
+        entry.State.Should().Be(RecoveryEntryState.Returned);
+        entry.VerificationConfidence.Should().Be(VerificationConfidence.Exact, "the observer log matched by exact provider message ID, not a body-hash guess");
+    }
+
+    [Fact]
+    public async Task A_live_observer_is_not_enough_on_its_own_without_the_replays_new_id()
+    {
+        // The pre-4.2 gap this closes: a replay recorded with no ReplayedProviderMessageId (as
+        // every replay was before this unit) must still fail closed even once an observer exists —
+        // liveness proves the observer works, not that THIS message was ever looked up.
+        var ns = AwsNs();
+        var id = await Observing(ns, TimeSpan.FromMinutes(-1), replayedProviderMessageId: null);
+
+        await Agent(ns, ProviderCapabilities.Aws, CloudProviderType.Aws,
+            attestationService: new FakeAttestation(live: true),
+            logReader: new FakeLogReader(CloudProviderType.Aws, arrivedMessageIds: new HashSet<string>())
+        ).ExecuteCycleAsync(CancellationToken.None);
+
+        (await Entry(id)).State.Should().Be(RecoveryEntryState.Unverified);
+    }
+
+    [Fact]
+    public async Task An_attestation_that_is_not_live_still_fails_closed()
+    {
+        var ns = AwsNs();
+        var id = await Observing(ns, TimeSpan.FromMinutes(-1), replayedProviderMessageId: "new-msg-id");
+
+        await Agent(ns, ProviderCapabilities.Aws, CloudProviderType.Aws,
+            attestationService: new FakeAttestation(live: false),
+            logReader: new FakeLogReader(CloudProviderType.Aws, arrivedMessageIds: new HashSet<string>())
+        ).ExecuteCycleAsync(CancellationToken.None);
+
+        (await Entry(id)).State.Should().Be(RecoveryEntryState.Unverified);
     }
 }

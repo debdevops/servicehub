@@ -6,6 +6,7 @@ using ServiceHub.Core.Entities;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Security;
 using ServiceHub.Core.Constants;
+using ServiceHub.Core.Models;
 using ServiceHub.Core.Results;
 using Azure.Messaging.ServiceBus;
 
@@ -373,7 +374,7 @@ public sealed class MessageReceiver : IMessageReceiver
     }
 
     /// <inheritdoc/>
-    public async Task<Result<bool>> ReplayMessageAsync(
+    public async Task<Result<ReplayExecutionResult>> ReplayMessageAsync(
         Guid namespaceId,
         string entityName,
         string? subscriptionName,
@@ -383,14 +384,14 @@ public sealed class MessageReceiver : IMessageReceiver
     {
         if (namespaceId == Guid.Empty)
         {
-            return Result<bool>.Failure(Error.Validation(
+            return Result<ReplayExecutionResult>.Failure(Error.Validation(
                 ErrorCodes.Namespace.NotFound,
                 "Namespace ID is required."));
         }
 
         if (string.IsNullOrWhiteSpace(entityName))
         {
-            return Result<bool>.Failure(Error.Validation(
+            return Result<ReplayExecutionResult>.Failure(Error.Validation(
                 ErrorCodes.Message.QueueNameRequired,
                 "Queue or topic name is required."));
         }
@@ -398,7 +399,7 @@ public sealed class MessageReceiver : IMessageReceiver
         var clientResult = await GetClientWrapperAsync(namespaceId, cancellationToken).ConfigureAwait(false);
         if (clientResult.IsFailure)
         {
-            return Result<bool>.Failure(clientResult.Error);
+            return Result<ReplayExecutionResult>.Failure(clientResult.Error);
         }
 
         try
@@ -410,21 +411,26 @@ public sealed class MessageReceiver : IMessageReceiver
                 recoveryMarker,
                 cancellationToken).ConfigureAwait(false);
 
-            if (result.IsSuccess)
+            if (result.IsFailure)
             {
-                _logger.LogInformation(
-                    "Replayed message {SequenceNumber} from {EntityName} in namespace {NamespaceId}",
-                    sequenceNumber,
-                    LogRedactor.SanitiseForLog(entityName),
-                    namespaceId);
+                return Result<ReplayExecutionResult>.Failure(result.Error);
             }
 
-            return result;
+            _logger.LogInformation(
+                "Replayed message {SequenceNumber} from {EntityName} in namespace {NamespaceId}",
+                sequenceNumber,
+                LogRedactor.SanitiseForLog(entityName),
+                namespaceId);
+
+            // Azure has no post-send response carrying a new message ID worth reporting here —
+            // CanProveDlqAbsence is already true for Azure via its own uncapped peek, so nothing
+            // ever needs to look one up (see ReplayExecutionResult.ProviderMessageId).
+            return Result<ReplayExecutionResult>.Success(new ReplayExecutionResult(result.Value, ProviderMessageId: null));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unexpected error replaying message");
-            return Result<bool>.Failure(Error.Internal(
+            return Result<ReplayExecutionResult>.Failure(Error.Internal(
                 ErrorCodes.General.UnexpectedError,
                 "An unexpected error occurred while replaying the message."));
         }

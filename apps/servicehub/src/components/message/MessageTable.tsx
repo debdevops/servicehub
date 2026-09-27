@@ -3,8 +3,9 @@ import { Link, useLocation } from 'react-router-dom'
 import { columnHelp } from '../../content/columns'
 import { explainFailure } from '../../lib/analyzer'
 import { EntityCell } from './EntityCell'
-import type { DeadLetter, ResolutionCause } from '../../lib/api/deadLetters'
+import type { DeadLetter } from '../../lib/api/deadLetters'
 import { formatAge, formatBytes, formatWhen } from '../../lib/format'
+import { resolutionWords } from '../../lib/resolutionWords'
 import { DataTable, type Column, type Selection } from '../ui/DataTable'
 
 /**
@@ -135,15 +136,6 @@ function FailedBecause({ row }: { row: DeadLetter }) {
   )
 }
 
-/** How it left, in words that claim no more than was recorded: absence proves it is gone, not who removed it (R5). */
-const causeWords: Readonly<Record<ResolutionCause, string>> = {
-  replayedByServiceHub: 'Replayed by ServiceHub',
-  purgedByServiceHub: 'Purged by ServiceHub',
-  vanishedExternally: 'Left the queue — ServiceHub did not see how',
-  declaredByOperator: 'Marked handled by a person',
-  unknown: 'How it left was not recorded',
-}
-
 function Now({ row, now }: { row: DeadLetter; now: Date }) {
   switch (row.status) {
     case 'active':
@@ -157,9 +149,7 @@ function Now({ row, now }: { row: DeadLetter; now: Date }) {
       return (
         <div className="text-[12.5px]">
           <p className="font-medium">No longer in the queue{row.resolvedAt ? ` since ${formatWhen(row.resolvedAt, now)}` : ''}</p>
-          <p className="text-[var(--color-text-muted)]">
-            {row.resolutionCause ? causeWords[row.resolutionCause] : row.status === 'replayed' ? causeWords.replayedByServiceHub : row.status === 'discarded' ? 'Discarded on purpose' : row.status === 'replayFailed' ? 'A replay was tried and failed' : causeWords.unknown}
-          </p>
+          <p className="text-[var(--color-text-muted)]">{resolutionWords(row)}</p>
         </div>
       )
   }

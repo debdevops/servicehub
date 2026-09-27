@@ -382,7 +382,7 @@ public sealed class AwsMessageReceiverRegressionTests
         var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, seq, recoveryMarker);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.Should().BeTrue(); // marker applied
+        result.Value.MarkerApplied.Should().BeTrue();
         sent.Should().NotBeNull();
         sent!.MessageAttributes["x-servicehub-recovery-id"].StringValue.Should().Be(recoveryMarker);
         // The existing attribute must survive — the marker is added, not swapped in.
@@ -414,7 +414,7 @@ public sealed class AwsMessageReceiverRegressionTests
         var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, seq, Guid.NewGuid().ToString());
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.Should().BeFalse(); // marker not applied — the cap was already reached
+        result.Value.MarkerApplied.Should().BeFalse(); // marker not applied — the cap was already reached
         sent.Should().NotBeNull();
         sent!.MessageAttributes.Should().NotContainKey("x-servicehub-recovery-id");
         sent.MessageAttributes.Should().HaveCount(10);

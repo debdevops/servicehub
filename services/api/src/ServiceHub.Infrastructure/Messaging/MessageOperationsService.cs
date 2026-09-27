@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Core.Results;
 using ServiceHub.Core.Constants;
 using ServiceHub.Infrastructure.Routing;
@@ -144,8 +145,8 @@ public sealed class MessageOperationsService : IMessageOperationsService
     /// <param name="sequenceNumber">Sequence number of the message to replay.</param>
     /// <param name="recoveryEntryId">The recovery ledger entry to stamp as the marker, if any.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A <see cref="Result{Boolean}"/> — the value is whether the marker was applied.</returns>
-    public Task<Result<bool>> ReplayMessageAsync(Guid namespaceId, string entityName, string? subscriptionName, long sequenceNumber, Guid? recoveryEntryId = null, CancellationToken cancellationToken = default)
+    /// <returns>A <see cref="Result{T}"/> of <see cref="ReplayExecutionResult"/> — whether the marker was applied, and the replayed message's new provider-assigned ID where reported.</returns>
+    public Task<Result<ReplayExecutionResult>> ReplayMessageAsync(Guid namespaceId, string entityName, string? subscriptionName, long sequenceNumber, Guid? recoveryEntryId = null, CancellationToken cancellationToken = default)
     {
         return ReplayMessageInternalAsync(namespaceId, entityName, subscriptionName, sequenceNumber, recoveryEntryId, cancellationToken);
     }
@@ -325,7 +326,7 @@ public sealed class MessageOperationsService : IMessageOperationsService
             }
     }
 
-    private async Task<Result<bool>> ReplayMessageInternalAsync(Guid namespaceId, string entityName, string? subscriptionName, long sequenceNumber, Guid? recoveryEntryId, CancellationToken cancellationToken)
+    private async Task<Result<ReplayExecutionResult>> ReplayMessageInternalAsync(Guid namespaceId, string entityName, string? subscriptionName, long sequenceNumber, Guid? recoveryEntryId, CancellationToken cancellationToken)
     {
         try
         {
@@ -346,7 +347,7 @@ public sealed class MessageOperationsService : IMessageOperationsService
         }
             catch (Exception ex)
             {
-                return ConvertExceptionToResult<bool>(ex, ErrorCodes.Message.ReceiveFailed);
+                return ConvertExceptionToResult<ReplayExecutionResult>(ex, ErrorCodes.Message.ReceiveFailed);
             }
     }
 

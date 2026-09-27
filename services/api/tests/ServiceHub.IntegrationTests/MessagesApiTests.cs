@@ -322,11 +322,15 @@ internal sealed class PeekableProvider(CloudProviderType type, ProviderCapabilit
     public Task<Result<IReadOnlyList<Message>>> PeekDeadLetterMessagesAsync(GetMessagesRequest request, CancellationToken cancellationToken = default) => Peek(request, true);
     public Task<Result<long>> GetMessageCountAsync(Guid namespaceId, string entityName, string? subscriptionName = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<Result<int>> DeadLetterMessagesAsync(DeadLetterRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    public Task<Result<bool>> ReplayMessageAsync(Guid namespaceId, string entityName, string? subscriptionName, long sequenceNumber, string? recoveryMarker, CancellationToken cancellationToken = default)
+    public Task<Result<ReplayExecutionResult>> ReplayMessageAsync(Guid namespaceId, string entityName, string? subscriptionName, long sequenceNumber, string? recoveryMarker, CancellationToken cancellationToken = default)
     {
         log.HitReplay();
         log.LastReplayTarget = (entityName, subscriptionName);
-        return log.OnReplay is { } replay ? Task.FromResult(replay()) : throw new NotSupportedException();
+        if (log.OnReplay is not { } replay) throw new NotSupportedException();
+        var result = replay();
+        return Task.FromResult(result.IsSuccess
+            ? Result<ReplayExecutionResult>.Success(new ReplayExecutionResult(result.Value, ProviderMessageId: null))
+            : Result<ReplayExecutionResult>.Failure(result.Error));
     }
     public Task<Result> PurgeMessageAsync(Guid namespaceId, string entityName, string? subscriptionName, long sequenceNumber, bool fromDeadLetter, CancellationToken cancellationToken = default)
     {

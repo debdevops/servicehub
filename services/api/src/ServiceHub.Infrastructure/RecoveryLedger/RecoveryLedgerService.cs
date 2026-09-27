@@ -223,6 +223,7 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
 
         entry.RecoveryMarker = request.RecoveryMarker;
         entry.MarkerApplied = request.MarkerApplied;
+        entry.ReplayedProviderMessageId = request.ReplayedProviderMessageId;
 
         var evt = await AppendEventAsync(entry.OwnerId, entry.Id, entry.OperationId, eventType, request.Actor, request.ProviderDetailJson, cancellationToken);
         entry.LastEventSeq = evt.Seq;

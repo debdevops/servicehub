@@ -99,6 +99,23 @@ describe('the message drawer', () => {
     expect(screen.getByText(/nothing to replay/)).toBeInTheDocument()
   })
 
+  // Unit 6.11: the drawer's own "how it left" line must read the recorded resolutionCause, the
+  // same as the list's Now column — found live against real data: the drawer said "ServiceHub
+  // cannot say what became of it" for a message the list, from the same response, already showed
+  // as "Replayed by ServiceHub".
+  it('reads the recorded resolution cause, not a generic "cannot say" line', async () => {
+    fetchOne.mockResolvedValue(detail({ item: { ...detail().item, status: 'resolved', resolutionCause: 'replayedByServiceHub' }, resolvedAt: '2026-09-27T12:21:00Z' }))
+    renderDrawer()
+    expect(await screen.findByText(/No longer in the dead-letter queue/)).toHaveTextContent('Replayed by ServiceHub')
+    expect(screen.queryByText(/ServiceHub cannot say what became of it/)).not.toBeInTheDocument()
+  })
+
+  it('falls back to "cannot say" only when no cause was ever recorded', async () => {
+    fetchOne.mockResolvedValue(detail({ item: { ...detail().item, status: 'resolved', resolutionCause: null }, resolvedAt: '2026-09-27T12:21:00Z' }))
+    renderDrawer()
+    expect(await screen.findByText(/No longer in the dead-letter queue/)).toHaveTextContent('How it left was not recorded')
+  })
+
   it('leaves Esc to the proposal while it is open on top', async () => {
     fetchOne.mockResolvedValue(detail())
     const user = userEvent.setup()

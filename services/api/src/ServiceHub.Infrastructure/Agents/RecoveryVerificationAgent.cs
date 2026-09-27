@@ -109,6 +109,8 @@ public sealed class RecoveryVerificationAgent : IAgent
         var namespaceRepo = services.GetRequiredService<INamespaceRepository>();
         var router = services.GetRequiredService<ICloudProviderRouter>();
         var metrics = services.GetService<ServiceHubMetrics>();
+        var attestationService = services.GetService<IDlqObserverAttestationService>();
+        var logReaders = services.GetService<IEnumerable<IDlqObserverLogReader>>();
 
         var now = DateTimeOffset.UtcNow;
         var due = (await ledger.GetAgeingAsync(ownerId, _maxBatch, ct).ConfigureAwait(false))
@@ -119,11 +121,12 @@ public sealed class RecoveryVerificationAgent : IAgent
         foreach (var entry in due)
         {
             ct.ThrowIfCancellationRequested();
-            var (outcome, reason) = await DetermineCoverageAsync(entry, namespaceRepo, router, ct).ConfigureAwait(false);
+            var (outcome, reason, confidence) = await DetermineCoverageAsync(
+                entry, namespaceRepo, router, attestationService, logReaders, _logger, ct).ConfigureAwait(false);
 
             var result = await ledger.RecordObservationAsync(new RecordObservationRequest
             {
-                EntryId = entry.Id, OwnerId = ownerId, Actor = actor, Outcome = outcome,
+                EntryId = entry.Id, OwnerId = ownerId, Actor = actor, Outcome = outcome, Confidence = confidence,
                 DetailJson = reason is null ? null : JsonSerializer.Serialize(new { reason }),
             }, ct).ConfigureAwait(false);
 
@@ -153,31 +156,98 @@ public sealed class RecoveryVerificationAgent : IAgent
     }
 
     /// <summary>
-    /// Whether the window closed with proven coverage. Copied from 4.0.0 unchanged: a static, conservative,
-    /// per-namespace capability — never the provider's name — and a missing namespace means nobody was watching.
+    /// Whether the window closed with proven coverage. The static, conservative, per-namespace
+    /// capability check is copied from 4.0.0 unchanged — never the provider's name — and a
+    /// missing namespace means nobody was watching.
     /// </summary>
-    internal static async Task<(RecoveryObservationOutcome Outcome, string? Reason)> DetermineCoverageAsync(
-        RecoveryLedgerEntry entry, INamespaceRepository namespaceRepo, ICloudProviderRouter router, CancellationToken ct)
+    /// <remarks>
+    /// Unit 4.2 (ADR-004; ADR-0011): where the static capability is false, a namespace whose DLQ
+    /// observer is attested <i>live</i> can still prove this <i>specific</i> replay's fate, by
+    /// looking its new provider-assigned ID (<see cref="RecoveryLedgerEntry.ReplayedProviderMessageId"/>,
+    /// set only from unit 4.2 onward) up in the observer's own durable log. Liveness alone is not
+    /// enough — it says an observer is present and confirmed working, not that this message was
+    /// checked — so every step below fails closed to <see cref="RecoveryObservationOutcome.ObservationUnavailable"/>
+    /// on anything missing or unreachable, exactly as the static-capability path already does.
+    /// </remarks>
+    internal static async Task<(RecoveryObservationOutcome Outcome, string? Reason, VerificationConfidence? Confidence)> DetermineCoverageAsync(
+        RecoveryLedgerEntry entry,
+        INamespaceRepository namespaceRepo,
+        ICloudProviderRouter router,
+        IDlqObserverAttestationService? attestationService,
+        IEnumerable<IDlqObserverLogReader>? logReaders,
+        ILogger logger,
+        CancellationToken ct)
     {
         if (entry.NamespaceId is not { } namespaceId)
         {
-            return (RecoveryObservationOutcome.ObservationUnavailable, "NAMESPACE_UNKNOWN");
+            return (RecoveryObservationOutcome.ObservationUnavailable, "NAMESPACE_UNKNOWN", null);
         }
 
         var nsResult = await namespaceRepo.GetByIdAsync(namespaceId, ct).ConfigureAwait(false);
         if (nsResult.IsFailure)
         {
-            return (RecoveryObservationOutcome.ObservationUnavailable, "NAMESPACE_DEREGISTERED");
+            return (RecoveryObservationOutcome.ObservationUnavailable, "NAMESPACE_DEREGISTERED", null);
         }
 
         var ns = nsResult.Value;
         if (!router.IsRegistered(ns.Provider))
         {
-            return (RecoveryObservationOutcome.ObservationUnavailable, $"{ns.Provider.ToString().ToUpperInvariant()}_PROVIDER_NOT_REGISTERED");
+            return (RecoveryObservationOutcome.ObservationUnavailable, $"{ns.Provider.ToString().ToUpperInvariant()}_PROVIDER_NOT_REGISTERED", null);
         }
 
-        return router.Resolve(ns.Provider).Capabilities.CanProveDlqAbsence
-            ? (RecoveryObservationOutcome.NoRecurrenceObserved, null)
-            : (RecoveryObservationOutcome.ObservationUnavailable, $"{ns.Provider.ToString().ToUpperInvariant()}_NO_ABSENCE_PROOF");
+        if (router.Resolve(ns.Provider).Capabilities.CanProveDlqAbsence)
+        {
+            return (RecoveryObservationOutcome.NoRecurrenceObserved, null, null);
+        }
+
+        var noAbsenceProof = (RecoveryObservationOutcome.ObservationUnavailable,
+            $"{ns.Provider.ToString().ToUpperInvariant()}_NO_ABSENCE_PROOF", (VerificationConfidence?)null);
+
+        if (attestationService is null || entry.ReplayedProviderMessageId is not { } replayedId)
+        {
+            return noAbsenceProof;
+        }
+
+        DlqObserverAttestation? attestation;
+        try
+        {
+            attestation = await attestationService.GetAsync(entry.OwnerId, namespaceId, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "DLQ observer attestation query failed for owner {OwnerId} namespace {NamespaceId}; failing closed", entry.OwnerId, namespaceId);
+            return noAbsenceProof;
+        }
+
+        if (attestation is null || attestation.ObserverReference is null || !attestation.IsLiveAt(DateTimeOffset.UtcNow))
+        {
+            return noAbsenceProof;
+        }
+
+        var reader = logReaders?.FirstOrDefault(r => r.Provider == ns.Provider);
+        if (reader is null)
+        {
+            return noAbsenceProof;
+        }
+
+        bool reappeared;
+        try
+        {
+            reappeared = await reader.HasRecordedArrivalAsync(ns, attestation.ObserverReference, replayedId, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "DLQ observer log query failed for owner {OwnerId} namespace {NamespaceId}; failing closed", entry.OwnerId, namespaceId);
+            return (RecoveryObservationOutcome.ObservationUnavailable,
+                $"{ns.Provider.ToString().ToUpperInvariant()}_OBSERVER_QUERY_FAILED", null);
+        }
+
+        return reappeared
+            // The observer's own log — independent of ServiceHub's own capped scanning — saw this
+            // exact replayed ID land back in the DLQ. Exact: it is matched by ID, not body hash.
+            ? (RecoveryObservationOutcome.RecurrenceObserved,
+                $"{ns.Provider.ToString().ToUpperInvariant()}_OBSERVER_CONFIRMED_RETURN", VerificationConfidence.Exact)
+            : (RecoveryObservationOutcome.NoRecurrenceObserved,
+                $"{ns.Provider.ToString().ToUpperInvariant()}_OBSERVER_CONFIRMED_ABSENCE", null);
     }
 }

@@ -167,6 +167,7 @@ public sealed class DlqReplayService : IDlqReplayService
         string? errorCode = null;
         string? errorMessage = null;
         var markerApplied = false;
+        string? replayedProviderMessageId = null;
         try
         {
             var result = await _operations.ReplayMessageAsync(
@@ -174,7 +175,8 @@ public sealed class DlqReplayService : IDlqReplayService
             if (result.IsSuccess)
             {
                 executed = RecoveryExecutionOutcome.Accepted;
-                markerApplied = result.Value;
+                markerApplied = result.Value.MarkerApplied;
+                replayedProviderMessageId = result.Value.ProviderMessageId;
             }
             else if (NothingCanHaveHappened(result.Error))
             {
@@ -202,6 +204,7 @@ public sealed class DlqReplayService : IDlqReplayService
         {
             EntryId = entry.Value.Id, OwnerId = ns.OwnerId, Actor = actor, Outcome = executed,
             RecoveryMarker = markerApplied ? entry.Value.Id.ToString() : null, MarkerApplied = markerApplied,
+            ReplayedProviderMessageId = replayedProviderMessageId,
             ProviderDetailJson = errorCode is null ? null : System.Text.Json.JsonSerializer.Serialize(new { errorCode }),
         }, CancellationToken.None);
         var final = recorded.IsSuccess ? recorded.Value : entry.Value;
