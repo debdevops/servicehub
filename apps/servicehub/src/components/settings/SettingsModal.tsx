@@ -335,7 +335,12 @@ function EmergencyStopControl({ stop }: { stop: api.EmergencyStop }) {
       {stop.active ? (
         <>
           <p className="mt-1">On since {stop.at ? formatWhen(stop.at, new Date()) : '—'}{stop.by ? `, by ${stop.by}` : ''}{stop.reason ? ` — “${stop.reason}”` : ''}. ServiceHub will not act on its own; replays a person starts still go through their checks.</p>
-          <button type="button" className={`${primary} mt-2`} disabled={!may.allowed || set.isPending} onClick={() => set.mutate({ active: false })}>Switch emergency stop off</button>
+          {/* Lifting hands automatic authority back: as deliberate as switching on — why it is safe again, and the typed word. */}
+          <form className="mt-2 space-y-2" onSubmit={(e) => { e.preventDefault(); set.mutate({ active: false, reason, confirm }, { onSuccess: () => { setReason(''); setConfirm('') } }) }}>
+            <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why is it safe to resume? (recorded with your name)" aria-label="Why it is safe to resume" className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2" />
+            <input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Type LIFT to confirm" aria-label="Type LIFT to confirm" className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2 font-mono" />
+            <button type="submit" className={primary} disabled={!may.allowed || set.isPending || !reason.trim() || confirm.trim() !== 'LIFT'}>Switch emergency stop off</button>
+          </form>
         </>
       ) : (
         <form className="mt-1 space-y-2" onSubmit={(e) => { e.preventDefault(); set.mutate({ active: true, reason, confirm }, { onSuccess: () => { setReason(''); setConfirm('') } }) }}>

@@ -84,7 +84,31 @@ public sealed class SettingsApiTests
         }
 
         (await Json(await host.Client.GetAsync("/api/v1/settings/emergency-stop"))).GetProperty("active").GetBoolean().Should().BeTrue();
-        (await Json(await host.Client.SendAsync(Req(HttpMethod.Post, "/api/v1/settings/emergency-stop", "emergency-stop", new { active = false }))))
+
+        // Lifting hands automatic authority back, so it is as deliberate as switching on: a reason and the typed word LIFT. A bare
+        // request — the browser's old one-click, or an API key's one-liner — is refused and the stop stays on.
+        foreach (var bare in new object[]
+                 {
+                     new { active = false },
+                     new { active = false, reason = "all clear" },
+                     new { active = false, confirm = "LIFT" },
+                     new { active = false, reason = "all clear", confirm = "STOP" },
+                     new { active = false, reason = "  ", confirm = "LIFT" },
+                 })
+        {
+            (await host.Client.SendAsync(Req(HttpMethod.Post, "/api/v1/settings/emergency-stop", "emergency-stop", bare)))
+                .StatusCode.Should().Be(HttpStatusCode.BadRequest, JsonSerializer.Serialize(bare));
+        }
+
+        (await Json(await host.Client.GetAsync("/api/v1/settings/emergency-stop"))).GetProperty("active").GetBoolean().Should().BeTrue("every refused lift leaves it on");
+        (await Json(await host.Client.SendAsync(Req(HttpMethod.Post, "/api/v1/settings/emergency-stop", "emergency-stop", new { active = false, reason = "incident 42 closed", confirm = "LIFT" }))))
             .GetProperty("active").GetBoolean().Should().BeFalse();
+
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServiceHubDbContext>();
+            var cleared = await db.RecoveryOperations.AsNoTracking().Where(o => o.Kind == RecoveryOperationKind.EmergencyControl && o.ScopeDescription == "emergency-stop=clear").ToListAsync();
+            cleared.Should().ContainSingle().Which.Reason.Should().Be("incident 42 closed", "who lifted it, and why it was safe, is in the record");
+        }
     }
 }

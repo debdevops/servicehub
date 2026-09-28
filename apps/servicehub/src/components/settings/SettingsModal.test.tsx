@@ -67,6 +67,24 @@ describe('Settings', () => {
     await userEvent.click(on)
     expect(settings.setEmergencyStop).toHaveBeenCalledWith({ active: true, reason: 'incident', confirm: 'STOP' }, expect.anything())
   })
+
+  it('lifts emergency stop only with a reason and LIFT typed — never a single click', async () => {
+    const stopOn = { active: true, by: 'from this browser session', at: '2026-09-28T10:00:00Z', reason: 'incident' }
+    vi.mocked(settings.fetchSettings).mockResolvedValue({ ...base, emergencyStop: stopOn })
+    vi.mocked(settings.setEmergencyStop).mockResolvedValue(stopOff)
+    wrap(<SettingsModal />)
+    const off = await screen.findByRole('button', { name: /Switch emergency stop off/ })
+    expect(off).toBeDisabled()
+    await userEvent.click(off)
+    expect(settings.setEmergencyStop).not.toHaveBeenCalled()
+
+    await userEvent.type(screen.getByLabelText('Type LIFT to confirm'), 'LIFT')
+    expect(off).toBeDisabled() // the word alone is not enough: say why it is safe
+    await userEvent.type(screen.getByLabelText('Why it is safe to resume'), 'incident closed')
+    expect(off).toBeEnabled()
+    await userEvent.click(off)
+    expect(settings.setEmergencyStop).toHaveBeenCalledWith({ active: false, reason: 'incident closed', confirm: 'LIFT' }, expect.anything())
+  })
 })
 
 describe('Safety banners', () => {

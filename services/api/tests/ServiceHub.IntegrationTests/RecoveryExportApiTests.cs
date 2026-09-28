@@ -15,7 +15,7 @@ public sealed class RecoveryExportApiTests
 {
     private static async Task RecordThreeEvents(HttpClient client)
     {
-        foreach (var body in new object[] { new { active = true, reason = "drill", confirm = "STOP" }, new { active = false }, new { active = true, reason = "drill 2", confirm = "STOP" } })
+        foreach (var body in new object[] { new { active = true, reason = "drill", confirm = "STOP" }, new { active = false, reason = "drill over", confirm = "LIFT" }, new { active = true, reason = "drill 2", confirm = "STOP" } })
         {
             var r = new HttpRequestMessage(HttpMethod.Post, "/api/v1/settings/emergency-stop") { Content = JsonContent.Create(body) };
             r.Headers.Add("X-ServiceHub-Intent", "emergency-stop");

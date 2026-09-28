@@ -25,6 +25,7 @@ namespace ServiceHub.Api.Controllers.V1;
 public sealed class SettingsController : ApiControllerBase
 {
     private const string StopWord = "STOP";
+    private const string LiftWord = "LIFT";
 
     private readonly ServiceHubDbContext _db;
     private readonly IConnectionStringProtector _protector;
@@ -170,7 +171,7 @@ public sealed class SettingsController : ApiControllerBase
 
     /// <summary>
     /// Switches emergency stop on or off (owner decision O3): Admin, intent <c>emergency-stop</c>. Switching it on needs a reason
-    /// and the word STOP typed — it is meant to be deliberate, not a stray click.
+    /// and the word STOP typed; switching it off needs a reason and the word LIFT typed — both are meant to be deliberate, not a stray click.
     /// </summary>
     [HttpPost("emergency-stop")]
     [ProducesResponseType(StatusCodes.Status200OK)]
@@ -190,6 +191,13 @@ public sealed class SettingsController : ApiControllerBase
         if (request.Active && (string.IsNullOrWhiteSpace(request.Reason) || !string.Equals(request.Confirm?.Trim(), StopWord, StringComparison.Ordinal)))
         {
             return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, $"Say why, and type {StopWord} to confirm.");
+        }
+
+        // Lifting hands automatic authority back, so it is as deliberate as switching on: say why it is safe again (recorded in the
+        // ledger with the name of whoever lifted it) and type the word. An API key gets no shortcut the browser does not.
+        if (!request.Active && (string.IsNullOrWhiteSpace(request.Reason) || !string.Equals(request.Confirm?.Trim(), LiftWord, StringComparison.Ordinal)))
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, $"Say why it is safe to resume, and type {LiftWord} to confirm.");
         }
 
         var current = await _ledger.GetEmergencyStopStateAsync(OwnerId, cancellationToken);

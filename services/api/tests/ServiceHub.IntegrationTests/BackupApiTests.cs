@@ -32,7 +32,7 @@ public sealed class BackupApiTests : IDisposable
 
     private static async Task Stop(HttpClient client, bool on)
     {
-        var body = on ? (object)new { active = true, reason = "drill", confirm = "STOP" } : new { active = false };
+        var body = on ? (object)new { active = true, reason = "drill", confirm = "STOP" } : new { active = false, reason = "drill over", confirm = "LIFT" };
         (await client.SendAsync(Req(HttpMethod.Post, "/api/v1/settings/emergency-stop", "emergency-stop", body))).EnsureSuccessStatusCode();
     }
 
