@@ -110,4 +110,20 @@ describe('Auto Replay page', () => {
     expect(rulesApi.generateRules).toHaveBeenCalledWith('azure')
     expect(await screen.findByText(/Made 1 rule/)).toBeInTheDocument()
   })
+
+  it('opens the create form from a prefill link once, and closing it drops the link\'s parameter', async () => {
+    vi.mocked(rulesApi.fetchRules).mockResolvedValue([rule()])
+    vi.mocked(rulesApi.fetchRuleSources).mockResolvedValue([{ signatureHash: 'h', reason: 'Timeout', entityName: 'payments-dlq', messages: 3, exampleError: null }])
+    vi.mocked(rulesApi.testRule).mockResolvedValue({ days: 7, matched: 0, stillWaiting: 0, wouldRun: 0, heldBack: 0, holds: [] })
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter initialEntries={['/?panel=rules&rule=h']}><AutoReplayPage provider="azure" onClose={() => {}} /></MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    expect(await screen.findByRole('form', { name: 'New rule' })).toBeInTheDocument()
+    expect(await screen.findByText(/A rule for this failure already exists/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByRole('form', { name: 'New rule' })).not.toBeInTheDocument()
+  })
 })

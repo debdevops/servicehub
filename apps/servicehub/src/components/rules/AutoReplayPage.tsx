@@ -38,11 +38,17 @@ export function AutoReplayPage({ provider, onClose }: { provider: CloudProvider;
     onSuccess: () => void client.invalidateQueries({ queryKey: rulesKey(provider) }),
   })
   const rules = useQuery({ queryKey: rulesKey(provider), queryFn: () => fetchRules(provider), refetchInterval: 15_000 })
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
+  const wantedRule = params.get('rule')
 
+  // A link from Failure Signatures (`&rule=<signature>`) opens the form once — not again on every later URL change.
   useEffect(() => {
-    if (params.get('rule') !== null) setCreating(true)
-  }, [params])
+    if (wantedRule !== null) setCreating(true)
+  }, [wantedRule])
+  const closeForm = () => {
+    setCreating(false)
+    if (params.has('rule')) setParams((c) => { const n = new URLSearchParams(c); n.delete('rule'); return n }, { replace: true })
+  }
 
   if (rules.isPending) return <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading your rules…</p>
   if (rules.isError) return <p role="alert" className="text-sm text-[var(--color-error)]">ServiceHub couldn't read the rules just now.</p>
@@ -137,7 +143,7 @@ export function AutoReplayPage({ provider, onClose }: { provider: CloudProvider;
         </section>
       )}
 
-      {creating && <NewRule provider={provider} onDone={() => setCreating(false)} />}
+      {creating && <NewRule provider={provider} onDone={closeForm} />}
 
       {list.length === 0 && !creating && (
         <div className="rounded-xl border border-dashed border-[var(--color-border)] px-6 py-10 text-center">
@@ -446,6 +452,7 @@ function NewRule({ provider, onDone }: { provider: CloudProvider; onDone: () => 
           {sources.data?.map((s) => <option key={s.signatureHash} value={s.signatureHash}>{s.reason} · {s.entityName} · {s.messages} {s.messages === 1 ? 'message' : 'messages'}{covered.has(s.signatureHash) ? ' · already has a rule' : ''}</option>)}
         </select>
       </label>
+      {source && covered.has(source.signatureHash) && <p className="text-[12.5px] text-[#78350f]">A rule for this failure already exists. A second one would race it; edit the existing rule instead unless you want a different pace.</p>}
       {sources.data?.length === 0 && <p className="text-[12.5px] text-[var(--color-text-muted)]">No failures have been recorded in this cloud yet, so there is nothing to base a rule on. ServiceHub records failures where it can look on its own.</p>}
 
       {source && (
