@@ -129,7 +129,7 @@ export default function ReplayModal({ close }: OverlayBodyProps) {
         </p>
       )}
 
-      <footer className="flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-4">
+      <footer className="sticky bottom-0 z-10 -mx-5 -mb-4 flex items-center justify-between gap-3 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-3">
         <p className="text-xs text-[var(--color-text-muted)]">
           {me.data ? (me.data.actor.isSession ? 'Recorded as from this browser session' : <>Recorded with your name — <b>{me.data.actor.label}</b></>) : 'Recorded in the ledger'}
         </p>

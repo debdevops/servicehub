@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { formatAge, formatBytes } from '../../lib/format'
 import { Collapsible } from '../ui/Collapsible'
 import { Check, CircleStop, Eye, Play, ShieldCheck, Trash2, TriangleAlert } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
@@ -183,7 +184,7 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
 
       <PurgeOffer onChoose={() => setPurging(true)} />
 
-      <footer className="flex items-center gap-3 border-t border-[var(--color-border)] pt-4">
+      <footer className="sticky bottom-0 z-10 -mx-5 -mb-4 flex items-center gap-3 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-3">
         <span className="flex items-center gap-1.5 text-[13px] text-[var(--color-text-muted)]"><ShieldCheck className="h-4 w-4" aria-hidden="true" /> Each message is checked again as it is sent.</span>
         <button type="button" onClick={close} className="ml-auto rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold">Cancel</button>
         {replayButton}
@@ -198,33 +199,64 @@ function SelectedMessages({ ids, heldBack }: { ids: readonly number[]; heldBack:
   const namespaces = useNamespaces().data ?? []
   const results = useQueries({ queries: ids.slice(0, SHOWN).map((id) => ({ queryKey: ['dead-letter', id], queryFn: () => fetchDeadLetter(id), staleTime: 30_000 })) })
   const held = new Set(heldBack)
+  const now = new Date()
+  const loaded = results.flatMap((r, i) => (r.data?.item ? [{ id: ids[i], m: r.data.item }] : []))
+  const pending = results.filter((r) => !r.data?.item)
+  // One block per failure reason, in the order they first appear — so what is alike is read together.
+  const groups = new Map<string, typeof loaded>()
+  for (const row of loaded) {
+    const key = row.m.deadLetterReason ?? 'Not recorded'
+    groups.set(key, [...(groups.get(key) ?? []), row])
+  }
   return (
     <section aria-label="Messages that will be replayed">
-      <Collapsible title="Where each one goes" summary={ids.length > SHOWN ? `first ${SHOWN} of ${ids.length.toLocaleString()}` : undefined}>
-      <div className="max-h-56 overflow-auto rounded-xl border border-[var(--color-border)]">
-        <table className="w-full text-left text-[12.5px]">
-          <caption className="sr-only">Selected messages and where each will be sent back</caption>
-          <thead className="sticky top-0 bg-[var(--color-surface-muted)] text-[11px] uppercase tracking-wide text-[var(--color-text-muted)]">
-            <tr><th scope="col" className="px-3 py-1.5">Message</th><th scope="col" className="px-3 py-1.5">Sent back to</th><th scope="col" className="px-3 py-1.5">Cloud · namespace</th><th scope="col" className="px-3 py-1.5">Failed because</th></tr>
-          </thead>
-          <tbody>
-            {results.map((r, i) => {
-              const id = ids[i]
-              const m = r.data?.item
-              if (!m) return <tr key={id} className="border-t border-[var(--color-border)]"><td colSpan={4} className="px-3 py-1.5 text-[var(--color-text-muted)]">{r.isError ? `Message ${id} could not be read` : `Reading message ${id}…`}</td></tr>
-              const ns = namespaces.find((n) => n.id === m.namespaceId)
-              return (
-                <tr key={id} className="border-t border-[var(--color-border)]">
-                  <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[11.5px]" title={m.messageId}>{m.messageId.length > 18 ? `${m.messageId.slice(0, 16)}…` : m.messageId}{held.has(id) && <span className="ml-1.5 rounded-full bg-[var(--color-warning-light)] px-1.5 text-[10px] font-bold text-[#78350f]">held back</span>}</td>
-                  <td className="px-3 py-1.5">{m.topicName ?? m.entityName}</td>
-                  <td className="px-3 py-1.5 whitespace-nowrap">{ns ? `${providerLabel[ns.provider]} · ${namespaceTag(ns)}` : '—'}</td>
-                  <td className="px-3 py-1.5">{m.deadLetterReason ?? 'Not recorded'}</td>
+      <Collapsible title="Where each one goes" summary={ids.length > SHOWN ? `first ${SHOWN} of ${ids.length.toLocaleString()}, grouped by failure reason` : 'grouped by failure reason'}>
+        <div className="overflow-x-auto rounded-xl border border-[var(--color-border)]">
+          <table className="w-full text-left text-[12.5px]">
+            <caption className="sr-only">Selected messages, grouped by failure reason, and where each will be sent back</caption>
+            <thead className="bg-[var(--color-surface-muted)] text-[11px] uppercase tracking-wide text-[var(--color-text-muted)]">
+              <tr>
+                <th scope="col" className="px-3 py-1.5">Message ID</th>
+                <th scope="col" className="px-3 py-1.5">Sent back to</th>
+                <th scope="col" className="px-3 py-1.5">Cloud · namespace</th>
+                <th scope="col" className="px-3 py-1.5">Dead-lettered</th>
+                <th scope="col" className="px-3 py-1.5 text-right">Tries</th>
+                <th scope="col" className="px-3 py-1.5 text-right">Size</th>
+              </tr>
+            </thead>
+            {[...groups].map(([reason, rows]) => (
+              <tbody key={reason}>
+                <tr className="border-t border-[var(--color-border)] bg-[var(--color-error-light)]">
+                  <th scope="rowgroup" colSpan={6} className="px-3 py-1.5 text-left text-[12px]">
+                    <span className="font-bold text-[#b91c1c]">{reason}</span>
+                    <span className="ml-2 font-normal text-[var(--color-text-muted)]">{rows.length} {rows.length === 1 ? 'message' : 'messages'}</span>
+                  </th>
                 </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+                {rows.map(({ id, m }) => {
+                  const ns = namespaces.find((n) => n.id === m.namespaceId)
+                  return (
+                    <tr key={id} className="border-t border-[var(--color-border)] align-top">
+                      <td className="px-3 py-1.5 font-mono text-[11.5px] [overflow-wrap:anywhere]">
+                        {m.messageId}
+                        {held.has(id) && <span className="ml-1.5 rounded-full bg-[var(--color-warning-light)] px-1.5 font-sans text-[10px] font-bold text-[#78350f]">held back</span>}
+                      </td>
+                      <td className="px-3 py-1.5">{m.topicName ?? m.entityName}</td>
+                      <td className="whitespace-nowrap px-3 py-1.5">{ns ? `${providerLabel[ns.provider]} · ${namespaceTag(ns)}` : '—'}</td>
+                      <td className="whitespace-nowrap px-3 py-1.5" title={m.detectedAtUtc}>{formatAge(m.detectedAtUtc, now)} ago</td>
+                      <td className="tabular px-3 py-1.5 text-right">{m.deliveryCount}</td>
+                      <td className="tabular whitespace-nowrap px-3 py-1.5 text-right">{formatBytes(m.sizeInBytes)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            ))}
+            {pending.length > 0 && (
+              <tbody>
+                <tr className="border-t border-[var(--color-border)]"><td colSpan={6} className="px-3 py-1.5 text-[var(--color-text-muted)]">{results.some((r) => r.isError) ? 'Some messages could not be read.' : `Reading ${pending.length} more…`}</td></tr>
+              </tbody>
+            )}
+          </table>
+        </div>
       </Collapsible>
     </section>
   )
