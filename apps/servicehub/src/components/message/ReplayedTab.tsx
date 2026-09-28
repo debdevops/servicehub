@@ -1,6 +1,6 @@
 import { usePageSize } from '../../lib/pageSize'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
-import { TriangleAlert } from 'lucide-react'
+import { TriangleAlert, Zap } from 'lucide-react'
 import { Pager } from '../ui/Pager'
 import { DataTable, type Column } from '../ui/DataTable'
 import { WorkTabs } from './WorkTabs'
@@ -106,9 +106,18 @@ export function ReplayedTab({ provider, choice }: { provider: CloudProvider; cho
 
   return (
     <section className="px-6 py-6">
-      <header className="mb-4">
-        <h1 className="text-2xl font-semibold text-[var(--color-text)]">{cloud} — Replayed</h1>
-        <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">Everything that was put back, by whom, and how it went.</p>
+      <header className="mb-4 flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-[var(--color-text)]">{cloud} — Replayed</h1>
+          <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">Everything that was put back, by whom, and how it went.</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setParams((p) => { const n = new URLSearchParams(p); n.set('panel', 'rules'); return n }, { replace: true })}
+          className="flex items-center gap-2 rounded-lg bg-[var(--color-primary-50)] px-3 py-2 text-sm font-medium text-[var(--color-primary-700)] hover:bg-[var(--color-primary-100)]"
+        >
+          <Zap className="h-4 w-4" aria-hidden="true" /> Auto Replay rules
+        </button>
       </header>
 
       <ReplayedNumbers provider={provider} choice={choice} />

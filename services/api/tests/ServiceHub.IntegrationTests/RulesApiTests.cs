@@ -211,4 +211,65 @@ public sealed class RulesApiTests : IDisposable
         (await Send(host.Client, $"/api/v1/rules/{id}/enabled", new { enabled = true })).GetProperty("enabled").GetBoolean().Should().BeTrue();
         await Send(host.Client, "/api/v1/rules/9999/enabled", new { enabled = true }, HttpStatusCode.NotFound);
     }
+
+    [Fact]
+    public async Task A_rule_can_be_renamed_and_re_paced_but_what_it_matches_never_changes()
+    {
+        using var host = DeadLettersApiTests.Host();
+        var made = await Send(host.Client, "/api/v1/rules", new { provider = "azure", name = "Timeouts", reason = "Timeout", entityName = "orders" }, HttpStatusCode.Created);
+        var id = made.GetProperty("id").GetInt64();
+
+        var response = await host.Client.PutAsJsonAsync($"/api/v1/rules/{id}", new { name = "Order timeouts", maxPerHour = 3, waitSeconds = 600, backOff = false });
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var rule = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        rule.GetProperty("name").GetString().Should().Be("Order timeouts");
+        rule.GetProperty("maxPerHour").GetInt32().Should().Be(3);
+        rule.GetProperty("waitSeconds").GetInt32().Should().Be(600);
+        rule.GetProperty("backOff").GetBoolean().Should().BeFalse();
+        rule.GetProperty("reason").GetString().Should().Be("Timeout");
+        rule.GetProperty("entityName").GetString().Should().Be("orders");
+
+        (await host.Client.PutAsJsonAsync($"/api/v1/rules/{id}", new { name = "", maxPerHour = 3 })).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await host.Client.PutAsJsonAsync($"/api/v1/rules/{id}", new { name = "x", maxPerHour = 0 })).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await host.Client.PutAsJsonAsync("/api/v1/rules/999", new { name = "x" })).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Deleting_a_rule_removes_only_the_rule()
+    {
+        using var host = DeadLettersApiTests.Host();
+        var made = await Send(host.Client, "/api/v1/rules", new { provider = "azure", name = "Timeouts", reason = "Timeout" }, HttpStatusCode.Created);
+        var id = made.GetProperty("id").GetInt64();
+
+        (await host.Client.DeleteAsync($"/api/v1/rules/{id}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await ListRules(host.Client)).GetArrayLength().Should().Be(0);
+        (await host.Client.DeleteAsync($"/api/v1/rules/{id}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task A_rule_lists_the_messages_it_matches_that_are_still_waiting_and_sends_nothing()
+    {
+        var log = new PeekLog { OnReplay = () => ServiceHub.Core.Results.Result<bool>.Success(true) };
+        using var host = DeadLettersApiTests.Host(log);
+        var ns = await DeadLettersApiTests.Connect(host.Client, "azure");
+        await DeadLettersApiTests.Seed(host, ns, CloudProviderType.Azure, 3, reason: "Timeout");
+        await DeadLettersApiTests.Seed(host, ns, CloudProviderType.Azure, 2, reason: "Timeout", status: DlqMessageStatus.Resolved, prefix: "old");
+        await DeadLettersApiTests.Seed(host, ns, CloudProviderType.Azure, 4, reason: "Validation", prefix: "v");
+        var made = await Send(host.Client, "/api/v1/rules", new { provider = "azure", name = "Timeouts", reason = "Timeout" }, HttpStatusCode.Created);
+
+        var ids = JsonDocument.Parse(await host.Client.GetStringAsync($"/api/v1/rules/{made.GetProperty("id").GetInt64()}/matches")).RootElement;
+
+        ids.GetArrayLength().Should().Be(3, "only the Timeout messages still in the queue");
+        (await host.Client.GetAsync("/api/v1/rules/999/matches")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        log.Replays.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Generating_rules_needs_a_cloud_and_makes_none_when_no_failure_has_been_seen()
+    {
+        using var host = DeadLettersApiTests.Host();
+        await Send(host.Client, "/api/v1/rules/generate", new { }, HttpStatusCode.BadRequest);
+        var made = await Send(host.Client, "/api/v1/rules/generate", new { provider = "azure" });
+        made.GetArrayLength().Should().Be(0);
+    }
 }

@@ -90,7 +90,8 @@ describe('the replay proposal', () => {
   it('keeps Replay, disabled, with the gate reason code beside it when blocked', async () => {
     proposalMock.mockResolvedValue(proposal({ canExecute: false, verdict: 'Deny', reasonCode: 'PRODUCTION_ELEVATION_REQUIRED', blockedCode: 'PRODUCTION_ELEVATION_REQUIRED' }))
     renderModal()
-    expect(await screen.findByRole('button', { name: /Replay 1 message/ })).toBeDisabled()
+    // Replay sits at the top (always in view) and at the bottom — both obey the same gate.
+    for (const b of await screen.findAllByRole('button', { name: /Replay 1 message/ })) expect(b).toBeDisabled()
     expect(screen.getByText('PRODUCTION_ELEVATION_REQUIRED')).toBeInTheDocument()
   })
 
@@ -99,7 +100,7 @@ describe('the replay proposal', () => {
     replayMock.mockResolvedValue(outcome())
     const user = userEvent.setup()
     renderModal()
-    await user.click(await screen.findByRole('button', { name: /Replay 1 message/ }))
+    await user.click((await screen.findAllByRole('button', { name: /Replay 1 message/ }))[0])
     expect(await screen.findByText('Sent back')).toBeInTheDocument()
     expect(screen.getByText(/ServiceHub will say whether it stayed fixed/)).toBeInTheDocument()
     expect(replayMock).toHaveBeenCalledTimes(1)
@@ -111,7 +112,7 @@ describe('the replay proposal', () => {
     replayMock.mockResolvedValue(outcome({ result: 'unknown', state: 'ExecutionUnknown', message: 'ServiceHub lost contact with the cloud.' }))
     const user = userEvent.setup()
     renderModal()
-    await user.click(await screen.findByRole('button', { name: /Replay 1 message/ }))
+    await user.click((await screen.findAllByRole('button', { name: /Replay 1 message/ }))[0])
     expect(await screen.findByText('Outcome unknown')).toBeInTheDocument()
     expect(screen.getByText(/second copy may be sent/)).toBeInTheDocument()
   })

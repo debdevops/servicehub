@@ -75,3 +75,23 @@ export async function setRuleEnabled(id: number, enabled: boolean): Promise<Rule
 export async function testRule(rule: Pick<NewRule, 'provider' | 'reason' | 'entityName' | 'signatureHash'>): Promise<RuleTest> {
   return (await api.post<RuleTest>('/rules/test', { ...rule, days: 7 })).data
 }
+
+/** Name and pace only — what a rule matches never changes; a different failure is a new rule. */
+export async function updateRule(id: number, rule: Pick<NewRule, 'name' | 'maxPerHour' | 'waitSeconds' | 'backOff'>): Promise<Rule> {
+  return (await api.put<Rule>(`/rules/${id}`, rule)).data
+}
+
+/** Deletes the rule. What it replayed stays in the ledger and the replay history. */
+export async function deleteRule(id: number): Promise<void> {
+  await api.delete(`/rules/${id}`)
+}
+
+/** The dead letters the rule matches right now and that are still waiting. Sends nothing. */
+export async function fetchRuleMatches(id: number): Promise<number[]> {
+  return (await api.get<number[]>(`/rules/${id}/matches`, { params: { limit: 500 } })).data
+}
+
+/** Makes rules for the most common failures no rule covers yet. Returns the rules it made. */
+export async function generateRules(provider: CloudProvider, max = 5): Promise<Rule[]> {
+  return (await api.post<Rule[]>('/rules/generate', { provider, max })).data
+}

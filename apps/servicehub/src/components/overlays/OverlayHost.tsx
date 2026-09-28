@@ -1,5 +1,5 @@
 import { Suspense } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import { visibleEntries, type OverlayEntry } from '../../nav/navigation'
 import { OverlayFrame } from './OverlayFrame'
 import { overlayBodies, overlayCompanionParams, overlayWide } from './registry'
@@ -18,12 +18,14 @@ type OverlayKind = 'modal' | 'panel'
  */
 export function OverlayHost({ connectedCloudCount }: { connectedCloudCount: number }) {
   const [params, setParams] = useSearchParams()
+  const { pathname } = useLocation()
   const offered = visibleEntries(connectedCloudCount)
 
   const find = (kind: OverlayKind): OverlayEntry | undefined => {
     const value = params.get(kind)
     if (value === null) return undefined
-    return offered.find((e): e is OverlayEntry => e.kind === kind && e.value === value)
+    // On Home, Auto Replay is a page section (HomePage renders it), not a side panel.
+    return offered.find((e): e is OverlayEntry => e.kind === kind && e.value === value && !(e.id === 'auto-replay' && pathname === '/'))
   }
 
   const close = (kind: OverlayKind, id: string) => () => {

@@ -67,6 +67,53 @@ public sealed class RulesController : ApiControllerBase
         return result.IsFailure ? Problem(result.Error) : Ok(result.Value);
     }
 
+    /// <summary>Changes a rule's name and pace. Raising the pace widens what a machine may do, so it is an Approver's call, like making a rule.</summary>
+    [HttpPut("{id:long}")]
+    [ProducesResponseType(typeof(RuleView), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Update(long id, [FromBody] UpdateRuleRequest request, CancellationToken cancellationToken)
+    {
+        if (await DeniedUnlessAsync(GovernanceRole.Approver, null, PillarKind.Recover, "change an auto-replay rule", cancellationToken) is { } denied) return denied;
+        var result = await _rules.UpdateAsync(OwnerId, id, request.Name, request.MaxPerHour ?? 10, request.WaitSeconds ?? 120, request.BackOff ?? true, cancellationToken);
+        return result.IsFailure ? Problem(result.Error) : Ok(result.Value);
+    }
+
+    /// <summary>Deletes a rule. Only takes authority away, so an Operator may — like switching one off. Its replays stay in the ledger.</summary>
+    [HttpDelete("{id:long}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Delete(long id, CancellationToken cancellationToken)
+    {
+        if (await DeniedUnlessAsync(GovernanceRole.Operator, null, PillarKind.Recover, "delete an auto-replay rule", cancellationToken) is { } denied) return denied;
+        var result = await _rules.DeleteAsync(OwnerId, id, cancellationToken);
+        return result.IsFailure ? Problem(result.Error) : NoContent();
+    }
+
+    /// <summary>The dead letters the rule matches right now. Sends nothing; Replay all hands these to the bulk preview.</summary>
+    [HttpGet("{id:long}/matches")]
+    [ProducesResponseType(typeof(IReadOnlyList<long>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Matches(long id, [FromQuery] int? limit, CancellationToken cancellationToken)
+    {
+        var result = await _rules.MatchesAsync(OwnerId, AllowedNamespaceIds, id, limit ?? 500, cancellationToken);
+        return result.IsFailure ? Problem(result.Error) : Ok(result.Value);
+    }
+
+    /// <summary>Makes rules for the most common failures nothing covers yet. Each starts on, so it is an Approver's call.</summary>
+    [HttpPost("generate")]
+    [ProducesResponseType(typeof(IReadOnlyList<RuleView>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Generate([FromBody] GenerateRulesRequest request, CancellationToken cancellationToken)
+    {
+        if (request.Provider is not { } cloud)
+        {
+            return NeedsCloud();
+        }
+
+        if (await DeniedUnlessAsync(GovernanceRole.Approver, null, PillarKind.Recover, "create auto-replay rules", cancellationToken) is { } denied) return denied;
+        return Ok(await _rules.GenerateAsync(OwnerId, AllowedNamespaceIds, cloud, request.Max ?? 5, cancellationToken));
+    }
+
     /// <summary>What a rule would have done over the last days, by today's checks. Sends nothing.</summary>
     [HttpPost("test")]
     [ProducesResponseType(typeof(RuleTest), StatusCodes.Status200OK)]
@@ -89,6 +136,12 @@ public sealed class RulesController : ApiControllerBase
     /// <summary>A new rule.</summary>
     public sealed record CreateRuleRequest(
         CloudProviderType? Provider, string Name, string? Reason, string? EntityName, string? SignatureHash, int? MaxPerHour, int? WaitSeconds, bool? BackOff);
+
+    /// <summary>A rule's new name and pace.</summary>
+    public sealed record UpdateRuleRequest(string Name, int? MaxPerHour, int? WaitSeconds, bool? BackOff);
+
+    /// <summary>Which cloud to make rules for, and at most how many.</summary>
+    public sealed record GenerateRulesRequest(CloudProviderType? Provider, int? Max);
 
     /// <summary>On or off.</summary>
     public sealed record EnabledRequest(bool Enabled);

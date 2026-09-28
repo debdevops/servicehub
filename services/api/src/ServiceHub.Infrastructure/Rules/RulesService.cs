@@ -87,9 +87,9 @@ public sealed class RulesService : IRulesService
             return Result<RuleView>.Failure(Error.Validation(ErrorCodes.ValidationFailed, "A rule needs at least one condition. A rule that matches every dead letter is not allowed."));
         }
 
-        if (maxPerHour is < 1 or > 1000 || waitSeconds is < 0 or > 86400)
+        if (PaceError(maxPerHour, waitSeconds) is { } paceError)
         {
-            return Result<RuleView>.Failure(Error.Validation(ErrorCodes.ValidationFailed, "Replays per hour must be 1–1000 and the wait 0–86400 seconds."));
+            return Result<RuleView>.Failure(paceError);
         }
 
         var rule = new AutoReplayRule
@@ -100,6 +100,93 @@ public sealed class RulesService : IRulesService
         _db.AutoReplayRules.Add(rule);
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
         return Result<RuleView>.Success(await ViewAsync(rule, ct).ConfigureAwait(false));
+    }
+
+    private static Error? PaceError(int maxPerHour, int waitSeconds) =>
+        maxPerHour is < 1 or > 1000 || waitSeconds is < 0 or > 86400
+            ? Error.Validation(ErrorCodes.ValidationFailed, "Replays per hour must be 1–1000 and the wait 0–86400 seconds.") : null;
+
+    private static Error RuleNotFound(long id) => Error.NotFound("RULE_NOT_FOUND", $"Rule '{id}' was not found.");
+
+    /// <inheritdoc />
+    public async Task<Result<RuleView>> UpdateAsync(string ownerId, long id, string name, int maxPerHour, int waitSeconds, bool backOff, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(name) || name.Length > 120)
+        {
+            return Result<RuleView>.Failure(Error.Validation(ErrorCodes.ValidationFailed, "Give the rule a name of up to 120 characters."));
+        }
+
+        if (PaceError(maxPerHour, waitSeconds) is { } paceError)
+        {
+            return Result<RuleView>.Failure(paceError);
+        }
+
+        var rule = await _db.AutoReplayRules.FirstOrDefaultAsync(r => r.Id == id && r.OwnerId == ownerId, ct).ConfigureAwait(false);
+        if (rule is null)
+        {
+            return Result<RuleView>.Failure(RuleNotFound(id));
+        }
+
+        rule.Name = name.Trim();
+        rule.MaxPerHour = maxPerHour;
+        rule.WaitSeconds = waitSeconds;
+        rule.BackOff = backOff;
+        rule.UpdatedAt = _time.GetUtcNow();
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        return Result<RuleView>.Success(await ViewAsync(rule, ct).ConfigureAwait(false));
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<bool>> DeleteAsync(string ownerId, long id, CancellationToken ct)
+    {
+        var rule = await _db.AutoReplayRules.FirstOrDefaultAsync(r => r.Id == id && r.OwnerId == ownerId, ct).ConfigureAwait(false);
+        if (rule is null)
+        {
+            return Result<bool>.Failure(RuleNotFound(id));
+        }
+
+        _db.AutoReplayRules.Remove(rule);
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        return Result<bool>.Success(true);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<IReadOnlyList<long>>> MatchesAsync(string ownerId, IReadOnlySet<Guid>? allowed, long id, int limit, CancellationToken ct)
+    {
+        var rule = await _db.AutoReplayRules.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id && r.OwnerId == ownerId, ct).ConfigureAwait(false);
+        if (rule is null)
+        {
+            return Result<IReadOnlyList<long>>.Failure(RuleNotFound(id));
+        }
+
+        var q = Matching(rule).Where(m => m.Status == DlqMessageStatus.Active);
+        if (allowed is not null)
+        {
+            q = q.Where(m => allowed.Contains(m.NamespaceId));
+        }
+
+        IReadOnlyList<long> ids = await q.OrderByDescending(m => m.DetectedAtUtc).Select(m => m.Id).Take(Math.Clamp(limit, 1, 500)).ToListAsync(ct).ConfigureAwait(false);
+        return Result<IReadOnlyList<long>>.Success(ids);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<RuleView>> GenerateAsync(string ownerId, IReadOnlySet<Guid>? allowed, CloudProviderType provider, int max, CancellationToken ct)
+    {
+        var existing = await _db.AutoReplayRules.AsNoTracking().Where(r => r.OwnerId == ownerId && r.Provider == provider).ToListAsync(ct).ConfigureAwait(false);
+        var covered = existing.Where(r => r.SignatureHash is not null).Select(r => r.SignatureHash!).ToHashSet();
+        var sources = await SourcesAsync(ownerId, allowed, provider, ct).ConfigureAwait(false);
+        var made = new List<RuleView>();
+        foreach (var s in sources.Where(s => !covered.Contains(s.SignatureHash)).OrderByDescending(s => s.Messages).Take(Math.Clamp(max, 1, 10)))
+        {
+            var name = $"Auto: {s.Reason} in {s.EntityName}";
+            var result = await CreateAsync(ownerId, provider, name.Length > 120 ? name[..120] : name, s.Reason, s.EntityName, s.SignatureHash, 10, 120, true, ct).ConfigureAwait(false);
+            if (result.IsSuccess)
+            {
+                made.Add(result.Value);
+            }
+        }
+
+        return made;
     }
 
     /// <inheritdoc />

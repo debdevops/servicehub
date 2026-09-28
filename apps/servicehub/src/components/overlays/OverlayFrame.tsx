@@ -96,11 +96,11 @@ export function OverlayFrame({
         data-docked={docked || undefined}
         className={
           isModal
-            ? `relative max-h-full w-full ${size === 'wide' ? 'max-w-4xl' : 'max-w-xl'} overflow-y-auto rounded-2xl bg-[var(--color-surface)] shadow-xl`
-            : `relative h-full w-full ${docked ? 'pointer-events-auto' : ''} ${size === 'drawer' ? 'max-w-[462px]' : 'max-w-md'} overflow-y-auto border-l border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl`
+            ? `relative flex max-h-full w-full flex-col ${size === 'wide' ? 'max-w-4xl' : 'max-w-xl'} overflow-hidden rounded-2xl bg-[var(--color-surface)] shadow-xl`
+            : `relative h-full w-full ${docked ? 'pointer-events-auto' : ''} ${size === 'drawer' ? 'max-w-[462px]' : 'max-w-md'} flex flex-col overflow-hidden border-l border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl`
         }
       >
-        <div className="flex items-start gap-3 border-b border-[var(--color-border)] px-5 py-4">
+        <div className="flex shrink-0 items-start gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-4">
           <div className="min-w-0 flex-1">
             <h2 className="text-base font-semibold text-[var(--color-text)]">{title}</h2>
             {description && <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">{description}</p>}
@@ -115,7 +115,7 @@ export function OverlayFrame({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="px-5 py-4">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
       </div>
     </div>
   )

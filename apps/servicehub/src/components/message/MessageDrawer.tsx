@@ -42,7 +42,9 @@ export function MessageDrawer() {
   const [params, setParams] = useSearchParams()
   const raw = params.get('message')
   const id = raw !== null && /^\d+$/.test(raw) ? Number(raw) : null
-  const full = params.get('view') === 'full'
+  // `view=full` is the wide modal reached from the side view; `view=modal` is the same modal opened straight from a list, with no side view to go back to.
+  const modalOnly = params.get('view') === 'modal'
+  const full = params.get('view') === 'full' || modalOnly
   const { data, isPending, isError, error } = useDeadLetter(id)
   const [tab, setTab] = useState<Tab>('overview')
 
@@ -80,8 +82,8 @@ export function MessageDrawer() {
       size={full ? 'wide' : 'drawer'}
       docked={!full}
       title={full ? 'Dead letter' : 'Message details'}
-      onClose={full ? backToSide : close}
-      actions={data ? expandButton : undefined}
+      onClose={full && !modalOnly ? backToSide : close}
+      actions={data && !modalOnly ? expandButton : undefined}
     >
       {notFound ? (
         <p role="status" className="text-sm text-[var(--color-text-muted)]">

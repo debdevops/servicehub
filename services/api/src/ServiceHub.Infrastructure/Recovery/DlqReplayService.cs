@@ -399,7 +399,7 @@ public sealed class DlqReplayService : IDlqReplayService
 
     /// <inheritdoc />
     public async Task<ReplayPage> ListAsync(
-        IReadOnlyCollection<Guid> namespaceIds, string? result, long? dlqMessageId, int page, int pageSize, CancellationToken cancellationToken)
+        IReadOnlyCollection<Guid> namespaceIds, string? result, long? dlqMessageId, int page, int pageSize, CancellationToken cancellationToken, long? ruleId = null)
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
@@ -414,6 +414,11 @@ public sealed class DlqReplayService : IDlqReplayService
         if (dlqMessageId is { } message)
         {
             rows = rows.Where(r => r.DlqMessageId == message);
+        }
+
+        if (ruleId is { } rule)
+        {
+            rows = rows.Where(r => r.RuleId == rule);
         }
 
         var total = await rows.CountAsync(cancellationToken);

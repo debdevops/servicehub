@@ -35,7 +35,7 @@ public interface IDlqReplayService
         long dlqMessageId, Namespace ns, RecoveryActor actor, string reason, string? intentHeader, string? correlationId,
         CancellationToken cancellationToken);
 
-    /// <summary>The replays in the given namespaces, newest first — optionally only those of one dead letter.</summary>
+    /// <summary>The replays in the given namespaces, newest first — optionally only those of one dead letter, or only those an Auto Replay rule sent.</summary>
     Task<ReplayPage> ListAsync(
-        IReadOnlyCollection<Guid> namespaceIds, string? result, long? dlqMessageId, int page, int pageSize, CancellationToken cancellationToken);
+        IReadOnlyCollection<Guid> namespaceIds, string? result, long? dlqMessageId, int page, int pageSize, CancellationToken cancellationToken, long? ruleId = null);
 }

@@ -12,6 +12,7 @@ import { ScopeTabs } from '../components/home/ScopeTabs'
 import { MessageDrawer } from '../components/message/MessageDrawer'
 import { DeadLettersView } from '../components/message/DeadLettersView'
 import { ActiveMessagesTab } from '../components/message/ActiveMessagesTab'
+import { AutoReplayPage } from '../components/rules/AutoReplayPage'
 import { ReplayedTab } from '../components/message/ReplayedTab'
 import { NamespaceScope } from '../components/provider/NamespaceScope'
 import { resolveScope } from '../components/provider/scopeChoice'
@@ -31,7 +32,7 @@ import { connectedProviders, providerLabel } from '../lib/providers'
 export function HomePage() {
   const namespaces = useNamespaces()
   const { selected } = useProviderScope()
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
   // Called unconditionally (rules of hooks) — safe before we know whether anything is connected,
   // since `connectedProviders([])` is just `[]` and every early return below ignores the result.
   const homeScope = useHomeScope(connectedProviders(namespaces.data ?? []).map((p) => p.provider))
@@ -54,6 +55,18 @@ export function HomePage() {
 
   const tab = params.get('tab')
   const connected = connectedProviders(namespaces.data).map((p) => p.provider)
+  // Auto Replay opens IN the page (`?panel=rules`, from any link), for the chosen cloud — or the first connected one.
+  const rulesProvider = homeScope.provider ?? selected ?? connected[0]
+  if (params.get('panel') === 'rules' && rulesProvider) {
+    return (
+      <>
+        <section className="px-6 py-6">
+          <AutoReplayPage provider={rulesProvider} onClose={() => setParams((p) => { const n = new URLSearchParams(p); n.delete('panel'); n.delete('rule'); return n }, { replace: true })} />
+        </section>
+        <MessageDrawer />
+      </>
+    )
+  }
   // A tab (Dead letters / Active / Replayed) is always one cloud's own table: `?provider=` when it is
   // set, otherwise the sidebar's sticky choice (plan §7) — never "All clouds", which has no one table.
   const tabProvider = homeScope.provider ?? selected

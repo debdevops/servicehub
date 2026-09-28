@@ -4,6 +4,7 @@ import type { OverlayBodyProps } from '../overlays/registry'
 import { useDeadLetter } from '../../hooks/useDeadLetter'
 import { useMe } from '../../hooks/useIdentity'
 import { permission } from '../../lib/permissions'
+import { Collapsible } from '../ui/Collapsible'
 import { NotAllowed } from '../ui/NotAllowed'
 import { useReplay, useReplayProposal } from '../../hooks/useReplay'
 import { explainFailure } from '../../lib/analyzer'
@@ -54,13 +55,23 @@ export default function ReplayModal({ close }: OverlayBodyProps) {
 
   return (
     <div className="space-y-5">
-      <p className="text-sm text-[var(--color-text-muted)]">
-        <span className="font-mono text-[13px]">{p.sourceEntity}</span> → <span className="font-mono text-[13px]">{p.targetEntity}</span> · {cloud} ·{' '}
-        {p.namespaceName} · <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-0.5 text-xs font-medium">{p.environment}</span>
-      </p>
+      <div className="sticky top-0 z-10 -mx-5 -mt-4 space-y-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-3">
+        <p className="text-sm text-[var(--color-text-muted)]">
+          <span className="font-mono text-[13px]">{p.sourceEntity}</span> → <span className="font-mono text-[13px]">{p.targetEntity}</span> · {cloud} ·{' '}
+          {p.namespaceName} · <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-0.5 text-xs font-medium">{p.environment}</span>
+        </p>
+        <button
+          type="button"
+          disabled={!p.canExecute || !may.allowed || replay.isPending}
+          onClick={() => replay.mutate(p.dlqMessageId)}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--color-primary-600)] px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Play className="h-4 w-4 fill-current" aria-hidden="true" /> {replay.isPending ? 'Replaying…' : 'Replay 1 message'}
+        </button>
+      </div>
 
       <section aria-label="What will happen">
-        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">What will happen</h3>
+        <Collapsible title="What will happen">
         <p className="text-sm">
           1 message is sent back to <span className="font-mono text-[13px] font-semibold">{p.targetEntity}</span>. Its copy in the dead-letter queue is removed
           once {cloud} accepts it.{' '}
@@ -68,6 +79,7 @@ export default function ReplayModal({ close }: OverlayBodyProps) {
             ? 'It carries a recovery ID, so ServiceHub can tell if it comes back.'
             : `${cloud} cannot carry a recovery ID, so a return can only be matched by its contents.`}
         </p>
+        </Collapsible>
       </section>
 
       {mayFailAgain && (
@@ -86,16 +98,15 @@ export default function ReplayModal({ close }: OverlayBodyProps) {
       )}
 
       <section aria-label="Safety checks">
-        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-          Safety checks — {needAttention === 0 ? 'all passed' : `${needAttention} to look at`}
-        </h3>
+        <Collapsible title="Safety checks" summary={needAttention === 0 ? 'all passed' : `${needAttention} to look at`} defaultOpen={needAttention > 0}>
         <ul className="divide-y divide-[var(--color-border)] rounded-xl border border-[var(--color-border)]">
           {p.checks.map((c) => <CheckRow key={c.id} check={c} />)}
         </ul>
+        </Collapsible>
       </section>
 
       <section aria-label="After it runs">
-        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">After it runs</h3>
+        <Collapsible title="After it runs">
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-xl border border-[var(--color-border)] p-3 text-sm">
             ServiceHub records this replay and opens a <b>{hoursLabel(p.observationWindowHours)}</b> watch window.{' '}
@@ -107,6 +118,7 @@ export default function ReplayModal({ close }: OverlayBodyProps) {
             If it comes back, <b>nothing retries it</b>. It returns to the list, and the next step is yours.
           </div>
         </div>
+        </Collapsible>
       </section>
 
       {!p.canExecute && <UnlockHint code={p.blockedCode} approvable={p.approvable} />}

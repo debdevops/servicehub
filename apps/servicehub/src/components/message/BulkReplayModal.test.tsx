@@ -55,7 +55,9 @@ describe('Bulk Replay modal', () => {
     vi.mocked(bulk.fetchBulk).mockResolvedValue({ id: 'job1', status: 'running', selected: 7, willReplay: 6, sent: 2, failed: 0, unknown: 0, remaining: 4, heldBack: 1, sampleOnly: false } as bulk.BulkProgress)
     renderModal()
 
-    await userEvent.click(await screen.findByRole('button', { name: /Replay 6 messages/ }))
+    // Replay sits at the top (always in view) and at the bottom.
+    expect(await screen.findAllByRole('button', { name: /Replay 6 messages/ })).toHaveLength(2)
+    await userEvent.click(screen.getAllByRole('button', { name: /Replay 6 messages/ })[0])
 
     expect(bulk.startBulk).toHaveBeenCalledWith('p1', false)
     await waitFor(() => expect(screen.getByTestId('url')).toHaveTextContent('job=job1'))

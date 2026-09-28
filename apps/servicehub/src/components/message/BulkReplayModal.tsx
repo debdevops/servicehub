@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Collapsible } from '../ui/Collapsible'
 import { Check, CircleStop, Eye, Play, ShieldCheck, Trash2, TriangleAlert } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import type { OverlayBodyProps } from '../overlays/registry'
@@ -95,12 +96,29 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
   const p = state.preview
   const sampleAdvised = p.willReplay > 1 && p.groups.length > 0 && p.groups.filter((g) => g.willReplay > 0).every((g) => looksLikeValidation(g.reason))
 
+  const replayButton = (
+    <button
+      type="button"
+      disabled={p.willReplay === 0 || starting}
+      onClick={() => void start(p, false)}
+      className="flex items-center gap-2 rounded-lg bg-[var(--color-primary-600)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+    >
+      <Play className="h-4 w-4" aria-hidden="true" /> Replay {p.willReplay.toLocaleString()} {p.willReplay === 1 ? 'message' : 'messages'}
+    </button>
+  )
+
   return (
     <div className="space-y-5">
-      <div>
-        <h3 className="text-lg font-bold">{p.selected === 1 ? 'Replay 1 message' : `Bulk replay · ${p.selected.toLocaleString()} messages`}</h3>
-        <div className="mt-2"><Steps at={1} /></div>
-        <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-[var(--color-surface-muted)] px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide"><Eye className="h-3 w-3" aria-hidden="true" /> Preview — nothing has run yet</p>
+      <div className="sticky top-0 z-10 -mx-5 -mt-4 flex items-start gap-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-3">
+        <div>
+          <h3 className="text-lg font-bold">{p.selected === 1 ? 'Replay 1 message' : `Bulk replay · ${p.selected.toLocaleString()} messages`}</h3>
+          <div className="mt-2"><Steps at={1} /></div>
+          <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-[var(--color-surface-muted)] px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide"><Eye className="h-3 w-3" aria-hidden="true" /> Preview — nothing has run yet</p>
+        </div>
+        <div className="ml-auto flex shrink-0 items-center gap-2 pt-1">
+          <button type="button" onClick={close} className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold">Cancel</button>
+          {replayButton}
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
@@ -110,7 +128,7 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
       </div>
 
       <section aria-label="Grouped by how they failed">
-        <h4 className="mb-2 text-[11px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">Grouped by how they failed</h4>
+        <Collapsible title="Grouped by how they failed">
         <ul className="divide-y divide-[var(--color-border)] rounded-xl border border-[var(--color-border)]">
           {p.groups.map((g) => (
             <li key={g.reason} className="flex items-center gap-3 px-3.5 py-2.5 text-sm">
@@ -120,6 +138,7 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
             </li>
           ))}
         </ul>
+        </Collapsible>
       </section>
 
       {p.heldBack.length > 0 && (
@@ -146,17 +165,19 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
       <SelectedMessages ids={state.ids} heldBack={p.heldBack.map((h) => h.dlqMessageId)} />
 
       <section aria-label="How it will run">
-        <h4 className="mb-2 text-[11px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">How it will run</h4>
+        <Collapsible title="How it will run">
         <div className="grid grid-cols-2 gap-3">
           <Info title="Pace">{p.perSecond} {p.perSecond === 1 ? 'message' : 'messages'} a second — gentle on your consumer.</Info>
           <Info title="Stops by itself if…">{p.stopAfterConsecutiveFailures} sends in a row aren’t accepted.</Info>
         </div>
+        </Collapsible>
       </section>
 
-      <p className="flex items-start gap-2.5 rounded-xl border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-3.5 py-2.5 text-[13px]">
-        <Eye className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-primary-700)]" aria-hidden="true" />
-        <span>After they are sent back, ServiceHub <b>watches</b> each one. Where the cloud can prove a message stayed fixed, its Recovery Ledger evidence can raise trust toward L4 and L5, and later fixes of the same kind may not need a person. That is a suggestion, not a promise — nothing is approved for you.</span>
-      </p>
+      <section aria-label="After they are sent back" className="rounded-xl border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-3.5 py-2.5">
+        <Collapsible title="After they are sent back" defaultOpen={false}>
+          <p className="text-[13px]">ServiceHub <b>watches</b> each one. Where the cloud can prove a message stayed fixed, its Recovery Ledger evidence can raise trust toward L4 and L5, and later fixes of the same kind may not need a person. That is a suggestion, not a promise — nothing is approved for you.</p>
+        </Collapsible>
+      </section>
 
       {startError && <p role="alert" className="text-sm text-[var(--color-error)]">{startError}</p>}
 
@@ -165,14 +186,7 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
       <footer className="flex items-center gap-3 border-t border-[var(--color-border)] pt-4">
         <span className="flex items-center gap-1.5 text-[13px] text-[var(--color-text-muted)]"><ShieldCheck className="h-4 w-4" aria-hidden="true" /> Each message is checked again as it is sent.</span>
         <button type="button" onClick={close} className="ml-auto rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold">Cancel</button>
-        <button
-          type="button"
-          disabled={p.willReplay === 0 || starting}
-          onClick={() => void start(p, false)}
-          className="flex items-center gap-2 rounded-lg bg-[var(--color-primary-600)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-        >
-          <Play className="h-4 w-4" aria-hidden="true" /> Replay {p.willReplay.toLocaleString()} {p.willReplay === 1 ? 'message' : 'messages'}
-        </button>
+        {replayButton}
       </footer>
     </div>
   )
@@ -186,9 +200,7 @@ function SelectedMessages({ ids, heldBack }: { ids: readonly number[]; heldBack:
   const held = new Set(heldBack)
   return (
     <section aria-label="Messages that will be replayed">
-      <h4 className="mb-2 text-[11px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">
-        Where each one goes {ids.length > SHOWN && <span className="normal-case tracking-normal">— first {SHOWN} of {ids.length.toLocaleString()}</span>}
-      </h4>
+      <Collapsible title="Where each one goes" summary={ids.length > SHOWN ? `first ${SHOWN} of ${ids.length.toLocaleString()}` : undefined}>
       <div className="max-h-56 overflow-auto rounded-xl border border-[var(--color-border)]">
         <table className="w-full text-left text-[12.5px]">
           <caption className="sr-only">Selected messages and where each will be sent back</caption>
@@ -213,6 +225,7 @@ function SelectedMessages({ ids, heldBack }: { ids: readonly number[]; heldBack:
           </tbody>
         </table>
       </div>
+      </Collapsible>
     </section>
   )
 }
@@ -304,6 +317,9 @@ function Running({ id, close }: { id: string; close: () => void }) {
     if (ended) {
       void client.invalidateQueries({ queryKey: deadLetterKeys.all })
       void client.invalidateQueries({ queryKey: replayKeys.all })
+      // The Auto Replay page counts what each rule replayed: refresh it too, so it never shows the page from before the run.
+      void client.invalidateQueries({ queryKey: ['rules'] })
+      void client.invalidateQueries({ queryKey: ['rule-activity'] })
     }
   }, [ended, client])
 
@@ -362,10 +378,19 @@ function Progress({ p, close }: { p: BulkProgress; close: () => void }) {
 
       {p.endedReason && <p className="rounded-xl border border-[#fde68a] bg-[var(--color-warning-light)] px-3.5 py-2.5 text-[13px] text-[#78350f]">{p.endedReason}</p>}
 
-      <p className="flex items-start gap-2.5 rounded-xl border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-3.5 py-2.5 text-[13px]">
-        <Eye className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-primary-700)]" aria-hidden="true" />
-        <span>Close this whenever you like. Progress and the final verdict appear in <b>Replayed</b>, and in the bell if anything needs you.</span>
-      </p>
+      {ended && (
+        <p className="flex items-start gap-2.5 rounded-xl border border-[#a7f3d0] bg-[#ecfdf5] px-3.5 py-2.5 text-[13px]">
+          <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#047857]" aria-hidden="true" />
+          <span><b>{p.sent.toLocaleString()} {p.kind === 'purge' ? 'deleted' : 'replayed'}</b> and sent to cloud — navigate to <b>Replayed</b> tab to see the results.</span>
+        </p>
+      )}
+
+      {!ended && (
+        <p className="flex items-start gap-2.5 rounded-xl border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-3.5 py-2.5 text-[13px]">
+          <Eye className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-primary-700)]" aria-hidden="true" />
+          <span>Close this whenever you like. Progress and the final verdict appear in <b>Replayed</b>, and in the bell if anything needs you.</span>
+        </p>
+      )}
 
       <footer className="flex items-center gap-3 border-t border-[var(--color-border)] pt-4">
         {!ended && (

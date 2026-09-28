@@ -29,6 +29,7 @@ public sealed class ReplaysController : ApiControllerBase
     /// <param name="environment">Only namespaces of this environment (dev, uat, prod).</param>
     /// <param name="result">Only this outcome: accepted, rejected or unknown.</param>
     /// <param name="dlqMessageId">Only the replays of this one dead letter (the drawer's watch card).</param>
+    /// <param name="ruleId">Only the replays this Auto Replay rule sent.</param>
     /// <param name="page">1-based.</param>
     /// <param name="pageSize">1–100 (default 25).</param>
     /// <param name="cancellationToken">Cancellation.</param>
@@ -38,7 +39,7 @@ public sealed class ReplaysController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> List(
         [FromQuery] Guid? namespaceId, [FromQuery] CloudProviderType? provider, [FromQuery] EnvironmentType? environment, [FromQuery] string? result, [FromQuery] long? dlqMessageId,
-        [FromQuery] int? page, [FromQuery] int? pageSize, CancellationToken cancellationToken)
+        [FromQuery] long? ruleId, [FromQuery] int? page, [FromQuery] int? pageSize, CancellationToken cancellationToken)
     {
         if (namespaceId is null && provider is null && dlqMessageId is null)
         {
@@ -82,6 +83,6 @@ public sealed class ReplaysController : ApiControllerBase
             candidates = candidates.Where(n => n.Environment == env);
         }
 
-        return Ok(await _replay.ListAsync([.. candidates.Select(n => n.Id)], result, dlqMessageId, page ?? 1, pageSize ?? 25, cancellationToken));
+        return Ok(await _replay.ListAsync([.. candidates.Select(n => n.Id)], result, dlqMessageId, page ?? 1, pageSize ?? 25, cancellationToken, ruleId));
     }
 }

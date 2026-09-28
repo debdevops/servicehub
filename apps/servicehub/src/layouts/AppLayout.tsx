@@ -18,7 +18,7 @@ import { useEventStream } from '../hooks/useEventStream'
 import { useNamespaces } from '../hooks/useNamespaces'
 import { readLastAdvancedPath, rememberAdvancedPath } from '../lib/lastAdvancedPage'
 import { connectedProviders } from '../lib/providers'
-import { ADVANCED_ROOT, hrefOf, landingPath, surfaceOf, visibleEntries, type NavEntry, type NavGroup, type OverlayEntry } from '../nav/navigation'
+import { ADVANCED_ROOT, hrefOf, navigation, landingPath, surfaceOf, visibleEntries, type NavEntry, type NavGroup, type OverlayEntry } from '../nav/navigation'
 import { LandingRedirect } from './LandingRedirect'
 
 /**
@@ -209,6 +209,11 @@ function NavSection({ label, entries, bare }: { label?: string; entries: readonl
   const { pathname, search } = useLocation()
   if (entries.length === 0) return null
 
+  // A tab or panel open on Home is the place you are: it is lit instead of Home (exactly one row is highlighted).
+  const params = new URLSearchParams(search)
+  const isHere = (e: NavEntry) => pathname === '/' && ((e.kind === 'tab' && params.get('tab') === e.value) || (e.kind === 'panel' && e.id === 'auto-replay' && params.get('panel') === e.value))
+  const here = navigation.some(isHere)
+
   return (
     <div className={bare ? '' : 'mb-6'}>
       {label && (
@@ -226,7 +231,7 @@ function NavSection({ label, entries, bare }: { label?: string; entries: readonl
                 // leaving two rows highlighted. The design highlights exactly one.
                 end={entry.path === '/' || entry.path === ADVANCED_ROOT}
                 title={entry.description}
-                className={({ isActive }) => [itemClass, isActive ? activeClass : idleClass].join(' ')}
+                className={({ isActive }) => [itemClass, isActive && !(entry.path === '/' && here) ? activeClass : idleClass].join(' ')}
               >
                 <entry.icon className="h-4 w-4 shrink-0" />
                 {entry.label}
@@ -235,7 +240,7 @@ function NavSection({ label, entries, bare }: { label?: string; entries: readonl
             ) : (
               // Tabs, panels and modals are URL states on a page, not routes (D45). Opening a panel or
               // modal keeps the rest of the URL — the tab you are on stays put behind it.
-              <Link to={entry.kind === 'tab' ? hrefOf(entry) : overlayHref(entry, pathname, search)} title={entry.description} className={[itemClass, idleClass].join(' ')}>
+              <Link to={entry.kind === 'tab' ? hrefOf(entry) : overlayHref(entry, pathname, search)} title={entry.description} aria-current={isHere(entry) ? 'page' : undefined} className={[itemClass, isHere(entry) ? activeClass : idleClass].join(' ')}>
                 <entry.icon className="h-4 w-4 shrink-0" />
                 {entry.label}
               </Link>

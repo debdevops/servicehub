@@ -20,6 +20,18 @@ public interface IRulesService
     /// <summary>Turns a rule on or off. A rule the circuit breaker stopped can be turned back on only by a person, on purpose.</summary>
     Task<Result<RuleView>> SetEnabledAsync(string ownerId, long id, bool enabled, CancellationToken ct);
 
+    /// <summary>Changes a rule's name and pace. What it matches never changes — to match a different failure, make a new rule.</summary>
+    Task<Result<RuleView>> UpdateAsync(string ownerId, long id, string name, int maxPerHour, int waitSeconds, bool backOff, CancellationToken ct);
+
+    /// <summary>Deletes a rule. What it replayed stays in the ledger and the replay history; only the rule is gone.</summary>
+    Task<Result<bool>> DeleteAsync(string ownerId, long id, CancellationToken ct);
+
+    /// <summary>The ids of the dead letters the rule matches right now (still in the queue), newest first, at most <paramref name="limit"/>. Feeds Replay all, which then goes through the bulk preview and the gate as a person.</summary>
+    Task<Result<IReadOnlyList<long>>> MatchesAsync(string ownerId, IReadOnlySet<Guid>? allowed, long id, int limit, CancellationToken ct);
+
+    /// <summary>Makes a rule for each of the most common failures that no rule covers yet (at most <paramref name="max"/>). Returns the rules it made.</summary>
+    Task<IReadOnlyList<RuleView>> GenerateAsync(string ownerId, IReadOnlySet<Guid>? allowed, CloudProviderType provider, int max, CancellationToken ct);
+
     /// <summary>What the rule would have done over the last <paramref name="days"/> days, judged by today's checks. Sends nothing.</summary>
     Task<RuleTest> TestAsync(string ownerId, IReadOnlySet<Guid>? allowed, CloudProviderType provider, string? reason, string? entity, string? signatureHash, int days, CancellationToken ct);
 }

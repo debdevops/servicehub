@@ -125,6 +125,8 @@ export interface ReplayQuery {
   readonly environment?: EnvironmentKind
   /** Only the replays of this one dead letter (the drawer). */
   readonly dlqMessageId?: number
+  /** Only what this Auto Replay rule sent. */
+  readonly ruleId?: number
   readonly result?: 'accepted' | 'rejected' | 'unknown'
   readonly page?: number
   readonly pageSize?: number

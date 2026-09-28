@@ -523,6 +523,26 @@ public sealed class DeadLettersApiTests
     }
 
     [Fact]
+    public async Task Replays_can_be_narrowed_to_the_ones_an_auto_replay_rule_sent()
+    {
+        var (host, _, ns, id) = await Seeded(() => Result<bool>.Success(true));
+        using var _ = host;
+        (await PostReplay(host, id)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        async Task<int> Total(long rule) => (await Body(await host.Client.GetAsync($"/api/v1/replays?namespaceId={ns}&ruleId={rule}"))).GetProperty("total").GetInt32();
+
+        // A person's replay belongs to no rule.
+        (await Total(7)).Should().Be(0);
+        using (var scope = host.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<ServiceHubDbContext>().Database.ExecuteSqlRawAsync("UPDATE ReplayHistories SET RuleId = 7");
+        }
+
+        (await Total(7)).Should().Be(1);
+        (await Total(8)).Should().Be(0);
+    }
+
+    [Fact]
     public async Task A_replay_records_the_failure_signature_it_is_earning_trust_for()
     {
         var (host, _, _, id) = await Seeded(() => Result<bool>.Success(true));
