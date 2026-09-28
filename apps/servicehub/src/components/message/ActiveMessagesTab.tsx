@@ -20,6 +20,8 @@ import { formatAge, formatBytes, formatWhen } from '../../lib/format'
 import { providerLabel } from '../../lib/providers'
 import { environmentOrder, namespaceTag } from '../provider/scopeChoice'
 import { namespaceKeys } from '../../hooks/useNamespaces'
+import { RetryLink } from '../ui/RetryLink'
+import { Skeleton } from '../ui/Skeleton'
 
 /** A peek is one request for up to this many of the oldest messages (the API's ceiling); the grid pages through them locally. */
 const PEEK_MAX = 100
@@ -73,7 +75,7 @@ export function ActiveMessagesTab({ provider, namespaces }: { provider: CloudPro
       {lists.some((l) => l.isPending) && <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading {cloud}…</p>}
       {lists.some((l) => l.isError) && (
         <p role="alert" className="rounded-xl bg-[var(--color-warning-light)] px-4 py-3 text-sm">
-          ServiceHub couldn’t read {cloud} just now.
+          ServiceHub couldn’t read {cloud} just now. <RetryLink onRetry={() => lists.forEach((l) => { if (l.isError) void l.refetch() })} />
         </p>
       )}
       {lists.every((l) => l.isSuccess) &&
@@ -162,7 +164,7 @@ function Browser({ rows }: { rows: readonly Row[] }) {
           >
             {rows.map((r) => (
               <option key={keyOf(r)} value={keyOf(r)}>
-                {several ? `${nameOf(r.namespace)} / ` : ''}{optionLabel(r)} · {r.entity.activeMessages === null ? "can't count" : r.entity.activeMessages.toLocaleString()}
+                {several ? `${nameOf(r.namespace)} / ` : ''}{optionLabel(r)} · {r.entity.activeMessages === null ? "can't count" : `${r.entity.activeMessages.toLocaleString()} waiting`}
               </option>
             ))}
           </select>
@@ -193,8 +195,8 @@ function Browser({ rows }: { rows: readonly Row[] }) {
           ? <ScheduledView namespaceId={chosen.namespace.id} {...target} />
           : <p className="px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">This cloud has no scheduled messages — messages here are delivered when they are sent.</p>)}
         {view === 'browse' && <>
-        {peek.isPending && <p role="status" className="px-4 py-3 text-sm text-[var(--color-text-muted)]">Looking…</p>}
-        {peek.isError && <p role="alert" className="px-4 py-3 text-sm">ServiceHub couldn’t look at this queue just now.</p>}
+        {peek.isPending && <Skeleton label="Looking…" rows={3} className="px-4 py-3" />}
+        {peek.isError && <p role="alert" className="px-4 py-3 text-sm">ServiceHub couldn’t look at this queue just now. <RetryLink onRetry={() => void peek.refetch()} /></p>}
         {peek.data && messages.length === 0 && <p className="px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">Nothing is waiting in this queue right now.</p>}
         {messages.length > 0 && (
           <>

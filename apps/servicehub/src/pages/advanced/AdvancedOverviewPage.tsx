@@ -15,6 +15,8 @@ import { fetchAuthority, type AuthoritySpread } from '../../lib/api/signatures'
 import { formatWhen } from '../../lib/format'
 import { providerLabel } from '../../lib/providers'
 import { InsightsTab } from '../../components/advanced/InsightsTab'
+import { RetryLink } from '../../components/ui/RetryLink'
+import { Skeleton } from '../../components/ui/Skeleton'
 
 const windows: readonly { id: RecoveryWindow; label: string; days: number }[] = [
   { id: '24h', label: 'Last 24 hours', days: 1 },
@@ -110,7 +112,7 @@ const h2 = 'text-[15px] font-bold'
 function Attention({ provider }: { provider?: CloudProvider }) {
   const pending = usePendingWork({ provider })
   const panel = useMinimizable('needs-your-attention-advanced')
-  if (!pending.data) return pending.isError ? <p role="alert" className={card}>ServiceHub couldn’t read what needs you.</p> : null
+  if (!pending.data) return pending.isError ? <p role="alert" className={card}>ServiceHub couldn’t read what needs you. <RetryLink onRetry={() => void pending.refetch()} /></p> : null
   const groups = (['approval', 'rule', 'agent'] as const).map((kind) => ({ kind, items: pending.data.items.filter((i) => i.kind === kind) })).filter((g) => g.items.length > 0)
   if (groups.length === 0) {
     return <p className={`${card} flex items-center gap-2 text-sm`}><ShieldCheck className="h-4 w-4 text-[var(--color-success)]" aria-hidden="true" /> Nothing needs a person right now.</p>
@@ -161,7 +163,7 @@ function Recovery({ provider, window, label }: { provider?: CloudProvider; windo
       <h2 className={`${h2} flex flex-wrap items-baseline gap-2`}>Recovery — {label.toLowerCase()}
         {d && <span className="ml-auto text-xs font-normal text-[var(--color-text-muted)]">{d.total} {d.total === 1 ? 'operation' : 'operations'}{d.stayedFixedRate !== null && <> · <b className="text-[var(--color-text)]">{Math.round(d.stayedFixedRate * 100)}% stayed fixed</b></>}</span>}
       </h2>
-      {summary.isError && <p role="alert" className="mt-2 text-sm">ServiceHub couldn’t read the recovery summary.</p>}
+      {summary.isError && <p role="alert" className="mt-2 text-sm">ServiceHub couldn’t read the recovery summary. <RetryLink onRetry={() => void summary.refetch()} /></p>}
       {d && d.total === 0 && <p className="mt-3 text-sm text-[var(--color-text-muted)]">No recoveries in this window.</p>}
       {d && d.total > 0 && (
         <>
@@ -208,8 +210,8 @@ function Authority({ provider, days }: { provider?: CloudProvider; days: number 
     <section aria-label="Authority — and why" className={card}>
       <h2 className={`${h2} flex items-center`}>Authority — and why<InfoTip help={widgetHelp.auth} /></h2>
       <p className="text-xs text-[var(--color-text-muted)]">What each failure may do on its own — and what holds it there.{a ? ` ${a.total} signatures seen.` : ''}</p>
-      {q.isPending && <p role="status" className="mt-2 text-sm text-[var(--color-text-muted)]">Counting…</p>}
-      {q.isError && <p role="alert" className="mt-2 text-sm">ServiceHub couldn’t read authority.</p>}
+      {q.isPending && <Skeleton label="Counting…" variant="block" className="mt-2" />}
+      {q.isError && <p role="alert" className="mt-2 text-sm">ServiceHub couldn’t read authority. <RetryLink onRetry={() => void q.refetch()} /></p>}
       {a && (
         <dl className="mt-3 space-y-3 text-sm">
           <div className="flex items-center gap-3"><dt className="w-28 font-semibold">Unattended</dt><dd className="flex items-center gap-2">{bar(a.unattended, '#0284c7')} <b>{a.unattended}</b></dd></div>
@@ -234,8 +236,18 @@ function Authority({ provider, days }: { provider?: CloudProvider; days: number 
 }
 
 function Agents() {
-  const agents = useAgents().data
-  if (!agents) return null
+  const query = useAgents()
+  const agents = query.data
+  if (!agents) {
+    return (
+      <section aria-label="Agents" className={card}>
+        <h2 className={`${h2} flex items-center`}>Agents<InfoTip help={widgetHelp.agents} /></h2>
+        {query.isError
+          ? <p role="alert" className="mt-2 text-sm">ServiceHub couldn’t read its agents. <RetryLink onRetry={() => void query.refetch()} /></p>
+          : <Skeleton label="Reading the agents…" variant="block" className="mt-2" />}
+      </section>
+    )
+  }
   const acting = agents.filter((a) => a.canAct && !a.isPaused).length
   const paused = agents.filter((a) => a.isPaused).length
   return (
@@ -257,8 +269,20 @@ function Agents() {
 }
 
 function Capability() {
-  const namespaces = useNamespaces().data ?? []
+  const query = useNamespaces()
+  const namespaces = query.data ?? []
   const clouds: readonly CloudProvider[] = ['azure', 'aws', 'gcp']
+  // Until the connections are read, "not connected" would be a claim nobody has checked.
+  if (!query.data) {
+    return (
+      <section aria-label="Capability" className={card}>
+        <h2 className={`${h2} flex items-center`}>Capability — what each cloud can prove<InfoTip help={widgetHelp.cap} /></h2>
+        {query.isError
+          ? <p role="alert" className="mt-2 text-sm">ServiceHub couldn’t read your connections. <RetryLink onRetry={() => void query.refetch()} /></p>
+          : <Skeleton label="Reading your connections…" variant="block" className="mt-2" />}
+      </section>
+    )
+  }
   return (
     <section aria-label="Capability" className={card}>
       <h2 className={`${h2} flex items-center`}>Capability — what each cloud can prove<InfoTip help={widgetHelp.cap} /></h2>
@@ -289,7 +313,7 @@ function WhatChanged() {
   return (
     <section aria-label="What changed" className={card}>
       <h2 className={`${h2} flex items-center`}>What changed — autonomy transitions<InfoTip help={widgetHelp.changed} /></h2>
-      {q.isError && <p role="alert" className="mt-2 text-sm">ServiceHub couldn’t read the transitions.</p>}
+      {q.isError && <p role="alert" className="mt-2 text-sm">ServiceHub couldn’t read the transitions. <RetryLink onRetry={() => void q.refetch()} /></p>}
       {q.data && changes.length === 0 && <p className="mt-2 text-sm text-[var(--color-text-muted)]">No failure has earned or lost automatic replay yet.</p>}
       {changes.length > 0 && (
         <ul className="mt-2 divide-y divide-[var(--color-border)] text-sm">

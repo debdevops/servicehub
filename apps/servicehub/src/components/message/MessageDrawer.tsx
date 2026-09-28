@@ -20,6 +20,8 @@ import { permission, type Permission } from '../../lib/permissions'
 import { NotAllowed } from '../ui/NotAllowed'
 import { formatAge, formatBytes, formatWhen } from '../../lib/format'
 import { resolutionWords } from '../../lib/resolutionWords'
+import { RetryLink } from '../ui/RetryLink'
+import { Skeleton } from '../ui/Skeleton'
 
 type Tab = 'overview' | 'body' | 'properties' | 'headers' | 'delivery'
 const tabs: readonly { id: Tab; label: string }[] = [
@@ -45,7 +47,7 @@ export function MessageDrawer() {
   // `view=full` is the wide modal reached from the side view; `view=modal` is the same modal opened straight from a list, with no side view to go back to.
   const modalOnly = params.get('view') === 'modal'
   const full = params.get('view') === 'full' || modalOnly
-  const { data, isPending, isError, error } = useDeadLetter(id)
+  const { data, isPending, isError, error, refetch } = useDeadLetter(id)
   const [tab, setTab] = useState<Tab>('overview')
 
   if (raw === null) return null
@@ -90,9 +92,9 @@ export function MessageDrawer() {
           ServiceHub has no dead letter with this link. It may belong to a cloud you are not connected to.
         </p>
       ) : isError ? (
-        <p role="alert" className="text-sm text-[var(--color-error)]">ServiceHub couldn’t read this message. Close it and try again.</p>
+        <p role="alert" className="text-sm text-[var(--color-error)]">ServiceHub couldn’t read this message. <RetryLink onRetry={() => void refetch()} /></p>
       ) : isPending ? (
-        <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading the message…</p>
+        <Skeleton label="Reading the message…" rows={6} />
       ) : (
         <Content detail={data} full={full} tab={tab} onTab={setTab} onReplay={openReplay} />
       )}

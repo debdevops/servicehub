@@ -6,6 +6,7 @@ import { fetchInsights, type InsightFinding, type InsightKind } from '../../lib/
 import type { CloudProvider } from '../../lib/api/namespaces'
 import { formatWhen } from '../../lib/format'
 import { providerLabel } from '../../lib/providers'
+import { Skeleton } from '../ui/Skeleton'
 
 const kinds: Readonly<Record<InsightKind, { label: string; Icon: typeof Activity }>> = {
   anomaly: { label: 'Spike or drop', Icon: Activity },
@@ -30,7 +31,7 @@ export function InsightsTab({ provider }: { provider?: CloudProvider }) {
         {q.data?.lastLookedAt && <>Last looked {formatWhen(q.data.lastLookedAt, now)}. </>}
         <Link to="/advanced/agents" className="font-medium text-[var(--color-primary-700)] hover:underline">The agents that look →</Link>
       </p>
-      {q.isPending && <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading insights…</p>}
+      {q.isPending && <Skeleton label="Reading insights…" rows={4} />}
       {q.isError && <p role="alert" className="text-sm">ServiceHub couldn’t read its insights. <button type="button" onClick={() => void q.refetch()} className="font-medium text-[var(--color-primary-700)] hover:underline">Try again</button></p>}
       {q.data && q.data.current.length === 0 && (
         <p className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-6 text-center text-sm">

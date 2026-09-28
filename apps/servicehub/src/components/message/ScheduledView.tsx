@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
 import { fetchScheduled } from '../../lib/api/messages'
 import { formatBytes, formatWhen } from '../../lib/format'
+import { RetryLink } from '../ui/RetryLink'
+import { Skeleton } from '../ui/Skeleton'
 
 /**
  * Scheduled (unit 6.17): what is waiting to be delivered later, soonest first. Read-only — cancelling would change the cloud
@@ -18,8 +20,8 @@ export function ScheduledView({ namespaceId, entity, subscription }: { namespace
           <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Refresh
         </button>
       </div>
-      {q.isPending && <p role="status" className="px-4 py-3 text-sm text-[var(--color-text-muted)]">Looking for scheduled messages…</p>}
-      {q.isError && <p role="alert" className="px-4 py-3 text-sm">ServiceHub couldn’t read the scheduled messages just now.</p>}
+      {q.isPending && <Skeleton label="Looking for scheduled messages…" rows={3} className="px-4 py-3" />}
+      {q.isError && <p role="alert" className="px-4 py-3 text-sm">ServiceHub couldn’t read the scheduled messages just now. <RetryLink onRetry={() => void q.refetch()} /></p>}
       {q.data && q.data.messages.length === 0 && <p className="px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">Nothing is scheduled on this queue.</p>}
       {q.data && q.data.messages.length > 0 && (
         <table className="w-full text-[12.5px]">

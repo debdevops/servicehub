@@ -5,6 +5,8 @@ import type { CloudProvider, EnvironmentKind } from '../../lib/api/namespaces'
 import { providerLabel } from '../../lib/providers'
 import { NO_REASON } from '../message/FailureGroups'
 import { InsightCard } from './InsightCard'
+import { RetryLink } from '../ui/RetryLink'
+import { Skeleton } from '../ui/Skeleton'
 
 // One series, so one hue: dead letters are the app's red. Everything else is ink and track grey.
 const BAR = '#dc2626'
@@ -29,7 +31,7 @@ export function WhyMessagesFailed({
   scopeQuery: string
 }) {
   const cloud = providerLabel[provider]
-  const { data, isPending, isError } = useDeadLetters({ provider, namespaceId, environment, status: 'active', pageSize: 1 })
+  const { data, isPending, isError, refetch } = useDeadLetters({ provider, namespaceId, environment, status: 'active', pageSize: 1 })
 
   const groups = [...(data?.groups ?? [])].sort((a, b) => b.count - a.count)
   const shown = groups.slice(0, SHOWN)
@@ -39,8 +41,8 @@ export function WhyMessagesFailed({
 
   return (
     <InsightCard title="Why messages failed" help={widgetHelp.whyFailed} note={total > 0 ? `${total.toLocaleString()} dead-lettered` : undefined}>
-      {isPending && <p role="status" className="text-[13px] text-[var(--color-text-muted)]">Reading {cloud}…</p>}
-      {isError && <p role="alert" className="text-[13px] text-[var(--color-text-muted)]">ServiceHub couldn’t read the reasons just now.</p>}
+      {isPending && <Skeleton label={`Reading {cloud}…`} rows={4} />}
+      {isError && <p role="alert" className="text-[13px] text-[var(--color-text-muted)]">ServiceHub couldn’t read the reasons just now. <RetryLink onRetry={() => void refetch()} /></p>}
       {data && total === 0 && <p className="text-[13px] text-[var(--color-text-muted)]">Nothing is dead-lettered in {cloud} right now, so there is nothing to explain.</p>}
       {data && total > 0 && (
         <ul className="space-y-3">

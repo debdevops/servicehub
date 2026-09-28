@@ -1,6 +1,7 @@
 import { useRecoverySummary } from '../../hooks/useRecoverySummary'
 import type { CloudProvider } from '../../lib/api/namespaces'
 import type { ScopeChoice } from '../provider/scopeChoice'
+import { RetryLink } from '../ui/RetryLink'
 
 const count = (states: readonly { state: string; count: number }[] | undefined, name: string) => states?.find((s) => s.state === name)?.count ?? 0
 
@@ -12,10 +13,10 @@ const count = (states: readonly { state: string; count: number }[] | undefined, 
  * never 0% (R4, R5).
  */
 export function ReplayedNumbers({ provider, choice }: { provider: CloudProvider; choice: ScopeChoice }) {
-  const { data, isPending, isError } = useRecoverySummary({ window: '24h', provider, namespaceId: choice.ns?.id, environment: choice.env ?? undefined })
+  const { data, isPending, isError, refetch } = useRecoverySummary({ window: '24h', provider, namespaceId: choice.ns?.id, environment: choice.env ?? undefined })
   // Loading draws the four tiles' shape (6.1), so the table below does not jump when the numbers arrive.
-  if (isPending) return <div className="mb-4 grid gap-3 sm:grid-cols-4" aria-hidden="true">{[0, 1, 2, 3].map((i) => <div key={i} className="h-[74px] animate-pulse rounded-xl bg-[var(--color-surface-muted)]" />)}</div>
-  if (isError || !data) return <p role="alert" className="mb-4 text-sm text-[var(--color-text-muted)]">ServiceHub couldn’t read the replay numbers just now; the list below is unaffected.</p>
+  if (isPending) return <div className="mb-4 grid gap-3 sm:grid-cols-4" aria-hidden="true">{[0, 1, 2, 3].map((i) => <div key={i} className="h-[74px] animate-pulse rounded-xl bg-[var(--color-border)]" />)}</div>
+  if (isError || !data) return <p role="alert" className="mb-4 text-sm text-[var(--color-text-muted)]">ServiceHub couldn’t read the replay numbers just now; the list below is unaffected. <RetryLink onRetry={() => void refetch()} /></p>
 
   const recovered = count(data.states, 'Recovered')
   const returned = count(data.states, 'Returned')
@@ -42,7 +43,7 @@ function Tile({ value, note, tone }: { value: string; note: string; tone?: 'good
   return (
     <div className={`rounded-xl border border-[var(--color-border)] p-4 ${box}`}>
       <div className="tabular text-2xl font-semibold">{value}</div>
-      <div className="mt-0.5 text-xs text-[var(--color-text-muted)]">{note}</div>
+      <div className={`mt-0.5 text-xs ${tone ? 'text-[#374151]' : 'text-[var(--color-text-muted)]'}`}>{note}</div>
     </div>
   )
 }

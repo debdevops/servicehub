@@ -6,12 +6,14 @@ import { useNamespaces, useRemoveNamespace, useTestConnection } from '../../hook
 import type { Namespace } from '../../lib/api/namespaces'
 import { providerLabel, providerService } from '../../lib/providers'
 import { environmentMeta, groupByCloudEnvironment } from '../provider/scopeChoice'
+import { RetryLink } from '../ui/RetryLink'
+import { Skeleton } from '../ui/Skeleton'
 
 const order = ['azure', 'aws', 'gcp'] as const
 
 function status(ns: Namespace) {
-  if (ns.lastConnectionTestSucceeded === true) return { Icon: CircleCheck, text: 'Connected', tone: 'text-[var(--color-success)]' }
-  if (ns.lastConnectionTestSucceeded === false) return { Icon: CircleAlert, text: 'Could not connect at last check', tone: 'text-[var(--color-warning)]' }
+  if (ns.lastConnectionTestSucceeded === true) return { Icon: CircleCheck, text: 'Connected', tone: 'text-[#047857]' }
+  if (ns.lastConnectionTestSucceeded === false) return { Icon: CircleAlert, text: 'Could not connect at last check', tone: 'text-[#92400e]' }
   return { Icon: CircleHelp, text: 'Not tested yet', tone: 'text-[var(--color-text-muted)]' }
 }
 
@@ -31,8 +33,8 @@ export default function ConnectionsPanel({ close }: OverlayBodyProps) {
   const [confirming, setConfirming] = useState<string | null>(null)
   const [typed, setTyped] = useState('')
 
-  if (namespaces.isPending) return <p role="status" className="text-sm text-[var(--color-text-muted)]">Loading your connections…</p>
-  if (namespaces.isError) return <p role="alert" className="text-sm text-[var(--color-error)]">Couldn’t load your connections.</p>
+  if (namespaces.isPending) return <Skeleton label="Loading your connections…" rows={3} />
+  if (namespaces.isError) return <p role="alert" className="text-sm text-[var(--color-error)]">Couldn’t load your connections. <RetryLink onRetry={() => void namespaces.refetch()} /></p>
 
   const runTest = (ns: Namespace) =>
     test.mutate(ns.id, {

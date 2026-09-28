@@ -5,11 +5,13 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as rulesApi from '../../lib/api/rules'
 import * as replayApi from '../../lib/api/replay'
+import * as identity from '../../lib/api/identity'
 import { bulkSelection } from '../../lib/bulkSelection'
 import { AutoReplayPage } from './AutoReplayPage'
 
 vi.mock('../../lib/api/rules')
 vi.mock('../../lib/api/replay')
+vi.mock('../../lib/api/identity', async (original) => ({ ...(await original<typeof identity>()), fetchMe: vi.fn() }))
 
 const rule = (over: Partial<rulesApi.Rule> = {}): rulesApi.Rule => ({
   id: 1, name: 'Payment timeouts', provider: 'azure', reason: 'Timeout', entityName: 'payments-dlq', signatureHash: 'h', maxPerHour: 10, waitSeconds: 120, backOff: true,
@@ -26,7 +28,27 @@ function renderPage() {
 }
 
 describe('Auto Replay page', () => {
-  beforeEach(() => { vi.clearAllMocks(); vi.mocked(rulesApi.fetchRuleSources).mockResolvedValue([]) })
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(rulesApi.fetchRuleSources).mockResolvedValue([])
+    vi.mocked(identity.fetchMe).mockResolvedValue({ ownerId: 'o', authMethod: 'session', actor: { identity: 's', kind: 'user', label: 'l', isSession: true }, effectiveRole: 'Admin', governanceActive: false } as identity.Me)
+  })
+
+  it('a Viewer is told in words, not only a tooltip, what is missing and who can grant it (6.1)', async () => {
+    vi.mocked(identity.fetchMe).mockResolvedValue({ ownerId: 'o', authMethod: 'session', actor: { identity: 's', kind: 'user', label: 'l', isSession: true }, effectiveRole: 'Viewer', recoverRole: 'Viewer', governanceActive: true, grantors: ['Ada'] } as identity.Me)
+    vi.mocked(rulesApi.fetchRules).mockResolvedValue([rule()])
+    renderPage()
+    expect((await screen.findAllByText(/you need the Operator role/)).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Ada can grant it/).length).toBeGreaterThan(0)
+  })
+
+  it('a failed read keeps the page title and a way to close it (6.1)', async () => {
+    vi.mocked(rulesApi.fetchRules).mockRejectedValue(new Error('down'))
+    renderPage()
+    expect(await screen.findByText(/couldn't read the rules just now/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /Auto Replay/ })).toBeInTheDocument()
+    expect(screen.getByLabelText('Close')).toBeInTheDocument()
+  })
 
   it('opens the explainer when there are no rules and offers a first rule', async () => {
     vi.mocked(rulesApi.fetchRules).mockResolvedValue([])
@@ -47,7 +69,7 @@ describe('Auto Replay page', () => {
     expect(rulesApi.testRule).toHaveBeenCalledWith({ provider: 'azure', reason: 'Timeout', entityName: 'payments-dlq', signatureHash: 'h' })
   })
 
-  it('shows the replays a rule sent, from the ledger', async () => {
+  it('shows the replays a rule sent, from its history', async () => {
     vi.mocked(rulesApi.fetchRules).mockResolvedValue([rule({ replayed: 1 })])
     vi.mocked(replayApi.fetchReplays).mockResolvedValue({
       total: 1, page: 1, pageSize: 5,
@@ -69,7 +91,7 @@ describe('Auto Replay page', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Delete Payment timeouts' }))
     expect(rulesApi.deleteRule).not.toHaveBeenCalled()
-    expect(screen.getByText(/stays in the ledger/)).toBeInTheDocument()
+    expect(screen.getByText(/stays in Replayed/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Yes, delete it' }))
     expect(rulesApi.deleteRule).toHaveBeenCalledWith(1)
   })

@@ -12,6 +12,8 @@ import { formatAge, formatWhen } from '../../lib/format'
 import { fetchReplays, type ReplayListItem } from '../../lib/api/replay'
 import { Collapsible } from '../ui/Collapsible'
 import { providerLabel } from '../../lib/providers'
+import { RetryLink } from '../ui/RetryLink'
+import { Skeleton } from '../ui/Skeleton'
 
 const rulesKey = (p: CloudProvider) => ['rules', p] as const
 
@@ -50,8 +52,22 @@ export function AutoReplayPage({ provider, onClose }: { provider: CloudProvider;
     if (params.has('rule')) setParams((c) => { const n = new URLSearchParams(c); n.delete('rule'); return n }, { replace: true })
   }
 
-  if (rules.isPending) return <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading your rules…</p>
-  if (rules.isError) return <p role="alert" className="text-sm text-[var(--color-error)]">ServiceHub couldn't read the rules just now.</p>
+  // Loading and failing keep the page's title and its way out, so a bad moment never leaves an untitled page you cannot close (6.1).
+  if (rules.isPending || rules.isError) {
+    return (
+      <div className="space-y-5">
+        <div className="flex items-start justify-between gap-4">
+          <h1 className="text-2xl font-semibold text-[var(--color-text)]">{cloud} — Auto Replay</h1>
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)]">
+            <X className="h-5 w-5" aria-label="Close" />
+          </button>
+        </div>
+        {rules.isPending
+          ? <Skeleton label="Reading your rules…" rows={4} />
+          : <p role="alert" className="text-sm text-[var(--color-error)]">ServiceHub couldn't read the rules just now. <RetryLink onRetry={() => void rules.refetch()} /></p>}
+      </div>
+    )
+  }
 
   const list = rules.data
   const on = list.filter((r) => r.enabled).length
@@ -64,11 +80,12 @@ export function AutoReplayPage({ provider, onClose }: { provider: CloudProvider;
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-semibold text-[var(--color-text)]">{cloud} — Auto Replay</h2>
+          <h1 className="text-2xl font-semibold text-[var(--color-text)]">{cloud} — Auto Replay</h1>
           <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
             What ServiceHub may retry on its own — {list.length} {list.length === 1 ? 'rule' : 'rules'}, {on} on
             {stopped > 0 ? `, ${stopped} stopped itself` : ''}
           </p>
+          <NotAllowed reason={mayCreate.reason} />
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button
@@ -201,7 +218,7 @@ function RuleActivity({ rule }: { rule: Rule }) {
     queryFn: () => fetchReplays({ provider: rule.provider, ruleId: rule.id, pageSize: 5 }),
   })
   const now = new Date()
-  if (isPending) return <p role="status" className="text-[12px] text-[var(--color-text-muted)]">Reading what it replayed…</p>
+  if (isPending) return <Skeleton label="Reading what it replayed…" rows={2} />
   if (isError) return <p role="alert" className="text-[12px] text-[var(--color-error)]">Couldn't read this rule's activity.</p>
   return (
     <ul className="divide-y divide-[var(--color-border)] rounded-lg border border-[var(--color-border)] text-[12.5px]">
@@ -264,7 +281,7 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
         </button>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="text-[15px] font-bold">{r.name}</h3>
+            <h2 className="text-[15px] font-bold">{r.name}</h2>
             {tripped ? (
               <span className="ml-auto rounded-full bg-[var(--color-error-light)] px-2.5 py-0.5 text-[11px] font-bold text-[#b91c1c]">Stopped itself</span>
             ) : r.verifiedOutcomes > 0 ? (
@@ -344,11 +361,12 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
           </button>
         </div>
         <p className="text-[11.5px] text-[var(--color-text-muted)]">Test shows what it would do today and sends nothing. Replay all shows a preview first.</p>
+        <NotAllowed reason={mayReplay.reason ?? mayDelete.reason ?? mayToggle.reason} />
         {replayAll.isError && <p role="alert" className="text-[12px] text-[var(--color-text-muted)]">{(replayAll.error as Error).message === 'none' ? 'Nothing matching is waiting in the queue right now.' : "Couldn't look for this rule's messages."}</p>}
         {editing && <EditRule rule={r} provider={provider} onDone={() => setEditing(false)} />}
         {confirmDelete && (
           <div role="alertdialog" aria-label={`Delete ${r.name}?`} className="rounded-lg border border-[#fecaca] bg-[var(--color-error-light)] px-3 py-2.5 text-[12.5px] text-[#7f1d1d]">
-            <p><b>Delete “{r.name}”?</b> The rule is removed for good. What it replayed stays in the ledger and in Replayed.</p>
+            <p><b>Delete “{r.name}”?</b> The rule is removed for good. What it replayed stays in Replayed.</p>
             {remove.isError && <p role="alert" className="mt-1">ServiceHub couldn't delete it.</p>}
             <div className="mt-2 flex gap-2">
               <button type="button" disabled={remove.isPending} onClick={() => remove.mutate()} className="rounded-lg bg-[#dc2626] px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-50">{remove.isPending ? 'Deleting…' : 'Yes, delete it'}</button>

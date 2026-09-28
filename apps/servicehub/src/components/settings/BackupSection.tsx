@@ -7,6 +7,8 @@ import { toProblem } from '../../lib/api/client'
 import { formatBytes, formatWhen } from '../../lib/format'
 import { permission } from '../../lib/permissions'
 import { NotAllowed } from '../ui/NotAllowed'
+import { RetryLink } from '../ui/RetryLink'
+import { Skeleton } from '../ui/Skeleton'
 
 const keys = { all: ['backups'] as const }
 const btn = 'inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-semibold hover:bg-[var(--color-surface-muted)] disabled:opacity-50'
@@ -50,8 +52,8 @@ export function BackupSection({ keyFingerprint }: { keyFingerprint: string }) {
             {create.isError && <p role="alert" className="mt-2 text-sm text-[#b91c1c]">{toProblem(create.error).message}</p>}
             {create.data && <p className="mt-2 text-sm">Backup <b>{create.data.backupId}</b> taken and checked.</p>}
           </div>
-          {list.isPending && <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading backups…</p>}
-          {list.isError && <p role="alert" className="text-sm">ServiceHub couldn’t read its backups.</p>}
+          {list.isPending && <Skeleton label="Reading backups…" rows={3} />}
+          {list.isError && <p role="alert" className="text-sm">ServiceHub couldn’t read its backups. <RetryLink onRetry={() => void list.refetch()} /></p>}
           {list.data && list.data.backups.length === 0 && <p className="text-sm text-[var(--color-text-muted)]">No backups yet.</p>}
           {list.data && list.data.backups.length > 0 && (
             <ul className="divide-y divide-[var(--color-border)] rounded-xl border border-[var(--color-border)]">
@@ -83,7 +85,7 @@ function RestorePanel({ id, onDone }: { id: string; onDone: () => void }) {
   return (
     <div className="mt-3 rounded-lg bg-[var(--color-surface-muted)] p-3">
       {check.isPending && <p role="status">Checking this backup…</p>}
-      {check.isError && <p role="alert">ServiceHub couldn’t check this backup.</p>}
+      {check.isError && <p role="alert">ServiceHub couldn’t check this backup. <RetryLink onRetry={() => void check.refetch()} /></p>}
       {check.data && (
         <>
           <ul aria-label="Checks" className="space-y-1.5">

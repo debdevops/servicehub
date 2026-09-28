@@ -6,7 +6,7 @@
 # It also means no existing job is renamed — branch protection matches required checks by NAME.
 #
 # ⚠️  After this workflow's first run, add its checks to the protected branches' required list:
-#     Build & Test API (4.1.0) · Build & Test Web (4.1.0) · Architecture Tests (4.1.0) ·
+#     Build & Test API (4.1.0) · Build & Test Web (4.1.0) · Accessibility (4.1.0) · Architecture Tests (4.1.0) ·
 #     Plan & Provenance Guards · Container Smoke Test (4.1.0) · CI Status (4.1.0)
 name: CI – ServiceHub 4.1.0
 
@@ -111,6 +111,41 @@ jobs:
           path: apps/servicehub/coverage/**
           retention-days: 7
 
+  accessibility:
+    name: Accessibility (4.1.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: apps/servicehub
+
+      # Unit 6.6. axe with colour contrast ON over every screen at 1366×768, plus a real-keyboard walk of the
+      # core loop. Runs in demo mode against `vite preview` of the production build — no API, no cloud.
+      # (The unit suite's axe cannot measure contrast: jsdom has no colours.)
+      - name: Accessibility and keyboard (Playwright)
+        run: npm run e2e -w apps/servicehub
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-4-1-0
+          path: |
+            apps/servicehub/playwright-report/**
+            apps/servicehub/test-results/**
+          retention-days: 7
+
   plan-and-provenance-guards:
     name: Plan & Provenance Guards
     runs-on: ubuntu-latest
@@ -171,6 +206,7 @@ jobs:
       - build-and-test-api
       - architecture-tests
       - build-and-test-web
+      - accessibility
       - plan-and-provenance-guards
       - container-smoke-test
     if: always()
@@ -187,6 +223,7 @@ jobs:
           check "API build/tests"        "${{ needs.build-and-test-api.result }}"
           check "Architecture rules"     "${{ needs.architecture-tests.result }}"
           check "Web build/tests"        "${{ needs.build-and-test-web.result }}"
+          check "Accessibility"          "${{ needs.accessibility.result }}"
           check "Plan & provenance guards" "${{ needs.plan-and-provenance-guards.result }}"
           check "Container smoke test"   "${{ needs.container-smoke-test.result }}"
           [ "$fail" -eq 0 ] || exit 1

@@ -50,12 +50,12 @@ describe('Active messages tab', () => {
     })
     const view = renderTab('azure', [named('a', 'Azure Prod'), named('b', 'Azure Dev')])
 
-    expect(await screen.findByRole('option', { name: 'Azure Prod / orders · 2' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Azure Dev / orders · 2' })).toBeInTheDocument()
+    expect(await screen.findByRole('option', { name: 'Azure Prod / orders · 2 waiting' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Azure Dev / orders · 2 waiting' })).toBeInTheDocument()
     view.unmount()
 
     renderTab('azure', [named('a', 'Azure Prod')])
-    expect(await screen.findByRole('option', { name: 'orders · 2' })).toBeInTheDocument()
+    expect(await screen.findByRole('option', { name: 'orders · 2 waiting' })).toBeInTheDocument()
   })
 
   it('shows counts only, and never looks, where a look is a delivery', async () => {

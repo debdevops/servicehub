@@ -36,7 +36,7 @@ export function PurgeAction({ dlqMessageId, namespaceId, active }: { dlqMessageI
         </button>
       ) : (
         <form className="space-y-2 rounded-xl border border-[#fecaca] bg-[#fef2f2] p-3" onSubmit={(e) => { e.preventDefault(); purge.mutate(reason.trim()) }}>
-          <p>Deletes it from the dead-letter queue <b>for good</b>. It goes through the same checks as a replay, and the ledger keeps your reason.</p>
+          <p>Deletes it from the dead-letter queue <b>for good</b>. It goes through the same checks as a replay, and your reason is recorded in Replayed.</p>
           <input value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Why purge it" placeholder="Why? (recorded with your name)" className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2" />
           <div className="flex gap-2">
             <button type="button" onClick={() => setOpen(false)} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 font-semibold">Cancel</button>

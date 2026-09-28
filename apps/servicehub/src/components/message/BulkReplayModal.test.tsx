@@ -49,6 +49,25 @@ describe('Bulk Replay modal', () => {
     expect(bulk.startBulk).not.toHaveBeenCalled()
   })
 
+  it('a failed preview says nothing was sent and Try again works, without re-opening (6.1)', async () => {
+    vi.mocked(bulk.previewBulk).mockRejectedValueOnce(new Error('down')).mockResolvedValue(preview())
+    renderModal()
+    expect(await screen.findByText(/so nothing was sent/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByText('Preview — nothing has run yet')).toBeInTheDocument()
+    expect(bulk.startBulk).not.toHaveBeenCalled()
+  })
+
+  it('a refused start is shown beside the buttons that were clicked, in the pinned footer (6.1)', async () => {
+    vi.mocked(bulk.previewBulk).mockResolvedValue(preview())
+    vi.mocked(bulk.startBulk).mockRejectedValue(new Error('gone'))
+    renderModal()
+    await screen.findByText('Preview — nothing has run yet')
+    await userEvent.click(screen.getAllByRole('button', { name: /^Replay \d+/ })[0])
+    const alert = await screen.findByRole('alert')
+    expect(alert.closest('footer')).not.toBeNull()
+  })
+
   it('starts only when the person chooses to, and moves to the running view in the URL', async () => {
     vi.mocked(bulk.previewBulk).mockResolvedValue(preview())
     vi.mocked(bulk.startBulk).mockResolvedValue({ id: 'job1' } as bulk.BulkProgress)
@@ -90,7 +109,8 @@ describe('Bulk Replay modal', () => {
     } as bulk.BulkProgress)
     renderModal('/?modal=bulk-replay&job=j')
 
-    expect(await screen.findByText('Bulk replay stopped itself')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Bulk replay stopped itself' })).toBeInTheDocument()
+    expect(screen.getAllByRole('status').some((e) => e.textContent === 'Bulk replay stopped itself')).toBe(true) // the verdict is announced, not just drawn
     expect(screen.getByText(/5 messages in a row were not accepted/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Stop now' })).not.toBeInTheDocument()
   })

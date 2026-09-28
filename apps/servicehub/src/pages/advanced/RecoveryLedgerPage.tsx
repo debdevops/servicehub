@@ -23,6 +23,7 @@ import { describeEvent, shortHash, stateChip, stateMeaning, stateTone } from '..
 import { formatWhen } from '../../lib/format'
 import { providerLabel } from '../../lib/providers'
 import type { CloudProvider, Namespace } from '../../lib/api/namespaces'
+import { Skeleton } from '../../components/ui/Skeleton'
 
 
 const windows: readonly { id: RecoveryWindow; label: string }[] = [
@@ -145,7 +146,7 @@ export default function RecoveryLedgerPage() {
           </nav>
 
           {waitingTab && <WaitingView page={waiting.data} pending={waiting.isPending} failed={waiting.isError} />}
-          {!waitingTab && ledger.isPending && <p role="status" className="px-6 py-8 text-sm text-[var(--color-text-muted)]">Reading the ledger…</p>}
+          {!waitingTab && ledger.isPending && <Skeleton label="Reading the ledger…" rows={6} className="px-6 py-8" />}
           {!waitingTab && ledger.isError && (
             <p role="alert" className="flex items-center gap-2 px-6 py-8 text-sm"><TriangleAlert className="h-4 w-4" aria-hidden="true" /> ServiceHub couldn’t read the ledger.
               <button type="button" onClick={() => void ledger.refetch()} className="text-[var(--color-primary-700)] hover:underline">Try again</button></p>
@@ -176,7 +177,7 @@ export default function RecoveryLedgerPage() {
  */
 function WaitingView({ page, pending, failed }: { page: PendingWorkPage | undefined; pending: boolean; failed: boolean }) {
   const [reason, setReason] = useState<string>('')
-  if (pending) return <p role="status" className="px-6 py-8 text-sm text-[var(--color-text-muted)]">Reading what is waiting…</p>
+  if (pending) return <Skeleton label="Reading what is waiting…" rows={4} className="px-6 py-8" />
   if (failed || !page) return <p role="alert" className="px-6 py-8 text-sm">ServiceHub couldn’t read what is waiting.</p>
   const codes = [...new Set(page.items.map((i) => i.reasonCode))]
   const rows = pendingRows(page.items.filter((i) => !reason || i.reasonCode === reason)).map((r) => ({

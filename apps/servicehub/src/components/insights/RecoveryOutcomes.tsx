@@ -6,6 +6,8 @@ import type { CloudProvider, EnvironmentKind } from '../../lib/api/namespaces'
 import { stateChip, stateMeaning, stateTone } from '../../lib/ledgerWords'
 import { providerLabel } from '../../lib/providers'
 import { InsightCard } from './InsightCard'
+import { RetryLink } from '../ui/RetryLink'
+import { Skeleton } from '../ui/Skeleton'
 
 // Status colours are reserved for state, and each ships with an icon and a word — colour is never the only carrier.
 const TONE = {
@@ -25,7 +27,7 @@ const ORDER: readonly EntryState[] = ['Returned', 'ExecutionFailed', 'ExecutionU
  */
 export function RecoveryOutcomes({ provider, namespaceId, environment, window = '7d' }: { provider: CloudProvider; namespaceId?: string; environment?: EnvironmentKind; window?: '24h' | '7d' }) {
   const cloud = providerLabel[provider]
-  const { data, isPending, isError } = useRecoverySummary({ window, provider, namespaceId, environment })
+  const { data, isPending, isError, refetch } = useRecoverySummary({ window, provider, namespaceId, environment })
 
   const parts = ORDER.map((s) => ({ state: s, count: data?.states.find((x) => x.state === s)?.count ?? 0 })).filter((p) => p.count > 0)
   const total = parts.reduce((n, p) => n + p.count, 0)
@@ -34,8 +36,8 @@ export function RecoveryOutcomes({ provider, namespaceId, environment, window = 
 
   return (
     <InsightCard title="How replays ended" help={widgetHelp.replayOutcomes} note={period}>
-      {isPending && <p role="status" className="text-[13px] text-[var(--color-text-muted)]">Reading the ledger…</p>}
-      {isError && <p role="alert" className="text-[13px] text-[var(--color-text-muted)]">ServiceHub couldn’t read the ledger just now.</p>}
+      {isPending && <Skeleton label="Reading replay history…" rows={3} />}
+      {isError && <p role="alert" className="text-[13px] text-[var(--color-text-muted)]">ServiceHub couldn’t read the replay history just now. <RetryLink onRetry={() => void refetch()} /></p>}
       {data && total === 0 && <p className="text-[13px] text-[var(--color-text-muted)]">Nothing has been replayed in {cloud} in the {period}.</p>}
       {data && total > 0 && (
         <>

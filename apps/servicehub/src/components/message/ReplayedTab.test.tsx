@@ -34,7 +34,8 @@ describe('the Replayed tab', () => {
     listMock.mockResolvedValue(page([row()]))
     renderTab()
     expect(await screen.findByText(/Watching · until/)).toBeInTheDocument()
-    expect(screen.queryByText(/stayed fixed/i)).toBeNull()
+    // The row says nothing is verified; the explainer's definition of the term is not a claim about this row.
+    expect(within(screen.getByRole('table')).queryByText(/stayed fixed/i)).toBeNull()
   })
 
   it('shows the same replay differently on a cloud that can prove it and one that cannot', async () => {

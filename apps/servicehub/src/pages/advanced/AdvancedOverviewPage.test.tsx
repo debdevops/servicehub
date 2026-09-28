@@ -47,6 +47,19 @@ describe('Advanced Overview', () => {
     await expectNoAxeViolations(container)
   })
 
+  it('a failed read never leaves a panel missing or lying: Agents and Capability say what failed and retry (6.1)', async () => {
+    vi.mocked(agents.fetchAgents).mockRejectedValueOnce(new Error('down'))
+    vi.mocked(ns.fetchNamespaces).mockRejectedValueOnce(new Error('down'))
+    wrap()
+    const agentsPanel = await screen.findByRole('region', { name: 'Agents' })
+    expect(await within(agentsPanel).findByText(/couldn’t read its agents/)).toBeInTheDocument()
+    const capability = screen.getByRole('region', { name: 'Capability' })
+    expect(await within(capability).findByText(/couldn’t read your connections/)).toBeInTheDocument()
+    expect(within(capability).queryByText('not connected')).toBeNull()
+    await userEvent.click(within(agentsPanel).getByRole('button', { name: 'Try again' }))
+    expect(await within(agentsPanel).findByText(/agents registered in this build/)).toBeInTheDocument()
+  })
+
   it('leads with what needs a person, as a link', async () => {
     wrap()
     const attention = await screen.findByRole('region', { name: 'Needs your attention' })

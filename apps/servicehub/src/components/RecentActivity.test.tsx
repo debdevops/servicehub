@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, act } from '@testing-library/react'
+import { render, screen, act, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as identity from '../lib/api/identity'
@@ -21,6 +21,21 @@ function renderIt() {
 describe('Recent activity', () => {
   beforeEach(() => auditMock.mockResolvedValue({ items: [entry('1')], page: 1, pageSize: 8, total: 1 }))
   afterEach(() => stream.stopEventStream())
+
+  it('a failed read says what failed and offers Try again, which reads it again (6.1)', async () => {
+    auditMock.mockRejectedValueOnce(new Error('boom'))
+    renderIt()
+    expect(await screen.findByText(/couldn’t read its activity history/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByText('Replayed a message')).toBeInTheDocument()
+  })
+
+  it('the feed is a polite live region, so a new entry is announced without stealing focus (6.6)', async () => {
+    renderIt()
+    await screen.findByText('Replayed a message')
+    const list = screen.getByRole('list', { name: /Recent activity/ })
+    expect(list).toHaveAttribute('aria-live', 'polite')
+  })
 
   it('reads the durable history and says it is not live when the stream is not open', async () => {
     renderIt()

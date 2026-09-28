@@ -196,7 +196,7 @@ export function AppLayout() {
 
 const itemClass = 'mb-0.5 flex items-center gap-[11px] rounded-[9px] px-[13px] py-[8.5px] text-[13.5px] font-medium transition-colors'
 const idleClass = 'text-[#374151] hover:bg-[var(--color-primary-50)] hover:text-[var(--color-primary-700)]'
-const activeClass = 'font-semibold text-white shadow-[0_2px_6px_rgba(2,132,199,0.3)] [background:linear-gradient(100deg,#0284c7,#0369a1)]'
+const activeClass = 'font-semibold text-white shadow-[0_2px_6px_rgba(3,105,161,0.3)] [background:linear-gradient(100deg,#0369a1,#075985)]'
 
 /** The Ledger's sidebar badge: how many things wait for a person — the bell's count, from the same query (5.9). */
 function WaitingBadge() {

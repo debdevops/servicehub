@@ -304,3 +304,7 @@ services/api/**/obj/
 *.db
 *.db-shm
 *.db-wal
+
+# Playwright (4.1.0 web app)
+apps/servicehub/test-results/
+apps/servicehub/playwright-report/

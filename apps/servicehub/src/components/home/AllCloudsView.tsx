@@ -19,6 +19,7 @@ import { traitsOf } from '../../lib/home/traits'
 import type { HomeWindow } from '../../lib/home/scope'
 import { formatWhen } from '../../lib/format'
 import { auditActionWords } from '../../lib/auditWords'
+import { Skeleton } from '../ui/Skeleton'
 
 const allProviders: readonly CloudProvider[] = ['azure', 'aws', 'gcp']
 const windowLabel: Record<HomeWindow, string> = { '24h': 'in 24 h', '7d': 'in 7 d' }
@@ -283,7 +284,7 @@ function LatestEverywhere({ connected, namespaces }: { connected: readonly Cloud
   const nameOf = new Map(namespaces.map((n) => [n.id, n]))
   const anyError = perCloud.some((q) => q.isError)
   if (anyError && loaded.length === 0) return <p role="alert" className="text-sm">ServiceHub couldn’t read the latest dead letters. <button type="button" onClick={() => perCloud.forEach((q) => void q.refetch())} className="font-medium text-[var(--color-primary-700)] hover:underline">Try again</button></p>
-  if (loaded.length < connected.length) return <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading every cloud…</p>
+  if (loaded.length < connected.length) return <Skeleton label="Reading every cloud…" variant="block" />
   if (items.length === 0) return null
   return (
     <section aria-label="Latest dead letters, every cloud" className="h-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { api, toProblem } from '../api/client'
+import { previewBulk, startBulk } from '../api/bulk'
 import { fetchDeadLetters } from '../api/deadLetters'
 import { fetchNamespaces } from '../api/namespaces'
 import { fetchReplays, replayMessage } from '../api/replay'
@@ -33,6 +34,13 @@ describe('demo mode', () => {
     expect(page.items).toHaveLength(5)
     expect(page.items.every((d) => d.namespaceId === demoNamespaces[0].id && d.status === 'active')).toBe(true)
     expect(page.groups.reduce((n, g) => n + g.count, 0)).toBe(page.paging.total)
+  })
+
+  it('previews a bulk replay (it changes nothing) but never starts one', async () => {
+    const preview = await previewBulk([1, 2, 3])
+    expect(preview.selected).toBe(3)
+    expect(preview.willReplay + preview.heldBackCount).toBe(3)
+    await expect(startBulk(preview.previewId, false)).rejects.toBeTruthy()
   })
 
   it('never sends: every write is refused in words', async () => {

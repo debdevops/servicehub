@@ -10,6 +10,8 @@ import { InsightCard } from './InsightCard'
 // waiting first, dead-lettered second. Blue and red are the app's own "active" and "dead letter" hues (see the stat tiles).
 const ACTIVE = '#0284c7'
 const DEAD = '#dc2626'
+// Striped, so the two series differ by texture as well as by colour (WCAG 1.4.1, unit 6.6).
+const DEAD_FILL = `repeating-linear-gradient(135deg, ${DEAD} 0 4px, #fca5a5 4px 7px)`
 const TRACK = '#f3f4f6'
 const SHOWN = 8
 
@@ -41,7 +43,7 @@ export function QueueDepth({ summary, namespaces, cloud }: { summary: CloudSumma
         <>
           <p className="mb-3 flex items-center gap-4 text-[11.5px] text-[var(--color-text-muted)]">
             <span className="flex items-center gap-1.5"><span aria-hidden="true" className="inline-block h-2 w-2 rounded-full" style={{ background: ACTIVE }} /> Waiting</span>
-            <span className="flex items-center gap-1.5"><span aria-hidden="true" className="inline-block h-2 w-2 rounded-full" style={{ background: DEAD }} /> Dead-lettered</span>
+            <span className="flex items-center gap-1.5"><span aria-hidden="true" className="inline-block h-2 w-2 rounded-full" style={{ background: DEAD_FILL }} /> Dead-lettered</span>
           </p>
           <ul className="space-y-3.5">
             {shown.map((r) => {
@@ -51,7 +53,7 @@ export function QueueDepth({ summary, namespaces, cloud }: { summary: CloudSumma
               const label = several ? `${nameOf.get(r.namespaceId) ?? 'namespace'} / ${entityLabel}` : entityLabel
               const bars = [
                 { key: 'a', name: 'Waiting', value: e.activeMessages, fill: ACTIVE },
-                { key: 'd', name: 'Dead-lettered', value: e.deadLetterMessages, fill: DEAD },
+                { key: 'd', name: 'Dead-lettered', value: e.deadLetterMessages, fill: DEAD_FILL },
               ]
               return (
                 <li key={`${r.namespaceId}|${e.kind}|${e.name}`}>

@@ -4,6 +4,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { usePendingWork } from '../../hooks/usePendingWork'
 import { pendingRows } from '../../lib/pendingRows'
 import { PendingWorkList } from './PendingWorkList'
+import { Skeleton } from '../ui/Skeleton'
 
 /**
  * The bell (5.3): how many things are waiting for a person, across every cloud. It counts PENDING WORK, not unread
@@ -40,7 +41,7 @@ export function Bell() {
       >
         <BellIcon className="h-5 w-5" aria-hidden="true" />
         {total > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#f59e0b] px-1 text-[10.5px] font-bold text-white">
+          <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#f59e0b] px-1 text-[10.5px] font-bold text-[#111827]">
             {total > 99 ? '99+' : total}
           </span>
         )}
@@ -53,13 +54,13 @@ export function Bell() {
             </p>
             <p className="text-[11px] text-[var(--color-text-muted)]">clears when it’s resolved, not when you look</p>
           </div>
-          {pending.isPending && <p role="status" className="px-5 py-4 text-sm text-[var(--color-text-muted)]">Reading what is waiting…</p>}
+          {pending.isPending && <Skeleton label="Reading what is waiting…" rows={3} className="px-5 py-4" />}
           {pending.isError && <p className="px-5 py-4 text-sm">ServiceHub couldn’t read what is waiting. <button type="button" className="font-medium text-[var(--color-primary-700)] hover:underline" onClick={() => void pending.refetch()}>Try again</button></p>}
           {pending.data && rows.length === 0 && <p className="px-5 py-5 text-sm text-[var(--color-text-muted)]">Nothing is waiting for you.</p>}
           {rows.length > 0 && <div className="max-h-[60vh] overflow-y-auto"><PendingWorkList rows={rows} now={new Date()} dense /></div>}
           <p className="flex items-center gap-2 border-t border-[var(--color-border)] bg-[var(--color-surface-muted)] px-5 py-2.5 text-[11.5px] text-[var(--color-text-muted)]">
             The bell is always on. Slack and Teams get the same items if they are set up.
-            <Link to="/advanced/ledger?state=Waiting" className="ml-auto whitespace-nowrap font-semibold text-[var(--color-primary-700)] hover:underline">All in the Ledger ›</Link>
+            <Link to="/advanced/ledger?state=Waiting" className="ml-auto whitespace-nowrap font-semibold text-[var(--color-primary-700)] hover:underline">See all waiting ›</Link>
           </p>
         </div>
       )}

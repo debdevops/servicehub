@@ -13,6 +13,8 @@ import { formatAge } from '../../lib/format'
 import { providerLabel } from '../../lib/providers'
 import { environmentMeta } from '../provider/scopeChoice'
 import type { OverlayBodyProps } from '../overlays/registry'
+import { RetryLink } from '../ui/RetryLink'
+import { Skeleton } from '../ui/Skeleton'
 
 /**
  * Approve and Decline (5.10) — `?modal=approve&group=<cloud>:<namespace>` or `&entry=<id>`. One modal, five doors: the bell,
@@ -43,7 +45,7 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
   if (approve.data) return <Approved results={approve.data} close={close} />
   if (decline.isSuccess) {
     return (
-      <div className="space-y-4 text-sm">
+      <div className="space-y-4 text-sm" role="status">
         <p className="flex items-center gap-2 font-semibold"><Check className="h-4 w-4 text-[var(--color-success)]" aria-hidden="true" /> Declined, with your reason recorded in the Ledger.</p>
         <p className="text-[var(--color-text-muted)]">Nothing was deleted. The Agent won’t ask about these messages again unless they fail again.</p>
         <button type="button" onClick={close} className="rounded-lg border border-[var(--color-border)] px-3.5 py-2 font-semibold">Close</button>
@@ -51,8 +53,8 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
     )
   }
 
-  if (pending.isPending) return <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading what is waiting…</p>
-  if (pending.isError) return <p role="alert" className="text-sm">ServiceHub couldn’t read what is waiting. Close this and try again.</p>
+  if (pending.isPending) return <Skeleton label="Reading what is waiting…" rows={3} />
+  if (pending.isError) return <p role="alert" className="text-sm">ServiceHub couldn’t read what is waiting. <RetryLink onRetry={() => void pending.refetch()} /></p>
   if (waiting.length === 0) {
     return (
       <div className="space-y-3 text-sm">
@@ -74,7 +76,7 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
 
   return (
     <div className="space-y-5 text-sm">
-      <header className="flex items-start gap-3">
+      <div className="flex items-start gap-3">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#fffbeb] text-[#d97706]"><Clock className="h-5 w-5" aria-hidden="true" /></span>
         <div>
           <p className="text-lg font-bold">The Agent stopped and asked you</p>
@@ -83,7 +85,7 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
             {first.environment && <span className={`ml-2 rounded-full px-2 py-0.5 text-[11px] font-semibold ${environmentMeta[first.environment].chip}`}>{environmentMeta[first.environment].label}</span>}
           </p>
         </div>
-      </header>
+      </div>
 
       <section className="rounded-xl border border-[#bae6fd] bg-[#f0f9ff] p-4">
         <h3 className="flex items-center gap-2 font-bold text-[var(--color-primary-700)]"><Bot className="h-4 w-4" aria-hidden="true" /> Why it asked instead of acting</h3>
@@ -98,6 +100,12 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
         </ul>
       </section>
 
+      {proposal.isPending && proposal.fetchStatus !== 'idle' && <Skeleton label="Working out the safety checks…" rows={3} />}
+      {proposal.isError && (
+        <p role="alert" className="rounded-xl border border-[var(--color-warning)] bg-[var(--color-warning-light)] px-4 py-3">
+          ServiceHub couldn’t show the safety checks just now. Approving still runs them on every message. <RetryLink onRetry={() => void proposal.refetch()} />
+        </p>
+      )}
       {proposal.data && (
         <section>
           <h3 className="mb-1.5 text-[10.5px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">Safety checks</h3>
@@ -143,7 +151,7 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
         <button type="button" onClick={close} className="rounded-lg border border-[var(--color-border)] px-3.5 py-2 font-semibold">Not now</button>
         {!declining && <button type="button" onClick={() => setDeclining(true)} disabled={busy || !may.allowed} className="rounded-lg border border-[#fecaca] px-3.5 py-2 font-semibold text-[#b91c1c]">Decline…</button>}
         <button type="button" disabled={busy || !may.allowed || chosen.length === 0} onClick={() => approve.mutate(chosen.map((i) => i.entryId!))}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-[#d97706] px-4 py-2 font-bold text-white hover:bg-[#b45309] disabled:opacity-50">
+          className="inline-flex items-center gap-1.5 rounded-lg bg-[#b45309] px-4 py-2 font-bold text-white hover:bg-[#92400e] disabled:opacity-50">
           <Check className="h-4 w-4" aria-hidden="true" /> {approve.isPending ? 'Replaying…' : `Approve ${chosen.length} ${chosen.length === 1 ? 'replay' : 'replays'}`}
         </button>
       </footer>
@@ -169,7 +177,7 @@ function Approved({ results, close }: { results: readonly { entryId: string; ok:
   const ok = results.filter((r) => r.ok).length
   const failed = results.filter((r) => !r.ok)
   return (
-    <div className="space-y-4 text-sm">
+    <div className="space-y-4 text-sm" role="status">
       <p className="flex items-center gap-2 text-base font-semibold"><Check className="h-5 w-5 text-[var(--color-success)]" aria-hidden="true" /> {ok} {ok === 1 ? 'replay' : 'replays'} sent, each recorded with your name.</p>
       <p className="text-[var(--color-text-muted)]">Each is now being watched to see whether it stays fixed — follow it on the Replayed tab.</p>
       {failed.length > 0 && (

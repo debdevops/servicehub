@@ -5,6 +5,7 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { useDeadLetterTrend } from '../hooks/useDeadLetters'
 import type { TrendDay } from '../lib/api/deadLetters'
 import type { CloudProvider, EnvironmentKind } from '../lib/api/namespaces'
+import { Skeleton } from './ui/Skeleton'
 
 const RANGES = [7, 14, 30] as const
 
@@ -58,7 +59,7 @@ export default function TrendChart({ provider, namespaceId, environment }: { pro
         </div>
       </header>
 
-      {isPending && <p role="status" className="py-10 text-center text-sm text-[var(--color-text-muted)]">Reading the trend…</p>}
+      {isPending && <Skeleton label="Reading the trend…" variant="block" className="py-10" />}
       {isError && (
         <p role="alert" className="py-6 text-center text-sm">
           ServiceHub couldn’t read the trend. <button type="button" onClick={() => void refetch()} className="text-[var(--color-primary-700)] hover:underline">Try again</button>

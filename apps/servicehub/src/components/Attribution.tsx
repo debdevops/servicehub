@@ -101,7 +101,7 @@ export function Attribution({
         </p>
         {extra && <p className="mt-0.5 text-xs">{extra}</p>}
       </div>
-      <Check className="mt-1 h-4 w-4 text-[var(--color-success)]" aria-label="Recorded in the ledger" />
+      <Check className="mt-1 h-4 w-4 text-[var(--color-success)]" aria-label="Recorded in the history" />
     </section>
   )
 }

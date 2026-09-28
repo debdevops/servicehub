@@ -44,7 +44,7 @@ export function PendingWorkList({ rows, now, primaryFirst = true, dense = false 
             </div>
             <Link
               to={resolve(r.action.href)}
-              className={`shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold ${primary ? 'bg-[#d97706] text-white hover:bg-[#b45309]' : 'border border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-muted)]'}`}
+              className={`shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold ${primary ? 'bg-[#b45309] text-white hover:bg-[#92400e]' : 'border border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-muted)]'}`}
             >
               {r.action.label}
             </Link>

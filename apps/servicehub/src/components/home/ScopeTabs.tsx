@@ -56,12 +56,12 @@ function Tab({ on, onClick, children }: { on: boolean; onClick: () => void; chil
 }
 
 function Count({ value, suffix, on }: { value: number; suffix: string; on: boolean }) {
-  return <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${on ? 'bg-white/20' : 'bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]'}`}>{value} {suffix}</span>
+  return <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${on ? 'bg-[#075985]' : 'bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]'}`}>{value} {suffix}</span>
 }
 
 function CountOrCant({ value, on }: { value: number | null; on: boolean }) {
   return (
-    <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${on ? 'bg-white/20' : value === null ? 'bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]' : 'bg-[var(--color-error-light)] text-[#b91c1c]'}`}>
+    <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold ${on ? 'bg-[#075985]' : value === null ? 'bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]' : 'bg-[var(--color-error-light)] text-[#b91c1c]'}`}>
       {value === null ? 'can’t count' : value.toLocaleString()}
     </span>
   )

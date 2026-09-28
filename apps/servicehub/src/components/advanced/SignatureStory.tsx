@@ -6,6 +6,8 @@ import type { CloudProvider } from '../../lib/api/namespaces'
 import { fetchIncident, fetchTrace } from '../../lib/api/signatures'
 import { formatWhen } from '../../lib/format'
 import { providerLabel } from '../../lib/providers'
+import { RetryLink } from '../ui/RetryLink'
+import { Skeleton } from '../ui/Skeleton'
 
 const dot: Readonly<Record<string, string>> = { first_seen: '#ef4444', came_back: '#fca5a5', replayed: '#0284c7', purged: '#6b7280', dead_lettered: '#ef4444' }
 
@@ -13,8 +15,8 @@ const dot: Readonly<Record<string, string>> = { first_seen: '#ef4444', came_back
 export function IncidentTimeline({ hash, provider }: { hash: string; provider: CloudProvider }) {
   const q = useQuery({ queryKey: ['signatures', 'incident', hash, provider], queryFn: () => fetchIncident(hash, provider) })
   const now = new Date()
-  if (q.isPending) return <p role="status" className="text-[var(--color-text-muted)]">Reading its story…</p>
-  if (q.isError) return <p role="alert">ServiceHub couldn’t read this signature’s story.</p>
+  if (q.isPending) return <Skeleton label="Reading its story…" rows={4} />
+  if (q.isError) return <p role="alert">ServiceHub couldn’t read this signature’s story. <RetryLink onRetry={() => void q.refetch()} /></p>
   const s = q.data
   return (
     <div className="space-y-3">
@@ -52,7 +54,7 @@ export function TraceView() {
       </form>
       <p className="mt-2 text-xs text-[var(--color-text-muted)]">Searches what ServiceHub recorded across every connected cloud — it never looks into a cloud to trace, so tracing can’t cause a delivery.</p>
       {q.isFetching && <p role="status" className="mt-4 text-sm text-[var(--color-text-muted)]">Tracing…</p>}
-      {q.isError && <p role="alert" className="mt-4 text-sm">ServiceHub couldn’t trace that just now.</p>}
+      {q.isError && <p role="alert" className="mt-4 text-sm">ServiceHub couldn’t trace that just now. <RetryLink onRetry={() => void q.refetch()} /></p>}
       {q.data && q.data.hops.length === 0 && <p className="mt-4 text-sm">Nothing recorded carries “{q.data.correlationId}”. {q.data.note}</p>}
       {q.data && q.data.hops.length > 0 && (
         <>

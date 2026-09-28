@@ -19,6 +19,8 @@ import { formatAge } from '../../lib/format'
 import { providerLabel } from '../../lib/providers'
 import { useState } from 'react'
 import { IncidentTimeline, TraceView } from '../../components/advanced/SignatureStory'
+import { RetryLink } from '../../components/ui/RetryLink'
+import { Skeleton } from '../../components/ui/Skeleton'
 
 const asTab = (v: string | null): SignatureTab => (v === 'growing' || v === 'helps' || v === 'doesnt' ? v : 'all')
 const asProvider = (v: string | null): CloudProvider | undefined => (v === 'azure' || v === 'aws' || v === 'gcp' ? v : undefined)
@@ -115,8 +117,8 @@ export default function FailureSignaturesPage() {
 
       {explainer.shown && <ExplainerCard id="signatures" onDismiss={explainer.dismiss} />}
       {tracing && <TraceView />}
-      {!tracing && list.isPending && <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading signatures…</p>}
-      {!tracing && list.isError && <p role="alert" className="text-sm text-[var(--color-error)]">ServiceHub couldn’t read the signatures just now.</p>}
+      {!tracing && list.isPending && <Skeleton label="Reading signatures…" rows={5} />}
+      {!tracing && list.isError && <p role="alert" className="text-sm text-[var(--color-error)]">ServiceHub couldn’t read the signatures just now. <RetryLink onRetry={() => void list.refetch()} /></p>}
 
       {!tracing && data && (
         <div className="flex items-start gap-3.5">
@@ -278,7 +280,7 @@ function Detail({ s, days, now, onClose }: { s: Signature; days: number; now: Da
 function Earned({ hash, provider }: { hash: string; provider: Signature['provider'] }) {
   const trust = useQuery({ queryKey: ['signatures', 'trust', hash, provider], queryFn: () => fetchSignatureTrust(hash, provider) })
   if (trust.isPending) return <p role="status" className="text-[var(--color-text-muted)]">Counting its verified replays…</p>
-  if (trust.isError) return <p className="text-[var(--color-text-muted)]">ServiceHub couldn’t read what it has earned.</p>
+  if (trust.isError) return <p className="text-[var(--color-text-muted)]">ServiceHub couldn’t read what it has earned. <RetryLink onRetry={() => void trust.refetch()} /></p>
   const w = trustWords(trust.data, providerLabel[provider])
   const tone = w.answer === 'yes' ? 'bg-[var(--color-success-light)] text-[#047857]' : w.answer === 'no' ? 'bg-[var(--color-surface-muted)] text-[var(--color-text)]' : 'bg-[var(--color-warning-light)] text-[#92400e]'
   return (

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -41,6 +41,14 @@ describe('Approve and Decline', () => {
     await expectNoAxeViolations(document.body)
   })
 
+  it('when the safety checks cannot be read it says so and offers Try again, instead of showing none (6.1)', async () => {
+    vi.mocked(replay.fetchReplayProposal).mockRejectedValueOnce(new Error('down'))
+    open()
+    expect(await screen.findByText(/couldn’t show the safety checks just now/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByText(/AWS can’t confirm the fix held/)).toBeInTheDocument()
+  })
+
   it('shows a Viewer the actions disabled with the reason and who can grant it — never hidden', async () => {
     vi.mocked(identity.fetchMe).mockResolvedValue({
       ownerId: 'o', authMethod: 'ApiKey', actor: { identity: 'ApiKey:reader', kind: 'apiKey', label: 'ApiKey:reader', isSession: false },
@@ -60,7 +68,8 @@ describe('Approve and Decline', () => {
     await userEvent.click(screen.getByRole('button', { name: /Approve 1 replay/ }))
     expect(api.approvePending).toHaveBeenCalledTimes(1)
     expect(api.approvePending).toHaveBeenCalledWith('e1')
-    expect(await screen.findByText(/1 replay sent, each recorded with your name/)).toBeInTheDocument()
+    const sent = await screen.findByText(/1 replay sent, each recorded with your name/)
+    expect(sent.closest('[role=status]')).not.toBeNull() // the result is announced, not only drawn (6.6)
   })
 
   it('declines only with a reason', async () => {
@@ -72,6 +81,7 @@ describe('Approve and Decline', () => {
     await userEvent.click(confirm)
     expect(api.declinePending).toHaveBeenCalledWith('e1', 'Downstream still down')
     expect(api.declinePending).toHaveBeenCalledWith('e2', 'Downstream still down')
+    await waitFor(() => expect(screen.getByRole('status')).toBeInTheDocument()) // and so is the decline (6.6)
   })
 
   it('"Not now" changes nothing', async () => {

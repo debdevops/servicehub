@@ -60,13 +60,15 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
+    // Playwright specs (e2e/) run under `npm run e2e`, not here.
+    exclude: ['e2e/**', 'node_modules/**'],
     setupFiles: ['./src/test/setup.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
-      // Starts at 50%, rises to 60% at Gate 6. A floor to stop rot — never the reason a unit is
-      // finished. The gate is.
-      thresholds: { lines: 50, statements: 50, functions: 50, branches: 50 },
+      // Started at 50%, raised to 60% at Gate 6 (measured 2026-09-28: 85% lines · 73% branches · 75% functions). A floor to
+      // stop rot — never the reason a unit is finished. The gate is.
+      thresholds: { lines: 60, statements: 60, functions: 60, branches: 60 },
       exclude: ['src/test/**', '**/*.config.*', 'src/main.tsx'],
     },
   },

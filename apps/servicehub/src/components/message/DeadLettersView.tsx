@@ -18,6 +18,7 @@ import { bulkSelection } from '../../lib/bulkSelection'
 import { environmentMeta, resolveScope } from '../provider/scopeChoice'
 import type { CloudProvider, Namespace } from '../../lib/api/namespaces'
 import { providerLabel } from '../../lib/providers'
+import { Skeleton } from '../ui/Skeleton'
 
 
 const ranges: readonly { id: DeadLetterRange; label: string }[] = [
@@ -158,7 +159,7 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
 
       <WorkTabs current="dlq" />
 
-      {isPending && <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading dead letters…</p>}
+      {isPending && <Skeleton label="Reading dead letters…" rows={6} />}
 
       {isError && (
         <div role="alert" className="rounded-xl border border-[var(--color-warning)] bg-[var(--color-warning-light)] p-4 text-sm">

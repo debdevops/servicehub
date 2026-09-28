@@ -11,6 +11,7 @@ import { explainFailure } from '../../lib/analyzer'
 import type { ReplayCheck, ReplayOutcome, ReplayProposal } from '../../lib/api/replay'
 import { providerLabel } from '../../lib/providers'
 import { UnlockHint } from '../UnlockHint'
+import { RetryLink } from '../ui/RetryLink'
 
 
 const hoursLabel = (h: number) => (h < 1 ? `${Math.round(h * 60)} minutes` : h === 1 ? '1 hour' : `${h} hours`)
@@ -34,7 +35,7 @@ export default function ReplayModal({ close }: OverlayBodyProps) {
   if (proposal.isError || !proposal.data) {
     return (
       <p role="alert" className="text-sm text-[var(--color-error)]">
-        ServiceHub couldn’t work out what replay would do, so it won’t replay. Close this and try again.
+        ServiceHub couldn’t work out what replay would do, so it won’t replay. <RetryLink onRetry={() => void proposal.refetch()} />
       </p>
     )
   }
@@ -68,6 +69,13 @@ export default function ReplayModal({ close }: OverlayBodyProps) {
         >
           <Play className="h-4 w-4 fill-current" aria-hidden="true" /> {replay.isPending ? 'Replaying…' : 'Replay 1 message'}
         </button>
+        {/* Pinned with the button, so a refusal or failure is seen where the click happened — not below the fold. */}
+        {replay.isError && (
+          <p role="alert" className="text-sm text-[var(--color-error)]">
+            {(replay.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'The replay did not go through. Check Replayed before trying again, in case it was accepted.'}
+          </p>
+        )}
+        <NotAllowed reason={may.reason} />
       </div>
 
       <section aria-label="What will happen">
@@ -123,12 +131,6 @@ export default function ReplayModal({ close }: OverlayBodyProps) {
 
       {!p.canExecute && <UnlockHint code={p.blockedCode} approvable={p.approvable} />}
 
-      {replay.isError && (
-        <p role="alert" className="text-sm text-[var(--color-error)]">
-          {(replay.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'The replay did not go through.'}
-        </p>
-      )}
-
       <footer className="sticky bottom-0 z-10 -mx-5 -mb-4 flex items-center justify-between gap-3 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-3">
         <p className="text-xs text-[var(--color-text-muted)]">
           {me.data ? (me.data.actor.isSession ? 'Recorded as from this browser session' : <>Recorded with your name — <b>{me.data.actor.label}</b></>) : 'Recorded in the ledger'}
@@ -145,7 +147,6 @@ export default function ReplayModal({ close }: OverlayBodyProps) {
           </button>
         </div>
       </footer>
-      <NotAllowed reason={may.reason} />
     </div>
   )
 }

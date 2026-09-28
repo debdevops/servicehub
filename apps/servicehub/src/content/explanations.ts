@@ -76,6 +76,24 @@ export const explanations = {
     ],
     learnMore: 'Active vs dead letters',
   },
+  replayed: {
+    title: "What you're looking at",
+    terms: [
+      {
+        term: 'Replayed',
+        meaning: 'a dead letter that was sent back to the queue it came from — by a person, or by one of your rules. Each one is listed with who did it.',
+      },
+      {
+        term: 'Stayed fixed',
+        meaning: 'the message went through and did not fail again while ServiceHub watched. It only says this where the cloud can prove it.',
+      },
+      {
+        term: 'Came back',
+        meaning: 'it failed again after the replay and returned to the dead letters. Those need a look before anyone replays them again.',
+      },
+    ],
+    learnMore: 'Did the replay work?',
+  },
   signatures: {
     title: "What you're looking at",
     terms: [

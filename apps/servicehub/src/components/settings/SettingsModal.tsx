@@ -15,6 +15,7 @@ import { providerLabel } from '../../lib/providers'
 import { environmentMeta } from '../provider/scopeChoice'
 import { NotAllowed } from '../ui/NotAllowed'
 import { BackupSection } from './BackupSection'
+import { Skeleton } from '../ui/Skeleton'
 
 const sections = [
   { id: 'connections', label: 'Connections', Icon: Cloud },
@@ -51,7 +52,7 @@ export default function SettingsModal() {
       </nav>
       <div className="min-w-0 space-y-8">
         <Connections admin={permission(me, 'Admin', 'remove a namespace')} />
-        {settings.isPending && <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading settings…</p>}
+        {settings.isPending && <Skeleton label="Reading settings…" rows={4} />}
         {settings.isError && <p role="alert" className="text-sm">ServiceHub couldn’t read its settings. <button type="button" className="font-medium text-[var(--color-primary-700)] hover:underline" onClick={() => void settings.refetch()}>Try again</button></p>}
         {settings.data && <Notifications data={settings.data} admin={permission(me, 'Admin', 'set up notifications')} />}
         <Preferences />
@@ -72,7 +73,7 @@ function Connections({ admin }: { admin: { allowed: boolean; reason: string | nu
         <h2 className={h2}>Connections</h2>
         <Link to={addHref} className={primary}>+ Add a cloud</Link>
       </div>
-      {namespaces.isPending && <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading connections…</p>}
+      {namespaces.isPending && <Skeleton label="Reading connections…" rows={3} />}
       {namespaces.data && namespaces.data.length === 0 && <p className="text-sm text-[var(--color-text-muted)]">Nothing is connected yet. Add a cloud to start.</p>}
       <ul className="divide-y divide-[var(--color-border)]">
         {(namespaces.data ?? []).map((n) => <ConnectionRow key={n.id} ns={n} admin={admin} />)}

@@ -25,6 +25,7 @@ import { traitsOf } from '../../lib/home/traits'
 import { connectionState } from '../../lib/home/connection'
 import type { HomeWindow } from '../../lib/home/scope'
 import type { CloudSummary } from '../../lib/homeSummary'
+import { Skeleton } from '../ui/Skeleton'
 
 const TrendChart = lazy(() => import('../TrendChart'))
 
@@ -129,7 +130,7 @@ export function CloudView({ provider, allInCloud, choice, window }: {
             <>
               <div className="grid items-start gap-3.5 xl:grid-cols-12">
                 <div className="xl:col-span-5">
-                  <Suspense fallback={<p role="status" className="text-sm text-[var(--color-text-muted)]">Reading the trend…</p>}>
+                  <Suspense fallback={<Skeleton label="Reading the trend…" variant="block" />}>
                     <TrendChart provider={provider} namespaceId={choice.ns?.id} environment={choice.env ?? undefined} />
                   </Suspense>
                 </div>
@@ -222,7 +223,7 @@ function ReplayedTile({ provider, recovery, traits, cloud, nsQuery }: {
       label="Replayed"
       value={recovery?.total ?? null}
       note={note}
-      unavailable="ServiceHub hasn’t read the ledger yet."
+      unavailable="ServiceHub hasn’t read its replay history yet."
       to={`/?provider=${provider}&tab=replayed${nsQuery}`}
       action="See what was replayed"
       tone="green"

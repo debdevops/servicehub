@@ -11,6 +11,8 @@ import { createRule, fetchRules, fetchRuleSources, setRuleEnabled, testRule, typ
 import type { CloudProvider } from '../../lib/api/namespaces'
 import { formatAge } from '../../lib/format'
 import { providerLabel } from '../../lib/providers'
+import { RetryLink } from '../ui/RetryLink'
+import { Skeleton } from '../ui/Skeleton'
 
 const rulesKey = (p: CloudProvider) => ['rules', p] as const
 
@@ -47,8 +49,8 @@ function Panel({ provider }: { provider: CloudProvider }) {
   const rules = useQuery({ queryKey: rulesKey(provider), queryFn: () => fetchRules(provider), refetchInterval: 15_000 })
   const cloud = providerLabel[provider]
 
-  if (rules.isPending) return <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading your rules…</p>
-  if (rules.isError) return <p role="alert" className="text-sm text-[var(--color-error)]">ServiceHub couldn’t read the rules just now.</p>
+  if (rules.isPending) return <Skeleton label="Reading your rules…" rows={3} />
+  if (rules.isError) return <p role="alert" className="text-sm text-[var(--color-error)]">ServiceHub couldn’t read the rules just now. <RetryLink onRetry={() => void rules.refetch()} /></p>
 
   const list = rules.data
   const on = list.filter((r) => r.enabled).length
@@ -130,6 +132,8 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
           </p>
         </div>
       </div>
+
+      <NotAllowed reason={mayToggle.reason} />
 
       {r.enabled && r.askedCount > 0 && (
         <p className="mt-3 flex items-start gap-2 rounded-lg border border-[#fde68a] bg-[var(--color-warning-light)] px-3 py-2 text-[12.5px] text-[#78350f]">

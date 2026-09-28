@@ -7,6 +7,8 @@ import { Attribution } from './Attribution'
 import type { CloudProvider, EnvironmentKind } from '../lib/api/namespaces'
 import { formatWhen } from '../lib/format'
 import { auditActionWords as words } from '../lib/auditWords'
+import { RetryLink } from './ui/RetryLink'
+import { Skeleton } from './ui/Skeleton'
 
 /**
  * Recent Activity: what has been recorded, newest first, from the durable audit trail. It is labelled "Live" only
@@ -16,7 +18,7 @@ import { auditActionWords as words } from '../lib/auditWords'
  */
 export function RecentActivity({ provider, namespaceId, environment }: { provider?: CloudProvider; namespaceId?: string; environment?: EnvironmentKind }) {
   const status = useStreamStatus()
-  const { data, isPending, isError } = useAudit({ pageSize: 5, provider, namespaceId, environment })
+  const { data, isPending, isError, refetch } = useAudit({ pageSize: 5, provider, namespaceId, environment })
   const now = new Date()
   const [open, setOpen] = useState<string | null>(null)
 
@@ -25,17 +27,17 @@ export function RecentActivity({ provider, namespaceId, environment }: { provide
       <header className="mb-1 flex items-center justify-between">
         <h2 className="flex items-center text-[13.5px] font-bold text-[#1f2937]">Recent activity<InfoTip help={{ title: 'Recent activity', text: 'Every action ServiceHub recorded — connecting a cloud, replaying a message, looking at dead letters — newest first, with who did it. Pick a row to see the full record.' }} /></h2>
         {status === 'live' ? (
-          <span className="flex items-center gap-1.5 text-xs font-medium text-[var(--color-success)]"><span aria-hidden="true" className="h-2 w-2 rounded-full bg-[var(--color-success)]" />Live</span>
+          <span className="flex items-center gap-1.5 text-xs font-medium text-[#047857]"><span aria-hidden="true" className="h-2 w-2 rounded-full bg-[var(--color-success)]" />Live</span>
         ) : (
           <span className="text-xs text-[var(--color-text-muted)]">{status === 'connecting' ? 'Connecting…' : 'History — not live'}</span>
         )}
       </header>
 
-      {isPending && <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading activity…</p>}
-      {isError && <p role="alert" className="text-sm text-[var(--color-error)]">ServiceHub couldn’t read its activity history.</p>}
+      {isPending && <Skeleton label="Reading activity…" rows={4} />}
+      {isError && <p role="alert" className="text-sm text-[var(--color-error)]">ServiceHub couldn’t read its activity history. <RetryLink onRetry={() => void refetch()} /></p>}
       {data && data.items.length === 0 && <p className="text-sm text-[var(--color-text-muted)]">Nothing has been recorded yet.</p>}
       {data && data.items.length > 0 && (
-        <ul className="divide-y divide-[var(--color-border)]">
+        <ul aria-live="polite" aria-relevant="additions" aria-label="Recent activity, newest first" className="divide-y divide-[var(--color-border)]">
           {data.items.map((a) => (
             <li key={a.id}>
               <button type="button" aria-expanded={open === a.id} onClick={() => setOpen(open === a.id ? null : a.id)} className="flex w-full items-center gap-3 py-1.5 text-left text-[12.5px]">

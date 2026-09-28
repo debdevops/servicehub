@@ -9,6 +9,7 @@ import { AgentRow, healthTone, healthWord } from '../../components/agent/AgentRo
 import { useAgentActivity, useAgents, useSetAgentsPaused } from '../../hooks/useAgents'
 import { authorityWords, cadenceWords, type Agent, type AgentActivityItem } from '../../lib/api/agents'
 import { formatWhen } from '../../lib/format'
+import { Skeleton } from '../../components/ui/Skeleton'
 
 const kindWord = { watch: 'Watch', decide: 'Decide', act: 'Act', maintain: 'Maintain' } as const
 
@@ -53,7 +54,7 @@ export default function AgentsPage() {
 
       {explainer.shown && <ExplainerCard id="agents" onDismiss={explainer.dismiss} />}
 
-      {agents.isPending && <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading the agents…</p>}
+      {agents.isPending && <Skeleton label="Reading the agents…" rows={4} />}
       {agents.isError && (
         <div role="alert" className="rounded-xl border border-[var(--color-warning)] bg-[var(--color-warning-light)] p-4 text-sm">
           <p className="flex items-center gap-2 font-semibold"><TriangleAlert className="h-4 w-4" aria-hidden="true" /> ServiceHub couldn’t read its agents.</p>
@@ -135,7 +136,7 @@ function Detail({ agent, onPause, pausing, notAllowed }: { agent: Agent; onPause
                   : <>It will stop running its cycles — it records nothing new until resumed. Nothing it already did is undone.</>}
               </p>
             </div>
-            <button type="button" onClick={onPause} disabled={pausing} className="inline-flex items-center gap-1.5 rounded-lg bg-[#d97706] px-3.5 py-2 font-semibold text-white hover:bg-[#b45309] disabled:opacity-60">
+            <button type="button" onClick={onPause} disabled={pausing} className="inline-flex items-center gap-1.5 rounded-lg bg-[#b45309] px-3.5 py-2 font-semibold text-white hover:bg-[#92400e] disabled:opacity-60">
               <Pause className="h-3.5 w-3.5" aria-hidden="true" /> Pause
             </button>
           </div>
@@ -158,7 +159,7 @@ function Detail({ agent, onPause, pausing, notAllowed }: { agent: Agent; onPause
           <h3 className="mb-1.5 text-[10.5px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">
             Recent activity <span className="font-normal normal-case tracking-normal">— idle cycles folded</span>
           </h3>
-          {activity.isPending && <p role="status" className="text-[var(--color-text-muted)]">Reading its activity…</p>}
+          {activity.isPending && <Skeleton label="Reading its activity…" rows={3} />}
           {activity.isError && <p className="text-[var(--color-text-muted)]">ServiceHub couldn’t read its activity.</p>}
           {activity.data && items.length === 0 && <p className="text-[var(--color-text-muted)]">Nothing yet since the server started.</p>}
           <ul className="divide-y divide-[var(--color-border)]">

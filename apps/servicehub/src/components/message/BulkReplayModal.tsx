@@ -14,6 +14,8 @@ import { namespaceTag } from '../provider/scopeChoice'
 import { BULK_LIMIT, bulkSelection } from '../../lib/bulkSelection'
 import { deadLetterKeys } from '../../hooks/useDeadLetters'
 import { replayKeys } from '../../hooks/useReplay'
+import { Skeleton } from '../ui/Skeleton'
+import { RetryLink } from '../ui/RetryLink'
 
 /** Preview · Run · Watch — the same three steps in both views, so a person always knows where they are. */
 function Steps({ at }: { at: 1 | 2 | 3 }) {
@@ -21,7 +23,7 @@ function Steps({ at }: { at: 1 | 2 | 3 }) {
     <li key={n} className="flex items-center gap-2">
       <span
         aria-hidden="true"
-        className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold ${n < at ? 'bg-[var(--color-success)] text-white' : n === at ? 'bg-[var(--color-primary-600)] text-white' : 'bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]'}`}
+        className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold ${n < at ? 'bg-[#047857] text-white' : n === at ? 'bg-[var(--color-primary-600)] text-white' : 'bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]'}`}
       >
         {n < at ? <Check className="h-3.5 w-3.5" /> : n}
       </span>
@@ -52,27 +54,29 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
   const [startError, setStartError] = useState<string | null>(null)
   const ran = useRef(false)
 
+  const load = async () => {
+    const selection = bulkSelection.get()
+    if (!selection) return setState({ empty: true })
+    try {
+      let ids: number[]
+      if ('ids' in selection) ids = [...selection.ids]
+      else {
+        ids = []
+        const pages = Math.ceil(Math.min(selection.total, BULK_LIMIT) / 100)
+        for (let page = 1; page <= pages; page++) ids.push(...(await fetchDeadLetters({ ...selection.query, page })).items.map((m) => m.id))
+      }
+      if (ids.length === 0) return setState({ empty: true })
+      const capped = ids.slice(0, BULK_LIMIT)
+      setState({ preview: await previewBulk(capped), ids: capped })
+    } catch {
+      setState({ error: 'ServiceHub couldn’t work out what this would do, so nothing was sent.' })
+    }
+  }
+
   useEffect(() => {
     if (ran.current) return
     ran.current = true
-    void (async () => {
-      const selection = bulkSelection.get()
-      if (!selection) return setState({ empty: true })
-      try {
-        let ids: number[]
-        if ('ids' in selection) ids = [...selection.ids]
-        else {
-          ids = []
-          const pages = Math.ceil(Math.min(selection.total, BULK_LIMIT) / 100)
-          for (let page = 1; page <= pages; page++) ids.push(...(await fetchDeadLetters({ ...selection.query, page })).items.map((m) => m.id))
-        }
-        if (ids.length === 0) return setState({ empty: true })
-        const capped = ids.slice(0, BULK_LIMIT)
-        setState({ preview: await previewBulk(capped), ids: capped })
-      } catch {
-        setState({ error: 'ServiceHub couldn’t work out what this would do, so nothing was sent.' })
-      }
-    })()
+    void load()
   }, [])
 
   const start = async (preview: BulkPreview, sampleOnly: boolean) => {
@@ -90,7 +94,13 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
   if ('empty' in state) {
     return <p className="text-sm text-[var(--color-text-muted)]">Choose some dead letters in the table first, then Replay selected. <button type="button" onClick={close} className="font-medium text-[var(--color-primary-700)] hover:underline">Close</button></p>
   }
-  if ('error' in state) return <p role="alert" className="text-sm text-[var(--color-error)]">{state.error}</p>
+  if ('error' in state) {
+    return (
+      <p role="alert" className="text-sm text-[var(--color-error)]">
+        {state.error} <RetryLink onRetry={() => { setState(null); void load() }} />
+      </p>
+    )
+  }
 
   if (purging) return <PurgeInstead ids={state.ids} onBack={() => setPurging(false)} onStarted={onStarted} />
 
@@ -176,15 +186,15 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
 
       <section aria-label="After they are sent back" className="rounded-xl border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-3.5 py-2.5">
         <Collapsible title="After they are sent back" defaultOpen={false}>
-          <p className="text-[13px]">ServiceHub <b>watches</b> each one. Where the cloud can prove a message stayed fixed, its Recovery Ledger evidence can raise trust toward L4 and L5, and later fixes of the same kind may not need a person. That is a suggestion, not a promise — nothing is approved for you.</p>
+          <p className="text-[13px]">ServiceHub <b>watches</b> each one. Where the cloud can prove a message stayed fixed, each verified fix builds ServiceHub’s track record for that kind of failure, and later ones may not need a person. That is a suggestion, not a promise — nothing is approved for you.</p>
         </Collapsible>
       </section>
 
-      {startError && <p role="alert" className="text-sm text-[var(--color-error)]">{startError}</p>}
-
       <PurgeOffer onChoose={() => setPurging(true)} />
 
-      <footer className="sticky bottom-0 z-10 -mx-5 -mb-4 flex items-center gap-3 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-3">
+      <footer className="sticky bottom-0 z-10 -mx-5 -mb-4 flex flex-wrap items-center gap-3 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-3">
+        {/* Pinned with the buttons, so a refusal is seen where the click happened — not below the fold. */}
+        {startError && <p role="alert" className="basis-full text-sm text-[var(--color-error)]">{startError}</p>}
         <span className="flex items-center gap-1.5 text-[13px] text-[var(--color-text-muted)]"><ShieldCheck className="h-4 w-4" aria-hidden="true" /> Each message is checked again as it is sent.</span>
         <button type="button" onClick={close} className="ml-auto rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold">Cancel</button>
         {replayButton}
@@ -229,7 +239,7 @@ function SelectedMessages({ ids, heldBack }: { ids: readonly number[]; heldBack:
                 <tr className="border-t border-[var(--color-border)] bg-[var(--color-error-light)]">
                   <th scope="rowgroup" colSpan={6} className="px-3 py-1.5 text-left text-[12px]">
                     <span className="font-bold text-[#b91c1c]">{reason}</span>
-                    <span className="ml-2 font-normal text-[var(--color-text-muted)]">{rows.length} {rows.length === 1 ? 'message' : 'messages'}</span>
+                    <span className="ml-2 font-normal text-[#4b5563]">{rows.length} {rows.length === 1 ? 'message' : 'messages'}</span>
                   </th>
                 </tr>
                 {rows.map(({ id, m }) => {
@@ -303,7 +313,7 @@ function PurgeInstead({ ids, onBack, onStarted }: { ids: number[]; onBack: () =>
   return (
     <div className="space-y-4">
       <h3 className="flex items-center gap-2 text-lg font-bold"><Trash2 className="h-5 w-5 text-[#dc2626]" aria-hidden="true" /> Purge {ids.length.toLocaleString()} {ids.length === 1 ? 'message' : 'messages'} instead</h3>
-      <p className="text-sm">Purging deletes them from the dead-letter queue <b>for good</b>. Each one goes through the same checks as a replay and gets its own ledger entry, with your reason.</p>
+      <p className="text-sm">Purging deletes them from the dead-letter queue <b>for good</b>. Each one goes through the same checks as a replay and is recorded in Replayed, with your reason.</p>
       <label className="block text-sm">
         <span className="mb-1 block font-semibold">Why?</span>
         <input value={reason} onChange={(e) => { setReason(e.target.value); setPreview(null) }} placeholder="Recorded with your name on every one" className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2" />
@@ -356,7 +366,7 @@ function Running({ id, close }: { id: string; close: () => void }) {
   }, [ended, client])
 
   if (isError) return <p role="alert" className="text-sm text-[var(--color-error)]">ServiceHub couldn’t read this bulk replay just now. It keeps running; close this and look in Replayed.</p>
-  if (!data) return <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading progress…</p>
+  if (!data) return <Skeleton label="Reading progress…" rows={3} />
   return <Progress p={data} close={close} />
 }
 
@@ -371,8 +381,13 @@ function Progress({ p, close }: { p: BulkProgress; close: () => void }) {
     ? p.status === 'completed' ? (p.sent === 0 && p.failed + p.unknown > 0 ? `Bulk ${what} failed — nothing was sent back` : p.failed + p.unknown > 0 ? `Bulk ${what} finished with problems` : `Bulk ${what} finished`) : p.status === 'cancelled' ? `Bulk ${what} stopped` : `Bulk ${what} stopped itself`
     : `${what === 'purge' ? 'Purging' : 'Replaying'} ${target.toLocaleString()} ${target === 1 ? 'message' : 'messages'}`
 
+  // A progress bar is not announced as it moves. Say the verdict when it ends, and the count at each quarter while it runs —
+  // never every tick, which would talk over whoever is reading.
+  const spoken = ended ? heading : `${Math.floor(pct / 25) * 25}% of ${target.toLocaleString()} ${target === 1 ? 'message' : 'messages'} tried`
+
   return (
     <div className="space-y-5">
+      <p role="status" className="sr-only">{spoken}</p>
       <div>
         <h3 className="text-lg font-bold">{heading}</h3>
         <div className="mt-2"><Steps at={ended ? 3 : 2} /></div>

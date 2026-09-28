@@ -14,6 +14,9 @@ import type { ReplayListItem } from '../../lib/api/replay'
 import type { CloudProvider } from '../../lib/api/namespaces'
 import { formatWhen } from '../../lib/format'
 import { providerLabel } from '../../lib/providers'
+import { Skeleton } from '../ui/Skeleton'
+import { ExplainerCard, ExplainerToggle } from '../explainer/Explainer'
+import { useExplainer } from '../explainer/useExplainer'
 
 
 const results = [
@@ -57,6 +60,7 @@ function Chip({ tone, children }: { tone: 'neutral' | 'error' | 'warning' | 'suc
  * Advanced ledger reads too (unit 2.12).
  */
 export function ReplayedTab({ provider, choice }: { provider: CloudProvider; choice: ScopeChoice }) {
+  const explainer = useExplainer('replayed')
   const cloud = providerLabel[provider]
   const [params, setParams] = useSearchParams()
   const { search } = useLocation()
@@ -108,7 +112,7 @@ export function ReplayedTab({ provider, choice }: { provider: CloudProvider; cho
     <section className="px-6 py-6">
       <header className="mb-4 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-[var(--color-text)]">{cloud} — Replayed</h1>
+          <h1 className="text-2xl font-semibold text-[var(--color-text)]">{cloud} — Replayed <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} /></h1>
           <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">Everything that was put back, by whom, and how it went.</p>
         </div>
         <button
@@ -120,10 +124,11 @@ export function ReplayedTab({ provider, choice }: { provider: CloudProvider; cho
         </button>
       </header>
 
+      {explainer.shown && <ExplainerCard id="replayed" onDismiss={explainer.dismiss} />}
       <ReplayedNumbers provider={provider} choice={choice} />
       <WorkTabs current="replayed" />
 
-      {isPending && <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading replays…</p>}
+      {isPending && <Skeleton label="Reading replays…" rows={6} />}
       {isError && (
         <div role="alert" className="rounded-xl border border-[var(--color-warning)] bg-[var(--color-warning-light)] p-4 text-sm">
           <p className="flex items-center gap-2 font-semibold"><TriangleAlert className="h-4 w-4" aria-hidden="true" /> ServiceHub couldn’t read its list of replays.</p>

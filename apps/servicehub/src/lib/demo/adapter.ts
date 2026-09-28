@@ -40,6 +40,24 @@ function listDeadLetters(p: Record<string, unknown>) {
   }
 }
 
+/** What replaying the chosen messages would do: a cloud that cannot prove a fix held is asked about first, the rest go. */
+function demoBulkPreview(config: InternalAxiosRequestConfig) {
+  const body = (typeof config.data === 'string' ? JSON.parse(config.data) : config.data) as { dlqMessageIds?: number[] } | undefined
+  const chosen = (body?.dlqMessageIds ?? []).map((id) => demoDeadLetters.find((d) => d.id === id)).filter((d): d is DeadLetter => !!d)
+  const held = chosen.filter((d) => !nsOf(d.namespaceId).capabilities!.canProveDlqAbsence)
+  const heldIds = new Set(held.map((d) => d.id))
+  const reasons = [...new Set(chosen.map((d) => d.deadLetterReason ?? 'No reason recorded'))]
+  return {
+    previewId: 'demo-preview', selected: chosen.length, willReplay: chosen.length - held.length, heldBackCount: held.length,
+    groups: reasons.map((reason) => {
+      const g = chosen.filter((d) => (d.deadLetterReason ?? 'No reason recorded') === reason)
+      return { reason, selected: g.length, willReplay: g.filter((d) => !heldIds.has(d.id)).length, heldBack: g.filter((d) => heldIds.has(d.id)).length }
+    }),
+    heldBack: held.map((d) => ({ dlqMessageId: d.id, entityName: d.entityName, deadLetterReason: d.deadLetterReason, reasonCode: 'PROVIDER_CANNOT_VERIFY_ABSENCE', remedy: 'This cloud cannot prove a fix held, so a person approves each replay.' })),
+    perSecond: 5, stopAfterConsecutiveFailures: 5, expiresInMinutes: 15, canProveDlqAbsence: held.length === 0,
+  }
+}
+
 type Route = [RegExp, (m: RegExpMatchArray, p: Record<string, unknown>) => unknown]
 const routes: Route[] = [
   [/^\/namespaces$/, () => demoNamespaces],
@@ -78,6 +96,9 @@ const routes: Route[] = [
 export const demoAdapter: AxiosAdapter = async (config) => {
   const url = (config.url ?? '').split('?')[0]
   const method = (config.method ?? 'get').toLowerCase()
+  // A bulk PREVIEW changes nothing — it only says what a run would do — so the demo can show it (ease bar U8: preview before
+  // anything changes a cloud). Starting the run is still refused below, like every other write.
+  if (method === 'post' && url === '/bulk-operations/preview') return { data: demoBulkPreview(config), status: 200, statusText: 'OK', headers: {}, config }
   if (method !== 'get') problem(config, 409, 'demo_read_only', 'This is a demo — nothing is sent. Connect your own cloud to do this for real.')
   const params = (config.params ?? {}) as Record<string, unknown>
   for (const [pattern, handler] of routes) {
