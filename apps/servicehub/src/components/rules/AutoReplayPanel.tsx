@@ -9,10 +9,11 @@ import { Clock, Eye, Plus, Zap } from 'lucide-react'
 import { useProviderScope } from '../provider/providerScope'
 import { createRule, fetchRules, fetchRuleSources, setRuleEnabled, testRule, type Rule, type RuleSource } from '../../lib/api/rules'
 import type { CloudProvider } from '../../lib/api/namespaces'
-import { formatAge } from '../../lib/format'
+import { formatAgo } from '../../lib/format'
 import { providerLabel } from '../../lib/providers'
 import { RetryLink } from '../ui/RetryLink'
 import { Skeleton } from '../ui/Skeleton'
+import { heldWords } from '../../lib/heldWords'
 
 const rulesKey = (p: CloudProvider) => ['rules', p] as const
 
@@ -127,7 +128,7 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
           </p>
           <p className="mt-2 flex flex-wrap items-center gap-x-3 text-[12px] text-[var(--color-text-muted)]">
             <span className="flex items-center gap-1"><Clock className="h-3 w-3" aria-hidden="true" /> {paceWords(r)}</span>
-            {r.replayed > 0 && r.lastReplayedAt && <span>last replayed {formatAge(r.lastReplayedAt, now)} ago · {r.replayed} {r.replayed === 1 ? 'message' : 'messages'}</span>}
+            {r.replayed > 0 && r.lastReplayedAt && <span>last replayed {formatAgo(r.lastReplayedAt, now)} · {r.replayed} {r.replayed === 1 ? 'message' : 'messages'}</span>}
             {r.replayed === 0 && !tripped && <span>hasn’t replayed anything yet</span>}
           </p>
         </div>
@@ -138,13 +139,13 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
       {r.enabled && r.askedCount > 0 && (
         <p className="mt-3 flex items-start gap-2 rounded-lg border border-[#fde68a] bg-[var(--color-warning-light)] px-3 py-2 text-[12.5px] text-[#78350f]">
           <Eye className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          <span><b>{r.askedCount} matching {r.askedCount === 1 ? 'message is' : 'messages are'} waiting for a person.</b> {holdWords(r.lastAskedReason)}</span>
+          <span><b>{heldWords([r])} matching {r.askedCount === 1 && !r.askedIsLowerBound ? 'message is' : 'messages are'} waiting for a person.</b> {holdWords(r.lastAskedReason)}</span>
         </p>
       )}
 
       {tripped && (
         <div className="mt-3 rounded-lg border border-[#fecaca] bg-white px-3 py-2.5 text-[12.5px] text-[#7f1d1d]">
-          <p className="flex items-start gap-2"><Zap className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span><b>Stopped itself{r.updatedAt ? ` ${formatAge(r.updatedAt, now)} ago` : ''}.</b> {r.disabledDetail}</span></p>
+          <p className="flex items-start gap-2"><Zap className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span><b>Stopped itself{r.updatedAt ? ` ${formatAgo(r.updatedAt, now)}` : ''}.</b> {r.disabledDetail}</span></p>
           <div className="mt-2 flex gap-2">
             {confirmOn ? (
               <button type="button" onClick={() => toggle.mutate(true)} className="rounded-lg bg-[var(--color-primary-600)] px-3 py-1.5 text-[12px] font-semibold text-white">Yes, turn it back on</button>

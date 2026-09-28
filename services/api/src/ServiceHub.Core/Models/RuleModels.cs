@@ -7,7 +7,8 @@ public sealed record RuleView(
     long Id, string Name, CloudProviderType Provider, string? Reason, string? EntityName, string? SignatureHash,
     int MaxPerHour, int WaitSeconds, bool BackOff, bool Enabled, string? DisabledReason, string? DisabledDetail,
     DateTimeOffset CreatedAt, DateTimeOffset? UpdatedAt, DateTimeOffset? LastAskedAt, string? LastAskedReason, int AskedCount,
-    int Replayed, DateTimeOffset? LastReplayedAt, int VerifiedOutcomes, int StayedFixed, int SampleSize, double SuccessFloor);
+    int Replayed, DateTimeOffset? LastReplayedAt, int VerifiedOutcomes, int StayedFixed, int SampleSize, double SuccessFloor,
+    bool AskedIsLowerBound = false);
 
 /// <summary>A held-back message in a rule test, grouped by the gate's reason.</summary>
 public sealed record RuleTestHold(string ReasonCode, string Remedy, int Count);

@@ -8,7 +8,7 @@ import { toProblem } from '../../lib/api/client'
 import type { Role } from '../../lib/api/identity'
 import type { Namespace } from '../../lib/api/namespaces'
 import * as api from '../../lib/api/settings'
-import { formatAge, formatWhen } from '../../lib/format'
+import { formatAgo, formatWhen } from '../../lib/format'
 import { permission } from '../../lib/permissions'
 import { browserTimeZone, usePreferences, writePreferences } from '../../lib/preferences'
 import { providerLabel } from '../../lib/providers'
@@ -97,7 +97,7 @@ function ConnectionRow({ ns, admin }: { ns: Namespace; admin: { allowed: boolean
           <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${environmentMeta[ns.environment].chip}`}>{environmentMeta[ns.environment].label}</span>
         </p>
         <p className="text-xs text-[var(--color-text-muted)]">
-          {providerLabel[ns.provider]}{ns.lastConnectionTestAt ? ` · checked ${formatAge(ns.lastConnectionTestAt, now)} ago` : ' · not checked yet'}
+          {providerLabel[ns.provider]}{ns.lastConnectionTestAt ? ` · checked ${formatAgo(ns.lastConnectionTestAt, now)}` : ' · not checked yet'}
         </p>
       </div>
       <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${ok ? 'bg-[var(--color-success-light)] text-[#047857]' : ok === false ? 'bg-[var(--color-warning-light)] text-[#92400e]' : 'bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]'}`}>
@@ -175,7 +175,7 @@ function ChannelRow({ channel: c, admin }: { channel: api.NotificationChannel; a
       <div className="min-w-0 flex-1">
         <p className="font-semibold">{formatName[c.format]} · {c.label}</p>
         <p className="text-xs text-[var(--color-text-muted)]">
-          {c.lastError ? <span className="text-[#b91c1c]">Last delivery failed: {c.lastError}</span> : c.lastDeliveredAt ? `last delivered ${formatAge(c.lastDeliveredAt, now)} ago` : 'nothing delivered yet'}
+          {c.lastError ? <span className="text-[#b91c1c]">Last delivery failed: {c.lastError}</span> : c.lastDeliveredAt ? `last delivered ${formatAgo(c.lastDeliveredAt, now)}` : 'nothing delivered yet'}
         </p>
         {test.data && <p className="text-xs" role="status">{test.data.delivered ? 'Test delivered — check the channel.' : `Test not delivered: ${test.data.error ?? 'unknown reason'}`}</p>}
       </div>

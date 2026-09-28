@@ -129,12 +129,24 @@ def cmd_preflight(_args):
     print(json.dumps(body, indent=2))
 
 
+PROVIDERS = ("Azure", "Aws", "Gcp")
+
+
+def canonical_provider(name):
+    """`aws`, `AWS` and `Aws` all mean Aws. An unknown name is a usage error — silently ignoring it
+    used to turn a mistyped `--namespace aws=...` into an all-SKIP run that looked like a pass."""
+    for known in PROVIDERS:
+        if known.lower() == name.strip().lower():
+            return known
+    sys.exit(f"unknown provider '{name}' (expected one of: {', '.join(PROVIDERS)})")
+
+
 def parse_namespace_args(pairs):
     """--namespace Provider=<namespace-id>, repeated -> {"Azure": ns_id, ...}."""
     out = {}
     for p in pairs:
         provider, ns_id = p.split("=", 1)
-        out[provider] = ns_id
+        out[canonical_provider(provider)] = ns_id
     return out
 
 
@@ -142,7 +154,7 @@ def parse_signature_args(pairs):
     out = {}
     for p in pairs or []:
         provider, hash_ = p.split("=", 1)
-        out[provider] = hash_
+        out[canonical_provider(provider)] = hash_
     return out
 
 
@@ -252,7 +264,18 @@ def run_provider(report, provider, ns_id, sig_hash, caps):
             json={"reason": "ConformanceSuite"},
         )
         if caps["supportsPurge"]:
-            report.check(provider, "purge (positive)", code == 200, f"HTTP {code}: {body}")
+            # HTTP 200 alone proves nothing: the endpoint answers 200 with `result: rejected` when the
+            # provider refused (2026-09-28: GCP, straight after a `look` that had leased the message
+            # for its ack deadline -> GCP.PubSub.MessageNotFound). Only `accepted` proves a purge.
+            result = body.get("result") if isinstance(body, dict) else None
+            if code == 200 and result == "accepted":
+                report.check(provider, "purge (positive)", True, f"HTTP {code}: {body}")
+            elif code == 200 and result == "rejected" and body.get("errorCode", "").endswith("MessageNotFound"):
+                report.skip(provider, "purge (positive)",
+                            f"unproven, not failed: the provider could not find the row's message right after the look "
+                            f"(a pull-based look leases messages for the ack deadline): {body}")
+            else:
+                report.check(provider, "purge (positive)", False, f"HTTP {code}: {body}")
         else:
             report.check(provider, "purge (negative — must be REJECTED, 409 CapabilityUnavailable)",
                           code == 409 and isinstance(body, dict) and body.get("code") == "capability_unavailable",

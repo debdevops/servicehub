@@ -3,6 +3,17 @@
 **Every page. Every button. Why it exists. Screenshots from a live, running instance connected
 to real Azure, AWS, and GCP infrastructure.**
 
+> **Status (2026-09-28): this guide documents ServiceHub 4.0.0's interface and has not yet been
+> re-shot for 4.1.0.** 4.1.0 is a from-scratch rewrite (ADR-0012/0013): Simple has two pages —
+> Home and the work tabs on it (Dead letters, Active messages, Replayed, Auto Replay) — with
+> Replay, Bulk Replay, Approve, Send and Settings opening in place as modals and panels, and four
+> read-only Advanced pages (Overview, Recovery Ledger, Failure Signatures, Agents). Pages named
+> below that have no equivalent there — Quick Access, the Autonomy Control Center, the Playbook
+> Ledger, Cloud Bridge — and every screenshot are 4.0.0's. The safety model this guide explains
+> (eligibility gate, verified outcomes, tamper-evident ledger, per-provider honesty) carries over;
+> the navigation and screenshots do not. For 4.1.0's current shape, the single source of truth is `apps/servicehub/src/nav/navigation.ts`
+> (every destination, one list) and ADR-0016; `docs/ARCHITECTURE.md` is also still 4.0.0's.
+
 **ServiceHub** is a self-hosted, open-source forensic debugger for cloud message queues — Azure
 Service Bus (GA), AWS SQS/SNS and GCP Pub/Sub (Supported) — giving full message bodies, real-time
 search, AI-assisted dead-letter pattern detection, one-click replay, and a tamper-evident record

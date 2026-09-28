@@ -15,8 +15,9 @@
 This page is the evidence behind the **Supported** label on AWS SQS/SNS and GCP Pub/Sub
 (previously **Preview** — see [What changed](#what-changed) below). It exists so the label is a
 claim anyone can reproduce, not a claim you have to take on trust. You'll see this same
-capability information live in the product on the **Cloud Bridge** page and anywhere a
-provider-specific action (Purge, Schedule, Live Tail) is offered or correctly grayed out.
+capability information live in the product on each cloud's card on Home (the ✓/— capability
+line, e.g. "— Counts only, no browsing") and anywhere a provider-specific action (Purge, Look now)
+is offered or correctly grayed out.
 
 ## What's being proven
 
@@ -38,6 +39,25 @@ depends on the actual cloud service responding.
 > reader of the 4.0.0-era table below should know before comparing them directly.
 
 ## Latest run
+
+**2026-09-28 — re-run, same live infrastructure: 19 passed, 0 failed, 4 skipped** (same four
+skips as below). Two things this re-run changed in the suite itself, both found by reading its
+own output rather than its summary line:
+
+- **A passing "purge (positive)" used to mean only "HTTP 200".** The purge endpoint answers 200
+  with `result: rejected` when the *provider* refuses. On GCP, immediately after the `look` step,
+  the purge came back `rejected · GCP.PubSub.MessageNotFound` and was still counted as a pass — a
+  pull-based look leases the messages it read for the subscription's ack deadline, so the row's
+  message is momentarily invisible to the purge's own pull. The suite now requires
+  `result: accepted` for a pass, and reports that specific case as **SKIPPED — unproven, not
+  failed**, so a lease race can never be mistaken for either a confirmed purge or a broken one.
+  Azure's negative purge (409 `capability_unavailable`) and AWS's positive purge (`accepted`,
+  state `Discarded`) are unaffected. *Not re-verified live after this change:* a live purge
+  probe was declined by this session's permission guard, so the GCP purge outcome above is from
+  the 2026-09-28 run before the assertion was tightened.
+- **`--namespace aws=<id>` used to be silently ignored** (provider names were matched
+  case-sensitively, so a lowercase name produced an all-SKIPPED run that still ended "1 passed,
+  0 failed"). Provider names are now case-insensitive, and an unknown one is a usage error.
 
 **2026-09-27 — 19 passed, 0 failed, 4 skipped, all three providers, live against real Azure DEV
 (`sb-servicehub-dev`), AWS DEV (`ap-south-1`) and GCP DEV (`servicehub-502914`).**

@@ -246,6 +246,34 @@ describe('Home', () => {
       expect(screen.queryByText('950')).not.toBeInTheDocument()
     })
 
+    it('says "Reading…" then "Couldn’t read" for a cloud that CAN count but has not answered — never "can’t count here"', async () => {
+      // Found live 2026-09-28: a slow/failed Azure stats read rendered "can’t count here / not watched" for a cloud
+      // that counts and is watched — a capability claim made about a read that had merely not landed.
+      mocked.fetchNamespaces.mockResolvedValue([ns('a1', 'azure'), ns('g1', 'gcp', { gcpProjectId: 'p' })])
+      let fail: (e: Error) => void = () => {}
+      mocked.fetchNamespaceStats.mockImplementation((id) => id === 'a1'
+        ? new Promise<NamespaceStats>((_, reject) => { fail = reject })
+        : Promise.resolve(stats(id, { deadLetterMessages: null, messageCountsSupported: false })))
+      renderHome()
+
+      const azure = within(await screen.findByRole('article', { name: 'Azure' }))
+      expect(azure.getAllByText('Reading…', { selector: 'div' }).length).toBeGreaterThan(0)
+      expect(azure.queryByText('can’t count here')).not.toBeInTheDocument()
+      // The scope tab carries the same figure and must not make the same claim.
+      const azureTab = within(screen.getByRole('tablist', { name: 'Scope' })).getByRole('tab', { name: /Azure/ })
+      expect(azureTab).toHaveTextContent('reading…')
+      expect(azureTab).not.toHaveTextContent('can’t count')
+
+      fail(new Error('AxiosError 502'))
+      expect((await azure.findAllByText(/Couldn’t read — will retry/, { selector: 'div' })).length).toBeGreaterThan(0)
+      expect(azure.queryByText('can’t count here')).not.toBeInTheDocument()
+
+      expect(azureTab).toHaveTextContent('couldn’t read')
+
+      // Google Cloud genuinely has no count API: that is still said, once its read has settled.
+      expect(await within(screen.getByRole('article', { name: 'Google Cloud' })).findByText('can’t count here')).toBeInTheDocument()
+    })
+
     it('a scope tab opens that cloud’s own detail, and the sidebar row does the same thing', async () => {
       mocked.fetchNamespaces.mockResolvedValue([ns('a1', 'azure'), ns('w1', 'aws', { awsRegion: 'us-east-1' })])
       mocked.fetchNamespaceStats.mockImplementation(async (id) => stats(id, id === 'w1' ? { deadLetterMessages: 17 } : {}))

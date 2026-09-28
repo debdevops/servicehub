@@ -26,6 +26,7 @@ import { connectionState } from '../../lib/home/connection'
 import type { HomeWindow } from '../../lib/home/scope'
 import type { CloudSummary } from '../../lib/homeSummary'
 import { Skeleton } from '../ui/Skeleton'
+import { heldWords } from '../../lib/heldWords'
 
 const TrendChart = lazy(() => import('../TrendChart'))
 
@@ -237,9 +238,10 @@ function RulesTile({ rules, traits }: { rules: import('../../lib/api/rules').Rul
   const enabled = rules.filter((r) => r.enabled).length
   const stopped = rules.filter((r) => !r.enabled && r.disabledReason === 'CircuitBreaker').length
   const asked = rules.reduce((n, r) => n + r.askedCount, 0)
+  const askedWords = heldWords(rules)
   const note = traits.confirms
     ? stopped > 0 ? `${stopped} stopped by its safety check` : `${rules.length - enabled} paused`
-    : asked > 0 ? `${asked} matches held for a person` : 'replays here wait for a person'
+    : asked > 0 ? `${askedWords} matches held for a person` : 'replays here wait for a person'
   return (
     <StatTile
       label="Auto Replay rules"

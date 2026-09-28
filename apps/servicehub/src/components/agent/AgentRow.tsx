@@ -1,6 +1,6 @@
 import { Bot, Clock, Pause } from 'lucide-react'
 import { authorityWords, cadenceWords, type Agent } from '../../lib/api/agents'
-import { formatAge } from '../../lib/format'
+import { formatAgo } from '../../lib/format'
 
 const kindWord = { watch: 'Watch', decide: 'Decide', act: 'Act', maintain: 'Maintain' } as const
 
@@ -20,7 +20,7 @@ export const healthWord: Readonly<Record<Agent['health'], string>> = {
 export function lastLine(a: Agent, now: Date): string {
   if (a.isPaused) return 'paused — its cycles are skipped until someone resumes it on Home'
   if (!a.lastRunUtc) return 'has not finished a cycle since the server started'
-  const when = `${formatAge(a.lastRunUtc, now)} ago`
+  const when = formatAgo(a.lastRunUtc, now)
   if (a.lastFailure) return `last cycle failed: ${a.lastFailure} · ${when}`
   return `last: ${a.lastResult?.summary ?? 'ran'} · ${when}${a.late ? ' — late' : ''}`
 }

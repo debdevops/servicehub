@@ -18,7 +18,7 @@ import { explainFailure } from '../../lib/analyzer'
 import { useMe } from '../../hooks/useIdentity'
 import { permission, type Permission } from '../../lib/permissions'
 import { NotAllowed } from '../ui/NotAllowed'
-import { formatAge, formatBytes, formatWhen } from '../../lib/format'
+import { formatAgo, formatBytes, formatWhen } from '../../lib/format'
 import { resolutionWords } from '../../lib/resolutionWords'
 import { RetryLink } from '../ui/RetryLink'
 import { Skeleton } from '../ui/Skeleton'
@@ -139,7 +139,7 @@ function Content({ detail, full, tab, onTab, onReplay }: { detail: DeadLetterDet
             <p className="mt-2 text-sm text-[var(--color-text)]">
               <span className="font-mono text-[13px]">{describeEntity(m.entityName, m.entityType, m.topicName).topic ? `${describeEntity(m.entityName, m.entityType, m.topicName).topic} › ` : ''}{describeEntity(m.entityName, m.entityType, m.topicName).name}</span>
               {m.deliveryCount > 0 ? ` · tried ${m.deliveryCount} ${m.deliveryCount === 1 ? 'time' : 'times'}` : ''} ·{' '}
-              {formatBytes(m.sizeInBytes)}{detail.contentType ? ` · ${detail.contentType}` : ''} · set aside {formatAge(m.detectedAtUtc, now)} ago
+              {formatBytes(m.sizeInBytes)}{detail.contentType ? ` · ${detail.contentType}` : ''} · set aside {formatAgo(m.detectedAtUtc, now)}
             </p>
             {m.deadLetterErrorDescription && <p className="mt-1 text-sm text-[var(--color-text-muted)]">{m.deadLetterErrorDescription}</p>}
             {m.status === 'resolved' && (

@@ -309,7 +309,8 @@ public sealed class RulesService : IRulesService
         return new RuleView(
             r.Id, r.Name, r.Provider, r.Reason, r.EntityName, r.SignatureHash, r.MaxPerHour, r.WaitSeconds, r.BackOff, r.Enabled,
             r.DisabledReason, r.DisabledDetail, r.CreatedAt, r.UpdatedAt, r.LastAskedAt, r.LastAskedReason, r.AskedCount,
-            replayed, last, outcomes.Count, outcomes.Count(o => o == RecoveryEntryState.Recovered), SampleSize, Floor);
+            replayed, last, outcomes.Count, outcomes.Count(o => o == RecoveryEntryState.Recovered), SampleSize, Floor,
+            AskedIsLowerBound: r.AskedCount > 0 && await Matching(r).CountAsync(m => m.Status == DlqMessageStatus.Active, ct).ConfigureAwait(false) > AutoReplayAgent.MaxLookedAtPerRule);
     }
 
     private static string? Clean(string? v) => string.IsNullOrWhiteSpace(v) ? null : v.Trim();

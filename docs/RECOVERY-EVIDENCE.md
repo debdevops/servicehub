@@ -1,5 +1,15 @@
 # Recovery Evidence Ledger
 
+> **4.1.0 status (verified live 2026-09-28):** this document was written for 4.0.0 and its routes
+> (`/recovery/operations/{id}/export`, `/playbook/*`, `/recovery/epochs/seal`) are 4.0.0's — 4.1.0
+> ships none of the Playbook ledger or epoch sealing (PORTING-MAP: LEAVE). What 4.1.0 has is the
+> Recovery Ledger's hash chain, and it works as described here: `GET /api/v1/recovery/chain`
+> reported `isValid: true` over 5,332 events; `GET /api/v1/recovery/export` produced a 2.8 MB
+> package that `scripts/verify-recovery-chain.py` accepted (**PASS — 5332 events, Seq 1-5332**);
+> and flipping one field (`eventType`) of one event in a copy made the same verifier **FAIL**,
+> naming Seq 2001 and the EntryHash mismatch — the tamper negative control. The Advanced →
+> Recovery Ledger page has an *Export evidence* button for the same package.
+
 > **In this article:** the technical design of ServiceHub's evidence ledger — the durable record
 > that answers "what did ServiceHub actually do, and can we prove it?" for every message it ever
 > replayed or purged.

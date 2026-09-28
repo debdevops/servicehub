@@ -104,6 +104,50 @@ public sealed class RulesApiTests : IDisposable
         test.GetProperty("heldBack").GetInt32().Should().Be(3, "only the three still in the queue can be held; the four already gone have nothing left to decide");
     }
 
+    /// <summary>The test host's own DLQ monitor resolves seeded rows the fake provider does not hold — pause it so a long cycle is not racing it.</summary>
+    private static async Task PauseDlqMonitor(HttpClient client)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/agents/dlq-monitor/pause");
+        request.Headers.Add("X-ServiceHub-Intent", "pause-agent");
+        (await client.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    /// <summary>
+    /// 2026-09-28: the agent looked only at the oldest 200 matches per cycle, so a rule matching 450 said "200 waiting" (a cap read as a
+    /// count) and never reached the newer 250. It now pages through all of them, and says "N+" only past its own bound.
+    /// </summary>
+    [Fact]
+    public async Task A_rule_matching_more_than_one_batch_counts_every_held_message_exactly()
+    {
+        using var host = DeadLettersApiTests.Host(new PeekLog { OnReplay = () => ServiceHub.Core.Results.Result<bool>.Success(true) });
+        var ns = await DeadLettersApiTests.Connect(host.Client, "azure");
+        await PauseDlqMonitor(host.Client);
+        await DeadLettersApiTests.Seed(host, ns, CloudProviderType.Azure, 450, reason: "Timeout");
+        await Send(host.Client, "/api/v1/rules", new { provider = "azure", name = "Timeouts", reason = "Timeout", waitSeconds = 0 }, HttpStatusCode.Created);
+
+        await RunAgent(host, "auto-replay");
+
+        var rule = (await ListRules(host.Client))[0];
+        rule.GetProperty("askedCount").GetInt32().Should().Be(450, "all 450 are held, not just the oldest 200");
+        rule.GetProperty("askedIsLowerBound").GetBoolean().Should().BeFalse("450 is below the per-cycle bound, so the count is exact");
+    }
+
+    [Fact]
+    public async Task A_rule_past_the_per_cycle_bound_says_its_count_is_a_floor()
+    {
+        using var host = DeadLettersApiTests.Host(new PeekLog { OnReplay = () => ServiceHub.Core.Results.Result<bool>.Success(true) });
+        var ns = await DeadLettersApiTests.Connect(host.Client, "azure");
+        await PauseDlqMonitor(host.Client);
+        await DeadLettersApiTests.Seed(host, ns, CloudProviderType.Azure, ServiceHub.Infrastructure.Rules.AutoReplayAgent.MaxLookedAtPerRule + 50, reason: "Timeout");
+        await Send(host.Client, "/api/v1/rules", new { provider = "azure", name = "Timeouts", reason = "Timeout", waitSeconds = 0 }, HttpStatusCode.Created);
+
+        await RunAgent(host, "auto-replay");
+
+        var rule = (await ListRules(host.Client))[0];
+        rule.GetProperty("askedCount").GetInt32().Should().Be(ServiceHub.Infrastructure.Rules.AutoReplayAgent.MaxLookedAtPerRule);
+        rule.GetProperty("askedIsLowerBound").GetBoolean().Should().BeTrue("more matches exist than one cycle looks at — show \"N+\"");
+    }
+
     [Fact]
     public async Task A_rule_finds_its_messages_but_the_gate_holds_them_until_trust_is_earned_and_the_rule_says_so()
     {

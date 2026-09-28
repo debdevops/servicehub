@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { formatAge, formatBytes } from '../../lib/format'
+import { formatAgo, formatBytes } from '../../lib/format'
 import { Collapsible } from '../ui/Collapsible'
 import { Check, CircleStop, Eye, Play, ShieldCheck, Trash2, TriangleAlert } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
@@ -252,7 +252,7 @@ function SelectedMessages({ ids, heldBack }: { ids: readonly number[]; heldBack:
                       </td>
                       <td className="px-3 py-1.5">{m.topicName ?? m.entityName}</td>
                       <td className="whitespace-nowrap px-3 py-1.5">{ns ? `${providerLabel[ns.provider]} · ${namespaceTag(ns)}` : '—'}</td>
-                      <td className="whitespace-nowrap px-3 py-1.5" title={m.detectedAtUtc}>{formatAge(m.detectedAtUtc, now)} ago</td>
+                      <td className="whitespace-nowrap px-3 py-1.5" title={m.detectedAtUtc}>{formatAgo(m.detectedAtUtc, now)}</td>
                       <td className="tabular px-3 py-1.5 text-right">{m.deliveryCount}</td>
                       <td className="tabular whitespace-nowrap px-3 py-1.5 text-right">{formatBytes(m.sizeInBytes)}</td>
                     </tr>

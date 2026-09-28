@@ -24,6 +24,21 @@ import { Skeleton } from '../ui/Skeleton'
 const allProviders: readonly CloudProvider[] = ['azure', 'aws', 'gcp']
 const windowLabel: Record<HomeWindow, string> = { '24h': 'in 24 h', '7d': 'in 7 d' }
 
+/** What a namespace's live counts are right now: read, still being read, or the read failed. */
+type Live = { active: number | null; deadLetters: number | null; state: 'ok' | 'loading' | 'failed' }
+
+/**
+ * What to say where a figure is missing. "can't count" is a claim about the CLOUD (it has no count API),
+ * so it may only be said once the read has settled — a read still in flight or failed is not that claim.
+ */
+function missingWords(state: Live['state'] | 'ok', cannot: string): string {
+  return state === 'loading' ? 'Reading…' : state === 'failed' ? 'Couldn’t read — will retry' : cannot
+}
+
+function worstState(states: readonly Live['state'][]): Live['state'] {
+  return states.includes('failed') ? 'failed' : states.includes('loading') ? 'loading' : 'ok'
+}
+
 /**
  * "All clouds" — Home's other level (D48): every namespace you've connected, divided by namespace and
  * grouped by cloud. What Fleet Overview used to be, now one row of this same page instead of a second
@@ -40,16 +55,18 @@ export function AllCloudsView({ window, onOpen }: { window: HomeWindow; onOpen: 
   // Every namespace's live counts, read once here and shared by the cloud cards and the table below —
   // the same `/stats` the fleet endpoint itself has no per-namespace dead-letter figure for.
   const stats = useQueries({ queries: list.map((n) => ({ queryKey: namespaceKeys.stats(n.id), queryFn: () => fetchNamespaceStats(n.id) })) })
-  const liveOf = (id: string): { active: number | null; deadLetters: number | null } => {
-    const s = stats[list.findIndex((n) => n.id === id)]?.data
-    return { active: s?.activeMessages ?? null, deadLetters: s?.deadLetterMessages ?? null }
+  const liveOf = (id: string): Live => {
+    const q = stats[list.findIndex((n) => n.id === id)]
+    const s = q?.data
+    return { active: s?.activeMessages ?? null, deadLetters: s?.deadLetterMessages ?? null, state: s ? 'ok' : q?.isError ? 'failed' : 'loading' }
   }
+  const fleetState: Live['state'] = fleet.data ? 'ok' : fleet.isError ? 'failed' : 'loading'
 
   return (
     <div className="space-y-3.5">
       <div className={`grid items-stretch gap-3.5 ${connected.length === 3 ? 'md:grid-cols-3' : connected.length === 2 ? 'md:grid-cols-[1fr_1fr_0.6fr]' : 'md:grid-cols-2'}`}>
         {connected.map((p) => (
-          <CloudSummaryCard key={p} provider={p} namespaces={list.filter((n) => n.provider === p)} fleet={fleet.data} liveOf={liveOf} window={window} onOpen={onOpen} />
+          <CloudSummaryCard key={p} provider={p} namespaces={list.filter((n) => n.provider === p)} fleet={fleet.data} fleetState={fleetState} liveOf={liveOf} window={window} onOpen={onOpen} />
         ))}
         {missing.length > 0 && <ConnectCloudCard missing={missing} />}
       </div>
@@ -67,18 +84,20 @@ export function AllCloudsView({ window, onOpen }: { window: HomeWindow; onOpen: 
 }
 
 function CloudSummaryCard({
-  provider, namespaces, fleet, liveOf, window, onOpen,
+  provider, namespaces, fleet, fleetState, liveOf, window, onOpen,
 }: {
   provider: CloudProvider
   namespaces: readonly Namespace[]
   fleet: FleetOverview | undefined
-  liveOf: (id: string) => { active: number | null; deadLetters: number | null }
+  fleetState: Live['state']
+  liveOf: (id: string) => Live
   window: HomeWindow
   onOpen: (provider: CloudProvider) => void
 }) {
   const fleetCloud = fleet?.clouds.find((c) => c.provider === provider)
   const traits = traitsOf(namespaces, fleetCloud)
   const counts = namespaces.map((n) => liveOf(n.id).deadLetters)
+  const countState = worstState(namespaces.map((n) => liveOf(n.id).state))
   const total = counts.length > 0 && counts.every((v) => typeof v === 'number') ? (counts as number[]).reduce((a, b) => a + b, 0) : null
   const recorded = useDeadLetters({ provider, status: 'active', page: 1, pageSize: 1 })
 
@@ -96,11 +115,11 @@ function CloudSummaryCard({
       </div>
 
       <div className="flex items-end gap-5">
-        <Fig value={total} label="dead letters now" cannot="can’t count here" />
+        <Fig value={total} label="dead letters now" cannot={missingWords(countState, 'can’t count here')} />
         {traits.watched ? (
           <>
-            <Fig value={fleetCloud?.newInWindow ?? null} tone="red" prefix="+" label={`new ${windowLabel[window]}`} cannot="not watched" />
-            <Fig value={fleetCloud?.resolvedInWindow ?? null} tone="green" prefix="−" label={`resolved ${windowLabel[window]}`} cannot="not watched" />
+            <Fig value={fleetCloud?.newInWindow ?? null} tone="red" prefix="+" label={`new ${windowLabel[window]}`} cannot={missingWords(fleetState, 'not watched')} />
+            <Fig value={fleetCloud?.resolvedInWindow ?? null} tone="green" prefix="−" label={`resolved ${windowLabel[window]}`} cannot={missingWords(fleetState, 'not watched')} />
           </>
         ) : (
           <div className="text-[12px] font-semibold text-[var(--color-text-muted)]">
@@ -159,7 +178,7 @@ function NamespaceByCloudTable({
 }: {
   namespaces: readonly Namespace[]
   fleet: FleetOverview | undefined
-  liveOf: (id: string) => { active: number | null; deadLetters: number | null }
+  liveOf: (id: string) => Live
   window: HomeWindow
 }) {
   const navigate = useNavigate()
@@ -240,8 +259,8 @@ function NamespaceByCloudTable({
                               <div className="text-[11px] text-[var(--color-text-muted)]">{ns?.awsRegion ?? ns?.gcpProjectId ?? ''}</div>
                             </td>
                             <td className="px-4 py-2.5"><span className={`rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${meta.chip}`}>{meta.label}</span></td>
-                            <td className="tabular px-4 py-2.5 text-[13px] font-bold">{typeof live.deadLetters === 'number' ? live.deadLetters.toLocaleString() : <span className="text-[11px] font-normal text-[var(--color-text-muted)]">can’t count</span>}</td>
-                            <td className="tabular px-4 py-2.5">{typeof live.active === 'number' ? live.active.toLocaleString() : <span className="text-[11px] font-normal text-[var(--color-text-muted)]">can’t count</span>}</td>
+                            <td className="tabular px-4 py-2.5 text-[13px] font-bold">{typeof live.deadLetters === 'number' ? live.deadLetters.toLocaleString() : <span className="text-[11px] font-normal text-[var(--color-text-muted)]">{missingWords(live.state, 'can’t count')}</span>}</td>
+                            <td className="tabular px-4 py-2.5">{typeof live.active === 'number' ? live.active.toLocaleString() : <span className="text-[11px] font-normal text-[var(--color-text-muted)]">{missingWords(live.state, 'can’t count')}</span>}</td>
                             <td className="tabular px-4 py-2.5">{r.watched ? <><span className="font-bold text-[#b91c1c]">+{r.newInWindow}</span> <span className="text-[var(--color-text-muted)]">/</span> <span className="font-bold text-[#047857]">−{r.resolvedInWindow}</span></> : <span className="text-[11px] font-normal text-[var(--color-text-muted)]">not watched</span>}</td>
                             <td className="px-4 py-2.5">{r.topFailure ? <span className="rounded-full bg-[var(--color-error-light)] px-2.5 py-0.5 text-[11px] font-bold text-[#b91c1c]">{r.topFailure.reason}</span> : <span className="text-[var(--color-text-muted)]">—</span>}</td>
                             <td className="px-4 py-2.5 text-[11.5px] text-[var(--color-text-muted)]">{r.watched ? 'Watched automatically · every 10 s' : 'Recorded when you look'}</td>

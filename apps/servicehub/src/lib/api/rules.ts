@@ -18,6 +18,8 @@ export interface Rule {
   readonly updatedAt: string | null
   /** How many matching messages the safety checks are holding for a person right now. */
   readonly askedCount: number
+  /** True when the rule has more matches than one cycle looks at, so `askedCount` is "at least" — show "N+". */
+  readonly askedIsLowerBound: boolean
   readonly lastAskedReason: string | null
   /** Counts of what actually happened under the rule — never a stored counter. */
   readonly replayed: number

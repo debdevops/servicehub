@@ -15,7 +15,7 @@ import { NamespaceScope } from '../../components/provider/NamespaceScope'
 import { environmentMeta, resolveScope } from '../../components/provider/scopeChoice'
 import { useNamespaces } from '../../hooks/useNamespaces'
 import type { CloudProvider } from '../../lib/api/namespaces'
-import { formatAge } from '../../lib/format'
+import { formatAgo } from '../../lib/format'
 import { providerLabel } from '../../lib/providers'
 import { useState } from 'react'
 import { IncidentTimeline, TraceView } from '../../components/advanced/SignatureStory'
@@ -224,7 +224,7 @@ function Detail({ s, days, now, onClose }: { s: Signature; days: number; now: Da
     <aside aria-label="Signature details" className="w-[420px] shrink-0 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
       <div className="flex items-center justify-between border-b border-[#f3f4f6] px-4 py-3">
         <span className="rounded-full bg-[var(--color-error-light)] px-2.5 py-0.5 text-[11px] font-bold text-[#b91c1c]">{s.reason}</span>
-        <span className="text-[11.5px] text-[var(--color-text-muted)]">first {formatAge(s.firstSeenAt, now)} ago · last {formatAge(s.lastSeenAt, now)} ago</span>
+        <span className="text-[11.5px] text-[var(--color-text-muted)]">first {formatAgo(s.firstSeenAt, now)} · last {formatAgo(s.lastSeenAt, now)}</span>
         <button type="button" onClick={onClose} aria-label="Close" className="text-sm text-[var(--color-text-muted)]">✕</button>
       </div>
       <nav aria-label="Signature detail" className="flex gap-1 border-b border-[#f3f4f6] px-3">

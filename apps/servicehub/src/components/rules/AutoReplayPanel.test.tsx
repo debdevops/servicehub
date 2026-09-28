@@ -11,7 +11,7 @@ vi.mock('../../lib/api/rules')
 
 const rule = (over: Partial<rulesApi.Rule> = {}): rulesApi.Rule => ({
   id: 1, name: 'Payment timeouts', provider: 'azure', reason: 'Timeout', entityName: 'payments-dlq', signatureHash: 'h', maxPerHour: 10, waitSeconds: 120, backOff: true,
-  enabled: true, disabledReason: null, disabledDetail: null, updatedAt: null, askedCount: 0, lastAskedReason: null, replayed: 0, lastReplayedAt: null,
+  enabled: true, disabledReason: null, disabledDetail: null, updatedAt: null, askedCount: 0, askedIsLowerBound: false, lastAskedReason: null, replayed: 0, lastReplayedAt: null,
   verifiedOutcomes: 0, stayedFixed: 0, sampleSize: 20, successFloor: 0.5, ...over,
 })
 

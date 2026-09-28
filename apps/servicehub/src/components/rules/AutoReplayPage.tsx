@@ -8,12 +8,13 @@ import { Clock, Eye, FlaskConical, Pencil, Play, Plus, RefreshCw, ShieldCheck, S
 import { bulkSelection } from '../../lib/bulkSelection'
 import { createRule, deleteRule, fetchRuleMatches, fetchRules, fetchRuleSources, generateRules, setRuleEnabled, testRule, updateRule, type Rule, type RuleSource } from '../../lib/api/rules'
 import type { CloudProvider } from '../../lib/api/namespaces'
-import { formatAge, formatWhen } from '../../lib/format'
+import { formatAgo, formatWhen } from '../../lib/format'
 import { fetchReplays, type ReplayListItem } from '../../lib/api/replay'
 import { Collapsible } from '../ui/Collapsible'
 import { providerLabel } from '../../lib/providers'
 import { RetryLink } from '../ui/RetryLink'
 import { Skeleton } from '../ui/Skeleton'
+import { heldWords } from '../../lib/heldWords'
 
 const rulesKey = (p: CloudProvider) => ['rules', p] as const
 
@@ -74,7 +75,8 @@ export function AutoReplayPage({ provider, onClose }: { provider: CloudProvider;
   const stopped = list.filter((r) => r.disabledReason === 'CircuitBreaker').length
 
   const replayedTotal = list.reduce((n, r) => n + r.replayed, 0)
-  const waiting = list.filter((r) => r.enabled).reduce((n, r) => n + r.askedCount, 0)
+  const waitingRules = list.filter((r) => r.enabled)
+  const waiting = waitingRules.reduce((n, r) => n + r.askedCount, 0)
 
   return (
     <div className="space-y-5">
@@ -134,7 +136,7 @@ export function AutoReplayPage({ provider, onClose }: { provider: CloudProvider;
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Tile value={on} label="rules on" />
         <Tile value={replayedTotal} label="messages replayed by rules" />
-        <Tile value={waiting} label="waiting for a person" tone={waiting > 0 ? 'amber' : 'plain'} />
+        <Tile value={heldWords(waitingRules)} label="waiting for a person" tone={waiting > 0 ? 'amber' : 'plain'} />
         <Tile value={stopped} label="stopped themselves" tone={stopped > 0 ? 'red' : 'plain'} />
       </div>
 
@@ -178,11 +180,11 @@ export function AutoReplayPage({ provider, onClose }: { provider: CloudProvider;
   )
 }
 
-function Tile({ value, label, tone = 'plain' }: { value: number; label: string; tone?: 'plain' | 'amber' | 'red' }) {
+function Tile({ value, label, tone = 'plain' }: { value: number | string; label: string; tone?: 'plain' | 'amber' | 'red' }) {
   const color = tone === 'amber' ? 'text-[#b45309]' : tone === 'red' ? 'text-[#b91c1c]' : 'text-[var(--color-text)]'
   return (
     <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-      <p className={`tabular text-2xl font-bold ${color}`}>{value.toLocaleString()}</p>
+      <p className={`tabular text-2xl font-bold ${color}`}>{typeof value === 'number' ? value.toLocaleString() : value}</p>
       <p className="text-[12px] text-[var(--color-text-muted)]">{label}</p>
     </div>
   )
@@ -295,7 +297,7 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
           </p>
           <p className="mt-2 flex flex-wrap items-center gap-x-3 text-[12px] text-[var(--color-text-muted)]">
             <span className="flex items-center gap-1"><Clock className="h-3 w-3" aria-hidden="true" /> {paceWords(r)}</span>
-            {r.replayed > 0 && r.lastReplayedAt && <span>last replayed {formatAge(r.lastReplayedAt, now)} ago · {r.replayed} {r.replayed === 1 ? 'message' : 'messages'}</span>}
+            {r.replayed > 0 && r.lastReplayedAt && <span>last replayed {formatAgo(r.lastReplayedAt, now)} · {r.replayed} {r.replayed === 1 ? 'message' : 'messages'}</span>}
             {r.replayed === 0 && !tripped && <span>hasn't replayed anything yet</span>}
           </p>
         </div>
@@ -304,13 +306,13 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
       {r.enabled && r.askedCount > 0 && (
         <p className="mt-3 flex items-start gap-2 rounded-lg border border-[#fde68a] bg-[var(--color-warning-light)] px-3 py-2 text-[12.5px] text-[#78350f]">
           <Eye className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          <span><b>{r.askedCount} matching {r.askedCount === 1 ? 'message is' : 'messages are'} waiting for a person.</b> {holdWords(r.lastAskedReason)}</span>
+          <span><b>{heldWords([r])} matching {r.askedCount === 1 && !r.askedIsLowerBound ? 'message is' : 'messages are'} waiting for a person.</b> {holdWords(r.lastAskedReason)}</span>
         </p>
       )}
 
       {tripped && (
         <div className="mt-3 rounded-lg border border-[#fecaca] bg-white px-3 py-2.5 text-[12.5px] text-[#7f1d1d]">
-          <p className="flex items-start gap-2"><Zap className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span><b>Stopped itself{r.updatedAt ? ` ${formatAge(r.updatedAt, now)} ago` : ''}.</b> {r.disabledDetail}</span></p>
+          <p className="flex items-start gap-2"><Zap className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span><b>Stopped itself{r.updatedAt ? ` ${formatAgo(r.updatedAt, now)}` : ''}.</b> {r.disabledDetail}</span></p>
           <div className="mt-2 flex gap-2">
             {confirmOn ? (
               <button type="button" onClick={() => toggle.mutate(true)} className="rounded-lg bg-[var(--color-primary-600)] px-3 py-1.5 text-[12px] font-semibold text-white">Yes, turn it back on</button>

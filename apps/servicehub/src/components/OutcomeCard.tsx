@@ -1,6 +1,6 @@
 import { Check, CircleHelp, RotateCcw, TriangleAlert } from 'lucide-react'
 import type { ReplayListItem } from '../lib/api/replay'
-import { formatAge } from '../lib/format'
+import { formatAgo } from '../lib/format'
 import { providerLabel } from '../lib/providers'
 
 /**
@@ -23,7 +23,7 @@ export function OutcomeCard({ replay, now = new Date() }: { replay: ReplayListIt
     <section aria-label="Replay result" className={`rounded-xl border p-4 ${tone.box}`}>
       <p className="flex items-center justify-between text-xs text-[var(--color-text-muted)]">
         <span>Replayed 1 message</span>
-        <span className="uppercase tracking-wide">{cloud} · {formatAge(replay.replayedAt, now)} ago</span>
+        <span className="uppercase tracking-wide">{cloud} · {formatAgo(replay.replayedAt, now)}</span>
       </p>
       <p className={`mt-1 flex items-center gap-2 font-semibold ${tone.text}`}>
         {tone.icon}

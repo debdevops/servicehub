@@ -90,7 +90,9 @@ describe('Add a cloud — welcome → modal → Home', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
     expect(where()).toBe('/')
     expect(screen.queryByRole('heading', { name: 'Welcome' })).not.toBeInTheDocument()
-  })
+    // A whole welcome → modal → Home journey of real user-event steps; the default 5 s cap is only
+    // met on an idle machine and it timed out (once, 2026-09-28) while a load campaign was running.
+  }, 20_000)
 
   it('opens on the cloud the card named', async () => {
     renderApp('/?modal=add-cloud&cloud=aws')

@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Fixed — found by the 2026-09-28 live verification pass
+
+- **Home and the scope tabs said "can't count here" about a cloud that can count.** A dead-letter
+  total that was still being read (or whose read failed) rendered as `can’t count here` /
+  `not watched` — a claim about the *cloud's capability* made about a read that had merely not
+  landed, seen live on Azure under load. They now say `Reading…`, then `Couldn’t read — will retry`;
+  `can’t count` is only said for a cloud whose read has settled with no count (Google Cloud).
+- **"just now ago".** Ten places appended " ago" to an age that reads "just now" under a minute
+  (Bulk Replay preview, message drawer, Agents, Failure Signatures, Auto Replay, Settings, outcome
+  card). One `formatAgo` helper now says "just now" or "N min ago".
+- **Provider conformance suite:** `--namespace aws=<id>` (lowercase) was silently ignored and ended
+  as an all-SKIPPED "pass"; provider names are now case-insensitive and an unknown one is an error.
+  A "positive purge" passed on HTTP 200 alone even when the body said `result: rejected`; it now
+  requires `accepted` and reports a provider-side `MessageNotFound` as SKIPPED (unproven).
+- **Auto Replay looked at only the oldest 200 matches per rule.** A rule matching 885 messages said "200 matching messages are waiting for a person" (a cap read as a count) and never reached the newer ones. The agent now pages through every match, 200 at a time, up to 2,000 per rule per cycle; the count is exact below that, and reads "2,000+" (card, tile, Home) only when a rule has more matches than a cycle looks at. No migration.
+- **Test coverage:** the new Auto Replay rule routes (`PUT`/`DELETE /rules/{id}`, `POST
+  /rules/generate`) had no test proving a lower role is refused — added
+  (`Rule_management_is_gated_by_role…`, verified to fail when the gate is weakened). The
+  welcome→Home `AddCloudModal` journey test no longer times out on a loaded machine.
+
 ### Added — provider conformance suite ported to 4.1.0 (2026-09-27)
 
 - **`scripts/conformance-suite.py`** (PORTING-MAP.md P46): a live, HTTP-level suite proving each

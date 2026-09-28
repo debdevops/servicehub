@@ -21,6 +21,12 @@ export function formatAge(fromIso: string, now: Date): string {
   return `${Math.floor(hours / 24)} d`
 }
 
+/** "3 min ago", "2 h ago" — and plain "just now", never "just now ago". */
+export function formatAgo(fromIso: string, now: Date): string {
+  const age = formatAge(fromIso, now)
+  return age === 'just now' ? age : `${age} ago`
+}
+
 /**
  * "10:12" for today, otherwise "Sep 22, 10:12" — 24-hour, in the time zone chosen in Settings (the browser's own by default).
  * `timeZone` is for tests; the app passes nothing and the preference applies.

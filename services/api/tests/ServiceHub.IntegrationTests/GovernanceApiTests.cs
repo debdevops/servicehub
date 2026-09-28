@@ -97,4 +97,50 @@ public sealed class GovernanceApiTests
         (await host.Client.SendAsync(Req(HttpMethod.Post, "/api/v1/governance/grants", "reader-key-value", "grant-role", new { granteeIdentity = "reader", granteeKind = "ApiKey", role = "Admin" })))
             .StatusCode.Should().Be(HttpStatusCode.Forbidden, "a revoked identity stays differentiated: revoke means no access, never full access");
     }
+
+    /// <summary>
+    /// 2026-09-28: the Auto Replay page added PUT/DELETE /rules/{id} and POST /rules/generate, each gated by role — and no test
+    /// proved a lower role is refused. Changing pace or making rules widens what a machine may do (Approver); deleting only
+    /// takes authority away (Operator).
+    /// </summary>
+    [Fact]
+    public async Task Rule_management_is_gated_by_role_a_viewer_can_do_none_an_operator_can_only_delete()
+    {
+        var root = new ServiceHubApiFactory();
+        var factory = root.WithWebHostBuilder(b =>
+        {
+            b.UseSetting("Security:Authentication:ApiKeys:0:Key", "viewer-key-value");
+            b.UseSetting("Security:Authentication:ApiKeys:0:Description", "viewer");
+            b.UseSetting("Security:Authentication:ApiKeys:1:Key", "operator-key-value");
+            b.UseSetting("Security:Authentication:ApiKeys:1:Description", "operator");
+            b.UseSetting("Security:Authentication:ApiKeys:2:Key", "lead-key-value");
+            b.UseSetting("Security:Authentication:ApiKeys:2:Description", "lead");
+        });
+        using var host = new DeadLettersApiTests.Handle(root, factory);
+
+        async Task Grant(string who, string role, string? key) =>
+            (await host.Client.SendAsync(Req(HttpMethod.Post, "/api/v1/governance/grants", key, "grant-role", new { granteeIdentity = who, granteeKind = "ApiKey", role })))
+                .StatusCode.Should().Be(HttpStatusCode.Created);
+        await Grant("lead", "Admin", null);
+        await Grant("viewer", "Viewer", "lead-key-value");
+        await Grant("operator", "Operator", "lead-key-value");
+
+        var made = await host.Client.SendAsync(Req(HttpMethod.Post, "/api/v1/rules", "lead-key-value", null, new { provider = "azure", name = "Timeouts", reason = "Timeout" }));
+        made.StatusCode.Should().Be(HttpStatusCode.Created,await made.Content.ReadAsStringAsync());
+        var ruleId = (await Json(made)).GetProperty("id").GetInt64();
+        var edit = new { name = "Renamed", maxPerHour = 500, waitSeconds = 0, backOff = false };
+
+        foreach (var who in new[] { "viewer-key-value", "operator-key-value" })
+        {
+            (await host.Client.SendAsync(Req(HttpMethod.Put, $"/api/v1/rules/{ruleId}", who, null, edit))).StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{who} may not raise a rule's pace");
+            (await host.Client.SendAsync(Req(HttpMethod.Post, "/api/v1/rules/generate", who, null, new { provider = "azure" }))).StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{who} may not make rules");
+        }
+
+        (await host.Client.SendAsync(Req(HttpMethod.Delete, $"/api/v1/rules/{ruleId}", "viewer-key-value"))).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var untouched = await Json(await host.Client.SendAsync(Req(HttpMethod.Get, "/api/v1/rules?provider=azure", "lead-key-value")));
+        untouched.EnumerateArray().Single().GetProperty("name").GetString().Should().Be("Timeouts", "refused edits change nothing");
+
+        (await host.Client.SendAsync(Req(HttpMethod.Put, $"/api/v1/rules/{ruleId}", "lead-key-value", null, edit))).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await host.Client.SendAsync(Req(HttpMethod.Delete, $"/api/v1/rules/{ruleId}", "operator-key-value"))).StatusCode.Should().Be(HttpStatusCode.NoContent, "deleting only takes authority away");
+    }
 }

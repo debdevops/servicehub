@@ -15,7 +15,7 @@ vi.mock('../../lib/api/identity', async (original) => ({ ...(await original<type
 
 const rule = (over: Partial<rulesApi.Rule> = {}): rulesApi.Rule => ({
   id: 1, name: 'Payment timeouts', provider: 'azure', reason: 'Timeout', entityName: 'payments-dlq', signatureHash: 'h', maxPerHour: 10, waitSeconds: 120, backOff: true,
-  enabled: true, disabledReason: null, disabledDetail: null, updatedAt: null, askedCount: 0, lastAskedReason: null, replayed: 0, lastReplayedAt: null,
+  enabled: true, disabledReason: null, disabledDetail: null, updatedAt: null, askedCount: 0, askedIsLowerBound: false, lastAskedReason: null, replayed: 0, lastReplayedAt: null,
   verifiedOutcomes: 0, stayedFixed: 0, sampleSize: 20, successFloor: 0.5, ...over,
 })
 
@@ -67,6 +67,15 @@ describe('Auto Replay page', () => {
     await userEvent.click((await screen.findAllByRole('button', { name: 'Test this rule' }))[0])
     expect(await screen.findByText(/it would have matched/)).toBeInTheDocument()
     expect(rulesApi.testRule).toHaveBeenCalledWith({ provider: 'azure', reason: 'Timeout', entityName: 'payments-dlq', signatureHash: 'h' })
+  })
+
+  it('says "N+" — never an exact-looking number — when a rule has more matches than one cycle looks at', async () => {
+    vi.mocked(rulesApi.fetchRules).mockResolvedValue([rule({ askedCount: 2000, askedIsLowerBound: true }), rule({ id: 2, name: 'Small', askedCount: 3 })])
+    renderPage()
+
+    expect(await screen.findByText('2,000+ matching messages are waiting for a person.')).toBeInTheDocument()
+    expect(screen.getByText('3 matching messages are waiting for a person.')).toBeInTheDocument()
+    expect(screen.getByText('2,003+')).toBeInTheDocument() // the tile: a sum with a floor in it is itself a floor
   })
 
   it('shows the replays a rule sent, from its history', async () => {

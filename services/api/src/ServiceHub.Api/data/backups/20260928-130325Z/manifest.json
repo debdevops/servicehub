@@ -1,0 +1,14 @@
+{
+  "backupId": "20260928-130325Z",
+  "createdAtUtc": "2026-09-28T13:03:26.05303+00:00",
+  "serviceHubVersion": "4.0.0\u002Ba0e22578b8b8778044e0faa77153b1e7fd93871a",
+  "sqlite": {
+    "fileName": "servicehub-dlq.db",
+    "sizeBytes": 11841536,
+    "sha256": "95dff202d34e4f3ebda2a6e9ef754bc9b5c85784440f8d315a1d4add9b80d05e"
+  },
+  "namespaceStore": null,
+  "integrityCheck": "ok",
+  "encryptionKeyFingerprint": "sha256:e2e86eb22f771121",
+  "consistencyNote": "The SQLite snapshot and the namespace JSON store were captured independently, not as a single atomic transaction across both stores. The SQLite snapshot is internally consistent as of its VACUUM INTO completion time; the namespace JSON file is copied as a single atomic file operation at a separate, nearby instant."
+}

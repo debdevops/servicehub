@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatAge, formatBytes, formatWhen } from './format'
+import { formatAge, formatAgo, formatBytes, formatWhen } from './format'
 
 const now = new Date('2026-09-24T14:00:00')
 
@@ -17,6 +17,12 @@ describe('format', () => {
     expect(formatAge('2026-09-24T10:00:00', now)).toBe('4 h')
     expect(formatAge('2026-09-21T14:00:00', now)).toBe('3 d')
     expect(formatAge('2026-09-25T09:00:00', now)).toBe('just now')
+  })
+
+  it('says "ago" after a duration but never "just now ago"', () => {
+    expect(formatAgo('2026-09-24T13:59:40', now)).toBe('just now')
+    expect(formatAgo('2026-09-24T13:48:00', now)).toBe('12 min ago')
+    expect(formatAgo('2026-09-21T14:00:00', now)).toBe('3 d ago')
   })
 
   it('shows only the clock for today and adds the date otherwise', () => {

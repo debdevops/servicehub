@@ -25,6 +25,10 @@ namespace ServiceHub.Infrastructure.Rules;
 public sealed class AutoReplayAgent : IAgent
 {
     private const int MaxPerCycle = 20;
+    private const int BatchSize = 200;
+
+    /// <summary>The most matches looked at per rule per cycle. Reaching it is reported, not hidden: the rule's count then reads "N+".</summary>
+    public const int MaxLookedAtPerRule = 2000;
 
     private readonly IServiceScopeFactory _scopes;
     private readonly ILogger<AutoReplayAgent> _logger;
@@ -77,62 +81,78 @@ public sealed class AutoReplayAgent : IAgent
             }
 
             var now = time.GetUtcNow();
-            var candidates = await rules.Matching(rule).Where(m => m.Status == DlqMessageStatus.Active).OrderBy(m => m.DetectedAtUtc).Take(200).ToListAsync(ct).ConfigureAwait(false);
-            var attempts = await db.ReplayHistories.AsNoTracking().Where(h => candidates.Select(c => c.Id).Contains(h.DlqMessageId))
-                .GroupBy(h => h.DlqMessageId).Select(g => new { Id = g.Key, N = g.Count() }).ToDictionaryAsync(x => x.Id, x => x.N, ct).ConfigureAwait(false);
             var lastHour = await db.ReplayHistories.CountAsync(h => h.RuleId == rule.Id && h.ReplayedAt >= now.AddHours(-1), ct).ConfigureAwait(false);
 
             var actor = new RecoveryActor($"System:AutoReplay:{rule.Id}", RecoveryActorKind.Automation);
             var holding = 0;
             string? holdReason = null;
-            foreach (var m in candidates)
+            var looked = 0;
+            long afterId = 0;
+            // Every match is looked at, a batch at a time by id — never only "the oldest 200", which starved newer matches and made the
+            // card's count a cap. MaxLookedAtPerRule bounds the work; a rule that reaches it says "N+" (see RuleView.AskedIsLowerBound).
+            while (looked < MaxLookedAtPerRule)
             {
-                examined++;
-                var prior = attempts.GetValueOrDefault(m.Id);
-                var wait = TimeSpan.FromSeconds(rule.WaitSeconds * (rule.BackOff ? Math.Pow(2, Math.Min(prior, 10)) : 1));
-                if (m.DetectedAtUtc + wait > now)
+                var candidates = await rules.Matching(rule).Where(m => m.Status == DlqMessageStatus.Active && m.Id > afterId)
+                    .OrderBy(m => m.Id).Take(BatchSize).ToListAsync(ct).ConfigureAwait(false);
+                if (candidates.Count == 0)
                 {
-                    continue; // not its time yet
+                    break;
                 }
 
-                var found = await namespaces.GetByIdAsync(m.NamespaceId, ct).ConfigureAwait(false);
-                if (found.IsFailure || found.Value.OwnerId != rule.OwnerId)
-                {
-                    continue;
-                }
+                afterId = candidates[^1].Id;
+                looked += candidates.Count;
+                var attempts = await db.ReplayHistories.AsNoTracking().Where(h => candidates.Select(c => c.Id).Contains(h.DlqMessageId))
+                    .GroupBy(h => h.DlqMessageId).Select(g => new { Id = g.Key, N = g.Count() }).ToDictionaryAsync(x => x.Id, x => x.N, ct).ConfigureAwait(false);
 
-                var checker = scope.ServiceProvider.GetRequiredService<IDlqReplayService>();
-                var decision = await checker.CheckEligibilityAsync(m.Id, found.Value, actor, RecoveryOperationKind.Replay, ct).ConfigureAwait(false);
-                if (decision is null)
+                foreach (var m in candidates)
                 {
-                    continue;
-                }
+                    examined++;
+                    var prior = attempts.GetValueOrDefault(m.Id);
+                    var wait = TimeSpan.FromSeconds(rule.WaitSeconds * (rule.BackOff ? Math.Pow(2, Math.Min(prior, 10)) : 1));
+                    if (m.DetectedAtUtc + wait > now)
+                    {
+                        continue; // not its time yet
+                    }
 
-                if (decision.Verdict != EligibilityVerdict.Allow)
-                {
-                    holding++;
-                    holdReason ??= decision.ReasonCode ?? decision.Verdict.ToString().ToUpperInvariant();
+                    var found = await namespaces.GetByIdAsync(m.NamespaceId, ct).ConfigureAwait(false);
+                    if (found.IsFailure || found.Value.OwnerId != rule.OwnerId)
+                    {
+                        continue;
+                    }
 
-                    // An Escalate becomes pending work a person can answer (5.1) — once per dead letter, never per cycle.
-                    using var holdScope = _scopes.CreateScope();
-                    await holdScope.ServiceProvider.GetRequiredService<Recovery.EscalationRecorder>()
-                        .RecordHeldReplayAsync(m, found.Value, rule, actor, decision, ct).ConfigureAwait(false);
-                    continue;
-                }
+                    var checker = scope.ServiceProvider.GetRequiredService<IDlqReplayService>();
+                    var decision = await checker.CheckEligibilityAsync(m.Id, found.Value, actor, RecoveryOperationKind.Replay, ct).ConfigureAwait(false);
+                    if (decision is null)
+                    {
+                        continue;
+                    }
 
-                if (lastHour >= rule.MaxPerHour || replayed >= MaxPerCycle)
-                {
-                    continue; // over its pace: waits for the next cycle, never bursts
-                }
+                    if (decision.Verdict != EligibilityVerdict.Allow)
+                    {
+                        holding++;
+                        holdReason ??= decision.ReasonCode ?? decision.Verdict.ToString().ToUpperInvariant();
 
-                // Its own scope, so a concurrency conflict with the DLQ monitor cannot poison this rule's bookkeeping.
-                using var itemScope = _scopes.CreateScope();
-                var replay = itemScope.ServiceProvider.GetRequiredService<IDlqReplayService>();
-                var outcome = await replay.ReplayAsync(m.Id, found.Value, actor, "auto-replay", $"rule-{rule.Id}", CancellationToken.None, rule.Id).ConfigureAwait(false);
-                if (outcome.IsSuccess)
-                {
-                    replayed++;
-                    lastHour++;
+                        // An Escalate becomes pending work a person can answer (5.1) — once per dead letter, never per cycle.
+                        using var holdScope = _scopes.CreateScope();
+                        await holdScope.ServiceProvider.GetRequiredService<Recovery.EscalationRecorder>()
+                            .RecordHeldReplayAsync(m, found.Value, rule, actor, decision, ct).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    if (lastHour >= rule.MaxPerHour || replayed >= MaxPerCycle)
+                    {
+                        continue; // over its pace: waits for the next cycle, never bursts
+                    }
+
+                    // Its own scope, so a concurrency conflict with the DLQ monitor cannot poison this rule's bookkeeping.
+                    using var itemScope = _scopes.CreateScope();
+                    var replay = itemScope.ServiceProvider.GetRequiredService<IDlqReplayService>();
+                    var outcome = await replay.ReplayAsync(m.Id, found.Value, actor, "auto-replay", $"rule-{rule.Id}", CancellationToken.None, rule.Id).ConfigureAwait(false);
+                    if (outcome.IsSuccess)
+                    {
+                        replayed++;
+                        lastHour++;
+                    }
                 }
             }
 
