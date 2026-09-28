@@ -109,11 +109,11 @@ export function AppLayout() {
           <button
             type="button"
             onClick={() => setSearchOpen(true)}
-            className="ml-auto hidden w-full max-w-[360px] items-center gap-2 rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2 text-left text-[13px] text-[var(--color-text-muted)] hover:border-[var(--color-primary-600)] md:flex"
+            className="ml-auto hidden min-w-0 w-full max-w-[360px] items-center gap-2 overflow-hidden rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-3 py-2 text-left text-[13px] text-[var(--color-text-muted)] hover:border-[var(--color-primary-600)] md:flex"
           >
-            <Search className="h-4 w-4" aria-hidden="true" />
-            <span className="flex-1">Search clouds, queues and places…</span>
-            <kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 text-[11px]">⌘K</kbd>
+            <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="min-w-0 flex-1 truncate">Search clouds, queues and places…</span>
+            <kbd className="shrink-0 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 text-[11px]">⌘K</kbd>
           </button>
           <button type="button" aria-label="Search" onClick={() => setSearchOpen(true)} className="ml-auto rounded-lg p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)] md:hidden">
             <Search className="h-5 w-5" aria-hidden="true" />
@@ -275,7 +275,7 @@ function HistoryButtons() {
   const canForward = idx < furthest.current
   const cls = 'rounded-lg p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)] disabled:opacity-40'
   return (
-    <div className="flex items-center" role="group" aria-label="History">
+    <div className="hidden items-center md:flex" role="group" aria-label="History">
       <button type="button" aria-label="Back" title="Back" disabled={!canBack} onClick={() => navigate(-1)} className={cls}>
         <ChevronLeft className="h-5 w-5" aria-hidden="true" />
       </button>

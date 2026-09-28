@@ -221,7 +221,7 @@ function SelectedMessages({ ids, heldBack }: { ids: readonly number[]; heldBack:
   return (
     <section aria-label="Messages that will be replayed">
       <Collapsible title="Where each one goes" summary={ids.length > SHOWN ? `first ${SHOWN} of ${ids.length.toLocaleString()}, grouped by failure reason` : 'grouped by failure reason'}>
-        <div className="overflow-x-auto rounded-xl border border-[var(--color-border)]">
+        <div className="relative overflow-x-auto rounded-xl border border-[var(--color-border)]">
           <table className="w-full text-left text-[12.5px]">
             <caption className="sr-only">Selected messages, grouped by failure reason, and where each will be sent back</caption>
             <thead className="bg-[var(--color-surface-muted)] text-[11px] uppercase tracking-wide text-[var(--color-text-muted)]">

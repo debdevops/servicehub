@@ -199,7 +199,7 @@ function NamespaceByCloudTable({
         <h2 className="flex items-center text-[13.5px] font-bold text-[#1f2937]">Every namespace, by cloud<InfoTip help={widgetHelp.fleetNs} /></h2>
         <span className="text-[11px] text-[var(--color-text-muted)]">worst first inside each cloud</span>
       </div>
-      <div className="overflow-x-auto">
+      <div className="relative overflow-x-auto">
         <table className="w-full min-w-[860px] border-collapse text-left text-[12.5px]">
           <caption className="sr-only">Every namespace, worst first inside its cloud</caption>
           <thead>
