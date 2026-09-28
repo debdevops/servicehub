@@ -6,7 +6,7 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Clock, Eye, FlaskConical, Pencil, Play, Plus, RefreshCw, ShieldCheck, Sparkles, Trash2, Zap, X } from 'lucide-react'
 import { bulkSelection } from '../../lib/bulkSelection'
-import { createRule, deleteRule, fetchRuleMatches, fetchRules, fetchRuleSources, generateRules, setRuleEnabled, testRule, updateRule, type Rule, type RuleSource } from '../../lib/api/rules'
+import { createRule, deleteRule, fetchRuleMatches, fetchRules, fetchRulesHeld, fetchRuleSources, generateRules, setRuleEnabled, testRule, updateRule, type Rule, type RuleSource } from '../../lib/api/rules'
 import type { CloudProvider } from '../../lib/api/namespaces'
 import { formatAgo, formatWhen } from '../../lib/format'
 import { fetchReplays, type ReplayListItem } from '../../lib/api/replay'
@@ -14,7 +14,7 @@ import { Collapsible } from '../ui/Collapsible'
 import { providerLabel } from '../../lib/providers'
 import { RetryLink } from '../ui/RetryLink'
 import { Skeleton } from '../ui/Skeleton'
-import { heldWords } from '../../lib/heldWords'
+import { distinctHeldWords, heldWords } from '../../lib/heldWords'
 
 const rulesKey = (p: CloudProvider) => ['rules', p] as const
 
@@ -41,6 +41,7 @@ export function AutoReplayPage({ provider, onClose }: { provider: CloudProvider;
     onSuccess: () => void client.invalidateQueries({ queryKey: rulesKey(provider) }),
   })
   const rules = useQuery({ queryKey: rulesKey(provider), queryFn: () => fetchRules(provider), refetchInterval: 15_000 })
+  const held = useQuery({ queryKey: [...rulesKey(provider), 'held'], queryFn: () => fetchRulesHeld(provider), refetchInterval: 15_000 })
   const [params, setParams] = useSearchParams()
   const wantedRule = params.get('rule')
 
@@ -75,8 +76,7 @@ export function AutoReplayPage({ provider, onClose }: { provider: CloudProvider;
   const stopped = list.filter((r) => r.disabledReason === 'CircuitBreaker').length
 
   const replayedTotal = list.reduce((n, r) => n + r.replayed, 0)
-  const waitingRules = list.filter((r) => r.enabled)
-  const waiting = waitingRules.reduce((n, r) => n + r.askedCount, 0)
+  const waiting = held.data?.distinct ?? 0
 
   return (
     <div className="space-y-5">
@@ -136,7 +136,7 @@ export function AutoReplayPage({ provider, onClose }: { provider: CloudProvider;
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Tile value={on} label="rules on" />
         <Tile value={replayedTotal} label="messages replayed by rules" />
-        <Tile value={heldWords(waitingRules)} label="waiting for a person" tone={waiting > 0 ? 'amber' : 'plain'} />
+        <Tile value={held.data ? distinctHeldWords(held.data) : '…'} label="waiting for a person" tone={waiting > 0 ? 'amber' : 'plain'} />
         <Tile value={stopped} label="stopped themselves" tone={stopped > 0 ? 'red' : 'plain'} />
       </div>
 

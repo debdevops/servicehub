@@ -17,7 +17,7 @@ import { columnHelp } from '../../content/columns'
 import { useProviderSummary } from '../../hooks/useProviderSummary'
 import { useRecoverySummary } from '../../hooks/useRecoverySummary'
 import { useDeadLetters } from '../../hooks/useDeadLetters'
-import { fetchRules } from '../../lib/api/rules'
+import { fetchRules, fetchRulesHeld, type RulesHeld } from '../../lib/api/rules'
 import { fetchFleet } from '../../lib/api/fleet'
 import type { CloudProvider, Namespace } from '../../lib/api/namespaces'
 import { providerLabel, providerService, scopeChips } from '../../lib/providers'
@@ -26,7 +26,7 @@ import { connectionState } from '../../lib/home/connection'
 import type { HomeWindow } from '../../lib/home/scope'
 import type { CloudSummary } from '../../lib/homeSummary'
 import { Skeleton } from '../ui/Skeleton'
-import { heldWords } from '../../lib/heldWords'
+import { distinctHeldWords } from '../../lib/heldWords'
 
 const TrendChart = lazy(() => import('../TrendChart'))
 
@@ -49,6 +49,7 @@ export function CloudView({ provider, allInCloud, choice, window }: {
   const traits = traitsOf(namespaces, fleetCloud)
   const recovery = useRecoverySummary({ window, provider, namespaceId: choice.ns?.id, environment: choice.env ?? undefined })
   const rules = useQuery({ queryKey: ['rules', provider], queryFn: () => fetchRules(provider) })
+  const rulesHeld = useQuery({ queryKey: ['rules', provider, 'held'], queryFn: () => fetchRulesHeld(provider) })
   const connection = connectionState(allInCloud)
   const chips = scopeChips(provider, allInCloud)
 
@@ -120,7 +121,7 @@ export function CloudView({ provider, allInCloud, choice, window }: {
               />
             )}
             <ReplayedTile provider={provider} recovery={recovery.data} traits={traits} cloud={cloud} nsQuery={nsQuery} />
-            <RulesTile rules={rules.data} traits={traits} />
+            <RulesTile rules={rules.data} held={rulesHeld.data} traits={traits} />
           </div>
 
           {allInCloud.length > 1 && namespaces.length > 1 && (
@@ -233,15 +234,14 @@ function ReplayedTile({ provider, recovery, traits, cloud, nsQuery }: {
   )
 }
 
-function RulesTile({ rules, traits }: { rules: import('../../lib/api/rules').Rule[] | undefined; traits: ReturnType<typeof traitsOf> }) {
+function RulesTile({ rules, held, traits }: { rules: import('../../lib/api/rules').Rule[] | undefined; held: RulesHeld | undefined; traits: ReturnType<typeof traitsOf> }) {
   if (!rules) return <StatTile label="Auto Replay rules" value={null} note="" unavailable="Reading the rules…" to="?panel=rules" action="Manage rules" tone="amber" icon={Zap} />
   const enabled = rules.filter((r) => r.enabled).length
   const stopped = rules.filter((r) => !r.enabled && r.disabledReason === 'CircuitBreaker').length
   const asked = rules.reduce((n, r) => n + r.askedCount, 0)
-  const askedWords = heldWords(rules)
   const note = traits.confirms
     ? stopped > 0 ? `${stopped} stopped by its safety check` : `${rules.length - enabled} paused`
-    : asked > 0 ? `${askedWords} matches held for a person` : 'replays here wait for a person'
+    : asked > 0 ? `${held ? distinctHeldWords(held) : 'some'} matches held for a person` : 'replays here wait for a person'
   return (
     <StatTile
       label="Auto Replay rules"

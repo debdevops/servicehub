@@ -32,6 +32,13 @@ public sealed class RulesController : ApiControllerBase
     public async Task<IActionResult> Sources([FromQuery] CloudProviderType? provider, CancellationToken cancellationToken) =>
         provider is { } cloud ? Ok(await _rules.SourcesAsync(OwnerId, AllowedNamespaceIds, cloud, cancellationToken)) : NeedsCloud();
 
+    /// <summary>The distinct dead letters this cloud's rules are holding for a person — one message counted once however many rules match it.</summary>
+    [HttpGet("held")]
+    [ProducesResponseType(typeof(RulesHeld), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Held([FromQuery] CloudProviderType? provider, CancellationToken cancellationToken) =>
+        provider is { } cloud ? Ok(await _rules.HeldAsync(OwnerId, AllowedNamespaceIds, cloud, cancellationToken)) : NeedsCloud();
+
     // A rule belongs to one cloud, and an enum left out would quietly mean the first one — so a missing cloud is refused, never defaulted.
     private ObjectResult NeedsCloud() => Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "Say which cloud: give a 'provider'.");
 

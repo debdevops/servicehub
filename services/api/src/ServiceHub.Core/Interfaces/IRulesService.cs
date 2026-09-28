@@ -12,6 +12,9 @@ public interface IRulesService
     Task<IReadOnlyList<RuleView>> ListAsync(string ownerId, CloudProviderType provider, CancellationToken ct);
 
     /// <summary>Failures seen recently that a rule could be made from (one row per signature).</summary>
+    /// <summary>The distinct messages held for a person across this cloud's enabled rules (a message two rules match is counted once).</summary>
+    Task<RulesHeld> HeldAsync(string ownerId, IReadOnlySet<Guid>? allowed, CloudProviderType provider, CancellationToken ct);
+
     Task<IReadOnlyList<RuleSource>> SourcesAsync(string ownerId, IReadOnlySet<Guid>? allowed, CloudProviderType provider, CancellationToken ct);
 
     /// <summary>Makes a rule. It starts on.</summary>

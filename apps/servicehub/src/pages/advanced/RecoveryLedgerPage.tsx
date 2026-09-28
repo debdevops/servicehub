@@ -117,7 +117,9 @@ export default function RecoveryLedgerPage() {
 
       {explainer.shown && <ExplainerCard id="ledger" onDismiss={explainer.dismiss} />}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+      {/* The entry pane takes room only while an entry is open: an empty 360 px placeholder squeezed the table until Outcome and
+          Details sat behind a side-scroll at 1366 px (found live 2026-09-28). */}
+      <div className={`grid gap-4 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_360px]' : ''}`}>
         <div className="min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
           <nav aria-label="Outcome" className="flex flex-wrap gap-1 border-b border-[var(--color-border)] px-2">
             <button
@@ -161,7 +163,7 @@ export default function RecoveryLedgerPage() {
               <Pager page={ledger.data.page} pageSize={ledger.data.pageSize} total={ledger.data.total} filtered={!!state || !!provider} onPage={(p) => change({ page: String(p) })} onPageSize={(s) => { setPageSize(s); change({ page: null }) }} />
             </>
           ))}
-          <p className="border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-muted)]">The chain starts at this server’s own genesis.</p>
+          <p className="border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-muted)]">{selected ? '' : 'Choose Details on a row to see who took it, what happened and its evidence. '}The chain starts at this server’s own genesis.</p>
         </div>
 
         <EntryPanel id={selected} onClose={() => change({ entry: null })} />
@@ -217,12 +219,12 @@ function LedgerTable({ rows, namespaces, selected, onSelect }: { rows: readonly 
   const columns: Column<LedgerEntry>[] = [
     { key: 'time', header: 'Time', info: help.time, className: 'whitespace-nowrap', render: (r) => formatWhen(r.begunAt, now) },
     { key: 'entity', header: 'Queue or topic', info: help.entity, render: (r) => <EntityCell size="sm" entityName={r.entityName} entityType={r.entityName.includes('/') ? 'subscription' : 'queue'} /> },
-    { key: 'cloud', header: 'Cloud', info: help.cloud, render: (r) => (r.provider ? providerLabel[r.provider] : '—') },
-    { key: 'ns', header: 'Namespace', info: help.namespace, render: (r) => tagOf(r) },
     { key: 'by', header: 'By', info: help.by, render: (r) => <Attribution actor={r.actor} at={r.begunAt} compact /> },
-    { key: 'what', header: 'What', info: help.what, className: 'whitespace-nowrap', render: (r) => `${r.kind} · 1 message` },
+    // With an entry open its pane says what it was and how it was matched, and gives the table 360 px less: those two columns
+    // go, so Outcome and Details never sit behind a side-scroll at 1366 px.
+    ...(selected ? [] : [{ key: 'what', header: 'What', info: help.what, className: 'whitespace-nowrap', render: (r: LedgerEntry) => `${r.kind} · 1 message` }]),
     { key: 'outcome', header: 'Outcome', info: help.outcome, render: (r) => <StateChip state={r.state} /> },
-    { key: 'match', header: 'Match', info: help.match, render: (r) => r.confidence ?? '—' },
+    ...(selected ? [] : [{ key: 'match', header: 'Match', info: help.match, render: (r: LedgerEntry) => r.confidence ?? '—' }]),
     {
       key: 'open',
       header: 'Details',
@@ -256,7 +258,7 @@ function EntryPanel({ id, onClose }: { id: string | null; onClose: () => void })
   const [chain, setChain] = useState<{ busy: boolean; result?: ChainVerification; failed?: boolean }>({ busy: false })
 
   if (id === null) {
-    return <aside aria-label="Entry" className="rounded-xl border border-dashed border-[var(--color-border)] p-6 text-sm text-[var(--color-text-muted)]">Open an entry to see who took it, what happened, and its evidence.</aside>
+    return null
   }
   if (isPending) return <aside aria-label="Entry" className="rounded-xl border border-[var(--color-border)] p-6 text-sm" role="status">Reading the entry…</aside>
   if (isError || !data) return <aside aria-label="Entry" role="alert" className="rounded-xl border border-[var(--color-border)] p-6 text-sm">ServiceHub couldn’t read this entry. It may not be one you can see.</aside>

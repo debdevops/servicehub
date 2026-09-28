@@ -120,6 +120,26 @@ describe('the Recovery Ledger (Advanced)', () => {
     expect(screen.queryByRole('button', { name: /^(Replay|Write off|Purge|Delete)/i })).toBeNull()
   })
 
+  it('gives the table the whole width until an entry is open, then trades two columns for the pane (found at 1366 px, 2026-09-28)', async () => {
+    vi.mocked(api.fetchLedgerEntry).mockResolvedValue(detail(entry('e1', 'Recovered')))
+    vi.mocked(dlApi.fetchDeadLetter).mockResolvedValue({ item: { id: 7, status: 'resolved' } } as dlApi.DeadLetterDetail)
+    const user = userEvent.setup()
+    renderPage()
+    let table = within(await screen.findByRole('table'))
+    // Nothing open: no empty 360 px placeholder, and every column is there — the cloud and namespace are the group header, not columns.
+    expect(screen.queryByRole('complementary', { name: 'Entry' })).toBeNull()
+    for (const h of ['Outcome', 'What', 'Match', 'Details']) expect(table.getByRole('columnheader', { name: new RegExp(h) })).toBeInTheDocument()
+    expect(table.queryByRole('columnheader', { name: /^Cloud/ })).toBeNull()
+
+    await user.click((await screen.findAllByRole('button', { name: /Details of ledger entry/ }))[0]!)
+    await screen.findByRole('complementary', { name: 'Entry' })
+    table = within(screen.getByRole('table'))
+    expect(table.getByRole('columnheader', { name: /Outcome/ })).toBeInTheDocument()
+    expect(table.getByRole('columnheader', { name: /Details/ })).toBeInTheDocument()
+    expect(table.queryByRole('columnheader', { name: /^What/ })).toBeNull()
+    expect(table.queryByRole('columnheader', { name: /^Match/ })).toBeNull()
+  })
+
   it('verifies the chain on request and shows the result read-only', async () => {
     vi.mocked(api.fetchLedgerEntry).mockResolvedValue(detail(entry('e1', 'Recovered')))
     vi.mocked(api.verifyChain).mockResolvedValue({ ownerId: 'o', isValid: true, eventsChecked: 5, firstDivergentSeq: null, reason: null })

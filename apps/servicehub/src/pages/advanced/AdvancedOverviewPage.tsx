@@ -33,7 +33,7 @@ const states: readonly { state: EntryState; label: string; meaning: string; colo
   { state: 'Observing', label: 'Being watched', meaning: 'Replayed; the observation window is still open.', color: '#38bdf8' },
   { state: 'ExecutionUnknown', label: 'Unknown', meaning: 'ServiceHub lost contact before the cloud answered.', color: '#6b7280' },
   { state: 'Discarded', label: 'Discarded', meaning: 'Purged on purpose, with a reason.', color: '#d1d5db' },
-  { state: 'Declined', label: 'Declined', meaning: 'A person said no to what the Agent asked.', color: '#e5e7eb' },
+  { state: 'Declined', label: 'Declined', meaning: 'The safety checks stopped it before any cloud was contacted — most are waiting for a person to decide.', color: '#e5e7eb' },
   { state: 'WrittenOff', label: 'Written off', meaning: 'Left as it is, on purpose.', color: '#e5e7eb' },
   { state: 'Expired', label: 'Expired', meaning: 'Waited too long for a decision.', color: '#e5e7eb' },
 ]

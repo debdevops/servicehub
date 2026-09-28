@@ -22,6 +22,14 @@ describe('safety banners', () => {
     vi.mocked(identity.fetchMe).mockResolvedValue({ ownerId: 'o', authMethod: 'session', actor: { identity: 's', kind: 'user', label: 'l', isSession: true }, effectiveRole: 'Admin' })
   })
 
+  it('words who switched it on as a sentence — "by Dana", but never "by from this browser session"', async () => {
+    vi.mocked(settings.fetchEmergencyStop).mockResolvedValue({ active: true, by: 'from this browser session', at: '2026-09-26T10:00:00Z', reason: 'incident' })
+    wrap(<SafetyBanners />)
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/from this browser session — “incident”/)
+    expect(alert).not.toHaveTextContent(/by from/)
+  })
+
   it('shows emergency stop while it is on', async () => {
     vi.mocked(settings.fetchEmergencyStop).mockResolvedValue({ active: true, by: 'Dana', at: '2026-09-26T10:00:00Z', reason: 'incident' })
     wrap(<SafetyBanners />)

@@ -10,6 +10,12 @@ public sealed record RuleView(
     int Replayed, DateTimeOffset? LastReplayedAt, int VerifiedOutcomes, int StayedFixed, int SampleSize, double SuccessFloor,
     bool AskedIsLowerBound = false);
 
+/// <summary>
+/// How many DISTINCT dead letters the enabled rules are holding for a person — not the sum of each rule's own count, which counts a
+/// message once per overlapping rule. <paramref name="IsLowerBound"/> when a rule has more matches than one cycle looks at.
+/// </summary>
+public sealed record RulesHeld(int Distinct, bool IsLowerBound);
+
 /// <summary>A held-back message in a rule test, grouped by the gate's reason.</summary>
 public sealed record RuleTestHold(string ReasonCode, string Remedy, int Count);
 

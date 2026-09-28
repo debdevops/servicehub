@@ -17,6 +17,7 @@
   A "positive purge" passed on HTTP 200 alone even when the body said `result: rejected`; it now
   requires `accepted` and reports a provider-side `MessageNotFound` as SKIPPED (unproven).
 - **Auto Replay looked at only the oldest 200 matches per rule.** A rule matching 885 messages said "200 matching messages are waiting for a person" (a cap read as a count) and never reached the newer ones. The agent now pages through every match, 200 at a time, up to 2,000 per rule per cycle; the count is exact below that, and reads "2,000+" (card, tile, Home) only when a rule has more matches than a cycle looks at. No migration.
+- **Wave 6 polish pass (2026-09-28):** the *Recovery Ledger* no longer hides *Outcome* and *Details* behind a side-scroll at 1366 px (its empty entry pane took 360 px; it now appears only when an entry is open, and the redundant Cloud/Namespace columns are gone); the Advanced Overview no longer says a person "declined" what the safety checks stopped; the emergency-stop banner reads "since 19:51 from this browser session" instead of "by from…"; the "can't verify" hint links to an answer that exists. New browser gate: no horizontal scroll at 1366×768.
 - **Test coverage:** the new Auto Replay rule routes (`PUT`/`DELETE /rules/{id}`, `POST
   /rules/generate`) had no test proving a lower role is refused — added
   (`Rule_management_is_gated_by_role…`, verified to fail when the gate is weakened). The

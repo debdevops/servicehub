@@ -69,13 +69,25 @@ describe('Auto Replay page', () => {
     expect(rulesApi.testRule).toHaveBeenCalledWith({ provider: 'azure', reason: 'Timeout', entityName: 'payments-dlq', signatureHash: 'h' })
   })
 
-  it('says "N+" — never an exact-looking number — when a rule has more matches than one cycle looks at', async () => {
+  it('says "N+" on a card — never an exact-looking number — when a rule has more matches than one cycle looks at', async () => {
     vi.mocked(rulesApi.fetchRules).mockResolvedValue([rule({ askedCount: 2000, askedIsLowerBound: true }), rule({ id: 2, name: 'Small', askedCount: 3 })])
+    vi.mocked(rulesApi.fetchRulesHeld).mockResolvedValue({ distinct: 2000, isLowerBound: true })
     renderPage()
 
     expect(await screen.findByText('2,000+ matching messages are waiting for a person.')).toBeInTheDocument()
     expect(screen.getByText('3 matching messages are waiting for a person.')).toBeInTheDocument()
-    expect(screen.getByText('2,003+')).toBeInTheDocument() // the tile: a sum with a floor in it is itself a floor
+    expect(await screen.findByText('2,000+', { selector: 'p' })).toBeInTheDocument() // the tile
+  })
+
+  it('counts a message two rules both match once in the "waiting for a person" tile, not once per rule', async () => {
+    // Two overlapping rules each hold the same 5 messages: the cards say 5 and 5, the tile says 5 — not 10.
+    vi.mocked(rulesApi.fetchRules).mockResolvedValue([rule({ askedCount: 5 }), rule({ id: 2, name: 'Overlaps', askedCount: 5 })])
+    vi.mocked(rulesApi.fetchRulesHeld).mockResolvedValue({ distinct: 5, isLowerBound: false })
+    renderPage()
+
+    expect(await screen.findAllByText('5 matching messages are waiting for a person.')).toHaveLength(2)
+    const tile = (await screen.findByText('waiting for a person', { selector: 'p' })).previousElementSibling
+    expect(tile).toHaveTextContent(/^5$/)
   })
 
   it('shows the replays a rule sent, from its history', async () => {

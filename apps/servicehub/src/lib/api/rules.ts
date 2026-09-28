@@ -62,6 +62,17 @@ export async function fetchRules(provider: CloudProvider): Promise<Rule[]> {
   return (await api.get<Rule[]>('/rules', { params: { provider } })).data
 }
 
+/** The distinct dead letters a cloud's rules are holding for a person — a message two rules match counts once. */
+export interface RulesHeld {
+  readonly distinct: number
+  /** True when a rule has more matches than one cycle looks at, so `distinct` is "at least" — show "N+". */
+  readonly isLowerBound: boolean
+}
+
+export async function fetchRulesHeld(provider: CloudProvider): Promise<RulesHeld> {
+  return (await api.get<RulesHeld>('/rules/held', { params: { provider } })).data
+}
+
 export async function fetchRuleSources(provider: CloudProvider): Promise<RuleSource[]> {
   return (await api.get<RuleSource[]>('/rules/sources', { params: { provider } })).data
 }

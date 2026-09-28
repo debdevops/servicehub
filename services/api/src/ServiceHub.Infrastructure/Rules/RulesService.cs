@@ -170,6 +170,36 @@ public sealed class RulesService : IRulesService
     }
 
     /// <inheritdoc />
+    public async Task<RulesHeld> HeldAsync(string ownerId, IReadOnlySet<Guid>? allowed, CloudProviderType provider, CancellationToken ct)
+    {
+        var holding = await _db.AutoReplayRules.AsNoTracking()
+            .Where(r => r.OwnerId == ownerId && r.Provider == provider && r.Enabled && r.AskedCount > 0).ToListAsync(ct).ConfigureAwait(false);
+        var ids = new HashSet<long>();
+        var lower = false;
+        foreach (var rule in holding)
+        {
+            var q = Matching(rule).Where(m => m.Status == DlqMessageStatus.Active);
+            if (allowed is not null)
+            {
+                q = q.Where(m => allowed.Contains(m.NamespaceId));
+            }
+
+            var matched = await q.Select(m => m.Id).Take(AutoReplayAgent.MaxLookedAtPerRule + 1).ToListAsync(ct).ConfigureAwait(false);
+            if (matched.Count > AutoReplayAgent.MaxLookedAtPerRule)
+            {
+                lower = true;
+                matched.RemoveAt(matched.Count - 1);
+            }
+
+            ids.UnionWith(matched);
+        }
+
+        // A rule holds no more than it was asked about, so the union of what the rules match can never be more than the sum of what they
+        // hold — and for a single rule this is exactly its own count.
+        return new RulesHeld(Math.Min(ids.Count, holding.Sum(r => r.AskedCount)), lower);
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<RuleView>> GenerateAsync(string ownerId, IReadOnlySet<Guid>? allowed, CloudProviderType provider, int max, CancellationToken ct)
     {
         var existing = await _db.AutoReplayRules.AsNoTracking().Where(r => r.OwnerId == ownerId && r.Provider == provider).ToListAsync(ct).ConfigureAwait(false);

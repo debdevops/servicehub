@@ -36,7 +36,7 @@ export function SafetyBanners() {
           <OctagonAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
           <p className="min-w-0 flex-1">
             <b>Emergency stop is on — ServiceHub will not act on its own</b>
-            {stop.data.at ? ` · since ${formatWhen(stop.data.at, now)}` : ''}{stop.data.by ? ` by ${stop.data.by}` : ''}{stop.data.reason ? ` — “${stop.data.reason}”` : ''}.
+            {stop.data.at ? ` · since ${formatWhen(stop.data.at, now)}` : ''}{stop.data.by ? ` ${/^from /i.test(stop.data.by) ? '' : 'by '}${stop.data.by}` : ''}{stop.data.reason ? ` — “${stop.data.reason}”` : ''}.
             {' '}Rules and the Agent are refused; a replay a person starts still goes through its checks. Numbers keep updating.
           </p>
           <Link to={settingsHref} className="rounded-lg bg-white/15 px-3 py-1.5 font-semibold hover:bg-white/25">Review and lift…</Link>

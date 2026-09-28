@@ -132,6 +132,29 @@ public sealed class RulesApiTests : IDisposable
         rule.GetProperty("askedIsLowerBound").GetBoolean().Should().BeFalse("450 is below the per-cycle bound, so the count is exact");
     }
 
+    /// <summary>The "waiting for a person" tile summed each rule's own count, so two rules matching the same messages counted them twice.</summary>
+    [Fact]
+    public async Task Messages_two_rules_both_match_are_waiting_once_not_twice()
+    {
+        using var host = DeadLettersApiTests.Host(new PeekLog { OnReplay = () => ServiceHub.Core.Results.Result<bool>.Success(true) });
+        var ns = await DeadLettersApiTests.Connect(host.Client, "azure");
+        await PauseDlqMonitor(host.Client);
+        await DeadLettersApiTests.Seed(host, ns, CloudProviderType.Azure, 5, reason: "Timeout");
+        await DeadLettersApiTests.Seed(host, ns, CloudProviderType.Azure, 3, reason: "Validation", prefix: "v");
+        await Send(host.Client, "/api/v1/rules", new { provider = "azure", name = "By reason", reason = "Timeout", waitSeconds = 0 }, HttpStatusCode.Created);
+        await Send(host.Client, "/api/v1/rules", new { provider = "azure", name = "By reason and queue", reason = "Timeout", entityName = "orders", waitSeconds = 0 }, HttpStatusCode.Created);
+        await Send(host.Client, "/api/v1/rules", new { provider = "azure", name = "Other failure", reason = "Validation", waitSeconds = 0 }, HttpStatusCode.Created);
+
+        await RunAgent(host, "auto-replay");
+
+        var rules = await ListRules(host.Client);
+        rules.EnumerateArray().Sum(r => r.GetProperty("askedCount").GetInt32()).Should().Be(13, "5 + 5 + 3: each rule counts its own matches");
+        var held = JsonDocument.Parse(await host.Client.GetStringAsync("/api/v1/rules/held?provider=azure")).RootElement;
+        held.GetProperty("distinct").GetInt32().Should().Be(8, "5 Timeout messages (matched by two rules) + 3 Validation messages, each once");
+        held.GetProperty("isLowerBound").GetBoolean().Should().BeFalse();
+        (await host.Client.GetAsync("/api/v1/rules/held")).StatusCode.Should().Be(HttpStatusCode.BadRequest, "a missing cloud is refused, never defaulted");
+    }
+
     [Fact]
     public async Task A_rule_past_the_per_cycle_bound_says_its_count_is_a_floor()
     {

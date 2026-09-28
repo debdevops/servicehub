@@ -76,6 +76,15 @@ describe('Advanced Overview', () => {
     expect(within(rec).getByRole('link', { name: 'Unverified' })).toBeInTheDocument()
   })
 
+  it('does not say a person declined what the safety checks stopped — Declined is the gate holding it, before any cloud was contacted', async () => {
+    // Found live 2026-09-28: 1,672 "Declined" were the Agent's own held escalations, and the legend said "A person said no".
+    vi.mocked(recovery.fetchRecoverySummary).mockResolvedValue({ window: '24h', total: 3, states: states({ Declined: 3 }), byProvider: [], stayedFixedRate: null, returnedConfidence: { exact: 0, heuristic: 0 }, replaysAccepted: 0 })
+    wrap()
+    const rec = await screen.findByRole('region', { name: 'Recovery' })
+    expect(await within(rec).findByText(/before any cloud was contacted/)).toBeInTheDocument()
+    expect(within(rec).queryByText(/A person said no/)).not.toBeInTheDocument()
+  })
+
   it('says why the floor’s population is held there, and draws the floor as a floor', async () => {
     wrap()
     const auth = await screen.findByRole('region', { name: 'Authority — and why' })
