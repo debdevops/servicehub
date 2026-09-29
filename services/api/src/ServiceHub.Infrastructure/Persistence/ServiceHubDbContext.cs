@@ -127,7 +127,7 @@ public sealed class ServiceHubDbContext : DbContext
     // the write lock) or SQLITE_LOCKED. busy_timeout (SqlitePragmaConnectionInterceptor) absorbs short
     // contention inside the driver; this is the outer safety net for contention that outlasts it.
     // Never retries DbUpdateConcurrencyException or constraint violations: callers handling those
-    // must see them immediately. 
+    // must see them immediately.
     private static ResiliencePipeline BuildSaveChangesRetryPipeline(
         SqliteBusyRetryOptions retryOptions, ILogger<ServiceHubDbContext>? logger) =>
         new ResiliencePipelineBuilder()

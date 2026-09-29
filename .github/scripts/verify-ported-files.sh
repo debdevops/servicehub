@@ -23,7 +23,7 @@ ROOT="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 cd "$ROOT"
 
 ARCHIVE_ROOT="archive/servicehub-4.0.0"
-SEARCH_PATHS=("services/api/src" "services/api/tests" "apps/servicehub/src")
+SEARCH_PATHS=("services/api/src" "tests" "apps/servicehub/src")
 
 failures=0
 checked=0
@@ -115,7 +115,7 @@ echo "Checked $checked ported file(s); $unverified carry a described adaptation 
 
 if [ "$failures" -gt 0 ]; then
   echo
-  echo "❌ $failures provenance problem(s). ARCHITECTURE.md §8 has the rules."
+  echo "❌ $failures provenance problem(s). The provenance-header rules were retired 2026-09-24; see the script's own header."
   exit 1
 fi
 

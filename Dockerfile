@@ -25,7 +25,7 @@ WORKDIR /src
 COPY .version ./.version
 COPY services/api/global.json services/api/Directory.Build.props services/api/ServiceHub.slnx services/api/
 COPY services/api/src services/api/src
-COPY services/api/tests services/api/tests
+COPY tests/backend tests/backend
 RUN dotnet restore services/api/ServiceHub.slnx
 
 RUN dotnet publish services/api/src/ServiceHub.Api \

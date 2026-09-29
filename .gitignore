@@ -287,9 +287,6 @@ CLAUDE.md
 
 docs/architecture/ARCHITECTURE_VISION.md
 .claude/skills/full-e2e-and-docs-refresh
-docs/BACKUP-RESTORE.md
-docs/BACKUP-RESTORE.md
-docs/BACKUP-RESTORE.md
 
 # ── ServiceHub 4.1.0 ────────────────────────────────────────────────────────────────────────────
 # The SPA build output. It is generated — by `npm run build` locally
@@ -308,3 +305,12 @@ services/api/**/obj/
 # Playwright (4.1.0 web app)
 apps/servicehub/test-results/
 apps/servicehub/playwright-report/
+
+# 4.1.0 tests/ folder outputs
+tests/e2e/playwright-report/
+tests/e2e/test-results/
+tests/web/coverage/
+
+# The API's development data directory (`dotnet run` resolves ServiceHub:DataDirectory to ./data under the project):
+# the database, its lock, logs and backups are runtime state, never source.
+services/api/src/ServiceHub.Api/data/

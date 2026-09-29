@@ -172,7 +172,7 @@ function Browser({ rows }: { rows: readonly Row[] }) {
   const columns: Column<Message>[] = [
     { key: 'enq', header: 'Received at', info: columnHelp.active.enqueued, className: 'whitespace-nowrap', render: (m) => (<><span className="block font-medium">{formatWhen(m.enqueuedTime, now)}</span><span className="block text-xs text-[var(--color-text-muted)]">{formatAge(m.enqueuedTime, now)} ago</span></>) },
     { key: 'q', header: 'Queue or topic', info: columnHelp.active.where, render: () => <EntityCell size="sm" entityName={chosen.entity.name} entityType={chosen.entity.kind} /> },
-    { key: 'id', header: 'Message ID', info: columnHelp.drawer.messageId, render: (m) => <span title={m.messageId} className="block max-w-[14rem] truncate font-mono text-[11.5px]">{m.messageId}</span> },
+    { key: 'id', header: 'Message ID', info: columnHelp.drawer.messageId, render: (m) => <span title={m.messageId} className="block max-w-[12rem] truncate font-mono text-[11.5px]">{m.messageId}</span> },
     { key: 'size', header: 'Size', info: columnHelp.active.size, numeric: true, className: 'whitespace-nowrap', render: (m) => formatBytes(m.sizeInBytes) },
     { key: 'd', header: 'Delivery count', info: columnHelp.active.delivery, numeric: true, render: (m) => m.deliveryCount },
     { key: 'age', header: 'Age', info: columnHelp.active.age, numeric: true, className: 'whitespace-nowrap', render: (m) => formatAge(m.enqueuedTime, now) },
@@ -277,6 +277,7 @@ function Browser({ rows }: { rows: readonly Row[] }) {
               <>
                 <DataTable
                   caption={`Active messages in ${chosen.entity.name}`}
+                  compact
                   columns={columns}
                   rows={shown}
                   rowKey={(m) => String(m.sequenceNumber)}

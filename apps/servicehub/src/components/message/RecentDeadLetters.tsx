@@ -29,6 +29,7 @@ export function RecentDeadLetters({ provider, namespaces, choice, recorded = fal
         rows={data.items}
         namespaceNames={new Map(namespaces.map((n) => [n.id, namespaceTag(n)]))}
         compact
+        glance
         caption="The five most recent dead-lettered messages"
       />
     </section>

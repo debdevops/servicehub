@@ -23,8 +23,11 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
  * Turns pending items into rows, most urgent first (the server's order): a stopped agent, a stopped rule, then questions.
  * Approvals in the same namespace become one row — "2 replays need your approval" — with one Review action; anything
  * else is one row each. The action opens the flow that resolves it; it never marks anything read.
+ *
+ * `capped`: the server sent only the first page of what is waiting (`items.length < total`). A group's size is then a floor, so it
+ * reads "100+ replays" — never a page size presented as a count (found live, 2026-09-29: "100 replays" beside "612 need you").
  */
-export function pendingRows(items: readonly PendingWorkItem[]): PendingRow[] {
+export function pendingRows(items: readonly PendingWorkItem[], { capped = false }: { capped?: boolean } = {}): PendingRow[] {
   const rows: PendingRow[] = []
   const groups = new Map<string, PendingWorkItem[]>()
   for (const i of items) {
@@ -60,7 +63,7 @@ export function pendingRows(items: readonly PendingWorkItem[]): PendingRow[] {
     const cloud = first.provider ? providerLabel[first.provider] : 'A cloud'
     return {
       ...r,
-      title: `${plural(g.length, 'replay')} ${g.length === 1 ? 'needs' : 'need'} your approval`,
+      title: capped ? `${g.length}+ replays need your approval` : `${plural(g.length, 'replay')} ${g.length === 1 ? 'needs' : 'need'} your approval`,
       where: [cloud, first.namespaceName, entities.slice(0, 3).join(', ') + (entities.length > 3 ? ` +${entities.length - 3}` : '')].filter(Boolean).join(' · '),
       why: first.reason,
       count: g.length,

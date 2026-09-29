@@ -23,7 +23,11 @@ export default defineConfig({
   },
 
   resolve: {
-    alias: { '@': resolve(import.meta.dirname, './src') },
+    alias: {
+      '@': resolve(import.meta.dirname, './src'),
+      // Test-only: the shared helpers in tests/web/support.
+      '@tests': resolve(import.meta.dirname, '../../tests/web'),
+    },
   },
 
   server: {
@@ -60,16 +64,19 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    // Playwright specs (e2e/) run under `npm run e2e`, not here.
-    exclude: ['e2e/**', 'node_modules/**'],
-    setupFiles: ['./src/test/setup.ts'],
+    // Every test lives under the repository-root tests/ folder. Browser specs (tests/e2e) run under
+    // `npm run e2e`, not here.
+    include: ['../../tests/web/unit/**/*.test.{ts,tsx}'],
+    exclude: ['node_modules/**'],
+    setupFiles: ['../../tests/web/support/setup.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
       // Started at 50%, raised to 60% at Gate 6 (measured 2026-09-28: 85% lines · 73% branches · 75% functions). A floor to
       // stop rot — never the reason a unit is finished. The gate is.
       thresholds: { lines: 60, statements: 60, functions: 60, branches: 60 },
-      exclude: ['src/test/**', '**/*.config.*', 'src/main.tsx'],
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['**/*.config.*', 'src/main.tsx'],
     },
   },
 })

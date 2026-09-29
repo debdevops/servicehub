@@ -23,6 +23,7 @@ export function MessageTable({
   selection,
   compact = true,
   showOutcome = false,
+  glance = false,
   caption = 'Dead-lettered messages, newest first',
 }: {
   rows: readonly DeadLetter[]
@@ -32,6 +33,8 @@ export function MessageTable({
   compact?: boolean
   /** History (unit 6.11): "Waiting" becomes "Now" — still stuck, or gone since when and how, as recorded. */
   showOutcome?: boolean
+  /** The small Home widget: half a page wide, so only what a quick look needs — when, where, why — and one link. */
+  glance?: boolean
   caption?: string
 }) {
   const { search } = useLocation()
@@ -62,12 +65,12 @@ export function MessageTable({
       key: 'queue',
       header: 'Queue or topic',
       info: help.where,
-      width: 'min-w-[12rem] w-[24%]',
+      width: 'min-w-[10rem] w-[22%]',
       render: (r) => (
         <>
           <EntityCell entityName={r.entityName} entityType={r.entityType} topicName={r.topicName} note={showNamespace ? namespaceNames?.get(r.namespaceId) : undefined} />
           {/* Which message, in the cloud's own words — the queue alone cannot tell two rows apart. */}
-          <p title={`Message ID: ${r.messageId}`} className="mt-1 max-w-[16rem] truncate font-mono text-[11px] text-[var(--color-text-muted)]">{r.messageId}</p>
+          <p title={`Message ID: ${r.messageId}`} className={`mt-1 ${glance ? 'max-w-[7rem]' : 'max-w-[12rem]'} truncate font-mono text-[11px] text-[var(--color-text-muted)]`}>{r.messageId}</p>
         </>
       ),
     },
@@ -76,7 +79,7 @@ export function MessageTable({
       key: 'reason',
       header: 'Failed because',
       info: help.failedBecause,
-      width: 'w-[42%] min-w-[18rem]',
+      width: 'w-[44%] min-w-[14rem]',
       render: (r) => <FailedBecause row={r} />,
     },
     { key: 'tries', header: 'Tries', info: help.tries, numeric: true, render: (r) => (r.deliveryCount > 0 ? r.deliveryCount : <span title="This cloud does not report how many times the message was delivered." className="text-[var(--color-text-muted)]">—</span>) },
@@ -97,7 +100,7 @@ export function MessageTable({
           >
             Details →
           </Link>
-          {!showOutcome && r.status === 'active' && (
+          {!glance && !showOutcome && r.status === 'active' && (
             may.allowed ? (
               <Link to={openHref(r, 'replay')} aria-label={`Replay message ${r.messageId}`} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-[var(--color-primary-50)] px-3 py-1.5 font-medium text-[var(--color-primary-700)] hover:bg-[var(--color-primary-100)]">
                 <Play className="h-3.5 w-3.5" aria-hidden="true" /> Replay
@@ -113,10 +116,17 @@ export function MessageTable({
     },
   ]
 
+  // The glance keeps four columns, lets the wide ones shrink, and offers Details only — the full list has the rest.
+  const shown = glance
+    ? columns
+        .filter((c) => ['when', 'queue', 'reason', 'open'].includes(c.key))
+        .map((c) => (c.key === 'queue' ? { ...c, width: 'min-w-[7rem] w-[30%]' } : c.key === 'reason' ? { ...c, width: 'min-w-[9rem] w-[50%]' } : c))
+    : columns
+
   return (
     <DataTable
       caption={caption}
-      columns={columns}
+      columns={shown}
       rows={rows}
       rowKey={(r) => String(r.id)}
       selection={selection}

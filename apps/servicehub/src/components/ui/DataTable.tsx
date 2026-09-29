@@ -57,7 +57,7 @@ export function DataTable<Row>({
   const selectedOnPage = selection ? pageKeys.filter((k) => selection.selected.has(k)).length : 0
   const allOnPage = rows.length > 0 && selectedOnPage === rows.length
 
-  const pad = compact ? 'px-3 py-2' : 'px-4 py-3'
+  const pad = compact ? 'px-1.5 py-2' : 'px-4 py-3'
 
   return (
     <div className="relative overflow-x-auto">
@@ -79,7 +79,7 @@ export function DataTable<Row>({
               </th>
             )}
             {columns.map((c) => (
-              <th key={c.key} scope="col" className={`${compact ? 'px-3' : 'px-4'} py-2 font-semibold whitespace-nowrap ${c.numeric ? 'text-right' : ''} ${c.width ?? ''}`}>
+              <th key={c.key} scope="col" className={`${compact ? 'px-1.5' : 'px-4'} py-2 font-semibold whitespace-nowrap ${c.numeric ? 'text-right' : ''} ${c.width ?? ''}`}>
                 {c.header}
                 {c.info && <InfoTip help={c.info} />}
               </th>

@@ -41,7 +41,7 @@ function Tile({ Icon, tone, box, value, label, note }: { Icon: typeof Eye; tone:
   return (
     <div className={`flex items-center gap-4 rounded-2xl border border-[var(--color-border)] px-5 py-4 ${box ?? 'bg-[var(--color-surface)]'}`}>
       <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${tone}`}><Icon className="h-6 w-6" aria-hidden="true" /></span>
-      <span className="min-w-0"><span className="tabular block text-2xl font-extrabold leading-none">{value}</span><span className="mt-1 block text-sm font-semibold">{label}</span><span className="block text-xs text-[var(--color-text-muted)]">{note}</span></span>
+      <span className="min-w-0"><span className="tabular block text-2xl font-extrabold leading-none">{value}</span><span className="mt-1 block text-sm font-semibold">{label}</span><span className={`block text-xs ${box ? 'text-[#4b5563]' : 'text-[var(--color-text-muted)]'}`}>{note}</span></span>
     </div>
   )
 }

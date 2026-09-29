@@ -28,7 +28,7 @@ export function Bell() {
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
   }, [open])
 
-  const rows = pendingRows(pending.data?.items ?? [])
+  const rows = pendingRows(pending.data?.items ?? [], { capped: (pending.data?.items.length ?? 0) < (pending.data?.total ?? 0) })
   return (
     <div ref={box} className="relative">
       <button

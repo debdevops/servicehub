@@ -1,5 +1,8 @@
 # CI workflow for ServiceHub 4.1.0 — the product being built at the repository root.
 #
+# Every test lives under tests/ (see tests/README.md): tests/backend (unit + architecture + integration),
+# tests/web (unit) and tests/e2e (Playwright). This workflow runs all of them; ./runtest.sh --all runs the same.
+#
 # Deliberately a SEPARATE workflow from servicehub.yml, which builds the frozen 4.0.0 archive with a
 # workflow-level `defaults.run.working-directory: archive/servicehub-4.0.0`. Two products with two
 # working directories in one workflow is how a `with:` path quietly points at the wrong tree.
@@ -11,6 +14,7 @@
 name: CI – ServiceHub 4.1.0
 
 on:
+  workflow_dispatch:
   push:
     branches: [main, develop, release, 'feat/**', 'feature/**', 'fix/**', 'bugfix/**', 'hotfix/**']
   pull_request:
@@ -38,18 +42,34 @@ jobs:
         # Directory.Build.props sets TreatWarningsAsErrors, so a warning fails here.
         run: dotnet build services/api/ServiceHub.slnx --no-restore -c Release
 
-      - name: Test
+      - name: NuGet vulnerability audit
+        # Fails on a High or Critical advisory in any project, direct or transitive.
+        run: |
+          REPORT="$(dotnet list services/api/ServiceHub.slnx package --vulnerable --include-transitive 2>&1)"
+          echo "$REPORT"
+          if echo "$REPORT" | grep -qE '^\s*>.*\s(High|Critical)\s'; then
+            echo "❌ High/Critical NuGet vulnerabilities found."
+            exit 1
+          fi
+
+      # Everything under tests/backend: unit, architecture and integration (in-process API over a real SQLite file).
+      - name: Test with coverage
         run: >
           dotnet test services/api/ServiceHub.slnx --no-build -c Release --nologo
           --logger "trx;LogFileName=api-tests.trx"
           --collect:"XPlat Code Coverage"
+          --results-directory tests/backend/TestResults
+
+      - name: Enforce the 60% backend coverage floor
+        # Same script ./runtest.sh --all runs, so a local pass and a CI pass mean the same thing.
+        run: tests/scripts/check-backend-coverage.sh tests/backend/TestResults 60
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: api-test-results-4-1-0
-          path: services/api/tests/**/TestResults/**
+          path: tests/backend/TestResults/**
           retention-days: 7
 
   architecture-tests:
@@ -86,6 +106,9 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: npm audit (production dependencies)
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Lint
         run: npm run lint -w apps/servicehub
 
@@ -93,6 +116,8 @@ jobs:
         # runtest.sh does NOT do this. In 4.0.0 that gap meant local green and CI red, repeatedly.
         run: npm run typecheck -w apps/servicehub
 
+      # tests/web/unit — vitest fails the step when lines, statements, functions or branches drop below 60%
+      # (thresholds live in apps/servicehub/vite.config.ts).
       - name: Test with coverage
         run: npm run test:coverage -w apps/servicehub
 
@@ -130,10 +155,11 @@ jobs:
         run: npx playwright install --with-deps chromium
         working-directory: apps/servicehub
 
-      # Unit 6.6. axe with colour contrast ON over every screen at 1366×768, plus a real-keyboard walk of the
-      # core loop. Runs in demo mode against `vite preview` of the production build — no API, no cloud.
+      # tests/e2e. Unit 6.6: axe with colour contrast ON over every screen at 1366×768, plus a real-keyboard walk of
+      # the core loop. Then the layout, plain-words and whole-screen journey specs. Runs in demo mode against
+      # `vite preview` of the production build — no API, no cloud.
       # (The unit suite's axe cannot measure contrast: jsdom has no colours.)
-      - name: Accessibility and keyboard (Playwright)
+      - name: Browser tests — accessibility, keyboard, layout, words, journeys (Playwright)
         run: npm run e2e -w apps/servicehub
 
       - name: Upload Playwright report
@@ -142,8 +168,8 @@ jobs:
         with:
           name: playwright-report-4-1-0
           path: |
-            apps/servicehub/playwright-report/**
-            apps/servicehub/test-results/**
+            tests/e2e/playwright-report/**
+            tests/e2e/test-results/**
           retention-days: 7
 
   plan-and-provenance-guards:
@@ -151,6 +177,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # Every link, image and repo path a tracked Markdown file cites must exist. The docs once described a 4.0.0 that
+      # was no longer in the tree, and nothing said so.
+      - name: Documentation references resolve
+        run: python3 .github/scripts/check-docs.py
 
       # ROADMAP.md is what the next session executes from. If its board and TASKS.md's cards drift
       # apart, "what do I do next?" stops having a reliable answer.
@@ -184,7 +215,8 @@ jobs:
 
       - name: Start and probe
         run: |
-          docker run -d --name servicehub-ci -p 8080:8080 servicehub:ci
+          # Production refuses to start without an encryption key. A throw-away one, for this container only.
+          docker run -d --name servicehub-ci -p 8080:8080 -e SECURITY__ENCRYPTIONKEY="$(openssl rand -hex 32)" servicehub:ci
           for i in $(seq 1 30); do
             if curl -fsS http://localhost:8080/health > /dev/null; then
               echo "✅ /health answered after ${i}s"

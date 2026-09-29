@@ -174,10 +174,19 @@ public sealed class NamespacesController : ApiControllerBase
         var probe = await _router.Resolve(ns.Provider).ValidateConnectionAsync(ns, cancellationToken);
         ns.RecordConnectionTest(probe.IsSuccess);
 
-        var recorded = await _namespaces.UpdateAsync(ns, cancellationToken);
-        if (recorded.IsFailure)
+        try
         {
-            _logger.LogWarning("Could not record the connection test for {NamespaceId}: {Code}", id, recorded.Error.Code);
+            var recorded = await _namespaces.UpdateAsync(ns, cancellationToken);
+            if (recorded.IsFailure)
+            {
+                _logger.LogWarning("Could not record the connection test for {NamespaceId}: {Code}", id, recorded.Error.Code);
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            // The database layer refuses to save a namespace whose stored credential it cannot re-protect — the encryption
+            // key it was saved under is no longer configured. Nothing is written; the probe's answer is still the answer.
+            _logger.LogWarning(ex, "Could not record the connection test for {NamespaceId}: its stored credential cannot be re-protected", id);
         }
 
         var message = probe.IsSuccess
@@ -286,8 +295,16 @@ public sealed class NamespacesController : ApiControllerBase
         var (ns, capabilities, entities) = listed.Value;
         var counts = capabilities.SupportsMessageCounts;
 
-        // Messages live in queues and subscriptions; a topic only fans out to them.
-        var holders = entities.Where(e => Kind(e) is "queue" or "subscription").ToList();
+        // Messages live in queues and subscriptions; a topic only fans out to them. A queue that another entity names as its
+        // dead-letter target (an SQS DLQ is an ordinary queue) holds dead letters: its messages are already counted as the source's
+        // dead letters, so counting them again as active would show every dead letter twice.
+        var deadLetterTargets = entities
+            .Select(e => e.DeadLetterTargetName)
+            .Where(n => !string.IsNullOrEmpty(n))
+            .ToHashSet(StringComparer.Ordinal);
+        var holders = entities
+            .Where(e => Kind(e) is "queue" or "subscription" && !deadLetterTargets.Contains(e.Name))
+            .ToList();
 
         return Ok(new NamespaceStatsResponse(
             ns.Id,

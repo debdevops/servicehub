@@ -7,12 +7,13 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "lint": "eslint .",
-    "typecheck": "tsc -b",
+    "lint": "eslint . && npm run lint:tests",
+    "lint:tests": "cd ../../tests && eslint -c eslint.config.mjs web e2e",
+    "typecheck": "tsc -b && tsc -b tsconfig.tests.json tsconfig.e2e.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "e2e": "playwright test"
+    "e2e": "playwright test -c ../../tests/e2e/playwright.config.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.2",

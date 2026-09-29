@@ -185,7 +185,7 @@ function WaitingView({ page, pending, failed }: { page: PendingWorkPage | undefi
   if (pending) return <Skeleton label="Reading what is waiting…" rows={4} className="px-6 py-8" />
   if (failed || !page) return <p role="alert" className="px-6 py-8 text-sm">ServiceHub couldn’t read what is waiting.</p>
   const codes = [...new Set(page.items.map((i) => i.reasonCode))]
-  const rows = pendingRows(page.items.filter((i) => !reason || i.reasonCode === reason)).map((r) => ({
+  const rows = pendingRows(page.items.filter((i) => !reason || i.reasonCode === reason), { capped: page.items.length < page.total }).map((r) => ({
     ...r,
     action: r.action.href.startsWith('?') ? { label: r.kind === 'approval' ? 'Review ›' : 'Open ›', href: r.action.href } : r.action,
   }))
@@ -222,16 +222,16 @@ function LedgerTable({ rows, namespaces, selected, onSelect }: { rows: readonly 
   // With an entry open its pane says what it was and how it was matched, and gives the table 360 px less: those columns
   // go, so Outcome and Details never sit behind a side-scroll at 1366 px.
   const columns: Column<LedgerEntry>[] = [
-    { key: 'time', header: 'Time', info: help.time, className: 'whitespace-nowrap', render: (r) => formatWhen(r.begunAt, now) },
+    { key: 'time', header: 'Time', info: help.time, render: (r) => formatWhen(r.begunAt, now) },
     { key: 'cloud', header: 'Cloud', info: help.cloud, className: 'whitespace-nowrap', render: (r) => <CloudBadge provider={r.provider} /> },
     ...(selected ? [] : [{ key: 'ns', header: 'Namespace', info: help.namespace, render: (r: LedgerEntry) => tagOf(r) }]),
     { key: 'entity', header: 'Queue / topic', info: help.entity, render: (r) => <EntityCell size="sm" entityName={r.entityName} entityType={r.entityType ?? (r.entityName.includes('/') ? 'subscription' : 'queue')} /> },
-    ...(selected ? [] : [{ key: 'msg', header: 'Message', info: columnHelp.drawer.messageId, render: (r: LedgerEntry) => r.messageId ? <span title={r.messageId} className="block max-w-[10rem] truncate font-mono text-[11.5px]">{r.messageId}</span> : <span className="text-[var(--color-text-muted)]">—</span> }]),
+    ...(selected ? [] : [{ key: 'msg', header: 'Message', info: columnHelp.drawer.messageId, render: (r: LedgerEntry) => r.messageId ? <span title={r.messageId} className="block max-w-[5rem] truncate font-mono text-[11.5px]">{r.messageId}</span> : <span className="text-[var(--color-text-muted)]">—</span> }]),
     { key: 'by', header: 'By', info: help.by, render: (r) => <ByCell actor={r.actor} at={r.begunAt} /> },
-    ...(selected ? [] : [{ key: 'what', header: 'What', info: help.what, className: 'whitespace-nowrap', render: (r: LedgerEntry) => `${r.kind} · 1 message` }]),
+    ...(selected ? [] : [{ key: 'what', header: 'What', info: help.what, render: (r: LedgerEntry) => r.kind }]),
     { key: 'outcome', header: 'Outcome', info: help.outcome, render: (r) => <StateChip state={r.state} /> },
     { key: 'level', header: 'Level', info: help.level, render: (r) => <LevelChip level={r.level} /> },
-    ...(selected ? [] : [{ key: 'match', header: 'Match', info: help.match, render: (r: LedgerEntry) => r.confidence ?? '—' }]),
+    ...(selected || !rows.some((r) => r.confidence) ? [] : [{ key: 'match', header: 'Match', info: help.match, render: (r: LedgerEntry) => r.confidence ?? '—' }]),
     {
       key: 'open',
       header: 'Details',

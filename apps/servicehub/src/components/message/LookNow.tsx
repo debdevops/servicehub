@@ -61,7 +61,7 @@ function Result({ summary, cloud }: { summary: LookSummary; cloud: string }) {
         Looked at {time} — {plural(summary.queuesExamined, 'queue')} with dead letters: {parts.join(', ')}.
       </p>
       {summary.unconfirmed > 0 && (
-        <p className="mt-1 text-xs text-[var(--color-text-muted)]">{plural(summary.unconfirmed, 'queue')} could not be read to the end; what was recorded before is left as it was.</p>
+        <p className="mt-1 text-xs text-[var(--color-text-muted)]">{cloud} hands back a sample, not the whole queue, so a dead letter recorded earlier and not seen this time is left in the list — it is not assumed gone.</p>
       )}
       {summary.failed > 0 && (
         <p className="mt-1 text-xs text-[var(--color-text-muted)]">

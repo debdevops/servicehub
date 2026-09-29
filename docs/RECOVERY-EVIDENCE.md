@@ -1,397 +1,122 @@
 # Recovery Evidence Ledger
 
-> **4.1.0 status (verified live 2026-09-28):** this document was written for 4.0.0 and its routes
-> (`/recovery/operations/{id}/export`, `/playbook/*`, `/recovery/epochs/seal`) are 4.0.0's — 4.1.0
-> ships none of the Playbook ledger or epoch sealing (PORTING-MAP: LEAVE). What 4.1.0 has is the
-> Recovery Ledger's hash chain, and it works as described here: `GET /api/v1/recovery/chain`
-> reported `isValid: true` over 5,332 events; `GET /api/v1/recovery/export` produced a 2.8 MB
-> package that `scripts/verify-recovery-chain.py` accepted (**PASS — 5332 events, Seq 1-5332**);
-> and flipping one field (`eventType`) of one event in a copy made the same verifier **FAIL**,
-> naming Seq 2001 and the EntryHash mismatch — the tamper negative control. The Advanced →
-> Recovery Ledger page has an *Export evidence* button for the same package.
-
-> **In this article:** the technical design of ServiceHub's evidence ledger — the durable record
-> that answers "what did ServiceHub actually do, and can we prove it?" for every message it ever
-> replayed or purged.
+> **In this article:** how ServiceHub records every recovery decision, how to export that record, and how an auditor can verify it **offline, without ServiceHub** —
+> including exactly what the record can and cannot prove.
 >
-> **In plain language, before the technical detail starts:** every time ServiceHub replays or
-> deletes a stuck ("dead-lettered") message, it writes down what it did, who or what decided to do
-> it, and what happened afterward — in a way that can't be quietly edited later. Think of it like
-> an aircraft's flight recorder for your message queues. You can see this ledger yourself, in
-> plain English with no reading required, on the **Recovery Evidence** page in the ServiceHub UI —
-> this document is the underlying technical design, written for someone who needs to independently
-> verify that record (an auditor, a compliance reviewer, or an engineer debugging a discrepancy),
-> not the everyday way to use it.
+> **In plain language:** every time ServiceHub replays or deletes a stuck ("dead-lettered") message — or refuses to — it writes down what it did, who or what decided,
+> and what happened afterward, in a way that cannot be quietly edited later. Think of it as a flight recorder for your queues. You read it in the app on **Advanced → Recovery
+> Ledger**; this page is for someone who needs to verify it independently (an auditor, a compliance reviewer, an engineer chasing a discrepancy).
 
-ServiceHub's Recovery Evidence Ledger is a durable, append-only, hash-chained record of every
-recovery decision ServiceHub makes on a dead-lettered message — replay or purge — and, where
-provable, its eventual outcome. This document is the standalone reference for an auditor working
-from an exported evidence bundle alone, with no access to the ServiceHub source or database.
-
-> [!TIP]
-> **Verified live, 2026-09-19:** ran the chain-verification check (the UI's own "Verify chain"
-> button, described in §3.3) against a real, actively-growing ledger — an instance under heavy
-> multi-cloud test traffic. Result: **83,212 events, chain intact.** A prior verification pass
-> (2026-09-13) additionally confirmed the negative case with a deliberately tampered copy — one
-> field of one event changed — which was correctly rejected, naming the exact event where the
-> chain broke.
-
-It is honest about a hard limit up front: the chain is **tamper-evident, not tamper-proof**.
-Anyone with write access to the underlying SQLite file can recompute the entire chain and produce
-a self-consistent forgery. Verification here detects *casual or partial* alteration — a changed
-field, a wrong link, a gap in sequence — not a determined adversary with database access. There is
-no cryptographic signing or external notarization in this release — deliberately deferred, not
-overlooked, so that this document doesn't overclaim what the chain actually protects against.
+The ledger is a durable, append-only, hash-chained record kept in ServiceHub's SQLite database. It is honest about a hard limit up front: the chain is
+**tamper-evident, not tamper-proof.** Anyone with write access to the database file can recompute the whole chain and produce a self-consistent forgery. Verification
+detects a changed field, a wrong link or a gap — not a determined adversary with database access. There is no cryptographic signing or external notarisation.
 
 ## 1. Data model
 
-Three entity types, in a strict hierarchy:
+- **`RecoveryOperation`** — the immutable header of one decision: who, why, what scope (one message, a rule firing, a bulk job).
+- **`RecoveryLedgerEntry`** — one per (operation, message): that message's own lifecycle, plus a snapshot of namespace, provider, entity and body-hash at the moment recovery
+  began. A small, declared set of fields (state, verification result/confidence, observation window, marker, closed-at) may change as the entry progresses; everything
+  else is immutable, and each change is itself recorded as an event.
+- **`RecoveryEvent`** — the evidence. Append-only and hash-chained; never updated, never deleted.
 
-- **`RecoveryOperation`** — the immutable header for one decision: who, why, what scope (a single
-  message, a rule firing, a bulk job), and when it was opened. Never mutated after insert.
-- **`RecoveryLedgerEntry`** — one per (operation, message). Tracks the message's own lifecycle —
-  `Executing → Observing → Recovered/Returned/Unverified/...` — snapshotting namespace, provider,
-  entity, and body-hash identity at the moment recovery began. A small, explicitly-enumerated set
-  of fields (state, verification result/confidence, observation window, marker, closed-at) may be
-  updated as the entry progresses; every other field is immutable once inserted, and every such
-  update is itself recorded as an event (§3).
-- **`RecoveryEvent`** — the evidence itself. Append-only, hash-chained, and the only place a fact
-  is ever recorded twice: once as a durable row, once folded into the chain. Never updated, never
-  deleted.
-
-An operation has one or more entries; an entry accumulates one or more events over its lifetime.
+The append-only rule is enforced where data is saved (`RecoveryLedgerAppendOnlyGuard`): a save that would modify or delete an operation or event — or change an entry field outside
+the declared set — throws. No controller, executor or agent can bypass it.
 
 ## 2. Entry lifecycle
 
 ```
-Executing → Observing → Recovered      (no recurrence, full coverage — "did not return")
-                       → Returned       (recurrence observed within the window)
-                       → Unverified     (window closed without adequate coverage)
-          → ExecutionFailed             (provider rejected the call)
-          → ExecutionUnknown            (process died mid-call — outcome genuinely unknown)
-Executing → Discarded                   (purge accepted — deliberate destruction)
-(any non-terminal) → WrittenOff         (operator declared unrecoverable; requires a reason)
-(any non-terminal) → Expired            (aged past threshold; reachable only after an
-                                          AgeingFlagged event was recorded for the entry first)
+Executing → Observing → Recovered        did not come back, with full scan coverage of the watch window
+                      → Returned         came back within the window
+                      → Unverified       window closed without adequate coverage — NOT a failure: the replay may have worked
+          → ExecutionFailed              the cloud rejected the call
+          → ExecutionUnknown             the process died mid-call — outcome genuinely unknown
+Executing → Discarded                    a purge was accepted (deliberate destruction)
+(before any cloud call) → Declined       the eligibility gate stopped it; nothing was sent
+(any open state) → WrittenOff / Expired  an operator declared it unrecoverable (a reason is required) / it aged out
 ```
 
-`Recovered` means *"a replayed message did not reappear in the dead-letter queue for the full
-observation window, and ServiceHub had continuous, uncapped scan coverage of that window."* It
-never means the downstream business transaction succeeded — ServiceHub cannot see past the queue.
+`Recovered` means *"a replayed message did not reappear in the dead-letter queue for the whole observation window, and ServiceHub had continuous, uncapped scan coverage of
+it."* It never means the downstream business transaction succeeded — ServiceHub cannot see past the queue.
 
 ## 3. The hash chain
 
-The chain is partitioned **per owner** (`OwnerId`), not per operation and not globally. `Seq` is a
-monotonically increasing integer, unique per `(OwnerId, Seq)`, starting at 1. Verifying any one
-operation's evidence necessarily verifies its owner's entire chain up to the present, because the
-events interleave across all of that owner's operations in one sequence.
+The chain is partitioned **per owner** (`OwnerId`); `Seq` is 1, 2, 3 … with no gaps. Verifying one event means verifying the owner's chain up to it.
 
-### 3.1 Genesis
-
-The first event for a given owner has `PrevHash` equal to 64 ASCII `'0'` characters (the same
-length as a SHA-256 hex digest).
-
-### 3.2 EntryHash computation
-
-For every `RecoveryEvent`, `EntryHash` is the lowercase hex-encoded SHA-256 digest of the UTF-8
-bytes of the following fields, joined with the ASCII pipe character `|` in exactly this order:
+- **Genesis:** the first event has `PrevHash` = 64 ASCII `0` characters.
+- **`EntryHash`** is the lowercase hex SHA-256 of the UTF-8 bytes of these twelve fields joined with `|`, in this order:
 
 ```
-1.  Id              (GUID, "D" format — lowercase, hyphenated, no braces)
-2.  OwnerId          (raw string)
-3.  Seq              (integer, invariant culture)
-4.  EntryId           (GUID "D" format, or empty string if null — operation-level events only)
-5.  OperationId       (GUID, "D" format)
-6.  EventType         (enum name — e.g. "EntryBegun", "RecurrenceObserved" — not its numeric value)
-7.  OccurredAt        (UTC, ISO-8601 round-trip format: DateTimeOffset.ToUniversalTime().ToString("O"))
-8.  ActorIdentity     (raw string)
-9.  ActorKind         (enum name — e.g. "Human", "Automation", "System")
-10. DetailJson        (raw string, or empty string if null)
-11. SchemaVersion     (integer, invariant culture)
-12. PrevHash          (the previous event's EntryHash for this owner; 64 zeros for the first event)
+1 id (GUID "D" format)              5 operationId (GUID "D")               9  actorKind (enum NAME)
+2 ownerId                           6 eventType (enum NAME)                10 detailJson (empty string if null)
+3 seq (invariant integer)           7 occurredAt (UTC, "O" round-trip)     11 schemaVersion (integer)
+4 entryId (GUID "D", empty if null) 8 actorIdentity                        12 prevHash
 ```
 
-That is: `EntryHash = lowercase_hex(SHA256(field1 + "|" + field2 + "|" + ... + "|" + field12))`.
+**It is a pipe-joined string, not a JSON serialisation.** Hashing the raw JSON will not reproduce it. Reproduction notes: enums are their **names** (`EntryBegun`, not `1`), which
+is how the export writes them; `occurredAt` must be re-formatted as UTC with 7 fractional digits and a `+00:00` offset — not a trailing `Z` — because a byte-for-byte match
+matters; a null `entryId` or `detailJson` is the empty string, never the text `null`.
 
-**This is a pipe-delimited canonical string, not a JSON serialization.** Concatenating the raw
-JSON representation of an exported event will not reproduce the hash — you must extract the twelve
-fields above and join them in this exact order with `|` before hashing.
+**Verifying a chain,** for one owner's events in `Seq` order: `Seq` must equal the expected next number (a gap means a missing or reordered event); `PrevHash` must equal the
+previous event's `EntryHash`; recomputing `EntryHash` must match the stored one (a mismatch means the event's own fields were altered). Report the first `Seq` that fails, and which check.
 
-Notes for reproduction from an exported bundle:
+`GET /api/v1/recovery/chain` runs exactly this on the server: `{"ownerId":"…","isValid":true,"eventsChecked":15424,"firstDivergentSeq":null,"reason":null}`.
+That is the server marking its own homework — hence the offline verifier below.
 
-- `EventType` and `ActorKind` must be rendered as their **enum name**, not the small integer
-  ServiceHub uses internally (`EntryBegun`, not `1`). The export JSON already serializes them as
-  strings.
-- `OccurredAt`: the export JSON's `occurredAt` field is a standard ISO-8601 timestamp. Parse it,
-  convert to UTC if it isn't already, and re-format with .NET's round-trip (`"O"`) specifier — or
-  equivalently, an ISO-8601 string with 7 fractional-second digits and a `+00:00` UTC offset (not
-  a trailing `Z`). Byte-for-byte agreement with the original matters; a naive re-stringification
-  in another language's default ISO-8601 formatter will usually **not** match.
-- `EntryId` is empty string, not the literal text `"null"`, when the event is operation-level.
-- `DetailJson` is empty string, not `"null"`, when absent.
+## 4. Export and independent offline verification
 
-### 3.3 Verifying a chain
+**Export.** Advanced → Recovery Ledger → *Export evidence* (choose a window), or `GET /api/v1/recovery/export[?from=…&to=…]` (not from a key limited to some
+namespaces — the ledger is one chain across all of them). One JSON file, `servicehub-evidence-<from>-to-<to>.json`:
 
-Given a `Seq`-ordered list of one owner's events:
-
-1. Set `expectedPrevHash = genesis (64 zeros)`, `expectedSeq = 1`.
-2. For each event in order:
-   a. Its `Seq` must equal `expectedSeq` — any gap means a missing or reordered event.
-   b. Its `PrevHash` must equal `expectedPrevHash` — a mismatch means the chain was broken or
-      reordered at this point.
-   c. Recompute `EntryHash` per §3.2 and compare to the stored value — a mismatch means this
-      event's own fields were altered after being appended.
-   d. On any failure, stop and report this `Seq` as the first divergent point, with which of (a),
-      (b), or (c) failed.
-   e. On success, set `expectedPrevHash = <this event's EntryHash>`, `expectedSeq += 1`.
-3. If every event passes, the chain is intact.
-
-This is exactly what `RecoveryChainVerifier.Verify` (server-side) and the evidence export's
-`chain.verified` field report — an independent recomputation should agree with it.
-
-### 3.3a Independent offline verification
-
-`archive/servicehub-4.0.0/scripts/verify-recovery-chain.py` is a dependency-free (Python 3 standard library only) tool
-that recomputes the checks above **without running ServiceHub and without trusting its API to
-say "valid."** It never contacts a server, never touches a database, and never modifies its
-input.
-
-**1. Obtain the evidence package.** `GET /api/v1/recovery/operations/{id}/export?format=package`
-(or `format=json` for the combined bundle — see §6) — either works as input to the script.
-
-**2. Run the verifier:**
-
-```
-python3 archive/servicehub-4.0.0/scripts/verify-recovery-chain.py recovery-evidence-<id>-<timestamp>.zip
+```json
+{ "manifest": { "kind": "servicehub-recovery-evidence", "exportedAt": "…", "from": null, "to": null, "partial": false,
+                "note": "The whole chain, from its first event.",
+                "chain": { "firstSeq": 1, "lastSeq": 15424, "eventsInChain": 15424 },
+                "verify": "python3 verify-recovery-chain.py servicehub-evidence-….json" },
+  "events":   [ { "id": "…", "ownerId": "…", "seq": 1, "entryId": null, "operationId": "…", "eventType": "OperationOpened",
+                  "occurredAt": "…", "actorIdentity": "…", "actorKind": "User", "detailJson": null, "schemaVersion": 1,
+                  "prevHash": "000…0", "entryHash": "…" }, … ] }
 ```
 
-**3. What it verifies**, for every event in the export:
-- Its `EntryHash` recomputes correctly from its own twelve canonical fields plus its own stored
-  `PrevHash` (§3.2) — detects an event modified after being appended.
-- `Seq` values are strictly increasing across the export, with no duplicates or reordering.
-- Wherever two exported events are truly adjacent in `Seq` (`n`, `n+1`), the second's `PrevHash`
-  equals the first's `EntryHash` — detects deletion or reordering of evidence between them.
-- Any event whose `PrevHash` is the genesis hash (§3.1) has `Seq == 1` — genesis is only valid
-  for the very first event in the owner's entire chain.
-- If a `manifest.json`/`manifest` is present, the exported events' `Seq` range matches what the
-  manifest claims — detects an event silently dropped from the export after the manifest was
-  computed (truncation).
+`partial: true` means a `from`/`to` window was applied, so the file is a slice of the chain, not all of it.
 
-**4. What "PASS" means:** every check above held for every event in this export. Nothing in the
-export was altered, reordered, duplicated, or dropped relative to what the manifest (if present)
-claims.
-
-**5. What it cannot prove:** continuity with the owner's **global** chain. A per-operation export
-contains only that operation's events; other operations' events are interleaved between them in
-the real, owner-wide sequence (see §3), so gaps in `Seq` between two exported events are normal,
-not evidence of tampering — and this tool has no way to see what, if anything, sits in those
-gaps. Proving the entire owner chain's continuity requires the full chain (every operation's
-events), which only the running ServiceHub server has, or a full owner-wide `events` export. This
-is a structural limit of exporting per operation, not a weakness specific to this tool — it is
-the same "tamper-evident, not tamper-proof" honesty this document opens with, extended to what an
-offline reader can and cannot check.
-
-**6. Example: a valid export**
+**Verify it** with `scripts/verify-recovery-chain.py` — Python 3 standard library only; it never contacts a server or database and never modifies its input:
 
 ```
-$ python3 archive/servicehub-4.0.0/scripts/verify-recovery-chain.py recovery-evidence-<id>-<timestamp>.zip
-PASS — 3 event(s) verified, owner='acme-owner', Seq 1-3.
-This confirms: no event was altered after being appended, no event in this export
-is missing/duplicated/reordered, and adjacent-Seq events chain correctly.
-This does NOT confirm continuity with other operations' events in the owner's
-global chain — see docs/RECOVERY-EVIDENCE.md for what an offline, per-operation
-export cannot prove.
+$ python3 scripts/verify-recovery-chain.py servicehub-evidence-20260925-0603-to-20260929-1653.json
+PASS — 15424 event(s) verified, owner='__spa__', Seq 1-15424.
 ```
 
-**7. Example: a tampered export** (one field of one event edited after export)
+It recomputes every `EntryHash` from the twelve fields and checks that `Seq` strictly increases, that adjacent events chain (`PrevHash` = the previous `EntryHash`), that only `Seq` 1 carries the
+genesis `PrevHash`, and that the manifest's range matches the events. Exit `0` = PASS, `1` = FAIL (naming every divergent `Seq`), `2` = the input could not be parsed.
+
+A tampered copy — one field of one event changed — fails and says where (a real run, 2026-09-29, `eventType` of one event edited):
 
 ```
-$ python3 archive/servicehub-4.0.0/scripts/verify-recovery-chain.py recovery-evidence-<id>-<timestamp>-tampered.zip
 FAIL — 1 finding(s):
-  - Seq 2: EntryHash mismatch — stored=21132ab... recomputed=791606b... This event's fields
-    were altered after being appended.
+  - Seq 3001: EntryHash mismatch — stored=df6922ac… recomputed=7cf051d4… This event's fields were altered after being appended.
 ```
 
-The script exits `0` on PASS, `1` on FAIL (naming every divergent `Seq`), and `2` if the input
-couldn't be parsed at all.
+**What PASS proves:** nothing in the file was altered, reordered, duplicated or dropped relative to itself and its manifest. **What it cannot prove:** that the file is the *whole* ledger
+(`partial: true` is a slice, and a slice cannot show what sat outside it), or that the database was not rewritten wholesale before export — the tamper-evident-not-tamper-proof limit above. The script also
+carries an `--archive-dir` option for 4.0.0's sealed-epoch archives; 4.1.0 does not seal epochs, so leave it unused. (A message it prints about a "per-operation export" is 4.0.0 wording; a 4.1.0 export is the whole chain unless `partial` is true.)
 
-### 3.3b The Playbook Ledger's independent chain and verifier
+## 5. What ServiceHub can and cannot prove
 
-The Recovery Evidence Ledger only ever covers the Recover pillar. `archive/servicehub-4.0.0/scripts/verify-playbook-chain.py`
-is the sibling verifier for the Playbook Ledger (roadmap next-chapter M1.3, ADR-0009) —
-Investigate, Correlate and Prevent's proposal-and-disposition record, a fully independent
-hash chain from the one this document describes (own `Seq` space, own genesis, own
-`PlaybookHashChain.ComputeEntryHash` algorithm — structurally identical to §3.2's, computed over a
-different field set). It is a separate script rather than a mode of this one deliberately: the two
-chains stay cryptographically and structurally separate on the server side, and a shared verifier
-would blur that.
+Recovery verification depends on ServiceHub being able to *observe the dead-letter queue* after a replay, and that differs by cloud:
 
-It performs every check §3.3a's tool does, against `GET /api/v1/playbook/export`'s bundle, **plus
-one this ledger's own evidence model requires and the Recovery ledger does not**: every
-`EvidenceRefJson` citation into a pillar finding (`AnomalyId`, `DriftFindingId`,
-`CorrelationFindingId`, `ExternalSignalCorrelationId` — the four fields the Investigate/Correlate
-detection workers and `PreventionRuleEvaluationService` write) must resolve inside the export's own
-`citedEvidence` section. A citation that doesn't is reported as **dangling** — the specific defect
-`PillarFindingRetentionWorker`'s citation exception exists to prevent, and this is how an auditor
-holding only the export would independently catch it if that exception were ever removed or broken.
-
-```
-python3 archive/servicehub-4.0.0/scripts/verify-playbook-chain.py playbook-evidence-<timestamp>.json
-```
-
-A healthy export reads:
-
-```
-PASS — 3 event(s) verified, 1 entrie(s), 1 cited finding(s) resolved, owner='acme-owner'.
-Seq 1-3 intact; no citation into a pillar finding dangles.
-```
-
-### 3.3c Epoch sealing and archival
-
-Append-only, hash-chained, one SQLite file, multi-year operation: unbounded growth with no legal
-way to prune — this is the specific problem epoch sealing (roadmap next-chapter M5.2) solves,
-**without adding a table and without weakening tamper-evidence.**
-
-**Sealing.** `POST /api/v1/recovery/epochs/seal` (admin scope + Admin Governance role) appends one
-`EpochSealed` event to the caller's chain — an ordinary event, hashed and chained exactly like any
-other (§3.2), with `DetailJson` carrying `{"epochNumber": N, "sealedThroughSeq": <Seq>}`.
-
-**Archiving.** Immediately after sealing, every event **strictly before** the new marker — which
-naturally includes any earlier seal marker too, now superseded — is:
-
-1. Verified in memory (§3.3), anchored at the *previous* seal marker's own `EntryHash` (or
-   `RecoveryHashChain.GenesisHash` for the first epoch) — never at a value read off the range being
-   verified itself, or a tampered first event could supply its own fabricated "previous" hash and
-   verify against nothing but itself.
-2. Written to `<DlqDatabase:DataDirectory>/recovery-archive/<ownerId>/epoch-<N>.json` (configurable
-   via `RecoveryEpochArchive:ArchiveDirectory`) — a JSON document carrying `ownerId`, `epochNumber`,
-   `startSeq`, `startPrevHash`, `endSeq`, `terminalHash`, `sealEventSeq`, `sealEventHash`, and the
-   full `events` array in the same shape `GET /api/v1/recovery/operations/{id}/export` uses.
-3. **Read back from disk and re-verified independently** before anything live is touched — a
-   written-but-corrupt archive aborts the whole operation with nothing deleted.
-4. Only then pruned from the live `RecoveryEvents` table via a raw parameterized `DELETE` — the one
-   deliberate, narrow exception to the append-only guard described in §8, safe specifically because
-   step 3 already proved the content survives, byte for byte, on disk first.
-
-**The seal marker itself is never archived** — it stays the sole live row for that owner until the
-*next* seal, so the live table's `GetNextSeqAndPrevHashAsync` continuation logic needs no special
-case: the next real event simply continues from the marker's own `Seq`/`EntryHash`, exactly as it
-would from any other event. Because the marker survives, there is always a one-`Seq` gap between an
-epoch's own `endSeq` and the *next* epoch's `startSeq` — the marker itself occupies that `Seq`.
-`sealEventSeq`/`sealEventHash` record the marker's own `Seq`/`EntryHash` in the archive file, so a
-later epoch's `startSeq`/`startPrevHash` actually equal *this* epoch's `sealEventSeq + 1`/
-`sealEventHash`, not `endSeq + 1`/`terminalHash` directly — an offline verifier reading archive
-files alone (no DB access) needs the marker's value duplicated here to bridge two archives, since
-the marker row itself was never written to either one.
-
-**Live-chain verification is archive-aware.** `VerifyChainAsync` (the `/verify` endpoint) does not
-assume the live table starts at `Seq` 1: it anchors at the *most recent* live
-`EpochSealed` marker's own `Seq`/`EntryHash` (or genesis, if the owner has never sealed an epoch),
-since everything before that marker was already pruned and independently verified at archive time.
-`SealAndArchiveEpochAsync` also re-runs this same check immediately after every prune, purely as a
-defence-in-depth self-check — it cannot undo an already-committed prune, but a failure there means
-the archive/prune logic itself has a bug, logged as `LogCritical`.
-
-**Verifying a sealed history.** `archive/servicehub-4.0.0/scripts/verify-recovery-chain.py --archive-dir <owner-dir>
-<current-export>` verifies every `epoch-*.json` archive in the directory (in epoch order), confirms
-each declares the correct `startSeq`/`startPrevHash`/`terminalHash` for its own first/last event,
-confirms consecutive archives chain `sealEventHash` → `startPrevHash` (with `startSeq` exactly
-`sealEventSeq + 1`) — bridging through the live marker between them rather than assuming no gap —
-and finally confirms the live export's own first event continues the same way from the last
-archive's `sealEventSeq`/`sealEventHash`. A single archive file also verifies standalone (it is a
-valid input to the plain, no-flag form of the script) — "a sealed epoch verifies from its archive
-alone."
-
-> **Verified live on 2026-09-20.** Two real epochs were sealed back-to-back against a live,
-> actively-growing owner chain (92,051 events, then 22 more): both seal markers stayed live as
-> chain anchors, both archive files carried the new `sealEventSeq`/`sealEventHash` fields, the
-> live `/verify` endpoint reported `isValid: true` immediately after each seal (no false-fail),
-> and `verify-recovery-chain.py --archive-dir` independently confirmed continuity across both
-> archives plus the live tail, Seq 1 through 92,092, with zero findings.
-
-## 4. What ServiceHub can and cannot prove
-
-Recovery verification depends on ServiceHub actually being able to observe the dead-letter queue
-after a replay. That capability differs by provider:
-
-| Provider | Can prove absence (`Recovered` is reachable) | Why |
+| Provider | Can prove absence (`Recovered` reachable) | Why |
 |---|---|---|
-| Azure Service Bus | Yes | Non-destructive peek gives continuous, uncapped DLQ visibility. |
-| AWS SQS | **No** | No non-destructive peek exists; scanning the DLQ risks altering receive counts. Entries close as `Unverified` with limitation code `AWS_NO_ABSENCE_PROOF`. |
-| GCP Pub/Sub | **No**, beyond a capped scan | Scanning is capped per cycle; once the cap is hit, reconciliation for the remainder is skipped. Entries close as `Unverified` with limitation code `GCP_NO_ABSENCE_PROOF`. |
+| Azure Service Bus | Yes | A non-destructive peek gives continuous, uncapped visibility of the DLQ. |
+| AWS SQS | **No**, unless a DLQ observer is attested | There is no non-destructive peek; scanning the DLQ would disturb receive counts. Its entries close `Unverified`. |
+| GCP Pub/Sub | **No**, unless a DLQ observer is attested | Scanning is capped per cycle. Its entries close `Unverified`. |
 
-`CanProveDlqAbsence = false` for a provider **structurally** blocks that provider's entries from
-ever reaching `Recovered` — it is not a UI label choice, it is enforced where the verification
-outcome is decided. An export's manifest always lists which limitations applied and to how many
-entries; it is never silently omitted.
+`CanProveDlqAbsence = false` **structurally** stops that provider's entries reaching `Recovered` — it is enforced where the outcome is decided, not a UI label. Regardless of cloud, the ledger never
+establishes whether any consumer processed the message, whether the business transaction completed, or anything about a message removed by another system.
 
-Regardless of provider, ServiceHub's evidence never establishes:
+## 6. The recovery marker
 
-- Whether any consumer processed the message successfully.
-- Whether the corresponding business transaction completed.
-- Anything about a message removed by a system other than ServiceHub.
-- For entries where the recovery marker could not be applied (`markerApplied: false`), which
-  specific message a body-hash recurrence match refers to, if more than one candidate matched.
+Where the cloud allows it (`ProviderCapabilities.SupportsRecoveryMarker`), a replayed message carries an application property `x-servicehub-recovery-id` set to the entry's id, so a later reappearance in the
+DLQ is attributed to that exact recovery (confidence **Exact**). Where it cannot be applied, recurrence is matched by body hash (**Heuristic**), and if more than one open entry shares the hash the match is recorded as
+ambiguous rather than guessed.
 
-Every export's manifest states this explicitly in a `whatServiceHubDoesNotKnow` field — non-empty
-on every export, by construction. An export that claimed to know everything would be a worse
-product than one that says nothing at all.
-
-## 5. Recovery marker
-
-On providers that support it, a replayed message carries an application-property marker
-(`x-servicehub-recovery-id`, set to the ledger entry's ID) so a later recurrence in the DLQ can be
-attributed to a specific recovery attempt with certainty, rather than inferred from a body-hash
-match. When the marker could not be applied (provider or message-size limits), recurrence detection
-falls back to a body-hash heuristic; if more than one open entry shares that hash, the match is
-recorded as ambiguous rather than guessed.
-
-## 6. Export bundle contents
-
-An evidence export (`GET` on the recovery operation's export endpoint) supports three formats via
-the `format` query parameter:
-
-- `format=json` (default) — the combined bundle: a single document with `manifest`, `operation`,
-  `entries`, and `events` under one root. This *is* the "bundle" — there is no separately-named
-  `bundle.json` file; requesting the default format is how you get the combined document.
-- `format=csv` — `entries.csv` alone, nothing else.
-- `format=package` — a zip containing five files, each individually reproducible from the
-  `format=json` bundle's fields:
-  - `manifest.json` — the honesty contract: schema/service version, chain summary (§3.3's
-    `verified` result plus first/last `Seq`), entry counts by state, what ServiceHub knows /
-    observed / does not know, and any provider limitations that applied.
-  - `operation.json` — the operation header.
-  - `entries.json` / `entries.csv` — one row per ledger entry.
-  - `events.json` — every event for the operation, `Seq`-ordered, sufficient to run the §3.3
-    verification procedure independently.
-
-**Reproducibility**: two exports of the same, unchanged operation are byte-identical except for
-`manifest.exportedAt` and `manifest.exportedBy` — entries are ordered deterministically
-(`BegunAt`, then `Id`) rather than relying on database-level tie-breaking, so re-exporting is safe
-to diff.
-
-## 7. Demo Mode
-
-Evidence generated from Demo Mode fixtures is never presented as real. Every Demo Mode export sets
-`manifest.demoMode: true`, adds an explicit `whatServiceHubDoesNotKnow` entry stating the export is
-fixture data, carries a `DEMO_DATA_NOT_REAL_EVIDENCE` limitation, and is named with a `demo-` filename
-prefix. The watermark travels with the artifact at every layer — UI, manifest, and filename — not
-just as a page banner that a downloaded file would lose.
-
-## 8. Append-only enforcement
-
-The three ledger tables are protected at the persistence layer, independent of any caller's
-discipline: every `SaveChanges`/`SaveChangesAsync` call is inspected before it commits, and it
-throws if it would delete or modify a `RecoveryOperation` or `RecoveryEvent` row, or modify a
-`RecoveryLedgerEntry` field outside a small, explicitly-declared mutable set (state, verification
-result/confidence, observation window, marker, closed-at). There is no code path — controller,
-executor, or worker — that can construct a `RecoveryEvent` update or delete and have it commit.
-
-**The one deliberate exception:** `RecoveryEpochArchiveService` (§3.3c) prunes archived
-`RecoveryEvent` rows via a raw, parameterized SQL `DELETE` issued directly against the connection
-(`Database.ExecuteSqlInterpolatedAsync`), which never populates the EF `ChangeTracker` this guard
-inspects — the same mechanism `BackupRestoreVerificationTests`' own tamper test uses to simulate a
-raw on-disk edit, used here deliberately instead of adversarially. This is safe specifically because
-every pruned row's full content already survives, byte for byte, in an independently re-verified
-archive file on disk *before* the delete runs — never the reverse, and never for a row that hasn't
-been archived and re-verified first.
+*Verified live 2026-09-29 against a real 15,424-event ledger: chain valid, offline verifier PASS, tamper negative control FAIL at the edited `Seq`.*

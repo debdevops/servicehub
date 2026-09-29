@@ -1,6 +1,10 @@
 # ServiceHub 4.1.0, locally.
 #
+#   export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"   # once; keep it — see docs/ENCRYPTION-KEY-ROTATION.md
 #   docker compose up --build        → http://localhost:8080
+#
+# A Production start with no encryption key configured refuses to run, by design: the key protects every cloud
+# connection string ServiceHub stores.
 services:
   servicehub:
     build:
@@ -8,12 +12,15 @@ services:
       dockerfile: Dockerfile
     image: servicehub:4.1.0-dev
     ports:
-      - "8080:8080"
+      # Loopback only. Anyone who can reach this port is the server's owner (an Administrator): ServiceHub does not
+      # authenticate the browser. To expose it, put an authenticating reverse proxy or a private network in front of it.
+      - "127.0.0.1:8080:8080"
     volumes:
       # The SQLite database. One instance, one file — ADR-0003, and the instance lock enforces it.
       - servicehub-data:/data
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      SECURITY__ENCRYPTIONKEY: ${SERVICEHUB_ENCRYPTION_KEY:?set SERVICEHUB_ENCRYPTION_KEY first (see the top of this file)}
     restart: unless-stopped
 
 volumes:

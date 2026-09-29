@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Fixed — found while re-verifying the documentation, 2026-09-29
+
+- **`docker compose up --build` and the CI container smoke test crashed at start.** A Production start with no encryption key refuses to run (by design), and neither compose nor the smoke test supplied one. `docker-compose.yml` now requires `SERVICEHUB_ENCRYPTION_KEY` (with a clear message if it is missing) and the smoke test passes a throw-away key.
+- **Dead letters and Recovery Ledger tables needed a side-scroll at 1366×768, one Replayed tile failed colour contrast, and two browser specs used stale selectors** — all caught by the existing layout/accessibility gates once CI's browser job was run against the redesign. Fixed; the gates now pass.
+- **`docker compose` published ServiceHub on every network interface.** ServiceHub does not log the browser in — a request with no API key is the server's owner, an Administrator, and granted roles limit only key holders — so the Compose file now binds `127.0.0.1:8080`. The README and SECURITY.md implied API keys protect an exposed instance; they do not, and now say what does.
+- **Test connection returned a bare 500 for a cloud whose encryption key had been dropped from the registry.** It now answers; the database layer still refuses to save what it cannot re-protect. Regression test added.
+- **The three operator runbooks described 4.0.0** (a manual-only restore, `ProductionConfigurationValidator`, per-operation exports, epoch sealing). `docs/BACKUP-RESTORE.md`, `docs/ENCRYPTION-KEY-ROTATION.md` and `docs/RECOVERY-EVIDENCE.md` were rewritten from 4.1.0's behaviour, and each procedure was run on a throw-away instance.
+
+- **AWS showed every dead letter twice** — once as dead-lettered and again as "active" — because an SQS dead-letter queue is itself a queue and the namespace total added its messages to the active count (live: 71 dead-lettered *and* 71 active, with 0 actually waiting). A queue that another entity names as its dead-letter target is now left out of the active total. Regression test added.
+- **A look at AWS or Google Cloud dead letters marked messages it had not seen as gone.** A second Pub/Sub look returned fewer messages than a full batch, the scan took that for the whole queue, and 19 dead letters were marked "no longer in the queue" — all 19 were still there (checked by pulling the queue directly). An SQS receive or Pub/Sub pull is a sample, so absence is no longer concluded from one; rows leave the list when ServiceHub replays or deletes them, or when a cloud that counts reports the queue empty. The Look now result says the cloud hands back a sample. Regression tests added; the 19 came back on the next look.
+- **"100 replays need your approval" when 612 were waiting.** The attention card, bell and Waiting tab counted only the first page the server returns. They now say "100+" when the page is truncated.
+- **Home's All clouds table needed a side-scroll at 1366×768 with three clouds connected** (1103 px in 1070). Cell padding tightened; measured live with Azure, AWS and GCP connected.
+
+### Changed — tests and documentation, 2026-09-29
+
+- **All tests now live under `tests/`** (`backend/`, `web/`, `e2e/`; see `tests/README.md`). CI enforces a 60 % backend line-coverage floor (generated code excluded) beside the existing 60 % frontend floor, and runs new browser journey specs and an API-contract suite.
+- **Documentation cut to the bare minimum.** The README, `CONTRIBUTING.md` and `llms.txt` were rewritten for 4.1.0 (they described 4.0.0 paths, screens and tests that no longer exist). `docs/` now holds only the backup/restore and key-rotation runbooks and the recovery-evidence reference; the architecture doc, decision records, provider conformance, guides, `LOCAL-DEPLOYMENT.md`, `self-hosting/README.md` and the old screenshots are no longer tracked. A CI guard fails the build if a tracked doc links to something that does not exist.
+
 ### Fixed — found by the 2026-09-29 live verification pass
 
 - **Home said "Replayed 2,420" while the Replayed page it links to said 848.** The tile counted every recovery-ledger entry in the window, including 1,572 *Declined* ones — messages the safety checks stopped before any cloud was contacted, which were never replayed. The tile now counts only what was actually sent back, so it matches the page it opens.

@@ -35,7 +35,7 @@ export function NeedsYouStrip() {
   const panel = useMinimizable('needs-your-attention')
 
   if (!pending.data) return null
-  const rows = pendingRows(pending.data.items)
+  const rows = pendingRows(pending.data.items, { capped: pending.data.items.length < pending.data.total })
 
   if (rows.length === 0) {
     return (

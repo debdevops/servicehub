@@ -315,9 +315,17 @@ public sealed class DlqScanner
             }
 
             // Rows in this entity that were not seen this time are gone — but only if this scan saw the
-            // whole queue. AWS/GCP take a single sample, so a full batch proves nothing beyond it.
+            // whole queue, which only an ordered, repeatable peek can. AWS and GCP take a single sample: an SQS receive or a
+            // Pub/Sub pull may hand back fewer messages than the queue holds, and a message the previous look leased stays
+            // hidden until its lease ends — so a short (or empty) sample proves nothing about what it did not return.
+            // (Found live on Pub/Sub, 2026-09-29: 19 dead letters marked "vanished" were all still in the queue.)
             var resolvedHere = 0;
-            var sawEverything = complete && (useSequenceKey || peeked.Count < PeekBatchSize);
+            if (!useSequenceKey)
+            {
+                complete = false;
+            }
+
+            var sawEverything = complete;
             if (sawEverything)
             {
                 var seen = peeked.Select(m => useSequenceKey ? m.SequenceNumber.ToString() : m.MessageId).ToHashSet();
