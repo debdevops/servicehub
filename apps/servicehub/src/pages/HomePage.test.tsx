@@ -131,6 +131,21 @@ describe('Home', () => {
       expect(await screen.findByText(/No dead letters in Azure\. ServiceHub can see 12 queues\./)).toBeInTheDocument()
     })
 
+    it('does not count Declined entries as "Replayed" — they were stopped before any cloud was contacted', async () => {
+      mocked.fetchNamespaces.mockResolvedValue([ns('orders-dev', 'azure')])
+      mocked.fetchNamespaceStats.mockResolvedValue(stats('orders-dev'))
+      mocked.fetchEntities.mockResolvedValue({ namespaceId: 'orders-dev', entities: [entity(4)] })
+      vi.mocked(fetchRecoverySummary).mockResolvedValue({
+        window: '24h', total: 2420, byProvider: [], stayedFixedRate: 0.07, returnedConfidence: { exact: 0, heuristic: 0 }, replaysAccepted: 848,
+        states: [{ state: 'Observing', count: 294 }, { state: 'Recovered', count: 40 }, { state: 'Returned', count: 514 }, { state: 'Declined', count: 1572 }],
+      } as never)
+      renderHome()
+
+      const tile = (await screen.findByText('Replayed', { selector: 'p, span, div, h3' })).closest('a, div') as HTMLElement
+      await waitFor(() => expect(within(tile.parentElement as HTMLElement).getByText('848')).toBeInTheDocument())
+      expect(screen.queryByText('2,420')).not.toBeInTheDocument()
+    })
+
     it('never turns "cannot count" into a zero, on a cloud that cannot count', async () => {
       mocked.fetchNamespaces.mockResolvedValue([ns('p1', 'gcp', { gcpProjectId: 'my-proj-123' })])
       mocked.fetchNamespaceStats.mockResolvedValue(

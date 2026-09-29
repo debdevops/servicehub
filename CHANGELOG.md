@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Fixed — found by the 2026-09-29 live verification pass
+
+- **Home said "Replayed 2,420" while the Replayed page it links to said 848.** The tile counted every recovery-ledger entry in the window, including 1,572 *Declined* ones — messages the safety checks stopped before any cloud was contacted, which were never replayed. The tile now counts only what was actually sent back, so it matches the page it opens.
+- **"Watching · until 20:06" looked like the time of the replay.** The watch lasts 24 hours, so the end is tomorrow, but only a clock time was shown (in the browser's zone, ignoring the time zone chosen in Settings). It now reads "until Sep 30, 20:06" when the end is not today, in the Settings time zone — on the Replayed page and in the replay drawer's watch card.
+
+### Changed — 2026-09-29 Advanced and Simple pages redesign (commits `db37ceef`, `14e36931`; had no entry until now)
+
+- **Recovery Ledger, Failure Signatures, Agents, Dead letters, Active and Replayed pages rebuilt** with one shared filter row, pill tabs, a numbered pager and summary tiles. Ledger, signatures and Replayed can be filtered by who acted (people / autonomous), queue and a word; the Replayed list also by how it ended and time window. Each ledger entry carries the autonomy level its signature held at the time, the message ID and the entity type.
+- **Every message is named by its ID** wherever it is acted on (tables, timeline, rule activity, live tail); the Replay window shows the message it will replay and the Approve window lists each message with select-all and progress. Bulk Replay pages ten at a time and names held-back messages by their own ID.
+- **One click opens one window:** row Replay uses its own parameter, and Settings, Help, Approve, Send and Bulk Replay put away any open drawer. The sidebar lights exactly one item. The header and data tables now fit narrow viewports.
+- **API:** the pending-work list can be asked for one entry by ID, so approving one past the 500th waiting item no longer returns 404. The Bulk Replay agent works in slices of at most 20 s so a long run is not reported as a stopped agent.
+- **Azure replay/purge scans release locked messages 16 at a time** instead of one round trip each (uncommitted at the time of writing).
+
 ### Fixed — found by the 2026-09-28 live verification pass
 
 - **Home and the scope tabs said "can't count here" about a cloud that can count.** A dead-letter

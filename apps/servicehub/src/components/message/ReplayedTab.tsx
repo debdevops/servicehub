@@ -56,7 +56,7 @@ function ResultChip({ row }: { row: ReplayListItem }) {
     case 'unknown':
       return <Chip tone="warning">Outcome unknown</Chip>
     default:
-      return <Chip tone="neutral">{v.watchUntil ? `Watching · until ${new Date(v.watchUntil).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}` : 'Watching'}</Chip>
+      return <Chip tone="neutral">{v.watchUntil ? `Watching · until ${formatWhen(v.watchUntil, new Date())}` : 'Watching'}</Chip>
   }
 }
 

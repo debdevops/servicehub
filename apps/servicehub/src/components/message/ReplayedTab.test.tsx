@@ -39,6 +39,12 @@ describe('the Replayed tab', () => {
     expect(within(screen.getByRole('table')).queryByText(/stayed fixed/i)).toBeNull()
   })
 
+  it('says which day a watch ends when it is not today — a bare clock time reads as the replay time', async () => {
+    listMock.mockResolvedValue(page([row({ verification: { status: 'watching', reasonCode: null, confidence: null, watchUntil: '2020-01-02T20:06:00Z', canConfirm: true, remedy: null } })]))
+    renderTab()
+    expect(await screen.findByText(/Watching · until Jan \d+, \d\d:\d\d/)).toBeInTheDocument()
+  })
+
   it('shows the same replay differently on a cloud that can prove it and one that cannot', async () => {
     const v = (over: object) => ({ status: 'verified', reasonCode: null, confidence: null, watchUntil: null, canConfirm: true, remedy: null, ...over }) as ReplayListItem['verification']
     listMock.mockResolvedValue(page([

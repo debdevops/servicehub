@@ -37,3 +37,6 @@ export const overlayCompanionParams: readonly string[] = ['cloud', 'job', 'rule'
 
 /** Overlays drawn wider than the default (a two-column design). Everything else keeps the frame's default width. */
 export const overlayWide: ReadonlySet<string> = new Set(['settings', 'bulk-replay'])
+
+/** Overlays with a side panel beside their table, so they need more room than a wide one. */
+export const overlayWider: ReadonlySet<string> = new Set(['approve'])

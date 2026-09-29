@@ -23,7 +23,7 @@ export function OverlayFrame({
   description?: string
   onClose: () => void
   /** `drawer` is the 462px side view of a message; `wide` a modal for careful reading. */
-  size?: 'default' | 'drawer' | 'wide'
+  size?: 'default' | 'drawer' | 'wide' | 'wider'
   /** Buttons that sit in the header beside the ✕ (a drawer's ⤢ Expand). */
   actions?: ReactNode
   /**
@@ -96,7 +96,7 @@ export function OverlayFrame({
         data-docked={docked || undefined}
         className={
           isModal
-            ? `relative flex max-h-full w-full flex-col ${size === 'wide' ? 'max-w-4xl' : 'max-w-xl'} overflow-hidden rounded-2xl bg-[var(--color-surface)] shadow-xl`
+            ? `relative flex max-h-full w-full flex-col ${size === 'wider' ? 'max-w-6xl' : size === 'wide' ? 'max-w-4xl' : 'max-w-xl'} overflow-hidden rounded-2xl bg-[var(--color-surface)] shadow-xl`
             : `relative h-full w-full ${docked ? 'pointer-events-auto' : ''} ${size === 'drawer' ? 'max-w-[462px]' : 'max-w-md'} flex flex-col overflow-hidden border-l border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl`
         }
       >

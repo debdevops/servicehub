@@ -213,17 +213,20 @@ function ReplayedTile({ provider, recovery, traits, cloud, nsQuery }: {
   nsQuery: string
 }) {
   const count = (name: string) => recovery?.states.find((s) => s.state === name)?.count ?? 0
+  // Declined entries were stopped before any cloud was contacted — they were never replayed, so they are not counted here
+  // (the Replayed tab this tile links to does not list them either).
+  const replayed = recovery ? recovery.total - count('Declined') : null
   const note = !recovery
     ? ''
     : traits.confirms
       ? `${count('Recovered')} verified · ${count('Observing')} being watched`
-      : recovery.total > 0
+      : (replayed ?? 0) > 0
         ? `sent back — ${cloud} can’t confirm a fix held yet`
         : 'nothing replayed yet'
   return (
     <StatTile
       label="Replayed"
-      value={recovery?.total ?? null}
+      value={replayed}
       note={note}
       unavailable="ServiceHub hasn’t read its replay history yet."
       to={`/?provider=${provider}&tab=replayed${nsQuery}`}

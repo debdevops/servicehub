@@ -1317,17 +1317,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             // Abandon all messages we didn't need so they become available again
             if (dlqReceiver != null)
             {
-                foreach (var msg in messagesToAbandon)
-                {
-                    try
-                    {
-                        await dlqReceiver.AbandonMessageAsync(msg, cancellationToken: CancellationToken.None).ConfigureAwait(false);
-                    }
-                    catch
-                    {
-                        // Best effort - ignore errors during cleanup
-                    }
-                }
+                await AbandonAllAsync(dlqReceiver, messagesToAbandon).ConfigureAwait(false);
                 await dlqReceiver.DisposeAsync().ConfigureAwait(false);
             }
             if (sender != null)
@@ -1335,6 +1325,38 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
                 await sender.DisposeAsync().ConfigureAwait(false);
             }
         }
+    }
+
+    /// <summary>
+    /// How many abandons run at once. Finding one dead letter means locking every message scanned before it — hundreds
+    /// on a deep queue — and releasing them one round trip at a time was what made a bulk replay crawl.
+    /// </summary>
+    private const int AbandonConcurrency = 16;
+
+    private static async Task AbandonAllAsync(ServiceBusReceiver receiver, IReadOnlyList<ServiceBusReceivedMessage> messages)
+    {
+        if (messages.Count == 0)
+        {
+            return;
+        }
+
+        using var gate = new SemaphoreSlim(AbandonConcurrency);
+        await Task.WhenAll(messages.Select(async msg =>
+        {
+            await gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                await receiver.AbandonMessageAsync(msg, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Best effort - ignore errors during cleanup
+            }
+            finally
+            {
+                gate.Release();
+            }
+        })).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -1515,17 +1537,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             // Abandon all non-target messages so they become available again
             if (dlqReceiver != null)
             {
-                foreach (var msg in messagesToAbandon)
-                {
-                    try
-                    {
-                        await dlqReceiver.AbandonMessageAsync(msg, cancellationToken: CancellationToken.None).ConfigureAwait(false);
-                    }
-                    catch
-                    {
-                        // Best effort
-                    }
-                }
+                await AbandonAllAsync(dlqReceiver, messagesToAbandon).ConfigureAwait(false);
                 await dlqReceiver.DisposeAsync().ConfigureAwait(false);
             }
             if (sender != null)
@@ -1668,17 +1680,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             // Abandon all messages we didn't need so they become available again
             if (receiver != null)
             {
-                foreach (var msg in messagesToAbandon)
-                {
-                    try
-                    {
-                        await receiver.AbandonMessageAsync(msg, cancellationToken: CancellationToken.None).ConfigureAwait(false);
-                    }
-                    catch
-                    {
-                        // Best effort - ignore errors during cleanup
-                    }
-                }
+                await AbandonAllAsync(receiver, messagesToAbandon).ConfigureAwait(false);
                 await receiver.DisposeAsync().ConfigureAwait(false);
             }
         }

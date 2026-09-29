@@ -1,8 +1,9 @@
 import { Eye } from 'lucide-react'
 import type { ReplayListItem } from '../../lib/api/replay'
+import { formatWhen } from '../../lib/format'
 import { providerLabel } from '../../lib/providers'
 
-const clock = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+const clock = (iso: string) => formatWhen(iso, new Date())
 
 /**
  * Immediately after a replay, the drawer's agent slot becomes this: what ServiceHub is watching for, and until
