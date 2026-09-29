@@ -33,7 +33,9 @@ public sealed class BackupApiTests : IDisposable
     private static async Task Stop(HttpClient client, bool on)
     {
         var body = on ? (object)new { active = true, reason = "drill", confirm = "STOP" } : new { active = false, reason = "drill over", confirm = "LIFT" };
-        (await client.SendAsync(Req(HttpMethod.Post, "/api/v1/settings/emergency-stop", "emergency-stop", body))).EnsureSuccessStatusCode();
+        var response = await client.SendAsync(Req(HttpMethod.Post, "/api/v1/settings/emergency-stop", "emergency-stop", body));
+        // Say what the server said: an intermittent 500 seen once in a full run (2026-09-29) could not be diagnosed from the status alone.
+        response.IsSuccessStatusCode.Should().BeTrue($"emergency stop {(on ? "on" : "off")} answered {(int)response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
     }
 
     private static async Task<long> LedgerEvents(HttpClient client) =>
