@@ -51,8 +51,7 @@ describe('Failure Signatures', () => {
 
     await screen.findByRole('table', { name: 'Failure signatures' })
     expect(api.fetchSignatures).toHaveBeenLastCalledWith(expect.objectContaining({ environment: 'prod', namespaceId: undefined }))
-    await userEvent.click(await screen.findByRole('button', { name: 'All clouds · Namespace' }))
-    await userEvent.click(screen.getByRole('option', { name: /Orders Dev/ }))
+    await userEvent.selectOptions(await screen.findByLabelText('Namespace'), screen.getByRole('option', { name: /Orders Dev/ }))
     await screen.findByRole('table', { name: 'Failure signatures' })
     expect(api.fetchSignatures).toHaveBeenLastCalledWith(expect.objectContaining({ namespaceId: 'd1', environment: undefined }))
   })
@@ -64,7 +63,7 @@ describe('Failure Signatures', () => {
     const table = await screen.findByRole('table', { name: 'Failure signatures' })
     expect(within(table).getByText('Required field customerId missing')).toBeInTheDocument()
     expect(within(table).getByText('0 of 3 stayed fixed')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Growing/ })).toHaveTextContent('1')
+    expect(screen.getByRole('button', { name: /^Growing/ })).toHaveTextContent('1')
   })
 
   it('says "not replayed" rather than inventing an outcome, and shows no autonomy level', async () => {

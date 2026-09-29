@@ -66,6 +66,12 @@ export interface LedgerEntry {
   readonly confidence: 'Exact' | 'Heuristic' | null
   readonly dlqMessageId: number | null
   readonly closedAt: string | null
+  /** `queue` or `subscription`, as recorded. */
+  readonly entityType?: string | null
+  /** The message's own ID, as the cloud knows it. */
+  readonly messageId?: string | null
+  /** The autonomy level this entry's signature held when it began: `approve` (L3), `standing` (L4), `unattended` (L5). Null when no signature is known. */
+  readonly level?: 'approve' | 'standing' | 'unattended' | null
 }
 
 export interface LedgerPage {
@@ -108,10 +114,14 @@ export interface LedgerQuery extends RecoveryScope {
   readonly state?: EntryState
   readonly page?: number
   readonly pageSize?: number
+  /** `people` (a person or their key) or `autonomous` (ServiceHub's own agents and rules). */
+  readonly by?: 'people' | 'autonomous'
+  readonly entity?: string
+  readonly q?: string
 }
 
 export async function fetchLedger(query: LedgerQuery): Promise<LedgerPage> {
-  return (await api.get<LedgerPage>('/recovery/entries', { params: { ...scopeParams(query), state: query.state, page: query.page, pageSize: query.pageSize } })).data
+  return (await api.get<LedgerPage>('/recovery/entries', { params: { ...scopeParams(query), state: query.state, page: query.page, pageSize: query.pageSize, by: query.by, entity: query.entity, q: query.q } })).data
 }
 
 export async function fetchLedgerEntry(id: string): Promise<LedgerEntryDetail> {

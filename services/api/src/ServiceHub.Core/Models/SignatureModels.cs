@@ -3,7 +3,13 @@ using ServiceHub.Core.Enums;
 namespace ServiceHub.Core.Models;
 
 /// <summary>How the replays of one signature ended, from the ledger. Recovered and returned are never merged with "unverified".</summary>
-public sealed record SignatureReplays(int Replayed, int StayedFixed, int Returned, int Unverified);
+/// <param name="Replayed">Replays made.</param>
+/// <param name="StayedFixed">Verified as staying fixed.</param>
+/// <param name="Returned">Verified as coming back.</param>
+/// <param name="Unverified">Sent, but not provable either way.</param>
+/// <param name="ByPeople">How many of the replays a person (or their key) made.</param>
+/// <param name="ByAutonomy">How many a rule made on its own.</param>
+public sealed record SignatureReplays(int Replayed, int StayedFixed, int Returned, int Unverified, int ByPeople = 0, int ByAutonomy = 0);
 
 /// <summary>A namespace a signature was seen in, with its environment and how many of the signature's messages are there.</summary>
 public sealed record SignatureNamespace(Guid Id, string Name, string? DisplayName, EnvironmentType Environment, int Messages);

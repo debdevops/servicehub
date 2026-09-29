@@ -20,6 +20,7 @@ import type { HomeWindow } from '../../lib/home/scope'
 import { formatWhen } from '../../lib/format'
 import { auditActionWords } from '../../lib/auditWords'
 import { Skeleton } from '../ui/Skeleton'
+import { sectionHelp } from '../../content/sections'
 
 const allProviders: readonly CloudProvider[] = ['azure', 'aws', 'gcp']
 const windowLabel: Record<HomeWindow, string> = { '24h': 'in 24 h', '7d': 'in 7 d' }
@@ -333,6 +334,7 @@ function LatestEverywhere({ connected, namespaces }: { connected: readonly Cloud
                     {m.entityName}
                   </span>
                   {ns && <div className="text-[11px] text-[var(--color-text-muted)]">{providerLabel[ns.provider]} · {ns.displayName ?? ns.name}</div>}
+                  <div title={`Message ID: ${m.messageId}`} className="max-w-[16rem] truncate font-mono text-[11px] text-[var(--color-text-muted)]">{m.messageId}</div>
                 </td>
                 <td className="px-4 py-2.5">{m.deadLetterReason ? <span className="rounded-full bg-[var(--color-error-light)] px-2.5 py-0.5 text-[11px] font-bold text-[#b91c1c]">{m.deadLetterReason}</span> : <span className="text-[var(--color-text-muted)]">Reason not recorded</span>}</td>
                 <td className="px-4 py-2.5 text-right"><a href={`?tab=dlq&message=${m.id}`} className="font-semibold text-[var(--color-primary-600)] hover:underline">Details →</a></td>
@@ -384,7 +386,7 @@ function ActivityEverywhere() {
   if (isError || !data || data.items.length === 0) return null
   return (
     <section aria-label="Recent activity, every cloud" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-      <h2 className="mb-1 text-[13.5px] font-bold text-[#1f2937]">Recent activity, every cloud</h2>
+      <h2 className="mb-1 flex items-center text-[13.5px] font-bold text-[#1f2937]">Recent activity, every cloud<InfoTip help={sectionHelp.home.recentAll} /></h2>
       <ul className="divide-y divide-[var(--color-border)]">
         {data.items.map((a) => (
           <li key={a.id} className="flex items-center gap-3 py-1.5 text-[12.5px]">

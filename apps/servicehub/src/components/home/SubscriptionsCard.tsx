@@ -4,6 +4,8 @@ import { namespaceKeys } from '../../hooks/useNamespaces'
 import { useLookAtDeadLetters } from '../../hooks/useDeadLetters'
 import { subscriptionParts } from '../../lib/entities'
 import { namespaceTag } from '../provider/scopeChoice'
+import { InfoTip } from '../ui/InfoTip'
+import { sectionHelp } from '../../content/sections'
 
 /**
  * Subscriptions — the GCP-shaped slot the Queues card doesn't fit (plan §5.3): Pub/Sub has no message
@@ -27,7 +29,7 @@ export function SubscriptionsCard({ namespaces }: { namespaces: readonly Namespa
   return (
     <section aria-label="Subscriptions" className="flex h-full flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
       <div className="flex items-center justify-between border-b border-[#f3f4f6] px-4 py-[13px]">
-        <h2 className="text-[13.5px] font-bold text-[#1f2937]">Subscriptions</h2>
+        <h2 className="flex items-center text-[13.5px] font-bold text-[#1f2937]">Subscriptions<InfoTip help={sectionHelp.home.subscriptions} /></h2>
         <span className="text-[11px] text-[var(--color-text-muted)]">no message counts here — look to record</span>
       </div>
       {rows.length === 0 ? (

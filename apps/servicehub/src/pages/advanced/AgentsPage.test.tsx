@@ -46,16 +46,27 @@ describe('the Agents page', () => {
 
   it('leads with the agents that can change anything, and draws any agent it is given with no code of its own', async () => {
     renderPage()
-    const acting = await screen.findByRole('region', { name: /ACTING \(1\)/ })
+    const acting = await screen.findByRole('region', { name: /Acting Agents \(1\)/ })
     expect(within(acting).getByText('Auto Replay')).toBeInTheDocument()
-    const watching = screen.getByRole('region', { name: /WATCHING \(2\)/ })
+    const watching = screen.getByRole('region', { name: /Watching Agents \(2\)/ })
     expect(within(watching).getByText('Throwaway')).toBeInTheDocument()
     expect(within(watching).getByText('Proves a new agent needs no UI.')).toBeInTheDocument()
     expect(screen.getByText('3 agents')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /add agent/i })).toBeNull() // an agent is code plus one registration line; no button promises otherwise
   })
 
-  it('opens the acting agent first and shows what it may and may never do', async () => {
+  it('summarises with four tiles that filter the lists, and a health ring drawn from the agents', async () => {
     renderPage()
+    await screen.findByRole('region', { name: /Acting Agents/ })
+    expect(screen.getByRole('button', { name: /1\s*Acting Agents/ })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '3 Healthy' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Watching Agents/ }))
+    expect(screen.queryByRole('region', { name: /Acting Agents/ })).toBeNull()
+    expect(screen.getByRole('region', { name: /Watching Agents \(2\)/ })).toBeInTheDocument()
+  })
+
+  it('opens an agent from its row and shows what it may and may never do', async () => {
+    renderPage('/advanced/agents?agent=auto-replay')
     const detail = await screen.findByRole('complementary', { name: 'Auto Replay details' })
     expect(within(detail).getByText('Replay matching messages')).toBeInTheDocument()
     expect(within(detail).getByText('Replay in Production')).toBeInTheDocument()
@@ -64,10 +75,10 @@ describe('the Agents page', () => {
 
   it('pauses, and never offers resume — Advanced can only take authority away', async () => {
     vi.mocked(api.fetchAgents).mockResolvedValue([agents[0], { ...agents[1], isPaused: true, health: 'paused' }])
-    renderPage()
+    renderPage('/advanced/agents?agent=auto-replay')
     const detail = await screen.findByRole('complementary', { name: 'Auto Replay details' })
     expect(within(detail).getByText(/Resume it from Home/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /resume/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^resume/i })).not.toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'Pause Dead-letter Monitor' }))
     expect(api.pauseAgent).toHaveBeenCalledWith('dlq-monitor')

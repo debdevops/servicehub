@@ -50,7 +50,7 @@ public sealed class RecoveryQueries : IRecoveryQueries
 
     /// <inheritdoc />
     public async Task<RecoveryEntryPage> ListAsync(
-        RecoveryScope scope, string window, RecoveryEntryState? state, int page, int pageSize, CancellationToken cancellationToken)
+        RecoveryScope scope, string window, RecoveryEntryState? state, int page, int pageSize, CancellationToken cancellationToken, RecoveryListFilter? filter = null)
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
@@ -61,12 +61,57 @@ public sealed class RecoveryQueries : IRecoveryQueries
             query = query.Where(e => e.State == wanted);
         }
 
+        if (filter is not null)
+        {
+            if (filter.By == "autonomous")
+            {
+                query = query.Where(e => _db.RecoveryOperations.Any(o => o.Id == e.OperationId && o.ActorIdentity.StartsWith("System:")));
+            }
+            else if (filter.By == "people")
+            {
+                query = query.Where(e => _db.RecoveryOperations.Any(o => o.Id == e.OperationId && !o.ActorIdentity.StartsWith("System:")));
+            }
+
+            if (!string.IsNullOrWhiteSpace(filter.Entity))
+            {
+                var entity = filter.Entity.Trim();
+                query = query.Where(e => e.EntityNameSnapshot == entity || e.TargetEntity == entity);
+            }
+
+            if (!string.IsNullOrWhiteSpace(filter.Search))
+            {
+                var like = $"%{filter.Search.Trim().Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_")}%";
+                query = query.Where(e =>
+                    EF.Functions.Like(e.EntityNameSnapshot ?? e.TargetEntity, like, "\\") || EF.Functions.Like(e.NamespaceNameSnapshot ?? "", like, "\\")
+                    || EF.Functions.Like(e.DeadLetterReasonSnapshot ?? "", like, "\\")
+                    || _db.RecoveryOperations.Any(o => o.Id == e.OperationId && EF.Functions.Like(o.ActorIdentity, like, "\\")));
+            }
+        }
+
         var total = await query.CountAsync(cancellationToken);
         var rows = await query.OrderByDescending(e => e.BegunAt).ThenByDescending(e => e.Id)
             .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
 
         var operations = await LoadOperationsAsync(rows.Select(r => r.OperationId), cancellationToken);
-        return new RecoveryEntryPage([.. rows.Select(r => ToItem(r, operations))], total, page, pageSize);
+        var levels = await LevelsAsync(scope.OwnerId, rows, cancellationToken);
+        return new RecoveryEntryPage([.. rows.Select(r => ToItem(r, operations) with { Level = levels.GetValueOrDefault(r.Id) })], total, page, pageSize);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyDictionary<string, string>> DescribeSignaturesAsync(string ownerId, IReadOnlyCollection<string> hashes, CancellationToken cancellationToken)
+    {
+        if (hashes.Count == 0)
+        {
+            return new Dictionary<string, string>();
+        }
+
+        var rows = await _db.DlqMessages.AsNoTracking()
+            .Where(m => m.OwnerId == ownerId && m.SignatureHash != null && hashes.Contains(m.SignatureHash))
+            .Select(m => new { Hash = m.SignatureHash!, m.DeadLetterReason, m.EntityName, m.CloudProvider })
+            .ToListAsync(cancellationToken);
+        return rows.GroupBy(r => r.Hash).ToDictionary(
+            g => g.Key,
+            g => { var r = g.First(); return $"{r.DeadLetterReason ?? "An unrecorded reason"} on {r.EntityName} ({r.CloudProvider})"; });
     }
 
     /// <inheritdoc />
@@ -90,6 +135,55 @@ public sealed class RecoveryQueries : IRecoveryQueries
                 e.Seq, e.EventType.ToString(), e.OccurredAt, ActorOf(e.ActorIdentity), e.DetailJson, e.PrevHash, e.EntryHash))],
             // Why a person did it — a purge always carries one (unit 6.15).
             operations.TryGetValue(entry.OperationId, out var op) ? op.Reason : null);
+    }
+
+    /// <summary>
+    /// The autonomy level each entry's signature held when the entry began — read from the recorded promotions and demotions, not
+    /// stored on the entry. A signature that has never moved was at the floor (<c>approve</c>); an entry with no signature has none.
+    /// </summary>
+    private async Task<Dictionary<Guid, string>> LevelsAsync(string ownerId, IReadOnlyList<RecoveryLedgerEntry> rows, CancellationToken ct)
+    {
+        var hashes = rows.Where(r => r.SignatureHashSnapshot is not null).Select(r => r.SignatureHashSnapshot!).Distinct().ToList();
+        var result = new Dictionary<Guid, string>();
+        if (hashes.Count == 0)
+        {
+            return result;
+        }
+
+        var events = await _db.RecoveryEvents.AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && (e.EventType == RecoveryEventType.AutonomyGrantPromoted || e.EventType == RecoveryEventType.AutonomyGrantDemoted))
+            .OrderBy(e => e.Seq).Select(e => new { e.OccurredAt, e.DetailJson }).ToListAsync(ct);
+        var moves = new Dictionary<string, List<(DateTimeOffset At, string Level)>>();
+        foreach (var e in events)
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(e.DetailJson ?? "{}");
+                if (doc.RootElement.TryGetProperty("signatureHash", out var h) && h.GetString() is { } hash && hashes.Contains(hash)
+                    && doc.RootElement.TryGetProperty("newLevel", out var l) && l.GetString() is { } level)
+                {
+                    if (!moves.TryGetValue(hash, out var list)) moves[hash] = list = [];
+                    list.Add((e.OccurredAt, level.ToLowerInvariant()));
+                }
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // A detail that is not JSON says nothing about a level.
+            }
+        }
+
+        foreach (var r in rows.Where(r => r.SignatureHashSnapshot is not null))
+        {
+            var level = "approve";
+            if (moves.TryGetValue(r.SignatureHashSnapshot!, out var list))
+            {
+                foreach (var m in list.Where(m => m.At <= r.BegunAt)) level = m.Level;
+            }
+
+            result[r.Id] = level;
+        }
+
+        return result;
     }
 
     private IQueryable<RecoveryLedgerEntry> Scoped(RecoveryScope scope, string window)
@@ -167,7 +261,7 @@ public sealed class RecoveryQueries : IRecoveryQueries
         return new RecoveryEntryListItem(
             e.Id, e.OperationId, e.BegunAt, op?.Kind.ToString() ?? "Replay", e.EntityNameSnapshot ?? e.TargetEntity, e.TargetEntity,
             e.ProviderSnapshot?.ToString().ToLowerInvariant(), e.NamespaceNameSnapshot, ActorOf(op?.ActorIdentity ?? "unknown"),
-            e.State.ToString(), e.VerificationConfidence?.ToString(), e.DlqMessageId, e.ClosedAt);
+            e.State.ToString(), e.VerificationConfidence?.ToString(), e.DlqMessageId, e.ClosedAt, e.EntityTypeSnapshot, MessageId: e.SourceMessageIdSnapshot);
     }
 
     private static ReplayActor ActorOf(string identity)

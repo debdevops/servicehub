@@ -49,7 +49,16 @@ public sealed record RecoveryEntryListItem(
     string State,
     string? Confidence,
     long? DlqMessageId,
-    DateTimeOffset? ClosedAt);
+    DateTimeOffset? ClosedAt,
+    string? EntityType = null,
+    string? Level = null,
+    string? MessageId = null);
+
+/// <summary>What narrows the ledger list beyond cloud, namespace and state. All optional; a null narrows nothing.</summary>
+/// <param name="By"><c>people</c> — a person or their API key · <c>autonomous</c> — ServiceHub's own agents and rules.</param>
+/// <param name="Entity">Only this queue or topic (exact name as recorded).</param>
+/// <param name="Search">Text found in the queue, namespace, dead-letter reason or who did it.</param>
+public sealed record RecoveryListFilter(string? By = null, string? Entity = null, string? Search = null);
 
 /// <summary>A page of ledger entries, newest first.</summary>
 public sealed record RecoveryEntryPage(IReadOnlyList<RecoveryEntryListItem> Items, int Total, int Page, int PageSize);

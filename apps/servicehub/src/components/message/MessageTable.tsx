@@ -1,10 +1,12 @@
-import { Lightbulb } from 'lucide-react'
+import { Lightbulb, Play } from 'lucide-react'
+import { useMe } from '../../hooks/useIdentity'
+import { permission } from '../../lib/permissions'
 import { Link, useLocation } from 'react-router-dom'
 import { columnHelp } from '../../content/columns'
 import { explainFailure } from '../../lib/analyzer'
 import { EntityCell } from './EntityCell'
 import type { DeadLetter } from '../../lib/api/deadLetters'
-import { formatAge, formatBytes, formatWhen } from '../../lib/format'
+import { formatAge, formatAgo, formatBytes, formatWhen } from '../../lib/format'
 import { resolutionWords } from '../../lib/resolutionWords'
 import { DataTable, type Column, type Selection } from '../ui/DataTable'
 
@@ -36,22 +38,38 @@ export function MessageTable({
   const now = new Date()
   const showNamespace = (namespaceNames?.size ?? 0) > 1
 
-  const openHref = (row: DeadLetter) => {
+  const may = permission(useMe().data, 'Operator', 'replay these messages', { recover: true })
+  const openHref = (row: DeadLetter, modal?: 'replay') => {
     const params = new URLSearchParams(search)
     params.set('tab', 'dlq')
-    params.set('message', String(row.id))
+    // A row's Replay opens the Replay modal by itself (`replay=`); only Details opens the message drawer (`message=`).
+    if (modal) {
+      // Put away any message drawer that is open for another row: the Replay window is the only thing this click opens.
+      params.delete('message')
+      params.delete('view')
+      params.set('replay', String(row.id))
+      params.set('modal', modal)
+    } else {
+      params.set('message', String(row.id))
+    }
     return `/?${params.toString()}`
   }
 
   const help = columnHelp.deadLetters
   const columns: Column<DeadLetter>[] = [
-    { key: 'when', header: 'When', info: help.when, className: 'whitespace-nowrap', render: (r) => formatWhen(r.detectedAtUtc, now) },
+    { key: 'when', header: 'When', info: help.when, className: 'whitespace-nowrap', render: (r) => (<><span className="block font-medium">{formatWhen(r.detectedAtUtc, now)}</span><span className="block text-xs text-[var(--color-text-muted)]">{formatAgo(r.detectedAtUtc, now)}</span></>) },
     {
       key: 'queue',
       header: 'Queue or topic',
       info: help.where,
       width: 'min-w-[12rem] w-[24%]',
-      render: (r) => <EntityCell entityName={r.entityName} entityType={r.entityType} topicName={r.topicName} note={showNamespace ? namespaceNames?.get(r.namespaceId) : undefined} />,
+      render: (r) => (
+        <>
+          <EntityCell entityName={r.entityName} entityType={r.entityType} topicName={r.topicName} note={showNamespace ? namespaceNames?.get(r.namespaceId) : undefined} />
+          {/* Which message, in the cloud's own words — the queue alone cannot tell two rows apart. */}
+          <p title={`Message ID: ${r.messageId}`} className="mt-1 max-w-[16rem] truncate font-mono text-[11px] text-[var(--color-text-muted)]">{r.messageId}</p>
+        </>
+      ),
     },
     {
       // The widest column, on purpose: it is the one a person reads to decide what to do.
@@ -68,16 +86,29 @@ export function MessageTable({
     { key: 'size', header: 'Size', info: help.size, numeric: true, className: 'whitespace-nowrap', render: (r) => formatBytes(r.sizeInBytes) },
     {
       key: 'open',
-      header: 'Details',
+      header: 'Actions',
       info: help.details,
       render: (r) => (
-        <Link
-          to={openHref(r)}
-          aria-label={`Details of message ${r.messageId}`}
-          className="whitespace-nowrap font-medium text-[var(--color-primary-700)] hover:underline"
-        >
-          Details →
-        </Link>
+        <span className="flex items-center gap-2">
+          <Link
+            to={openHref(r)}
+            aria-label={`Details of message ${r.messageId}`}
+            className="whitespace-nowrap rounded-lg bg-[var(--color-primary-50)] px-3 py-1.5 font-medium text-[var(--color-primary-700)] hover:bg-[var(--color-primary-100)]"
+          >
+            Details →
+          </Link>
+          {!showOutcome && r.status === 'active' && (
+            may.allowed ? (
+              <Link to={openHref(r, 'replay')} aria-label={`Replay message ${r.messageId}`} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-[var(--color-primary-50)] px-3 py-1.5 font-medium text-[var(--color-primary-700)] hover:bg-[var(--color-primary-100)]">
+                <Play className="h-3.5 w-3.5" aria-hidden="true" /> Replay
+              </Link>
+            ) : (
+              <button type="button" disabled title={may.reason ?? 'You cannot replay these messages'} aria-label={`Replay message ${r.messageId}`} className="inline-flex cursor-not-allowed items-center gap-1.5 whitespace-nowrap rounded-lg bg-[var(--color-surface-muted)] px-3 py-1.5 font-medium text-[var(--color-text-muted)]">
+                <Play className="h-3.5 w-3.5" aria-hidden="true" /> Replay
+              </button>
+            )
+          )}
+        </span>
       ),
     },
   ]

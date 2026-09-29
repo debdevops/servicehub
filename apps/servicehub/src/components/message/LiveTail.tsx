@@ -96,7 +96,7 @@ export function LiveTail({ namespaceId, entity, subscription }: { namespaceId: s
           {seen.map((m) => (
             <li key={m.sequenceNumber} className="px-4 py-2 text-[12.5px]">
               <div className="flex gap-3 text-[var(--color-text-muted)]">
-                <span>{formatWhen(m.enqueuedTime, now)}</span><span>#{m.sequenceNumber}</span><span>{formatBytes(m.sizeInBytes)}</span>{m.contentType && <span>{m.contentType}</span>}
+                <span>{formatWhen(m.enqueuedTime, now)}</span><span title={`Sequence ${m.sequenceNumber}`} className="max-w-[16rem] truncate font-mono">{m.messageId}</span><span>{formatBytes(m.sizeInBytes)}</span>{m.contentType && <span>{m.contentType}</span>}
               </div>
               <pre className="mt-1 truncate font-mono text-[12px]">{m.body ?? '(no body)'}</pre>
             </li>

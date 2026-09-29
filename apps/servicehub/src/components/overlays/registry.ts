@@ -33,7 +33,7 @@ export const overlayEntries = navigation.filter((e): e is OverlayEntry => e.kind
  * Extra query parameters an overlay reads (`?cloud=` preselects a cloud in Add a cloud). They belong
  * to the overlay, so closing it removes them too — otherwise a closed modal leaves debris in the URL.
  */
-export const overlayCompanionParams: readonly string[] = ['cloud', 'job', 'rule', 'group', 'entry', 'topic']
+export const overlayCompanionParams: readonly string[] = ['cloud', 'job', 'rule', 'group', 'entry', 'topic', 'replay']
 
 /** Overlays drawn wider than the default (a two-column design). Everything else keeps the frame's default width. */
 export const overlayWide: ReadonlySet<string> = new Set(['settings', 'bulk-replay'])

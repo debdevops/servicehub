@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -49,7 +49,11 @@ function renderModal() {
 describe('the replay proposal', () => {
   beforeEach(() => {
     vi.mocked(dl.fetchDeadLetter).mockResolvedValue({
-      item: { id: 7, deadLetterReason: 'ValidationFailed', deadLetterErrorDescription: 'missing required field: customerId', deliveryCount: 3 },
+      item: {
+        id: 7, messageId: 'msg-abc-123', entityName: 'payments', entityType: 'queue', topicName: null, detectedAtUtc: '2026-09-26T09:00:00Z', sizeInBytes: 309,
+        deadLetterReason: 'ValidationFailed', deadLetterErrorDescription: 'missing required field: customerId', deliveryCount: 3,
+      },
+      bodyPreview: '{"orderId":"ORD-1","customer":null}', bodyIsPreview: false,
     } as never)
     vi.mocked(identity.fetchMe).mockResolvedValue({ ownerId: 'o', authMethod: 'session', effectiveRole: null, actor: { identity: 'session', kind: 'user', label: 'from this browser session', isSession: true } })
     proposalMock.mockReset()
@@ -62,13 +66,25 @@ describe('the replay proposal', () => {
     await expectNoAxeViolations(document.body)
   })
 
+  it('shows which message is about to be replayed: its ID, queue, reason, tries and what it says', async () => {
+    proposalMock.mockResolvedValue(proposal())
+    renderModal()
+    const box = within(await screen.findByRole('region', { name: 'The message to be replayed' }))
+    expect(box.getByText('msg-abc-123')).toBeInTheDocument()
+    expect(box.getByText('payments')).toBeInTheDocument()
+    expect(box.getByText('ValidationFailed')).toBeInTheDocument()
+    expect(box.getByText('missing required field: customerId')).toBeInTheDocument()
+    expect(box.getByText('3 times')).toBeInTheDocument()
+    expect(box.getByText(/"orderId": "ORD-1"/)).toBeInTheDocument()
+  })
+
   it('says what will happen and lists the checks before anything runs', async () => {
     proposalMock.mockResolvedValue(proposal())
     renderModal()
     expect(await screen.findByText('What will happen')).toBeInTheDocument()
     expect(screen.getByText(/1 message is sent back to/)).toBeInTheDocument()
     expect(screen.getByText(/all passed/)).toBeInTheDocument()
-    expect(screen.getAllByRole('listitem')).toHaveLength(4)
+    expect(screen.getAllByRole('listitem', { hidden: true })).toHaveLength(4) // the folded checks list still counts
     expect(replayMock).not.toHaveBeenCalled()
   })
 
@@ -102,6 +118,9 @@ describe('the replay proposal', () => {
     renderModal()
     await user.click((await screen.findAllByRole('button', { name: /Replay 1 message/ }))[0])
     expect(await screen.findByText('Sent back')).toBeInTheDocument()
+    // It says where the message went, and links to where its story continues.
+    expect(screen.getByRole('link', { name: 'Active messages' })).toHaveAttribute('href', expect.stringContaining('tab=active'))
+    expect(screen.getByRole('link', { name: 'Replayed' })).toHaveAttribute('href', expect.stringContaining('tab=replayed'))
     expect(screen.getByText(/ServiceHub will say whether it stayed fixed/)).toBeInTheDocument()
     expect(replayMock).toHaveBeenCalledTimes(1)
     expect(replayMock).toHaveBeenCalledWith(7)

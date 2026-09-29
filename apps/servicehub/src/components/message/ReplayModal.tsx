@@ -1,5 +1,5 @@
 import { Play, Check, TriangleAlert, Ban } from 'lucide-react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import type { OverlayBodyProps } from '../overlays/registry'
 import { useDeadLetter } from '../../hooks/useDeadLetter'
 import { useMe } from '../../hooks/useIdentity'
@@ -12,6 +12,10 @@ import type { ReplayCheck, ReplayOutcome, ReplayProposal } from '../../lib/api/r
 import { providerLabel } from '../../lib/providers'
 import { UnlockHint } from '../UnlockHint'
 import { RetryLink } from '../ui/RetryLink'
+import { sectionHelp } from '../../content/sections'
+import { formatAgo, formatBytes, formatWhen } from '../../lib/format'
+import type { DeadLetterDetail } from '../../lib/api/deadLetters'
+import { describeEntity } from '../../lib/entities'
 
 
 const hoursLabel = (h: number) => (h < 1 ? `${Math.round(h * 60)} minutes` : h === 1 ? '1 hour' : `${h} hours`)
@@ -23,7 +27,8 @@ const hoursLabel = (h: number) => (h < 1 ? `${Math.round(h * 60)} minutes` : h =
  */
 export default function ReplayModal({ close }: OverlayBodyProps) {
   const [params] = useSearchParams()
-  const raw = params.get('message')
+  // `replay=` is a row's own Replay: this modal alone, no message drawer behind it. `message=` is the drawer's Replay, over the drawer.
+  const raw = params.get('replay') ?? params.get('message')
   const id = raw !== null && /^\d+$/.test(raw) ? Number(raw) : null
   const proposal = useReplayProposal(id)
   const message = useDeadLetter(id)
@@ -75,8 +80,15 @@ export default function ReplayModal({ close }: OverlayBodyProps) {
             {(replay.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'The replay did not go through. Check Replayed before trying again, in case it was accepted.'}
           </p>
         )}
+        {replay.isPending && (
+          <p role="status" className="text-sm text-[var(--color-text-muted)]">
+            {cloud} is being asked for this one message. With a long dead-letter queue this can take up to a minute — keep this open; nothing is lost if you leave.
+          </p>
+        )}
         <NotAllowed reason={may.reason} />
       </div>
+
+      <MessageToReplay detail={message.data} pending={message.isPending} />
 
       <section aria-label="What will happen">
         <Collapsible title="What will happen">
@@ -171,6 +183,14 @@ function CheckRow({ check }: { check: ReplayCheck }) {
 function Result({ outcome, proposal, close }: { outcome: ReplayOutcome; proposal: ReplayProposal; close: () => void }) {
   const border =
     outcome.result === 'accepted' ? 'border-[var(--color-success)]' : outcome.result === 'rejected' ? 'border-[var(--color-error)]' : 'border-[var(--color-warning)]'
+  const { search } = useLocation()
+  // The same cloud and namespace, on another tab, with this message's modal and drawer put away.
+  const follow = (tab: 'active' | 'replayed') => {
+    const p = new URLSearchParams(search)
+    ;['modal', 'message', 'replay', 'view', 'page', 'reason', 'entity', 'q'].forEach((k) => p.delete(k))
+    p.set('tab', tab)
+    return `/?${p.toString()}`
+  }
   const heading =
     outcome.result === 'accepted' ? 'Sent back' : outcome.result === 'rejected' ? 'The cloud did not accept it' : 'Outcome unknown'
   return (
@@ -192,9 +212,67 @@ function Result({ outcome, proposal, close }: { outcome: ReplayOutcome; proposal
           <p className="mt-2 text-xs text-[var(--color-text-muted)]">Look in {proposal.targetEntity} before trying again, or a second copy may be sent.</p>
         )}
       </div>
+      {outcome.result === 'accepted' && (
+        <p className="text-sm text-[var(--color-text-muted)]">
+          It is now on <span className="font-mono text-[13px]">{proposal.targetEntity}</span>, and the dead letter has left the list. Where the consumer is running it is picked up straight away, so it may already be gone from{' '}
+          <Link to={follow('active')} onClick={close} className="font-medium text-[var(--color-primary-700)] hover:underline">Active messages</Link>; its result is recorded in{' '}
+          <Link to={follow('replayed')} onClick={close} className="font-medium text-[var(--color-primary-700)] hover:underline">Replayed</Link>.
+        </p>
+      )}
       <div className="flex justify-end">
         <button type="button" onClick={close} className="rounded-xl bg-[var(--color-primary-600)] px-4 py-2 text-sm font-semibold text-white">Done</button>
       </div>
     </div>
+  )
+}
+
+/** The body as a person reads it: pretty JSON when it is JSON, as-is when it is not. */
+function readable(body: string): string {
+  try {
+    return JSON.stringify(JSON.parse(body), null, 2)
+  } catch {
+    return body
+  }
+}
+
+/**
+ * The message about to be replayed, so nobody presses the button without knowing which one it is: its ID, where it is stuck, why it
+ * failed (the recorded reason and error text), when it was set aside, how often it was tried, its size and what it says.
+ */
+function MessageToReplay({ detail, pending }: { detail: DeadLetterDetail | undefined; pending: boolean }) {
+  if (pending) return <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading the message…</p>
+  if (!detail) return null
+  const m = detail.item
+  const e = describeEntity(m.entityName, m.entityType, m.topicName)
+  const now = new Date()
+  const facts: [string, React.ReactNode][] = [
+    ['Message ID', <span key="id" className="break-all font-mono text-[12px]">{m.messageId}</span>],
+    ['Stuck in', <span key="q" className="font-mono text-[12px]">{e.topic ? `${e.topic} › ` : ''}{e.name}</span>],
+    ['Set aside', <span key="w">{formatWhen(m.detectedAtUtc, now)} · {formatAgo(m.detectedAtUtc, now)}</span>],
+    ['Tried', <span key="t">{m.deliveryCount > 0 ? `${m.deliveryCount} ${m.deliveryCount === 1 ? 'time' : 'times'}` : 'not reported by this cloud'}</span>],
+    ['Size', <span key="s">{formatBytes(m.sizeInBytes)}</span>],
+  ]
+  return (
+    <section aria-label="The message to be replayed" className="rounded-xl border border-[var(--color-border)]">
+      <Collapsible title="The message" help={sectionHelp.replay.message}>
+        <div className="space-y-3 px-3 pb-3 text-sm">
+          <dl className="grid grid-cols-[6.5rem_1fr] gap-y-1.5">
+            {facts.map(([k, v]) => (<div key={k} className="contents"><dt className="text-[var(--color-text-muted)]">{k}</dt><dd>{v}</dd></div>))}
+          </dl>
+          <div>
+            <span className="inline-block rounded-full bg-[var(--color-error-light)] px-2.5 py-0.5 text-xs font-semibold text-[#b91c1c]">{m.deadLetterReason ?? 'Reason not recorded'}</span>
+            <p className="mt-1 text-[12.5px]">{m.deadLetterErrorDescription ?? 'The cloud gave no error text for this one.'}</p>
+          </div>
+          {detail.bodyPreview ? (
+            <div>
+              <p className="mb-1 text-xs font-semibold text-[var(--color-text-muted)]">What it says{detail.bodyIsPreview ? ' (first part)' : ''}</p>
+              <pre className="max-h-44 overflow-auto rounded-lg bg-[var(--color-surface-muted)] p-3 font-mono text-[11.5px] leading-relaxed">{readable(detail.bodyPreview)}</pre>
+            </div>
+          ) : (
+            <p className="text-xs text-[var(--color-text-muted)]">This message has no body to show.</p>
+          )}
+        </div>
+      </Collapsible>
+    </section>
   )
 }

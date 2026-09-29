@@ -51,6 +51,7 @@ public sealed class PendingWorkService : IPendingWorkService
                 && !_db.RecoveryEvents.Any(e => e.EntryId == entry.Id && e.EventType == RecoveryEventType.OperatorNote)
             select new { entry, op, message.DeadLetterReason };
 
+        if (scope.EntryId is { } only) query = query.Where(x => x.entry.Id == only);
         if (scope.NamespaceId is { } ns) query = query.Where(x => x.entry.NamespaceId == ns);
         if (scope.Provider is { } provider) query = query.Where(x => x.entry.ProviderSnapshot == provider);
         if (scope.Environment is { } env) query = query.Where(x => x.entry.EnvironmentSnapshot == env);
@@ -90,7 +91,7 @@ public sealed class PendingWorkService : IPendingWorkService
 
         // A rule the breaker switched off waits until a person turns it back on, changes it or deletes it (3.6). Rules are
         // per cloud, not per namespace, so a caller narrowed to one namespace or a restricted key still sees its cloud's rules.
-        var stopped = await _db.AutoReplayRules.AsNoTracking()
+        var stopped = scope.EntryId is not null ? [] : await _db.AutoReplayRules.AsNoTracking()
             .Where(r => r.OwnerId == scope.OwnerId && !r.Enabled && r.DisabledReason == "CircuitBreaker" && (scope.Provider == null || r.Provider == scope.Provider))
             .ToListAsync(cancellationToken).ConfigureAwait(false);
         var ruleItems = stopped
@@ -105,7 +106,7 @@ public sealed class PendingWorkService : IPendingWorkService
         // Agents serve every cloud, so a stopped agent is pending work on every scope — but only for a caller who is
         // not narrowed to a reason code that is not an agent's.
         var now = _time.GetUtcNow();
-        var agentItems = _agents.All().Where(a => a.NeedsAPerson(now)).Select(a =>
+        var agentItems = _agents.All().Where(a => scope.EntryId is null && a.NeedsAPerson(now)).Select(a =>
         {
             var code = a.IsLate(now) ? EscalationReasons.AgentStale : EscalationReasons.AgentFailing;
             return new PendingWorkItem("agent", $"agent:{a.Descriptor.Id}", null, a.Descriptor.Id, null, null, null, null, null, null, null, null, null,

@@ -16,6 +16,8 @@ import { deadLetterKeys } from '../../hooks/useDeadLetters'
 import { replayKeys } from '../../hooks/useReplay'
 import { Skeleton } from '../ui/Skeleton'
 import { RetryLink } from '../ui/RetryLink'
+import { Pager } from '../ui/Pager'
+import { sectionHelp } from '../../content/sections'
 
 /** Preview · Run · Watch — the same three steps in both views, so a person always knows where they are. */
 function Steps({ at }: { at: 1 | 2 | 3 }) {
@@ -139,7 +141,7 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
       </div>
 
       <section aria-label="Grouped by how they failed">
-        <Collapsible title="Grouped by how they failed">
+        <Collapsible title="Grouped by how they failed" help={sectionHelp.bulk.grouped}>
         <ul className="divide-y divide-[var(--color-border)] rounded-xl border border-[var(--color-border)]">
           {p.groups.map((g) => (
             <li key={g.reason} className="flex items-center gap-3 px-3.5 py-2.5 text-sm">
@@ -157,7 +159,7 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
           {p.heldBack.map((h) => (
             <div key={h.dlqMessageId} className="flex items-start gap-2.5 rounded-xl border border-[#fde68a] bg-[var(--color-warning-light)] px-3.5 py-2.5 text-[13px] text-[#78350f]">
               <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-[#d97706]" aria-hidden="true" />
-              <span><b>Message {h.dlqMessageId} held back</b> — {h.remedy} <span className="font-mono text-[11px] opacity-70">{h.reasonCode}</span></span>
+              <span><b><MessageRef id={h.dlqMessageId} /> held back</b> — {h.remedy} <span className="font-mono text-[11px] opacity-70">{h.reasonCode}</span></span>
             </div>
           ))}
         </section>
@@ -176,7 +178,7 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
       <SelectedMessages ids={state.ids} heldBack={p.heldBack.map((h) => h.dlqMessageId)} />
 
       <section aria-label="How it will run">
-        <Collapsible title="How it will run">
+        <Collapsible title="How it will run" help={sectionHelp.bulk.run}>
         <div className="grid grid-cols-2 gap-3">
           <Info title="Pace">{p.perSecond} {p.perSecond === 1 ? 'message' : 'messages'} a second — gentle on your consumer.</Info>
           <Info title="Stops by itself if…">{p.stopAfterConsecutiveFailures} sends in a row aren’t accepted.</Info>
@@ -185,7 +187,7 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
       </section>
 
       <section aria-label="After they are sent back" className="rounded-xl border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-3.5 py-2.5">
-        <Collapsible title="After they are sent back" defaultOpen={false}>
+        <Collapsible title="After they are sent back" defaultOpen={false} help={sectionHelp.bulk.after}>
           <p className="text-[13px]">ServiceHub <b>watches</b> each one. Where the cloud can prove a message stayed fixed, each verified fix builds ServiceHub’s track record for that kind of failure, and later ones may not need a person. That is a suggestion, not a promise — nothing is approved for you.</p>
         </Collapsible>
       </section>
@@ -205,12 +207,14 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
 
 /** What is about to be sent, and where to — one row per message, so a person can check before anything runs. */
 function SelectedMessages({ ids, heldBack }: { ids: readonly number[]; heldBack: readonly number[] }) {
-  const SHOWN = 20
+  const PAGE_SIZE = 10
+  const [page, setPage] = useState(1)
+  const pageIds = ids.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
   const namespaces = useNamespaces().data ?? []
-  const results = useQueries({ queries: ids.slice(0, SHOWN).map((id) => ({ queryKey: ['dead-letter', id], queryFn: () => fetchDeadLetter(id), staleTime: 30_000 })) })
+  const results = useQueries({ queries: pageIds.map((id) => ({ queryKey: ['dead-letter', id], queryFn: () => fetchDeadLetter(id), staleTime: 30_000 })) })
   const held = new Set(heldBack)
   const now = new Date()
-  const loaded = results.flatMap((r, i) => (r.data?.item ? [{ id: ids[i], m: r.data.item }] : []))
+  const loaded = results.flatMap((r, i) => (r.data?.item ? [{ id: pageIds[i], m: r.data.item }] : []))
   const pending = results.filter((r) => !r.data?.item)
   // One block per failure reason, in the order they first appear — so what is alike is read together.
   const groups = new Map<string, typeof loaded>()
@@ -220,7 +224,7 @@ function SelectedMessages({ ids, heldBack }: { ids: readonly number[]; heldBack:
   }
   return (
     <section aria-label="Messages that will be replayed">
-      <Collapsible title="Where each one goes" summary={ids.length > SHOWN ? `first ${SHOWN} of ${ids.length.toLocaleString()}, grouped by failure reason` : 'grouped by failure reason'}>
+      <Collapsible title="Where each one goes" help={sectionHelp.bulk.where} summary={ids.length > PAGE_SIZE ? `${ids.length.toLocaleString()} messages, ${PAGE_SIZE} a page, grouped by failure reason` : 'grouped by failure reason'}>
         <div className="relative overflow-x-auto rounded-xl border border-[var(--color-border)]">
           <table className="w-full text-left text-[12.5px]">
             <caption className="sr-only">Selected messages, grouped by failure reason, and where each will be sent back</caption>
@@ -267,6 +271,7 @@ function SelectedMessages({ ids, heldBack }: { ids: readonly number[]; heldBack:
             )}
           </table>
         </div>
+        <Pager page={page} pageSize={PAGE_SIZE} total={ids.length} onPage={setPage} />
       </Collapsible>
     </section>
   )
@@ -313,6 +318,7 @@ function PurgeInstead({ ids, onBack, onStarted }: { ids: number[]; onBack: () =>
   return (
     <div className="space-y-4">
       <h3 className="flex items-center gap-2 text-lg font-bold"><Trash2 className="h-5 w-5 text-[#dc2626]" aria-hidden="true" /> Purge {ids.length.toLocaleString()} {ids.length === 1 ? 'message' : 'messages'} instead</h3>
+      <SelectedMessages ids={ids} heldBack={[]} />
       <p className="text-sm">Purging deletes them from the dead-letter queue <b>for good</b>. Each one goes through the same checks as a replay and is recorded in Replayed, with your reason.</p>
       <label className="block text-sm">
         <span className="mb-1 block font-semibold">Why?</span>
@@ -325,7 +331,7 @@ function PurgeInstead({ ids, onBack, onStarted }: { ids: number[]; onBack: () =>
             <Box value={preview.willReplay} label="will be deleted for good" tone="amber" />
             <Box value={preview.heldBackCount} label="held back — stays in dead letters" tone="plain" />
           </div>
-          {preview.heldBack.slice(0, 5).map((h) => <p key={h.dlqMessageId} className="text-[13px] text-[var(--color-text-muted)]">Message {h.dlqMessageId}: {h.remedy}</p>)}
+          {preview.heldBack.slice(0, 5).map((h) => <p key={h.dlqMessageId} className="text-[13px] text-[var(--color-text-muted)]"><MessageRef id={h.dlqMessageId} />: {h.remedy}</p>)}
           {preview.willReplay > 0 && (
             <label className="block text-sm">
               <span className="mb-1 block font-semibold">Type PURGE to confirm</span>
@@ -357,6 +363,7 @@ function Running({ id, close }: { id: string; close: () => void }) {
   const ended = data ? isEnded(data.status) : false
   useEffect(() => {
     if (ended) {
+      bulkSelection.finished()
       void client.invalidateQueries({ queryKey: deadLetterKeys.all })
       void client.invalidateQueries({ queryKey: replayKeys.all })
       // The Auto Replay page counts what each rule replayed: refresh it too, so it never shows the page from before the run.
@@ -416,7 +423,7 @@ function Progress({ p, close }: { p: BulkProgress; close: () => void }) {
           <ul className="space-y-1.5">
             {p.problems.map((x) => (
               <li key={x.dlqMessageId} className="rounded-xl border border-[#fecaca] bg-[var(--color-error-light)] px-3.5 py-2 text-[13px]">
-                <b>Message {x.dlqMessageId}</b> <span className="text-[var(--color-text-muted)]">({x.entityName})</span> — {x.why}{x.reasonCode && <span className="ml-1 font-mono text-[11px] opacity-70">{x.reasonCode}</span>}
+                <b><MessageRef id={x.dlqMessageId} /></b> <span className="text-[var(--color-text-muted)]">({x.entityName})</span> — {x.why}{x.reasonCode && <span className="ml-1 font-mono text-[11px] opacity-70">{x.reasonCode}</span>}
               </li>
             ))}
           </ul>
@@ -484,4 +491,10 @@ function Row({ ok, children }: { ok: boolean; children: React.ReactNode }) {
       {children}
     </li>
   )
+}
+
+/** A message named by its own ID, the one it carries in the cloud — never only ServiceHub's internal number. */
+function MessageRef({ id }: { id: number }) {
+  const { data } = useQuery({ queryKey: ['dead-letter', id], queryFn: () => fetchDeadLetter(id), staleTime: 30_000, retry: false })
+  return <span>{data?.item ? <>Message <span className="font-mono text-[12px] [overflow-wrap:anywhere]">{data.item.messageId}</span> <span className="font-normal text-[var(--color-text-muted)]">({data.item.topicName ?? data.item.entityName})</span></> : <>Message #{id}</>}</span>
 }

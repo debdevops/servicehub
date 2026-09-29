@@ -58,6 +58,9 @@ export interface SignatureQuery {
   readonly sort: 'messages' | 'recent'
   readonly page: number
   readonly pageSize: number
+  readonly by?: 'people' | 'autonomous'
+  readonly entity?: string
+  readonly q?: string
 }
 
 export async function fetchSignatures(q: SignatureQuery): Promise<SignaturePage> {
@@ -135,6 +138,8 @@ export interface TraceResult {
     readonly namespaceId: string
     readonly detail: string | null
     readonly entryId: string | null
+    /** The message's own ID, as the cloud knows it. */
+    readonly messageId?: string | null
   }[]
   readonly note: string
 }

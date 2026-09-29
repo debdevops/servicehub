@@ -2,7 +2,7 @@ import { useDeadLetter } from '../../hooks/useDeadLetter'
 import { useState } from 'react'
 import { usePageSize } from '../../lib/pageSize'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
-import { Download, Hash, ScrollText, ShieldCheck, TriangleAlert, X } from 'lucide-react'
+import { Bot, Download, Hash, KeyRound, ScrollText, ShieldCheck, TriangleAlert, UserRound, X } from 'lucide-react'
 import { Attribution } from '../../components/Attribution'
 import { EntityCell } from '../../components/message/EntityCell'
 import { columnHelp } from '../../content/columns'
@@ -10,14 +10,17 @@ import { ExplainerCard, ExplainerToggle } from '../../components/explainer/Expla
 import { useExplainer } from '../../components/explainer/useExplainer'
 import { DataTable, type Column } from '../../components/ui/DataTable'
 import { Pager } from '../../components/ui/Pager'
+import { InfoTip } from '../../components/ui/InfoTip'
+import { sectionHelp } from '../../content/sections'
+import { TabBar } from '../../components/ui/TabBar'
 import { useLedger, useLedgerEntry, useRecoverySummary } from '../../hooks/useRecoverySummary'
 import { usePendingWork } from '../../hooks/usePendingWork'
 import type { PendingWorkPage } from '../../lib/api/pendingWork'
 import { pendingRows } from '../../lib/pendingRows'
 import { PendingWorkList } from '../../components/pending/PendingWorkList'
 import { useNamespaces } from '../../hooks/useNamespaces'
-import { NamespaceScope } from '../../components/provider/NamespaceScope'
-import { namespaceTag, resolveScope } from '../../components/provider/scopeChoice'
+import { AdvancedFilters, asBy } from '../../components/advanced/AdvancedFilters'
+import { cloudColor, resolveScope } from '../../components/provider/scopeChoice'
 import { exportEvidence, verifyChain, type ChainVerification, type EntryState, type LedgerEntry, type RecoveryWindow } from '../../lib/api/recovery'
 import { describeEvent, shortHash, stateChip, stateMeaning, stateTone } from '../../lib/ledgerWords'
 import { formatWhen } from '../../lib/format'
@@ -34,15 +37,21 @@ const windows: readonly { id: RecoveryWindow; label: string }[] = [
 ]
 
 /** The tabs the design draws, each a state (or "All"). Other states stay reachable by `?state=` and appear under All. */
-const tabs: readonly { id: EntryState | 'All'; label: string }[] = [
-  { id: 'All', label: 'All' },
-  { id: 'Observing', label: 'Watching' },
-  { id: 'Recovered', label: 'Recovered' },
-  { id: 'Unverified', label: 'Unverified' },
-  { id: 'Returned', label: 'Returned' },
-  { id: 'ExecutionFailed', label: 'Failed' },
-  { id: 'ExecutionUnknown', label: 'Unknown' },
+const tabs: readonly { id: EntryState | 'All'; label: string; help: keyof typeof columnHelp.ledgerTabs }[] = [
+  { id: 'All', label: 'All', help: 'all' },
+  { id: 'Observing', label: 'Watching', help: 'observing' },
+  { id: 'Recovered', label: 'Recovered', help: 'recovered' },
+  { id: 'Unverified', label: 'Unverified', help: 'unverified' },
+  { id: 'Returned', label: 'Returned', help: 'returned' },
+  { id: 'ExecutionFailed', label: 'Failed', help: 'failed' },
+  { id: 'ExecutionUnknown', label: 'Unknown', help: 'unknown' },
+  { id: 'Declined', label: 'Declined', help: 'declined' },
 ]
+
+/** The colour a tab takes: green for proof, red for a failure or a return, amber for waiting on a person. */
+const tabTone: Partial<Record<EntryState | 'All', 'good' | 'bad' | 'neutral'>> = {
+  Recovered: 'good', Returned: 'bad', ExecutionFailed: 'bad', Observing: 'neutral', Unverified: 'neutral', ExecutionUnknown: 'neutral', Declined: 'neutral',
+}
 
 const allStates = Object.keys(stateChip) as EntryState[]
 const asState = (v: string | null): EntryState | undefined => allStates.find((s) => s === v)
@@ -77,7 +86,13 @@ export default function RecoveryLedgerPage() {
   const choice = resolveScope(inScope, params)
   const narrow = { namespaceId: choice.ns?.id, environment: choice.env ?? undefined }
   const summary = useRecoverySummary({ window, provider, ...narrow })
-  const ledger = useLedger({ window, provider, state, page, pageSize, ...narrow })
+  // With an entry open its pane sits beside the table, so the table stays short (10 rows) and the pane in view; close it and the reader's own page size returns.
+  const rowsPerPage = selected ? 10 : pageSize
+  const by = asBy(params.get('by'))
+  const entity = params.get('entity') ?? undefined
+  const search = params.get('q') ?? undefined
+  const narrowed = !!(by || entity || search)
+  const ledger = useLedger({ window, provider, state, page, pageSize: rowsPerPage, by, entity, q: search, ...narrow })
 
   const change = (patch: Record<string, string | null>) =>
     setParams((current) => {
@@ -91,6 +106,8 @@ export default function RecoveryLedgerPage() {
     }, { replace: true })
 
   const waiting = usePendingWork({ provider, ...narrow })
+  // A state without a tab of its own (Written off, Discarded…) still gets one while it is the chosen view, so the page never shows a filter with nothing lit.
+  const visibleTabs = state && !tabs.some((t) => t.id === state) ? [...tabs, { id: state, label: stateChip[state], help: 'other' as const }] : tabs
   const countOf = (id: EntryState | 'All') => (id === 'All' ? summary.data?.total : summary.data?.states.find((s) => s.state === id)?.count)
 
   return (
@@ -104,7 +121,6 @@ export default function RecoveryLedgerPage() {
           <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">Every recovery action, who took it, the evidence, and how it ended. Append-only and tamper-evident.</p>
         </div>
         <div className="flex flex-wrap items-end gap-2 text-sm">
-          {(namespaces.data?.length ?? 0) > 1 && <NamespaceScope namespaces={namespaces.data ?? []} cloud={provider ? providerLabel[provider] : 'All clouds'} cloudParam="provider" compact />}
           <label className="flex flex-col text-xs uppercase tracking-wide text-[var(--color-text-muted)]">
             Window
             <select value={window} onChange={(e) => change({ window: e.target.value === '24h' ? null : e.target.value })} className="mt-0.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm normal-case text-[var(--color-text)]">
@@ -121,31 +137,18 @@ export default function RecoveryLedgerPage() {
           Details sat behind a side-scroll at 1366 px (found live 2026-09-28). */}
       <div className={`grid gap-4 ${selected ? 'lg:grid-cols-[minmax(0,1fr)_360px]' : ''}`}>
         <div className="min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-          <nav aria-label="Outcome" className="flex flex-wrap gap-1 border-b border-[var(--color-border)] px-2">
-            <button
-              type="button"
-              aria-current={waitingTab ? 'page' : undefined}
-              onClick={() => change({ state: 'Waiting' })}
-              className={`-mb-px border-b-2 px-3 py-2.5 text-sm ${waitingTab ? 'border-[#d97706] font-semibold' : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]'}`}
-            >
-              Waiting <span className="ml-1 rounded-full bg-[#fef3c7] px-2 py-0.5 text-xs text-[#92400e]">{waiting.data?.total ?? '…'}</span>
-            </button>
-            {tabs.map((t) => {
-              const active = !waitingTab && ((t.id === 'All' && !state) || t.id === state)
-              const n = countOf(t.id)
-              return (
-                <button
-                  key={t.id}
-                  type="button"
-                  aria-current={active ? 'page' : undefined}
-                  onClick={() => change({ state: t.id === 'All' ? null : t.id })}
-                  className={`-mb-px border-b-2 px-3 py-2.5 text-sm ${active ? 'border-[var(--color-primary-600)] font-semibold' : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]'}`}
-                >
-                  {t.label} <span className="ml-1 rounded-full bg-[var(--color-surface-muted)] px-2 py-0.5 text-xs">{n ?? '…'}</span>
-                </button>
-              )
-            })}
-          </nav>
+          <TabBar
+            variant="pills"
+            label="Outcome"
+            active={waitingTab ? 'Waiting' : (state ?? 'All')}
+            onSelect={(id) => change({ state: id === 'All' ? null : id })}
+            tabs={[
+              { id: 'Waiting', label: 'Waiting', count: waiting.data?.total, help: columnHelp.ledgerTabs.waiting, tone: 'attention' },
+              ...visibleTabs.map((t) => ({ id: t.id, label: t.label, count: countOf(t.id), help: columnHelp.ledgerTabs[t.help], tone: tabTone[t.id] })),
+            ]}
+          />
+          <AdvancedFilters namespaces={namespaces.data ?? []} searchPlaceholder="Search queues, namespaces, reasons or who…" />
+          {narrowed && <p className="border-b border-[var(--color-border)] px-4 py-1.5 text-xs text-[var(--color-text-muted)]">The tab numbers follow the cloud, namespace and window; By, queue and search narrow the table below them.</p>}
 
           {waitingTab && <WaitingView page={waiting.data} pending={waiting.isPending} failed={waiting.isError} />}
           {!waitingTab && ledger.isPending && <Skeleton label="Reading the ledger…" rows={6} className="px-6 py-8" />}
@@ -160,7 +163,7 @@ export default function RecoveryLedgerPage() {
           ) : (
             <>
               <LedgerTable namespaces={namespaces.data ?? []} rows={ledger.data.items} selected={selected} onSelect={(id) => change({ entry: id })} />
-              <Pager page={ledger.data.page} pageSize={ledger.data.pageSize} total={ledger.data.total} filtered={!!state || !!provider} onPage={(p) => change({ page: String(p) })} onPageSize={(s) => { setPageSize(s); change({ page: null }) }} />
+              <Pager page={ledger.data.page} pageSize={ledger.data.pageSize} total={ledger.data.total} filtered={!!state || !!provider} onPage={(p) => change({ page: String(p) })} onPageSize={selected ? undefined : (s) => { setPageSize(s); change({ page: null }) }} />
             </>
           ))}
           <p className="border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-muted)]">{selected ? '' : 'Choose Details on a row to see who took it, what happened and its evidence. '}The chain starts at this server’s own genesis.</p>
@@ -213,17 +216,21 @@ function LedgerTable({ rows, namespaces, selected, onSelect }: { rows: readonly 
   const tagOf = (r: LedgerEntry): string => {
     if (!r.namespaceName) return '—'
     const hits = namespaces.filter((n) => n.provider === r.provider && (n.name === r.namespaceName || n.displayName === r.namespaceName))
-    return hits.length === 1 ? namespaceTag(hits[0]) : r.namespaceName
+    return hits.length === 1 ? (hits[0].displayName ?? hits[0].name) : r.namespaceName
   }
   const help = columnHelp.ledger
+  // With an entry open its pane says what it was and how it was matched, and gives the table 360 px less: those columns
+  // go, so Outcome and Details never sit behind a side-scroll at 1366 px.
   const columns: Column<LedgerEntry>[] = [
     { key: 'time', header: 'Time', info: help.time, className: 'whitespace-nowrap', render: (r) => formatWhen(r.begunAt, now) },
-    { key: 'entity', header: 'Queue or topic', info: help.entity, render: (r) => <EntityCell size="sm" entityName={r.entityName} entityType={r.entityName.includes('/') ? 'subscription' : 'queue'} /> },
-    { key: 'by', header: 'By', info: help.by, render: (r) => <Attribution actor={r.actor} at={r.begunAt} compact /> },
-    // With an entry open its pane says what it was and how it was matched, and gives the table 360 px less: those two columns
-    // go, so Outcome and Details never sit behind a side-scroll at 1366 px.
+    { key: 'cloud', header: 'Cloud', info: help.cloud, className: 'whitespace-nowrap', render: (r) => <CloudBadge provider={r.provider} /> },
+    ...(selected ? [] : [{ key: 'ns', header: 'Namespace', info: help.namespace, render: (r: LedgerEntry) => tagOf(r) }]),
+    { key: 'entity', header: 'Queue / topic', info: help.entity, render: (r) => <EntityCell size="sm" entityName={r.entityName} entityType={r.entityType ?? (r.entityName.includes('/') ? 'subscription' : 'queue')} /> },
+    ...(selected ? [] : [{ key: 'msg', header: 'Message', info: columnHelp.drawer.messageId, render: (r: LedgerEntry) => r.messageId ? <span title={r.messageId} className="block max-w-[10rem] truncate font-mono text-[11.5px]">{r.messageId}</span> : <span className="text-[var(--color-text-muted)]">—</span> }]),
+    { key: 'by', header: 'By', info: help.by, render: (r) => <ByCell actor={r.actor} at={r.begunAt} /> },
     ...(selected ? [] : [{ key: 'what', header: 'What', info: help.what, className: 'whitespace-nowrap', render: (r: LedgerEntry) => `${r.kind} · 1 message` }]),
     { key: 'outcome', header: 'Outcome', info: help.outcome, render: (r) => <StateChip state={r.state} /> },
+    { key: 'level', header: 'Level', info: help.level, render: (r) => <LevelChip level={r.level} /> },
     ...(selected ? [] : [{ key: 'match', header: 'Match', info: help.match, render: (r: LedgerEntry) => r.confidence ?? '—' }]),
     {
       key: 'open',
@@ -237,10 +244,49 @@ function LedgerTable({ rows, namespaces, selected, onSelect }: { rows: readonly 
       ),
     },
   ]
-  // Grouped Cloud › Namespace (the page's rows, newest first within each group), so a person reads one namespace at a time.
-  const groupOf = (r: LedgerEntry) => `${r.provider ? providerLabel[r.provider] : 'Unknown cloud'} › ${tagOf(r)}`
-  const grouped = [...rows].sort((a, b) => groupOf(a).localeCompare(groupOf(b)))
-  return <DataTable caption="Recovery ledger entries, grouped by cloud and namespace, newest first" columns={columns} rows={grouped} rowKey={(r) => r.id} compact groupBy={groupOf} />
+  return <DataTable caption="Recovery ledger entries, newest first" columns={columns} rows={rows} rowKey={(r) => r.id} compact />
+}
+
+/** A cloud, drawn the same for all three: its colour, its initial and its name. */
+export function CloudBadge({ provider }: { provider: CloudProvider | null }) {
+  if (!provider) return <span className="text-[var(--color-text-muted)]">—</span>
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span aria-hidden="true" className="flex h-6 w-6 items-center justify-center rounded-md text-[11px] font-extrabold text-white" style={{ background: cloudColor[provider] }}>{providerLabel[provider][0]}</span>
+      {providerLabel[provider]}
+    </span>
+  )
+}
+
+/** Who made it, in two lines: the name, then what kind of actor it was. Never a made-up person. */
+export function ByCell({ actor, at }: { actor: LedgerEntry['actor']; at: string }) {
+  const autonomous = actor.kind === 'system' || actor.kind === 'automation'
+  const sub = autonomous
+    ? (/AutoReplay/.test(actor.identity) ? 'Auto Replay agent' : 'ServiceHub agent')
+    : actor.kind === 'apiKey' ? 'API key' : 'User initiated'
+  const Icon = autonomous ? Bot : actor.kind === 'apiKey' ? KeyRound : UserRound
+  const name = autonomous
+    ? `ServiceHub · ${actor.identity.replace(/^System:/, '').replace(/^AutoReplay:/, 'AutoReplay:')}`
+    : actor.kind === 'apiKey' ? actor.identity.replace(/^ApiKey:/, '') : actor.isSession ? 'This browser session' : actor.label
+  return (
+    <span className="flex items-start gap-2" data-actor-kind={actor.kind} title={`${name} · ${formatWhen(at, new Date())}`}>
+      <Icon aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />
+      <span><span className="block text-[13px] font-medium">{name}</span><span className="block text-xs text-[var(--color-text-muted)]">{sub}</span></span>
+    </span>
+  )
+}
+
+const levelMeta = {
+  approve: { chip: 'L3', label: 'L3 Approve — a person approves each replay', cls: 'bg-[#dbeafe] text-[#1d4ed8]' },
+  standing: { chip: 'L4', label: 'L4 Standing — rules may replay without asking', cls: 'bg-[#ede9fe] text-[#6d28d9]' },
+  unattended: { chip: 'L5', label: 'L5 Unattended — earned the most trust', cls: 'bg-[#f3e8ff] text-[#7e22ce]' },
+} as const
+
+/** The level the failure's signature held when the action began. A dash means no signature was known — never a guess. */
+export function LevelChip({ level }: { level?: LedgerEntry['level'] }) {
+  if (!level) return <span className="text-[var(--color-text-muted)]" aria-label="No level recorded">—</span>
+  const m = levelMeta[level]
+  return <span title={m.label} aria-label={m.label} className={`inline-block rounded-md px-2 py-0.5 text-xs font-bold ${m.cls}`}>{m.chip}</span>
 }
 
 export function StateChip({ state }: { state: EntryState }) {
@@ -283,7 +329,7 @@ function EntryPanel({ id, onClose }: { id: string | null; onClose: () => void })
   }
 
   return (
-    <aside aria-label="Entry" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+    <aside aria-label="Entry" className="self-start overflow-y-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] lg:sticky lg:top-[calc(var(--header-height)+8px)] lg:max-h-[calc(100vh-var(--header-height)-24px)]">
       <div className="flex items-start gap-2 border-b border-[var(--color-border)] p-4">
         <div className="min-w-0 flex-1">
           <p className="flex flex-wrap items-center gap-2"><StateChip state={e.state} /> <span className="text-sm font-medium">{stateMeaning[e.state]}</span></p>
@@ -296,10 +342,20 @@ function EntryPanel({ id, onClose }: { id: string | null; onClose: () => void })
       </div>
 
       <div className="space-y-4 p-4 text-sm">
-        <section aria-label="Who"><h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Who</h3><Attribution actor={e.actor} at={e.begunAt} verb={e.kind === 'Purge' ? 'Purged' : 'Replayed'} /></section>
+        {(e.messageId || source) && (
+          <section aria-label="Message">
+            <h3 className="mb-1 flex items-center text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Message<InfoTip help={sectionHelp.ledger.message} /></h3>
+            <dl className="grid grid-cols-[110px_1fr] gap-y-1">
+              <dt className="text-[var(--color-text-muted)]">Message ID</dt><dd className="break-all font-mono text-xs">{e.messageId ?? source?.messageId ?? '—'}</dd>
+              {source?.deadLetterReason && (<><dt className="text-[var(--color-text-muted)]">Failed because</dt><dd>{source.deadLetterReason}{source.deadLetterErrorDescription ? <span className="block text-xs text-[var(--color-text-muted)]">{source.deadLetterErrorDescription}</span> : null}</dd></>)}
+            </dl>
+          </section>
+        )}
+
+        <section aria-label="Who"><h3 className="mb-1 flex items-center text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Who<InfoTip help={sectionHelp.ledger.who} /></h3><Attribution actor={e.actor} at={e.begunAt} verb={e.kind === 'Purge' ? 'Purged' : 'Replayed'} /></section>
 
         <section aria-label="What happened">
-          <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">What happened</h3>
+          <h3 className="mb-1 flex items-center text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">What happened<InfoTip help={sectionHelp.ledger.happened} /></h3>
           <ol className="space-y-2">
             {data.events.map((ev) => {
               const w = describeEvent(ev, cloud)
@@ -314,7 +370,7 @@ function EntryPanel({ id, onClose }: { id: string | null; onClose: () => void })
         </section>
 
         <section aria-label="Evidence">
-          <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Evidence</h3>
+          <h3 className="mb-1 flex items-center text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Evidence<InfoTip help={sectionHelp.ledger.evidence} /></h3>
           <dl className="grid grid-cols-[110px_1fr] gap-y-1">
             <dt className="text-[var(--color-text-muted)]">Entry</dt><dd className="break-all font-mono text-xs">{e.id}</dd>
             <dt className="text-[var(--color-text-muted)]">Recovery ID</dt><dd className="break-all font-mono text-xs">{data.recoveryMarker ?? (data.markerApplied ? '—' : 'not applied')}</dd>
@@ -339,7 +395,7 @@ function EntryPanel({ id, onClose }: { id: string | null; onClose: () => void })
       <div className="border-t border-[var(--color-border)] p-4 text-sm">
         <div className="flex flex-wrap gap-4 font-medium">
           {e.dlqMessageId !== null && <Link to={homeParams('replayed')} className="text-[var(--color-primary-700)] hover:underline">Open in Home →</Link>}
-          {e.dlqMessageId !== null && source?.status === 'active' && <Link to={`?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(search)), modal: 'replay', message: String(e.dlqMessageId) })}`} className="text-[var(--color-primary-700)] hover:underline">Replay…</Link>}
+          {e.dlqMessageId !== null && source?.status === 'active' && <Link to={`?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(search)), modal: 'replay', replay: String(e.dlqMessageId) })}`} className="text-[var(--color-primary-700)] hover:underline">Replay…</Link>}
         </div>
         {e.dlqMessageId !== null && source && source.status !== 'active' && (
           <p className="mt-2 text-xs text-[var(--color-text-muted)]">

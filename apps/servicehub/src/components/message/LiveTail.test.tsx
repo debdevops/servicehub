@@ -23,7 +23,7 @@ describe('Follow live', () => {
     expect(peek).toHaveBeenLastCalledWith('n', expect.objectContaining({ from: 3 }))
     // #1 and #2 were already waiting: they belong to Browse, not to "what arrived" (found live: the backlog was shown as arrivals).
     const items = within(screen.getByRole('list', { name: 'Arrived messages' })).getAllByRole('listitem')
-    expect(items.map((li) => li.textContent)).toEqual([expect.stringContaining('#3')])
+    expect(items.map((li) => li.textContent)).toEqual([expect.stringContaining('m3')])
 
     act(() => screen.getByRole('button', { name: /Pause/ }).click())
     const calls = peek.mock.calls.length

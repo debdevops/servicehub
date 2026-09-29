@@ -8,6 +8,7 @@ import { providerLabel, providerService } from '../../lib/providers'
 import { environmentMeta, groupByCloudEnvironment } from '../provider/scopeChoice'
 import { RetryLink } from '../ui/RetryLink'
 import { Skeleton } from '../ui/Skeleton'
+import { withoutDrawers } from '../../lib/urlState'
 
 const order = ['azure', 'aws', 'gcp'] as const
 
@@ -42,7 +43,7 @@ export default function ConnectionsPanel({ close }: OverlayBodyProps) {
       onError: () => setResults((cur) => ({ ...cur, [ns.id]: 'The test itself could not run. Try again.' })),
     })
 
-  const addHref = `?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(search)), modal: 'add-cloud' })}`
+  const addHref = `?${new URLSearchParams({ ...Object.fromEntries(withoutDrawers(new URLSearchParams(search))), modal: 'add-cloud' })}`
 
   return (
     <div className="space-y-6">

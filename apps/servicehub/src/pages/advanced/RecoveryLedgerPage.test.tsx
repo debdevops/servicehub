@@ -63,8 +63,8 @@ describe('the Recovery Ledger (Advanced)', () => {
 
     await waitFor(() => expect(api.fetchLedger).toHaveBeenLastCalledWith(expect.objectContaining({ environment: 'prod' })))
     expect(api.fetchRecoverySummary).toHaveBeenLastCalledWith(expect.objectContaining({ environment: 'prod' }))
-    await userEvent.click(await screen.findByRole('button', { name: 'All clouds · Namespace' }))
-    expect(screen.getByRole('option', { name: /AWS Dev/ })).toBeInTheDocument()
+    // With no cloud chosen, every namespace of every cloud is on offer.
+    expect(await screen.findByRole('option', { name: /AWS Dev/ })).toBeInTheDocument()
   })
 
   it('shows every state in the tabs with its count — zeros included — and never merges Recovered with Unverified', async () => {
@@ -95,10 +95,32 @@ describe('the Recovery Ledger (Advanced)', () => {
     expect(vi.mocked(api.fetchLedger)).toHaveBeenCalledWith(expect.objectContaining({ state: 'Unverified' }))
   })
 
+  it('gives every tab its own (i), and has a Declined tab so a declined answer is found where it landed', async () => {
+    vi.mocked(api.fetchRecoverySummary).mockResolvedValue(summary({ Recovered: 2, Declined: 3 }))
+    renderPage('/advanced/ledger?state=Declined')
+    const nav = within(await screen.findByRole('navigation', { name: 'Outcome' }))
+    for (const name of ['Waiting', 'All', 'Watching', 'Recovered', 'Unverified', 'Returned', 'Failed', 'Unknown', 'Declined']) {
+      expect(nav.getByRole('button', { name: `About ${name}` })).toBeInTheDocument()
+    }
+    expect(await nav.findByRole('button', { name: /^Declined\s*3/ })).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('keeps a state that has no tab of its own lit while it is the chosen view', async () => {
+    renderPage('/advanced/ledger?state=WrittenOff')
+    const nav = within(await screen.findByRole('navigation', { name: 'Outcome' }))
+    expect(await nav.findByRole('button', { name: /^Written off/ })).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('shows 10 rows while an entry is open, so its pane stays in view', async () => {
+    vi.mocked(api.fetchLedgerEntry).mockResolvedValue(detail(entry('e1', 'Recovered')))
+    renderPage('/advanced/ledger?entry=e1')
+    await waitFor(() => expect(api.fetchLedger).toHaveBeenLastCalledWith(expect.objectContaining({ pageSize: 10 })))
+  })
+
   it('changing a tab puts the state in the URL', async () => {
     const user = userEvent.setup()
     renderPage()
-    await user.click(await screen.findByRole('button', { name: /Unverified/ }))
+    await user.click(await screen.findByRole('button', { name: /^Unverified/ }))
     expect(screen.getByTestId('where').textContent).toContain('state=Unverified')
   })
 
@@ -126,10 +148,9 @@ describe('the Recovery Ledger (Advanced)', () => {
     const user = userEvent.setup()
     renderPage()
     let table = within(await screen.findByRole('table'))
-    // Nothing open: no empty 360 px placeholder, and every column is there — the cloud and namespace are the group header, not columns.
+    // Nothing open: no empty 360 px placeholder, and every column is there.
     expect(screen.queryByRole('complementary', { name: 'Entry' })).toBeNull()
-    for (const h of ['Outcome', 'What', 'Match', 'Details']) expect(table.getByRole('columnheader', { name: new RegExp(h) })).toBeInTheDocument()
-    expect(table.queryByRole('columnheader', { name: /^Cloud/ })).toBeNull()
+    for (const h of ['Time', 'Cloud', 'Namespace', 'By', 'What', 'Outcome', 'Level', 'Match', 'Details']) expect(table.getByRole('columnheader', { name: new RegExp(`^${h}`) })).toBeInTheDocument()
 
     await user.click((await screen.findAllByRole('button', { name: /Details of ledger entry/ }))[0]!)
     await screen.findByRole('complementary', { name: 'Entry' })
@@ -137,6 +158,7 @@ describe('the Recovery Ledger (Advanced)', () => {
     expect(table.getByRole('columnheader', { name: /Outcome/ })).toBeInTheDocument()
     expect(table.getByRole('columnheader', { name: /Details/ })).toBeInTheDocument()
     expect(table.queryByRole('columnheader', { name: /^What/ })).toBeNull()
+    expect(table.queryByRole('columnheader', { name: /^Namespace/ })).toBeNull()
     expect(table.queryByRole('columnheader', { name: /^Match/ })).toBeNull()
   })
 

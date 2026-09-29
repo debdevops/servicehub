@@ -125,18 +125,20 @@ describe('the message drawer', () => {
     expect(screen.getByTestId('where').textContent).toContain('message=7')
   })
 
-  it('expands to the full view and Esc returns to the side view, then closes', async () => {
+  it('expands to the full view; Esc closes it outright, and Back to side view returns', async () => {
     fetchOne.mockResolvedValue(detail())
     const user = userEvent.setup()
     renderDrawer()
     await user.click(await screen.findByRole('button', { name: 'Expand' }))
     expect(screen.getByTestId('where').textContent).toContain('view=full')
     expect(screen.getByRole('dialog').getAttribute('data-overlay')).toBe('modal')
-    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: 'Back to side view' }))
     expect(screen.getByTestId('where').textContent).not.toContain('view=full')
     expect(screen.getByTestId('where').textContent).toContain('message=7')
+    await user.click(screen.getByRole('button', { name: 'Expand' }))
     await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.getByTestId('where').textContent).not.toContain('message='))
+    expect(screen.getByTestId('where').textContent).not.toContain('view=')
     expect(screen.getByTestId('where').textContent).toContain('tab=dlq')
   })
 

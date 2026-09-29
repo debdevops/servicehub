@@ -15,6 +15,7 @@ import { providerLabel } from '../../lib/providers'
 import { RetryLink } from '../ui/RetryLink'
 import { Skeleton } from '../ui/Skeleton'
 import { distinctHeldWords, heldWords } from '../../lib/heldWords'
+import { waitingHref } from '../../lib/urlState'
 
 const rulesKey = (p: CloudProvider) => ['rules', p] as const
 
@@ -227,7 +228,8 @@ function RuleActivity({ rule }: { rule: Rule }) {
       {data.items.map((i: ReplayListItem) => (
         <li key={i.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-3 py-2">
           <span className="tabular text-[var(--color-text-muted)]">{formatWhen(i.replayedAt, now)}</span>
-          <Link to={`?${detailsParams(i.dlqMessageId)}`} className="font-mono text-[12px] text-[var(--color-primary-700)] hover:underline" title="Open the message details">{i.sourceEntity} → {i.targetEntity}</Link>
+          <Link to={`?${detailsParams(i.dlqMessageId)}`} className="font-mono text-[12px] text-[var(--color-primary-700)] hover:underline [overflow-wrap:anywhere]" title="Open the message details">{i.messageId}</Link>
+          <span className="font-mono text-[11.5px] text-[var(--color-text-muted)]">{i.sourceEntity} → {i.targetEntity}</span>
           <span className="ml-auto">{i.outcomeStatus === 'accepted' ? (outcomeWords[i.verification.status] ?? i.verification.status) : i.outcomeStatus === 'rejected' ? 'cloud refused it' : 'outcome unknown'}</span>
         </li>
       ))}
@@ -262,7 +264,7 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
       if (ids.length === 0) throw new Error('none')
       bulkSelection.set({ ids })
     },
-    onSuccess: () => setParams((c) => { const n = new URLSearchParams(c); n.set('modal', 'bulk-replay'); n.delete('job'); return n }),
+    onSuccess: () => setParams((c) => { const n = new URLSearchParams(c); n.set('modal', 'bulk-replay'); n.delete('job'); ;['message', 'view', 'replay'].forEach((k) => n.delete(k)); return n }),
   })
   const test = useMutation({ mutationFn: () => testRule({ provider, reason: r.reason ?? undefined, entityName: r.entityName ?? undefined, signatureHash: r.signatureHash ?? undefined }) })
 
@@ -306,7 +308,7 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
       {r.enabled && r.askedCount > 0 && (
         <p className="mt-3 flex items-start gap-2 rounded-lg border border-[#fde68a] bg-[var(--color-warning-light)] px-3 py-2 text-[12.5px] text-[#78350f]">
           <Eye className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          <span><b>{heldWords([r])} matching {r.askedCount === 1 && !r.askedIsLowerBound ? 'message is' : 'messages are'} waiting for a person.</b> {holdWords(r.lastAskedReason)}</span>
+          <span><b>{heldWords([r])} matching {r.askedCount === 1 && !r.askedIsLowerBound ? 'message is' : 'messages are'} waiting for a person.</b> {holdWords(r.lastAskedReason)}{' '}<Link to={waitingHref(r)} className="font-semibold underline">See {r.askedCount === 1 && !r.askedIsLowerBound ? 'it' : 'them'} ›</Link></span>
         </p>
       )}
 

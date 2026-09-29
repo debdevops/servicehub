@@ -63,6 +63,9 @@ public sealed class RecoveryController : ApiControllerBase
     /// <param name="environment">Only entries made in this environment (dev, uat, prod).</param>
     /// <param name="page">1-based.</param>
     /// <param name="pageSize">1–100 (default 25).</param>
+    /// <param name="by"><c>people</c> or <c>autonomous</c>: only what a person made, or only what ServiceHub's own agents and rules made.</param>
+    /// <param name="entity">Only this queue or topic.</param>
+    /// <param name="q">Text found in the queue, namespace, reason or who did it.</param>
     /// <param name="cancellationToken">Cancellation.</param>
     [HttpGet("entries")]
     [ProducesResponseType(typeof(RecoveryEntryPage), StatusCodes.Status200OK)]
@@ -71,12 +74,17 @@ public sealed class RecoveryController : ApiControllerBase
     public async Task<IActionResult> Entries(
         [FromQuery] string? window, [FromQuery] string? state, [FromQuery] CloudProviderType? provider, [FromQuery] Guid? namespaceId,
         [FromQuery] int? page, [FromQuery] int? pageSize, CancellationToken cancellationToken,
-        [FromQuery] EnvironmentType? environment = null)
+        [FromQuery] EnvironmentType? environment = null, [FromQuery] string? by = null, [FromQuery] string? entity = null, [FromQuery] string? q = null)
     {
         var w = string.IsNullOrWhiteSpace(window) ? "24h" : window.Trim();
         if (!RecoveryQueries.IsKnownWindow(w))
         {
             return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "'window' must be 24h, 7d, 30d or all.");
+        }
+
+        if (by is not (null or "" or "all" or "people" or "autonomous"))
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "'by' must be all, people or autonomous.");
         }
 
         RecoveryEntryState? wanted = null;
@@ -100,7 +108,7 @@ public sealed class RecoveryController : ApiControllerBase
             return Problem(StatusCodes.Status404NotFound, ErrorCodes.Namespace.NotFound, $"Namespace with ID '{namespaceId}' was not found.");
         }
 
-        return Ok(await _queries.ListAsync(scope, w, wanted, page ?? 1, pageSize ?? 25, cancellationToken));
+        return Ok(await _queries.ListAsync(scope, w, wanted, page ?? 1, pageSize ?? 25, cancellationToken, new RecoveryListFilter(by is "people" or "autonomous" ? by : null, entity, q)));
     }
 
     /// <summary>One entry, with its whole history and its place in the hash chain.</summary>

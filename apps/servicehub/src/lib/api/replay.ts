@@ -128,6 +128,12 @@ export interface ReplayQuery {
   /** Only what this Auto Replay rule sent. */
   readonly ruleId?: number
   readonly result?: 'accepted' | 'rejected' | 'unknown'
+  /** How it ended: stayed fixed, still being watched, came back, sent but unproven, or not sent. */
+  readonly ending?: 'fixed' | 'watching' | 'returned' | 'unproven' | 'notsent'
+  readonly by?: 'people' | 'autonomous'
+  readonly entity?: string
+  readonly q?: string
+  readonly window?: '24h' | '7d' | '30d' | 'all'
   readonly page?: number
   readonly pageSize?: number
 }

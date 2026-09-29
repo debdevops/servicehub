@@ -3,6 +3,7 @@ using ServiceHub.Core.Constants;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
+using ServiceHub.Infrastructure.RecoveryLedger;
 
 namespace ServiceHub.Api.Controllers.V1;
 
@@ -30,6 +31,11 @@ public sealed class ReplaysController : ApiControllerBase
     /// <param name="result">Only this outcome: accepted, rejected or unknown.</param>
     /// <param name="dlqMessageId">Only the replays of this one dead letter (the drawer's watch card).</param>
     /// <param name="ruleId">Only the replays this Auto Replay rule sent.</param>
+    /// <param name="ending">How it ended: fixed, watching, returned, unproven or notsent.</param>
+    /// <param name="by">people or autonomous.</param>
+    /// <param name="entity">Only replays from this queue or subscription.</param>
+    /// <param name="q">Text found in the message ID, queue or who replayed it.</param>
+    /// <param name="window">24h, 7d, 30d or all (the default).</param>
     /// <param name="page">1-based.</param>
     /// <param name="pageSize">1–100 (default 25).</param>
     /// <param name="cancellationToken">Cancellation.</param>
@@ -39,8 +45,14 @@ public sealed class ReplaysController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> List(
         [FromQuery] Guid? namespaceId, [FromQuery] CloudProviderType? provider, [FromQuery] EnvironmentType? environment, [FromQuery] string? result, [FromQuery] long? dlqMessageId,
-        [FromQuery] long? ruleId, [FromQuery] int? page, [FromQuery] int? pageSize, CancellationToken cancellationToken)
+        [FromQuery] long? ruleId, [FromQuery] int? page, [FromQuery] int? pageSize, CancellationToken cancellationToken,
+        [FromQuery] string? ending = null, [FromQuery] string? by = null, [FromQuery] string? entity = null, [FromQuery] string? q = null, [FromQuery] string? window = null)
     {
+        if (ending is not (null or "" or "fixed" or "watching" or "returned" or "unproven" or "notsent") || by is not (null or "" or "all" or "people" or "autonomous") || window is not (null or "" or "24h" or "7d" or "30d" or "all"))
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "'ending' must be fixed, watching, returned, unproven or notsent; 'by' people or autonomous; 'window' 24h, 7d, 30d or all.");
+        }
+
         if (namespaceId is null && provider is null && dlqMessageId is null)
         {
             return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed,
@@ -83,6 +95,7 @@ public sealed class ReplaysController : ApiControllerBase
             candidates = candidates.Where(n => n.Environment == env);
         }
 
-        return Ok(await _replay.ListAsync([.. candidates.Select(n => n.Id)], result, dlqMessageId, page ?? 1, pageSize ?? 25, cancellationToken, ruleId));
+        return Ok(await _replay.ListAsync([.. candidates.Select(n => n.Id)], result, dlqMessageId, page ?? 1, pageSize ?? 25, cancellationToken, ruleId,
+            new ReplayFilter(ending, by is "people" or "autonomous" ? by : null, entity, q, window is "24h" or "7d" or "30d" ? RecoveryQueries.SinceOf(window) : null)));
     }
 }

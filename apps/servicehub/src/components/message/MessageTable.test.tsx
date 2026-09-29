@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
@@ -10,7 +11,8 @@ const row = (over: Partial<DeadLetter> = {}): DeadLetter => ({
   deadLetterReason: 'MaxDeliveryCountExceeded', deadLetterErrorDescription: 'Message could not be consumed after 10 delivery attempts.', status: 'active', ...over,
 })
 
-const renderTable = (rows: DeadLetter[]) => render(<MemoryRouter><MessageTable rows={rows} /></MemoryRouter>)
+const renderTable = (rows: DeadLetter[]) =>
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter><MessageTable rows={rows} /></MemoryRouter></QueryClientProvider>)
 
 describe('the dead-letter table', () => {
   it('shows a topic’s subscription as topic › subscription, tagged, and a queue as a queue', () => {
@@ -69,5 +71,22 @@ describe('the dead-letter table', () => {
 
     const headers = screen.getAllByRole('columnheader')
     for (const h of headers) expect(within(h).getByRole('button', { name: /^About / })).toBeInTheDocument()
+  })
+
+  it('a row’s Replay opens the Replay modal by itself — the message drawer is only for Details', async () => {
+    renderTable([row({ id: 7, messageId: 'm-7' })])
+    const replay = await screen.findByRole('link', { name: 'Replay message m-7' })
+    expect(replay.getAttribute('href')).toContain('modal=replay')
+    expect(replay.getAttribute('href')).toContain('replay=7')
+    expect(replay.getAttribute('href')).not.toContain('message=')
+    expect(screen.getByRole('link', { name: 'Details of message m-7' }).getAttribute('href')).toContain('message=7')
+  })
+
+  it('a row’s Replay puts away a drawer left open for another row', async () => {
+    render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={['/?tab=dlq&message=3&view=full']}><MessageTable rows={[row({ id: 7, messageId: 'm-7' })]} /></MemoryRouter></QueryClientProvider>)
+    const href = (await screen.findByRole('link', { name: 'Replay message m-7' })).getAttribute('href')!
+    expect(href).toContain('replay=7')
+    expect(href).not.toContain('message=')
+    expect(href).not.toContain('view=')
   })
 })

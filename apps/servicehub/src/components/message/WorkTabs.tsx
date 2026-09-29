@@ -1,4 +1,6 @@
-import { Link, useLocation } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
+import { TabBar } from '../ui/TabBar'
+import { sectionHelp } from '../../content/sections'
 
 const tabs = [
   { id: 'dlq', label: 'Dead letters' },
@@ -7,26 +9,22 @@ const tabs = [
 ] as const
 
 /** The three views of Home's table. Each is `?tab=`, so each is linkable and survives a refresh. */
-export function WorkTabs({ current }: { current: string }) {
+export function WorkTabs({ current, counts = {} }: { current: string; counts?: Partial<Record<(typeof tabs)[number]['id'], number>> }) {
   const { search } = useLocation()
   const hrefFor = (id: string) => {
     const params = new URLSearchParams(search)
     params.set('tab', id)
-    ;['page', 'reason', 'entity', 'q', 'message'].forEach((k) => params.delete(k))
+    ;['page', 'reason', 'entity', 'q', 'message', 'active', 'replay', 'view', 'queue', 'modal'].forEach((k) => params.delete(k))
     return `/?${params.toString()}`
   }
   return (
-    <nav aria-label="Messages" className="mb-4 flex gap-1 border-b border-[var(--color-border)]">
-      {tabs.map((t) => (
-        <Link
-          key={t.id}
-          to={hrefFor(t.id)}
-          aria-current={t.id === current ? 'page' : undefined}
-          className={`-mb-px border-b-2 px-4 py-2 text-sm ${t.id === current ? 'border-[var(--color-primary-600)] font-semibold text-[var(--color-text)]' : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]'}`}
-        >
-          {t.label}
-        </Link>
-      ))}
-    </nav>
+    <div className="mb-4 overflow-hidden rounded-t-xl">
+    <TabBar
+      label="Messages"
+      active={current}
+      onSelect={() => undefined}
+      tabs={tabs.map((t) => ({ id: t.id, label: t.label, count: counts[t.id] ?? 'none', to: hrefFor(t.id), help: sectionHelp.tabs[t.id] }))}
+    />
+    </div>
   )
 }

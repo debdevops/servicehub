@@ -1,4 +1,5 @@
 import { Bot, Check, CircleAlert, Clock, FileText, TriangleAlert, X } from 'lucide-react'
+import { useQueries } from '@tanstack/react-query'
 import { useMe } from '../../hooks/useIdentity'
 import { permission } from '../../lib/permissions'
 import { UnlockHint } from '../UnlockHint'
@@ -10,6 +11,10 @@ import { useReplayProposal } from '../../hooks/useReplay'
 import { useNamespaces } from '../../hooks/useNamespaces'
 import type { PendingWorkItem } from '../../lib/api/pendingWork'
 import { formatAge } from '../../lib/format'
+import { fetchDeadLetter, type DeadLetter } from '../../lib/api/deadLetters'
+import { Collapsible } from '../ui/Collapsible'
+import { InfoTip } from '../ui/InfoTip'
+import { sectionHelp } from '../../content/sections'
 import { providerLabel } from '../../lib/providers'
 import { environmentMeta } from '../provider/scopeChoice'
 import type { OverlayBodyProps } from '../overlays/registry'
@@ -34,6 +39,8 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
     i.kind === 'approval' && (entry ? i.entryId === entry : group ? `${i.provider ?? '?'}:${i.namespaceId ?? '?'}` === group : true))
 
   const [unticked, setUnticked] = useState<ReadonlySet<string>>(new Set())
+  const [shown, setShown] = useState(PAGE)
+  const [progress, setProgress] = useState(0)
   const [declining, setDeclining] = useState(false)
   const [why, setWhy] = useState('')
   const approve = useApprovePending()
@@ -42,6 +49,7 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
   const me = useMe()
   const namespaces = useNamespaces()
 
+  if (approve.isPending) return <Sending done={progress} total={approve.variables?.entryIds.length ?? 0} />
   if (approve.data) return <Approved results={approve.data} close={close} />
   if (decline.isSuccess) {
     return (
@@ -70,6 +78,9 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
   const cloud = first.provider ? providerLabel[first.provider] : 'This cloud'
   const toggle = (id: string) => setUnticked((u) => { const n = new Set(u); if (n.has(id)) n.delete(id); else n.add(id); return n })
   const busy = approve.isPending || decline.isPending
+  const allTicked = chosen.length === waiting.length
+  const toggleAll = () => setUnticked(allTicked ? new Set(waiting.map((i) => i.id)) : new Set())
+  const visible = waiting.slice(0, shown)
   // Said from the namespace's capability, never the cloud's name.
   const canProve = namespaces.data?.find((n) => n.id === first.namespaceId)?.capabilities?.canProveDlqAbsence
   const may = permission(me.data, 'Approver', 'answer what the Agent asked', { recover: true, namespaceId: first.namespaceId ?? undefined })
@@ -88,16 +99,42 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
       </div>
 
       <section className="rounded-xl border border-[#bae6fd] bg-[#f0f9ff] p-4">
-        <h3 className="flex items-center gap-2 font-bold text-[var(--color-primary-700)]"><Bot className="h-4 w-4" aria-hidden="true" /> Why it asked instead of acting</h3>
-        <p className="mt-1">{first.reason}</p>
-        {first.ruleName && <p className="mt-1 text-xs text-[var(--color-text-muted)]">Asked on behalf of the rule “{first.ruleName}”. <span className="font-mono">{first.reasonCode}</span></p>}
+        <Collapsible title="Why it asked instead of acting" help={sectionHelp.approve.why}>
+          <p className="flex items-start gap-2"><Bot className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-primary-700)]" aria-hidden="true" /> <span>{first.reason}</span></p>
+          {first.ruleName && <p className="mt-1 text-xs text-[var(--color-text-muted)]">Asked on behalf of the rule “{first.ruleName}”. <span className="font-mono">{first.reasonCode}</span></p>}
+        </Collapsible>
       </section>
 
-      <section>
-        <h3 className="mb-1.5 text-[10.5px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">Waiting for you</h3>
-        <ul className="divide-y divide-[var(--color-border)] rounded-xl border border-[var(--color-border)]">
-          {waiting.map((i) => <Item key={i.id} item={i} ticked={!unticked.has(i.id)} onToggle={() => toggle(i.id)} />)}
-        </ul>
+      <section aria-label="Waiting for you">
+        <div className="mb-1.5 flex items-center gap-3">
+          <h3 className="flex items-center text-[10.5px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">Waiting for you<InfoTip help={sectionHelp.approve.waiting} /></h3>
+          <span className="ml-auto text-xs text-[var(--color-text-muted)]">{chosen.length} of {waiting.length} ticked</span>
+        </div>
+        <div className="overflow-x-auto rounded-xl border border-[var(--color-border)]">
+          <table className="w-full text-left text-[12.5px]">
+            <caption className="sr-only">Replays waiting for your answer</caption>
+            <thead className="bg-[var(--color-surface-muted)] text-[11px] uppercase tracking-wide text-[var(--color-text-muted)]">
+              <tr>
+                <th scope="col" className="w-8 px-3 py-1.5">
+                  <input type="checkbox" checked={allTicked} onChange={toggleAll} className="h-4 w-4" aria-label={`Select all ${waiting.length} waiting replays`} />
+                </th>
+                <th scope="col" className="px-3 py-1.5">Message</th>
+                <th scope="col" className="px-3 py-1.5">What went wrong</th>
+                <th scope="col" className="px-3 py-1.5 text-right">Waiting</th>
+              </tr>
+            </thead>
+            <Items items={visible} unticked={unticked} onToggle={toggle} />
+          </table>
+        </div>
+        {waiting.length > shown && (
+          <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+            Showing {shown} of {waiting.length}.{' '}
+            <button type="button" onClick={() => setShown((n) => n + PAGE)} className="font-semibold text-[var(--color-primary-700)] hover:underline">Show {Math.min(PAGE, waiting.length - shown)} more</button>
+            {' · '}
+            <button type="button" onClick={() => setShown(waiting.length)} className="font-semibold text-[var(--color-primary-700)] hover:underline">Show all</button>
+            {' — ticking “select all” covers every one, shown or not.'}
+          </p>
+        )}
       </section>
 
       {proposal.isPending && proposal.fetchStatus !== 'idle' && <Skeleton label="Working out the safety checks…" rows={3} />}
@@ -108,7 +145,7 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
       )}
       {proposal.data && (
         <section>
-          <h3 className="mb-1.5 text-[10.5px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">Safety checks</h3>
+          <Collapsible title="Safety checks" help={sectionHelp.approve.checks} summary={`${proposal.data.checks.filter((c) => c.state === 'passed').length} of ${proposal.data.checks.length} passed`} defaultOpen={proposal.data.checks.some((c) => c.state !== 'passed')}>
           <ul className="divide-y divide-[var(--color-border)] rounded-xl border border-[var(--color-border)]">
             {proposal.data.checks.map((c) => (
               <li key={c.id} className="flex items-start gap-2 px-4 py-2.5">
@@ -121,6 +158,7 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
               </li>
             ))}
           </ul>
+          </Collapsible>
         </section>
       )}
 
@@ -146,11 +184,12 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
       )}
       {(decline.isError || approve.isError) && <p role="alert" className="text-[#b91c1c]">That didn’t go through. Nothing changed — try again.</p>}
 
-      <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--color-border)] pt-4">
+      <footer className="sticky bottom-0 z-10 -mx-5 -mb-4 flex flex-wrap items-center justify-end gap-2 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-3">
         <span className="flex w-full items-center gap-1.5 text-xs text-[var(--color-text-muted)]"><FileText className="h-3.5 w-3.5" aria-hidden="true" /> Recorded with your name</span>
         <button type="button" onClick={close} className="rounded-lg border border-[var(--color-border)] px-3.5 py-2 font-semibold">Not now</button>
         {!declining && <button type="button" onClick={() => setDeclining(true)} disabled={busy || !may.allowed} className="rounded-lg border border-[#fecaca] px-3.5 py-2 font-semibold text-[#b91c1c]">Decline…</button>}
-        <button type="button" disabled={busy || !may.allowed || chosen.length === 0} onClick={() => approve.mutate(chosen.map((i) => i.entryId!))}
+        <button type="button" disabled={busy || !may.allowed || chosen.length === 0}
+          onClick={() => { setProgress(0); approve.mutate({ entryIds: chosen.map((i) => i.entryId!), onProgress: setProgress }) }}
           className="inline-flex items-center gap-1.5 rounded-lg bg-[#b45309] px-4 py-2 font-bold text-white hover:bg-[#92400e] disabled:opacity-50">
           <Check className="h-4 w-4" aria-hidden="true" /> {approve.isPending ? 'Replaying…' : `Approve ${chosen.length} ${chosen.length === 1 ? 'replay' : 'replays'}`}
         </button>
@@ -160,16 +199,62 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
   )
 }
 
-function Item({ item, ticked, onToggle }: { item: PendingWorkItem; ticked: boolean; onToggle: () => void }) {
+/** How many waiting replays show at first; more on request. Every one can still be ticked at once. */
+const PAGE = 25
+
+/** One row per waiting replay, named by what a person recognises: the message's own id, its queue and what failed. */
+function Items({ items, unticked, onToggle }: { items: readonly PendingWorkItem[]; unticked: ReadonlySet<string>; onToggle: (id: string) => void }) {
+  const results = useQueries({
+    queries: items.map((i) => ({
+      queryKey: ['dead-letter', i.dlqMessageId],
+      queryFn: () => fetchDeadLetter(i.dlqMessageId as number),
+      enabled: i.dlqMessageId !== null,
+      staleTime: 30_000,
+      retry: false,
+    })),
+  })
+  const now = new Date()
   return (
-    <li className="flex items-start gap-3 px-4 py-3">
-      <input type="checkbox" checked={ticked} onChange={onToggle} className="mt-1 h-4 w-4" aria-label={`Include ${item.entity ?? 'this message'}`} />
-      <div className="min-w-0 flex-1">
-        <p className="font-mono text-[13px] font-semibold">{item.entity ?? 'a queue'} · 1 message</p>
-        <p className="text-xs text-[var(--color-text-muted)]">waiting {formatAge(item.since, new Date())}</p>
+    <tbody>
+      {items.map((i, n) => {
+        const m: DeadLetter | undefined = results[n]?.data?.item
+        const reason = m?.deadLetterReason ?? i.deadLetterReason
+        return (
+          <tr key={i.id} className="border-t border-[var(--color-border)] align-top">
+            <td className="px-3 py-2"><input type="checkbox" checked={!unticked.has(i.id)} onChange={() => onToggle(i.id)} className="h-4 w-4" aria-label={`Include ${i.entity ?? 'this message'}`} /></td>
+            <td className="px-3 py-2">
+              <p className="font-mono text-[11.5px] font-semibold [overflow-wrap:anywhere]">{m?.messageId ?? (i.dlqMessageId !== null ? `Message #${i.dlqMessageId}` : 'Message')}</p>
+              <p className="text-xs text-[var(--color-text-muted)]">
+                in <span className="font-mono">{m?.topicName ? `${m.topicName} › ` : ''}{m?.entityName ?? i.entity ?? 'a queue'}</span>
+                {m ? ` · tried ${m.deliveryCount}×` : ''}
+              </p>
+            </td>
+            <td className="px-3 py-2">
+              {reason && <span className="rounded-full bg-[#fef3c7] px-2.5 py-0.5 text-[11px] font-semibold text-[#92400e]">{reason}</span>}
+              {m?.deadLetterErrorDescription && <p className="mt-1 line-clamp-2 text-xs text-[var(--color-text-muted)]" title={m.deadLetterErrorDescription}>{m.deadLetterErrorDescription}</p>}
+            </td>
+            <td className="whitespace-nowrap px-3 py-2 text-right text-xs text-[var(--color-text-muted)]">{formatAge(i.since, now)}</td>
+          </tr>
+        )
+      })}
+    </tbody>
+  )
+}
+
+/** While the replays go out one by one: how far along, so a long batch never looks frozen. */
+function Sending({ done, total }: { done: number; total: number }) {
+  const pct = total === 0 ? 0 : Math.min(100, Math.round((done / total) * 100))
+  return (
+    <div className="space-y-4 text-sm" role="status">
+      <p className="text-base font-semibold">Sending {total.toLocaleString()} {total === 1 ? 'replay' : 'replays'}…</p>
+      <div>
+        <div className="flex items-baseline justify-between"><b>{done.toLocaleString()} of {total.toLocaleString()} sent</b><span className="text-[var(--color-text-muted)]">{(total - done).toLocaleString()} to go</span></div>
+        <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-[var(--color-surface-muted)]" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Approval progress">
+          <div className="h-full rounded-full bg-[var(--color-primary-600)] transition-all" style={{ width: `${pct}%` }} />
+        </div>
       </div>
-      {item.deadLetterReason && <span className="rounded-full bg-[#fef3c7] px-2.5 py-0.5 text-[11px] font-semibold text-[#92400e]">{item.deadLetterReason}</span>}
-    </li>
+      <p className="text-[var(--color-text-muted)]">Each goes through the safety checks on its own. You can leave this open; nothing is skipped.</p>
+    </div>
   )
 }
 

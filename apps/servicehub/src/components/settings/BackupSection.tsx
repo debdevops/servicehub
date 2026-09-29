@@ -9,6 +9,8 @@ import { permission } from '../../lib/permissions'
 import { NotAllowed } from '../ui/NotAllowed'
 import { RetryLink } from '../ui/RetryLink'
 import { Skeleton } from '../ui/Skeleton'
+import { InfoTip } from '../ui/InfoTip'
+import { sectionHelp } from '../../content/sections'
 
 const keys = { all: ['backups'] as const }
 const btn = 'inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-semibold hover:bg-[var(--color-surface-muted)] disabled:opacity-50'
@@ -30,7 +32,7 @@ export function BackupSection({ keyFingerprint }: { keyFingerprint: string }) {
 
   return (
     <section id="settings-backup" aria-label="Backup" className="space-y-3">
-      <h2 className="text-[17px] font-bold text-[var(--color-text)]">Backup</h2>
+      <h2 className="flex items-center text-[17px] font-bold text-[var(--color-text)]">Backup<InfoTip help={sectionHelp.settings.backup} /></h2>
       <p className="text-sm text-[var(--color-text-muted)]">
         A backup is ServiceHub’s whole database — connections, dead letters, the evidence ledger — checked and kept in the data
         directory’s <code>backups</code> folder. It does <b>not</b> contain the encryption key (fingerprint <code>{keyFingerprint}</code>):

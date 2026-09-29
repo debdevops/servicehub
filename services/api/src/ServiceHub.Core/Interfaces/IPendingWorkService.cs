@@ -13,14 +13,18 @@ public interface IPendingWorkService
     Task<PendingWorkPage> ListAsync(PendingWorkScope scope, int limit, CancellationToken cancellationToken);
 }
 
-/// <summary>Who is asking and what they narrowed to. <see cref="AllowedNamespaceIds"/> null = unrestricted.</summary>
+/// <summary>
+/// Who is asking and what they narrowed to. <see cref="AllowedNamespaceIds"/> null = unrestricted. <see cref="EntryId"/> asks for
+/// exactly one waiting approval, however many others wait — a list is capped, so a lookup must not depend on it.
+/// </summary>
 public sealed record PendingWorkScope(
     string OwnerId,
     IReadOnlySet<Guid>? AllowedNamespaceIds,
     CloudProviderType? Provider = null,
     Guid? NamespaceId = null,
     EnvironmentType? Environment = null,
-    string? ReasonCode = null);
+    string? ReasonCode = null,
+    Guid? EntryId = null);
 
 /// <summary>One thing waiting for a person.</summary>
 /// <param name="Kind"><c>approval</c> — a replay waits for yes or no · <c>rule</c> — a rule switched itself off · <c>agent</c> — an agent has stopped working.</param>

@@ -26,6 +26,7 @@ function renderApp(initial = '/') {
         <Routes>
           <Route element={<AppLayout />}>
             <Route index element={<Where />} />
+            <Route path="*" element={<Where />} />
           </Route>
         </Routes>
       </MemoryRouter>
@@ -91,6 +92,40 @@ describe('AppLayout — the sidebar reflects what is connected', () => {
 
     await screen.findByRole('link', { name: /Dead letters/ })
     expect(where()).toBe('/?tab=dlq')
+  })
+
+  it('lights exactly one of Replayed and Auto Replay when the rules panel is open over the Replayed tab', async () => {
+    mocked.fetchNamespaces.mockResolvedValue([ns('azure')])
+    renderApp('/?tab=replayed&panel=rules')
+
+    const auto = await screen.findByRole('link', { name: /Auto Replay/ })
+    expect(auto).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: /Replayed/ })).not.toHaveAttribute('aria-current')
+  })
+
+  it.each([
+    '/', '/?tab=dlq', '/?tab=active', '/?tab=replayed', '/?tab=replayed&panel=rules', '/?tab=dlq&panel=rules', '/?panel=rules', '/?tab=replayed&panel=connections',
+    '/?tab=dlq&panel=help', '/?tab=replayed&modal=settings', '/?tab=dlq&modal=bulk-replay', '/?tab=active&modal=approve', '/?tab=nonsense',
+    '/advanced', '/advanced/ledger', '/advanced/ledger?state=Declined', '/advanced/signatures?tab=growing', '/advanced/agents?agent=auto-replay',
+  ])('lights exactly one place in the sidebar for %s', async (url) => {
+    mocked.fetchNamespaces.mockResolvedValue([ns('azure')])
+    renderApp(url)
+
+    await screen.findByRole('link', { name: /Dead letters|Advanced Overview/ })
+    const nav = screen.getAllByRole('navigation').find((n) => within(n).queryAllByRole('link').length > 3) ?? document.body
+    const lit = within(nav).queryAllByRole('link').filter((a) => a.getAttribute('aria-current') === 'page').map((a) => a.textContent?.trim())
+    expect(lit, `lit for ${url}: ${lit.join(' | ')}`).toHaveLength(1)
+  })
+
+  it('opening Settings or Help from the sidebar puts a message drawer away, so one click opens one window', async () => {
+    mocked.fetchNamespaces.mockResolvedValue([ns('azure')])
+    renderApp('/?tab=dlq&message=5&view=full&active=9')
+
+    const settings = await screen.findByRole('link', { name: /Settings/ })
+    const href = settings.getAttribute('href')!
+    expect(href).toContain('modal=settings')
+    expect(href).toContain('tab=dlq')
+    for (const k of ['message=', 'view=', 'active=']) expect(href).not.toContain(k)
   })
 
   it('remembers the chosen cloud and tints only the accent', async () => {

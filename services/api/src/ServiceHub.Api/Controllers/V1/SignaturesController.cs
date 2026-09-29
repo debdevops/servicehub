@@ -32,8 +32,14 @@ public sealed class SignaturesController : ApiControllerBase
     public async Task<IActionResult> List(
         [FromQuery] CloudProviderType? provider, [FromQuery] int? days, [FromQuery] string? tab, [FromQuery] string? sort,
         [FromQuery] int? page, [FromQuery] int? pageSize, CancellationToken cancellationToken,
-        [FromQuery] Guid? namespaceId = null, [FromQuery] EnvironmentType? environment = null)
+        [FromQuery] Guid? namespaceId = null, [FromQuery] EnvironmentType? environment = null,
+        [FromQuery] string? by = null, [FromQuery] string? entity = null, [FromQuery] string? q = null)
     {
+        if (by is not (null or "" or "all" or "people" or "autonomous"))
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "'by' must be all, people or autonomous.");
+        }
+
         if (tab is not (null or "all" or "growing" or "helps" or "doesnt"))
         {
             return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "'tab' must be all, growing, helps or doesnt.");
@@ -54,7 +60,7 @@ public sealed class SignaturesController : ApiControllerBase
             return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "'page' starts at 1 and 'pageSize' must be between 1 and 100.");
         }
 
-        return Ok(await _signatures.ListAsync(OwnerId, AllowedNamespaceIds, provider, days ?? 7, tab, sort ?? "messages", page ?? 1, pageSize ?? 25, cancellationToken, namespaceId, environment));
+        return Ok(await _signatures.ListAsync(OwnerId, AllowedNamespaceIds, provider, days ?? 7, tab, sort ?? "messages", page ?? 1, pageSize ?? 25, cancellationToken, namespaceId, environment, by is "people" or "autonomous" ? by : null, entity, q));
     }
 
     /// <summary>One signature.</summary>

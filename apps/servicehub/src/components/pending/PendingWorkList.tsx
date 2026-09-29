@@ -2,6 +2,7 @@ import { Bot, Clock, Zap } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import type { PendingRow } from '../../lib/pendingRows'
 import { formatAge } from '../../lib/format'
+import { withoutDrawers } from '../../lib/urlState'
 
 const icons = {
   approval: { Icon: Clock, box: 'bg-[#fffbeb] text-[#d97706]' },
@@ -14,7 +15,7 @@ export function useResolveHref() {
   const { pathname, search } = useLocation()
   return (href: string) => {
     if (!href.startsWith('?')) return href
-    const next = new URLSearchParams(search)
+    const next = withoutDrawers(new URLSearchParams(search))
     new URLSearchParams(href.slice(1)).forEach((v, k) => next.set(k, v))
     return `${pathname}?${next.toString()}`
   }

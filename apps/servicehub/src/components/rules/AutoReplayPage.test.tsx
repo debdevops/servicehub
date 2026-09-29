@@ -79,6 +79,17 @@ describe('Auto Replay page', () => {
     expect(await screen.findByText('2,000+', { selector: 'p' })).toBeInTheDocument() // the tile
   })
 
+  it('lets you see the messages a rule is holding — the link goes to that failure on that queue', async () => {
+    vi.mocked(rulesApi.fetchRules).mockResolvedValue([rule({ askedCount: 3, reason: 'Timeout', entityName: 'payments-dlq' })])
+    vi.mocked(rulesApi.fetchRulesHeld).mockResolvedValue({ distinct: 3, isLowerBound: false })
+    renderPage()
+    const link = await screen.findByRole('link', { name: /See them/ })
+    const href = link.getAttribute('href')!
+    expect(href).toContain('tab=dlq')
+    expect(href).toContain('reason=Timeout')
+    expect(href).toContain('entity=payments-dlq')
+  })
+
   it('counts a message two rules both match once in the "waiting for a person" tile, not once per rule', async () => {
     // Two overlapping rules each hold the same 5 messages: the cards say 5 and 5, the tile says 5 — not 10.
     vi.mocked(rulesApi.fetchRules).mockResolvedValue([rule({ askedCount: 5 }), rule({ id: 2, name: 'Overlaps', askedCount: 5 })])
@@ -94,14 +105,15 @@ describe('Auto Replay page', () => {
     vi.mocked(rulesApi.fetchRules).mockResolvedValue([rule({ replayed: 1 })])
     vi.mocked(replayApi.fetchReplays).mockResolvedValue({
       total: 1, page: 1, pageSize: 5,
-      items: [{ id: 9, dlqMessageId: 42, sourceEntity: 'payments-dlq', targetEntity: 'payments', replayedAt: '2026-09-27T10:00:00Z', outcomeStatus: 'accepted', verification: { status: 'verified' } }] as never,
+      items: [{ id: 9, dlqMessageId: 42, messageId: 'msg-42-abc', sourceEntity: 'payments-dlq', targetEntity: 'payments', replayedAt: '2026-09-27T10:00:00Z', outcomeStatus: 'accepted', verification: { status: 'verified' } }] as never,
     })
     renderPage()
 
     await userEvent.click(await screen.findByText('What it replayed'))
     expect(await screen.findByText('stayed fixed')).toBeInTheDocument()
     // The row opens the message's details in a modal over this page.
-    expect(screen.getByRole('link', { name: 'payments-dlq → payments' })).toHaveAttribute('href', expect.stringContaining('view=modal'))
+    expect(screen.getByRole('link', { name: 'msg-42-abc' })).toHaveAttribute('href', expect.stringContaining('view=modal'))
+    expect(screen.getByText('payments-dlq → payments')).toBeInTheDocument()
     expect(replayApi.fetchReplays).toHaveBeenCalledWith({ provider: 'azure', ruleId: 1, pageSize: 5 })
   })
 

@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { withoutDrawers } from '../lib/urlState'
 
 const typing = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))
@@ -19,7 +20,9 @@ export function useShortcuts({ openSearch, simpleHref, advancedHref }: { openSea
       if (e.metaKey || e.ctrlKey || e.altKey || typing(e.target)) return
       const params = new URLSearchParams(search)
       const open = (k: string, v: string) => { params.set(k, v); navigate(`${pathname}?${params}`) }
-      if (e.key === '?') { e.preventDefault(); open('panel', 'help') }
+      // Help is a window of its own: a drawer beside the page is put away first (R keeps the message — Replay opens over ITS drawer).
+      const openAlone = (k: string, v: string) => { const p = withoutDrawers(params); p.set(k, v); navigate(`${pathname}?${p}`) }
+      if (e.key === '?') { e.preventDefault(); openAlone('panel', 'help') }
       else if (e.key === 'a' || e.key === 'A') { e.preventDefault(); navigate(pathname.startsWith('/advanced') ? simpleHref : advancedHref) }
       else if ((e.key === 'r' || e.key === 'R') && params.get('message') && !params.get('modal')) { e.preventDefault(); open('modal', 'replay') }
       else if (e.key === '/') {

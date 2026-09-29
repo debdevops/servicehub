@@ -12,7 +12,7 @@ public interface ISignaturesService
     /// </summary>
     Task<SignaturePage> ListAsync(
         string ownerId, IReadOnlySet<Guid>? allowed, CloudProviderType? provider, int days, string? tab, string sort, int page, int pageSize, CancellationToken ct,
-        Guid? namespaceId = null, EnvironmentType? environment = null);
+        Guid? namespaceId = null, EnvironmentType? environment = null, string? by = null, string? entity = null, string? search = null);
 
     /// <summary>One signature by hash (per cloud), or null.</summary>
     Task<SignatureSummary?> GetAsync(string ownerId, IReadOnlySet<Guid>? allowed, string hash, CloudProviderType provider, int days, CancellationToken ct);

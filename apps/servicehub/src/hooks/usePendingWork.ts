@@ -32,7 +32,7 @@ function useInvalidateAfterAnswer() {
 export function useApprovePending() {
   const refresh = useInvalidateAfterAnswer()
   return useMutation({
-    mutationFn: async (entryIds: readonly string[]) => {
+    mutationFn: async ({ entryIds, onProgress }: { entryIds: readonly string[]; onProgress?: (done: number) => void }) => {
       const results: { entryId: string; ok: boolean; error?: string }[] = []
       for (const entryId of entryIds) {
         try {
@@ -41,6 +41,7 @@ export function useApprovePending() {
         } catch (e) {
           results.push({ entryId, ok: false, error: toProblem(e).message })
         }
+        onProgress?.(results.length)
       }
       return results
     },

@@ -49,7 +49,7 @@ public sealed class IncidentTraceController : ApiControllerBase
         var ids = visible.Where(n => n.Value.Provider == cloud).Select(n => n.Key).ToList();
         var messages = await _db.DlqMessages.AsNoTracking()
             .Where(m => m.OwnerId == OwnerId && m.SignatureHash == hash && ids.Contains(m.NamespaceId))
-            .Select(m => new { m.Id, m.NamespaceId, m.EntityName, m.DetectedAtUtc, m.Status, m.DeadLetterReason })
+            .Select(m => new { m.Id, m.NamespaceId, m.EntityName, m.DetectedAtUtc, m.Status, m.DeadLetterReason, m.MessageId })
             .ToListAsync(cancellationToken);
         if (messages.Count == 0)
         {
@@ -65,14 +65,14 @@ public sealed class IncidentTraceController : ApiControllerBase
 
         string Where(Guid ns) => visible.TryGetValue(ns, out var n) ? n.DisplayName ?? n.Name : "a namespace";
         var first = messages.MinBy(m => m.DetectedAtUtc)!;
-        var items = new List<TimelineItem> { new(first.DetectedAtUtc, "first_seen", $"First seen dead-lettered on {first.EntityName} in {Where(first.NamespaceId)}.", null, first.Id) };
+        var items = new List<TimelineItem> { new(first.DetectedAtUtc, "first_seen", $"First seen dead-lettered on {first.EntityName} in {Where(first.NamespaceId)} (message {first.MessageId}).", null, first.Id) };
         items.AddRange(messages.Where(m => m.Id != first.Id)
             .GroupBy(m => (Day: m.DetectedAtUtc.UtcDateTime.Date, m.NamespaceId))
             .Select(g => new TimelineItem(g.Max(m => m.DetectedAtUtc), "came_back", $"{g.Count()} more dead-lettered in {Where(g.Key.NamespaceId)}.", null, null)));
         foreach (var e in entries)
         {
             var purge = kinds.GetValueOrDefault(e.OperationId) == RecoveryOperationKind.Purge;
-            items.Add(new TimelineItem(e.BegunAt, purge ? "purged" : "replayed", $"{(purge ? "Purged" : "Replayed")} one from {e.EntityNameSnapshot} — {Outcome(e.State)}.", e.Id, e.DlqMessageId));
+            items.Add(new TimelineItem(e.BegunAt, purge ? "purged" : "replayed", $"{(purge ? "Purged" : "Replayed")} one from {e.EntityNameSnapshot}{(e.SourceMessageIdSnapshot is { } mid ? $" (message {mid})" : string.Empty)} — {Outcome(e.State)}.", e.Id, e.DlqMessageId));
         }
 
         return Ok(new
@@ -127,12 +127,12 @@ public sealed class IncidentTraceController : ApiControllerBase
         var hops = sightings.Select(m => new
         {
             at = m.DetectedAtUtc, kind = "dead_lettered", place = Place(m.NamespaceId), entity = m.EntityName, dlqMessageId = (long?)m.Id,
-            m.NamespaceId, detail = m.DeadLetterReason, entryId = (Guid?)null,
+            m.NamespaceId, detail = m.DeadLetterReason, entryId = (Guid?)null, messageId = (string?)m.MessageId,
         }).Concat(entries.Select(e => new
         {
             at = e.BegunAt, kind = kinds.GetValueOrDefault(e.OperationId) == RecoveryOperationKind.Purge ? "purged" : "replayed",
             place = Place(e.NamespaceId ?? Guid.Empty), entity = e.EntityNameSnapshot ?? e.TargetEntity, dlqMessageId = e.DlqMessageId,
-            NamespaceId = e.NamespaceId ?? Guid.Empty, detail = (string?)Outcome(e.State), entryId = (Guid?)e.Id,
+            NamespaceId = e.NamespaceId ?? Guid.Empty, detail = (string?)Outcome(e.State), entryId = (Guid?)e.Id, messageId = e.SourceMessageIdSnapshot,
         })).OrderBy(h => h.at).ToList();
 
         return Ok(new

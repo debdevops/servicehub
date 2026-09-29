@@ -2,7 +2,11 @@ import { useEffect, useState } from 'react'
 import { namespaceTag } from '../provider/scopeChoice'
 import { usePageSize } from '../../lib/pageSize'
 import { Link, useSearchParams } from 'react-router-dom'
-import { CheckCircle2, TriangleAlert } from 'lucide-react'
+import { CheckCircle2, RefreshCw, TriangleAlert } from 'lucide-react'
+import { InfoTip } from '../ui/InfoTip'
+import { sectionHelp } from '../../content/sections'
+import { formatAgo } from '../../lib/format'
+import { ReasonStrip } from './ReasonStrip'
 import { ExplainerCard, ExplainerToggle } from '../explainer/Explainer'
 import { useExplainer } from '../explainer/useExplainer'
 import { Pager } from '../ui/Pager'
@@ -73,7 +77,7 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
     page,
     pageSize,
   }
-  const { data, isPending, isError, refetch } = useDeadLetters(query)
+  const { data, isPending, isError, refetch, isFetching, dataUpdatedAt } = useDeadLetters(query)
 
   const change = (patch: Record<string, string | null>) =>
     setParams(
@@ -114,6 +118,8 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
   const groupTotal = (data?.groups ?? []).reduce((n, g) => n + g.count, 0) + (data?.otherReasons?.count ?? 0)
 
   const rows = data?.items ?? []
+  // A bulk run that has ended has used up its selection: untick it, so Replay selected goes back to waiting for a new one.
+  useEffect(() => bulkSelection.onFinished(() => setSelection({ sig: signature, ids: new Set(), all: false })), [signature])
   const selectedCount = current.all ? total : current.ids.size
 
   const toggle = (id: string) => {
@@ -130,9 +136,30 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
     setSelection({ sig: signature, ids, all: false })
   }
 
+  // Both bars are the same control: disabled until something is ticked, and free again once a run has finished and untick what it carried.
+  const bulkBar = (edge: 'top' | 'bottom') => (
+    <BulkBar
+      edge={edge}
+      allOnPage={rows.length > 0 && rows.every((r) => current.ids.has(String(r.id)))}
+      onTogglePage={togglePage}
+      single={!current.all && current.ids.size === 1 ? [...current.ids][0] : null}
+      count={selectedCount}
+      allMatching={current.all}
+      matchingTotal={total}
+      matchingLabel={reasonLabel ?? 'dead letters'}
+      canSelectAll={!!reasonParam && total > rows.length}
+      onSelectAll={() => setSelection({ sig: signature, ids: new Set(rows.map((r) => String(r.id))), all: true })}
+      onClear={() => setSelection({ sig: signature, ids: new Set(), all: false })}
+      onOpen={() =>
+        bulkSelection.set(current.all ? { query: { ...query, page: 1, pageSize: 100 }, total } : { ids: [...current.ids].map(Number) })
+      }
+    />
+  )
+
   return (
     <section className="px-6 py-6">
-      <header className="mb-4">
+      <header className="mb-4 flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        <div>
         <h1 className="flex items-center gap-2 text-2xl font-semibold text-[var(--color-text)]">
           {cloud} — Dead letters <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} />
         </h1>
@@ -151,13 +178,15 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
             </>
           )}
         </p>
+        </div>
+        {data && <ReasonStrip provider={provider} page={data} namespaceId={scope.ns?.id} environment={scope.env ?? undefined} />}
       </header>
 
       {!watched && <LookNow cloud={cloud} namespaces={namespaces.filter((n) => n.capabilities?.supportsRepeatablePeek !== true)} />}
 
       {explainer.shown && <ExplainerCard id="dead-letters" onDismiss={explainer.dismiss} />}
 
-      <WorkTabs current="dlq" />
+      <WorkTabs current="dlq" counts={data ? { dlq: total } : {}} />
 
       {isPending && <Skeleton label="Reading dead letters…" rows={6} />}
 
@@ -189,7 +218,7 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
               </select>
             </label>
             <label className="flex items-center gap-2">
-              <span className="text-[var(--color-text-muted)]">Window</span>
+              <span className="text-[var(--color-text-muted)]">Time window</span>
               <select value={range} onChange={(e) => change({ range: e.target.value === 'all' ? null : e.target.value })} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5">
                 {ranges.map((r) => (
                   <option key={r.id} value={r.id}>{r.label}</option>
@@ -211,7 +240,13 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
                 className="w-80 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5"
               />
             </label>
-            <span className="ml-auto text-xs text-[var(--color-text-muted)]">Newest first</span>
+            <span className="ml-auto flex items-center gap-3 text-xs text-[var(--color-text-muted)]">
+              <button type="button" onClick={() => void refetch()} disabled={isFetching} className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-semibold text-[var(--color-text)] hover:bg-[var(--color-surface-muted)] disabled:opacity-60">
+                <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" /> Refresh
+              </button>
+              <InfoTip help={sectionHelp.dlq.refresh} />
+              <span>Last updated<br />{dataUpdatedAt ? formatAgo(new Date(dataUpdatedAt).toISOString(), new Date()) : '—'}</span>
+            </span>
           </div>
 
           <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -219,20 +254,7 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
               <EmptyState cloud={cloud} filtering={filtering} watched={watched} onClear={() => setParams(new URLSearchParams({ tab: 'dlq' }), { replace: true })} />
             ) : (
               <>
-                {showing === 'active' && selectedCount > 0 && (
-                  <BulkBar
-                    count={selectedCount}
-                    allMatching={current.all}
-                    matchingTotal={total}
-                    matchingLabel={reasonLabel ?? 'dead letters'}
-                    canSelectAll={!!reasonParam && total > rows.length}
-                    onSelectAll={() => setSelection({ sig: signature, ids: new Set(rows.map((r) => String(r.id))), all: true })}
-                    onClear={() => setSelection({ sig: signature, ids: new Set(), all: false })}
-                    onOpen={() =>
-                      bulkSelection.set(current.all ? { query: { ...query, page: 1, pageSize: 100 }, total } : { ids: [...current.ids].map(Number) })
-                    }
-                  />
-                )}
+                {showing === 'active' && bulkBar('top')}
                 <MessageTable
                   rows={rows}
                   namespaceNames={names}
@@ -240,6 +262,7 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
                   caption={showing === 'active' ? undefined : 'Dead-lettered messages and what became of them, newest first'}
                   selection={showing !== 'active' ? undefined : { selected: current.all ? new Set(rows.map((r) => String(r.id))) : current.ids, onToggle: toggle, onTogglePage: togglePage }}
                 />
+                {showing === 'active' && bulkBar('bottom')}
                 <Pager page={data.paging.page} pageSize={data.paging.pageSize} total={total} filtered={filtering} onPage={(p) => change({ page: String(p) })} onPageSize={(s) => { setPageSize(s); change({ page: null }) }} />
               </>
             )}

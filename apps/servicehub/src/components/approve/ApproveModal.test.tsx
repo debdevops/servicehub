@@ -72,6 +72,37 @@ describe('Approve and Decline', () => {
     expect(sent.closest('[role=status]')).not.toBeNull() // the result is announced, not only drawn (6.6)
   })
 
+  it('names each message, shows 25 by default, and select all covers every one — not only those shown', async () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({ ...item(`e${i}`, 'orders-sqs'), dlqMessageId: null }))
+    vi.mocked(api.fetchPendingWork).mockResolvedValue({ items: many, total: 30, byProvider: [], agents: 0 })
+    open()
+    expect(await screen.findByText(/Showing 25 of 30/)).toBeInTheDocument()
+    expect(screen.getAllByRole('checkbox', { name: 'Include orders-sqs' })).toHaveLength(25)
+    expect(screen.getByRole('button', { name: /Approve 30 replays/ })).toBeEnabled()
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select all 30 waiting replays' }))
+    expect(screen.getByRole('button', { name: /Approve 0 replays/ })).toBeDisabled()
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select all 30 waiting replays' }))
+    expect(screen.getByRole('button', { name: /Approve 30 replays/ })).toBeEnabled()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Show 5 more' }))
+    expect(screen.getAllByRole('checkbox', { name: 'Include orders-sqs' })).toHaveLength(30)
+  })
+
+  it('shows a progress bar while the replays go out, so a long batch never looks frozen', async () => {
+    let release: () => void = () => {}
+    vi.mocked(api.approvePending).mockImplementation(() => new Promise((r) => { release = () => r({} as never) }))
+    open()
+    await userEvent.click(await screen.findByRole('button', { name: /Approve 2 replays/ }))
+    const bar = await screen.findByRole('progressbar', { name: 'Approval progress' })
+    expect(bar).toHaveAttribute('aria-valuenow', '0')
+    expect(screen.getByText('0 of 2 sent')).toBeInTheDocument()
+    release()
+    await waitFor(() => expect(screen.getByText('1 of 2 sent')).toBeInTheDocument())
+    release()
+    expect(await screen.findByText(/2 replays sent, each recorded with your name/)).toBeInTheDocument()
+  })
+
   it('declines only with a reason', async () => {
     open()
     await userEvent.click(await screen.findByRole('button', { name: 'Decline…' }))

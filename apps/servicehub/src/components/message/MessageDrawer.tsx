@@ -1,6 +1,7 @@
 import { columnHelp, type ColumnHelp } from '../../content/columns'
 import { describeEntity } from '../../lib/entities'
 import { InfoTip } from '../ui/InfoTip'
+import { sectionHelp } from '../../content/sections'
 import { EntityCell } from './EntityCell'
 import { PurgeAction } from './PurgeAction'
 import { useState, type ReactNode } from 'react'
@@ -84,7 +85,7 @@ export function MessageDrawer() {
       size={full ? 'wide' : 'drawer'}
       docked={!full}
       title={full ? 'Dead letter' : 'Message details'}
-      onClose={full && !modalOnly ? backToSide : close}
+      onClose={close}
       actions={data && !modalOnly ? expandButton : undefined}
     >
       {notFound ? (
@@ -257,7 +258,7 @@ function BodyBlock({ detail, field }: { detail: DeadLetterDetail; field: string 
   if (text === null) {
     return (
       <section aria-label="Message body">
-        <h3 className="mb-1 text-sm font-semibold">Message body</h3>
+        <h3 className="mb-1 flex items-center text-sm font-semibold">Message body<InfoTip help={sectionHelp.message.body} /></h3>
         <p className="text-sm text-[var(--color-text-muted)]">ServiceHub did not keep a body for this message.</p>
       </section>
     )
@@ -272,7 +273,7 @@ function BodyBlock({ detail, field }: { detail: DeadLetterDetail; field: string 
   return (
     <section aria-label="Message body">
       <div className="mb-1 flex items-center justify-between">
-        <h3 className="text-sm font-semibold">Message body</h3>
+        <h3 className="flex items-center text-sm font-semibold">Message body<InfoTip help={sectionHelp.message.body} /></h3>
         <div className="flex items-center gap-3 text-xs">
           {parses && (
             <div role="group" aria-label="Body format" className="flex overflow-hidden rounded-lg border border-[var(--color-border)]">
@@ -341,7 +342,7 @@ function OthersLikeIt({ detail }: { detail: DeadLetterDetail }) {
   if (m.deadLetterReason) to.set('reason', m.deadLetterReason)
   return (
     <section aria-label="Others like it">
-      <h3 className="mb-1 text-sm font-semibold">Others like it</h3>
+      <h3 className="mb-1 flex items-center text-sm font-semibold">Others like it<InfoTip help={sectionHelp.message.others} /></h3>
       {detail.othersLikeIt === 0 ? (
         <p className="text-sm text-[var(--color-text-muted)]">No other dead letters in {m.entityName} failed this way.</p>
       ) : (
@@ -399,7 +400,7 @@ function Details({ detail, now }: { detail: DeadLetterDetail; now: Date }) {
   const m = detail.item
   return (
     <section aria-label="Details">
-      <h3 className="mb-1 text-sm font-semibold">Details</h3>
+      <h3 className="mb-1 flex items-center text-sm font-semibold">Details<InfoTip help={sectionHelp.message.details} /></h3>
       <dl className="grid grid-cols-[150px_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
         <Row label="Message ID" help={columnHelp.drawer.messageId}>
           <span className="font-mono text-[13px]">{m.messageId}</span>{' '}
@@ -425,7 +426,7 @@ function Properties({ json }: { json: string | null }) {
   }
   return (
     <section aria-label="Properties">
-      <h3 className="mb-1 text-sm font-semibold">Properties</h3>
+      <h3 className="mb-1 flex items-center text-sm font-semibold">Properties<InfoTip help={sectionHelp.message.properties} /></h3>
       {entries.length === 0 ? (
         <p className="text-sm text-[var(--color-text-muted)]">This message carried no application properties.</p>
       ) : (
@@ -448,7 +449,7 @@ function Headers({ detail }: { detail: DeadLetterDetail }) {
   ]
   return (
     <section aria-label="Headers">
-      <h3 className="mb-1 text-sm font-semibold">Headers</h3>
+      <h3 className="mb-1 flex items-center text-sm font-semibold">Headers<InfoTip help={sectionHelp.message.headers} /></h3>
       <dl className="grid grid-cols-[150px_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
         {items.map(([k, v]) => (
           <Row key={k} label={k}>{v ?? <span className="text-[var(--color-text-muted)]">none</span>}</Row>
@@ -462,7 +463,7 @@ function Delivery({ detail, now }: { detail: DeadLetterDetail; now: Date }) {
   const m = detail.item
   return (
     <section aria-label="Delivery">
-      <h3 className="mb-1 text-sm font-semibold">Delivery</h3>
+      <h3 className="mb-1 flex items-center text-sm font-semibold">Delivery<InfoTip help={sectionHelp.message.delivery} /></h3>
       <dl className="grid grid-cols-[170px_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
         <Row label="Delivery attempts">{m.deliveryCount}</Row>
         <Row label="Enqueued" help={columnHelp.drawer.enqueued}>{formatWhen(m.enqueuedTimeUtc, now)}</Row>

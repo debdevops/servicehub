@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../../lib/api/namespaces'
 import * as messages from '../../lib/api/messages'
@@ -13,11 +14,13 @@ vi.mock('../../lib/api/messages')
 const ns = (provider: CloudProvider, peek: boolean): Namespace =>
   ({ id: `${provider}1`, name: provider, provider, capabilities: { supportsRepeatablePeek: peek } }) as unknown as Namespace
 
-const renderTab = (provider: CloudProvider, n: Namespace | readonly Namespace[]) =>
+const Where = () => <output data-testid="where">{useLocation().search}</output>
+
+const renderTab = (provider: CloudProvider, n: Namespace | readonly Namespace[], url = '/?tab=active') =>
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <MemoryRouter initialEntries={['/?tab=active']}>
-        <ActiveMessagesTab provider={provider} namespaces={Array.isArray(n) ? n : [n]} />
+      <MemoryRouter initialEntries={[url]}>
+        <ActiveMessagesTab provider={provider} namespaces={Array.isArray(n) ? n : [n]} /><Where />
       </MemoryRouter>
     </QueryClientProvider>,
   )
@@ -73,5 +76,50 @@ describe('Active messages tab', () => {
 
     expect((await screen.findAllByText('can’t count here')).length).toBe(2)
     expect(screen.queryByText('0')).not.toBeInTheDocument()
+  })
+
+  const peeked = () => {
+    vi.mocked(api.fetchEntities).mockResolvedValue({ namespaceId: 'azure1', entities: [queue(2)] })
+    vi.mocked(messages.peekMessages).mockResolvedValue({
+      namespaceId: 'azure1', entity: 'orders', subscription: null, deadLetter: false,
+      messages: [
+        { messageId: 'msg-aaa', sequenceNumber: 7, body: '{}', subject: 'order.created', correlationId: 'corr-1', enqueuedTime: new Date().toISOString(), deliveryCount: 0, sizeInBytes: 2048 },
+        { messageId: 'msg-bbb', sequenceNumber: 8, body: '{}', subject: null, correlationId: null, enqueuedTime: new Date().toISOString(), deliveryCount: 3, sizeInBytes: 100 },
+      ] as messages.Message[],
+      paging: { requested: 25, returned: 2, nextFromSequenceNumber: null }, peek: { repeatable: true, warning: null },
+    })
+  }
+
+  it('one click on Details opens only the details — a send window or another drawer left in the address is put away', async () => {
+    peeked()
+    renderTab('azure', ns('azure', true), '/?tab=active&modal=send&message=3')
+    await userEvent.click((await screen.findByRole('button', { name: 'Details of message msg-aaa' })))
+    const where = screen.getByTestId('where').textContent!
+    expect(where).toContain('active=7')
+    expect(where).not.toContain('modal=')
+    expect(where).not.toContain('message=')
+  })
+
+  it('narrows what was peeked by state and by a word in the ID, correlation ID or subject, and says so', async () => {
+    peeked()
+    renderTab('azure', ns('azure', true))
+    await screen.findByRole('table', { name: 'Active messages in orders' })
+    await userEvent.selectOptions(screen.getByLabelText('Message state'), 'retried')
+    expect(screen.getByText('1 message of 2 peeked')).toBeInTheDocument()
+    expect(screen.queryByText('msg-aaa')).toBeNull()
+    await userEvent.selectOptions(screen.getByLabelText('Message state'), 'all')
+    await userEvent.type(screen.getByLabelText('Search'), 'corr-1')
+    expect(screen.getByText('1 message of 2 peeked')).toBeInTheDocument()
+    expect(within(screen.getByRole('table')).getByText('msg-aaa')).toBeInTheDocument()
+  })
+
+  it('Peek message and Download body wait for exactly one ticked message', async () => {
+    peeked()
+    renderTab('azure', ns('azure', true))
+    await screen.findByRole('table', { name: 'Active messages in orders' })
+    expect(screen.getByRole('button', { name: /Peek message/ })).toBeDisabled()
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select message msg-aaa' }))
+    expect(screen.getByRole('button', { name: /Peek message/ })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /Download body/ })).toBeEnabled()
   })
 })

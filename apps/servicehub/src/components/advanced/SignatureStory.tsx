@@ -66,6 +66,7 @@ export function TraceView() {
                 <span className="w-24 font-semibold">{providerLabel[h.place.provider as CloudProvider] ?? h.place.provider}</span>
                 <span className="min-w-0 flex-1">
                   {h.kind === 'dead_lettered' ? 'Dead-lettered' : h.kind === 'purged' ? 'Purged' : 'Replayed'} on <span className="font-mono">{h.entity}</span> in {h.place.namespaceName}{h.detail ? ` — ${h.detail}` : ''}
+                  {h.messageId && <span className="mt-0.5 block font-mono text-[11.5px] text-[var(--color-text-muted)] [overflow-wrap:anywhere]">Message {h.messageId}</span>}
                 </span>
                 {h.kind === 'dead_lettered' && h.dlqMessageId !== null && <Link to={`/?tab=dlq&ns=${h.namespaceId}&message=${h.dlqMessageId}&status=all`} className="text-xs font-medium text-[var(--color-primary-700)] hover:underline">Open ›</Link>}
                 {h.entryId && <Link to={`/advanced/ledger?entry=${h.entryId}&window=all`} className="text-xs font-medium text-[var(--color-primary-700)] hover:underline">Evidence ›</Link>}

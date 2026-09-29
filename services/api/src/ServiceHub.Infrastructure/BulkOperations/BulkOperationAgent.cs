@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -22,14 +23,24 @@ namespace ServiceHub.Infrastructure.BulkOperations;
 /// </remarks>
 public sealed class BulkOperationAgent : IAgent
 {
+    /// <summary>
+    /// The longest one cycle keeps working before it reports and lets the next one carry on. A cycle only counts as a heartbeat
+    /// when it returns, and the watchdog calls an agent stale after about a minute of silence — so a long bulk replay in ONE cycle
+    /// (100 messages at 1 a second) raised a false "An agent stopped working" while it was working perfectly. The job's
+    /// progress is durable, so a run simply continues in the next cycle.
+    /// </summary>
+    internal static readonly TimeSpan DefaultSlice = TimeSpan.FromSeconds(20);
+
     private readonly IServiceScopeFactory _scopes;
     private readonly ILogger<BulkOperationAgent> _logger;
+    private readonly TimeSpan _slice;
 
     /// <summary>Creates the agent.</summary>
-    public BulkOperationAgent(IServiceScopeFactory scopes, ILogger<BulkOperationAgent> logger)
+    public BulkOperationAgent(IServiceScopeFactory scopes, ILogger<BulkOperationAgent> logger, IConfiguration? configuration = null)
     {
         _scopes = scopes ?? throw new ArgumentNullException(nameof(scopes));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _slice = TimeSpan.FromSeconds(Math.Clamp(configuration?.GetValue("BulkReplay:SliceSeconds", DefaultSlice.TotalSeconds) ?? DefaultSlice.TotalSeconds, 0.1, 30));
         Descriptor = new AgentDescriptor(
             Id: "bulk-replay",
             Name: "Bulk Replay",
@@ -92,7 +103,19 @@ public sealed class BulkOperationAgent : IAgent
 
         var actor = new RecoveryActor(job.ActorIdentity, job.ActorKind);
         var delay = TimeSpan.FromSeconds(1 / job.PerSecond);
+        // The streak of not-accepted messages so far, counted from what is durable — a run now spans several cycles.
         var inARow = 0;
+        foreach (var done in job.Items.Where(i => i.State is BulkItemState.Sent or BulkItemState.Failed or BulkItemState.Unknown).OrderByDescending(i => i.Position))
+        {
+            if (done.State == BulkItemState.Sent)
+            {
+                break;
+            }
+
+            inARow++;
+        }
+
+        var sliceStart = time.GetTimestamp();
 
         var queue = job.Items.Where(i => i.State == BulkItemState.Queued).OrderBy(i => i.Position).ToList();
         if (job.SampleOnly)
@@ -102,6 +125,12 @@ public sealed class BulkOperationAgent : IAgent
 
         foreach (var item in queue)
         {
+            // Out of time for this cycle: report, and pick up where this left off next cycle (the rest are still Queued).
+            if (attempted > 0 && time.GetElapsedTime(sliceStart) >= _slice)
+            {
+                break;
+            }
+
             // Cancel is a request in the database, honoured before the next message — never mid-message.
             await db.Entry(job).ReloadAsync(ct).ConfigureAwait(false);
             if (job.CancelRequested || ct.IsCancellationRequested)

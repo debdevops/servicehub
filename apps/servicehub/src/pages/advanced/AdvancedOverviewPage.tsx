@@ -17,6 +17,8 @@ import { providerLabel } from '../../lib/providers'
 import { InsightsTab } from '../../components/advanced/InsightsTab'
 import { RetryLink } from '../../components/ui/RetryLink'
 import { Skeleton } from '../../components/ui/Skeleton'
+import { sectionHelp } from '../../content/sections'
+import { TabBar } from '../../components/ui/TabBar'
 
 const windows: readonly { id: RecoveryWindow; label: string; days: number }[] = [
   { id: '24h', label: 'Last 24 hours', days: 1 },
@@ -81,12 +83,13 @@ export default function AdvancedOverviewPage() {
         </div>
       </header>
 
-      <nav aria-label="Overview sections" className="mb-4 flex gap-1 border-b border-[var(--color-border)]">
-        {([['overview', 'Overview'], ['insights', 'Insights']] as const).map(([id, label]) => (
-          <button key={id} type="button" aria-current={tab === id ? 'page' : undefined} onClick={() => set('tab', id === 'overview' ? null : id)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm font-semibold ${tab === id ? 'border-[var(--color-primary-600)] text-[var(--color-primary-700)]' : 'border-transparent text-[var(--color-text-muted)]'}`}>{label}</button>
-        ))}
-      </nav>
+      <div className="mb-4 overflow-hidden rounded-t-xl">
+        <TabBar label="Overview sections" active={tab} onSelect={(id) => set('tab', id === 'overview' ? null : id)}
+          tabs={[
+            { id: 'overview', label: 'Overview', count: 'none', help: sectionHelp.tabs.overview },
+            { id: 'insights', label: 'Insights', count: 'none', help: sectionHelp.tabs.insights },
+          ]} />
+      </div>
 
       {tab === 'insights' ? <InsightsTab provider={provider} /> : (
         <div className="space-y-4">
@@ -121,7 +124,7 @@ function Attention({ provider }: { provider?: CloudProvider }) {
   return (
     <section aria-label="Needs your attention" className="overflow-hidden rounded-2xl border border-[#fcd34d] bg-[#fffbeb]">
       <h2 className="flex items-center gap-2 border-b border-[#fde68a] px-5 py-3 text-[15px] font-bold text-[#92400e]">
-        <AlertTriangle className="h-4 w-4" aria-hidden="true" /> Needs your attention
+        <AlertTriangle className="h-4 w-4" aria-hidden="true" /> Needs your attention<InfoTip help={sectionHelp.advanced.needsAttention} />
         <span className="ml-auto flex items-center gap-3 text-xs font-semibold">
           {pending.data.total} {pending.data.total === 1 ? 'thing' : 'things'}
           <button
@@ -160,9 +163,10 @@ function Recovery({ provider, window, label }: { provider?: CloudProvider; windo
   const d = summary.data
   return (
     <section aria-label="Recovery" className={card}>
-      <h2 className={`${h2} flex flex-wrap items-baseline gap-2`}>Recovery — {label.toLowerCase()}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <h2 className={`${h2} flex items-center`}>Recovery — {label.toLowerCase()}<InfoTip help={sectionHelp.advanced.recovery} /></h2>
         {d && <span className="ml-auto text-xs font-normal text-[var(--color-text-muted)]">{d.total} {d.total === 1 ? 'operation' : 'operations'}{d.stayedFixedRate !== null && <> · <b className="text-[var(--color-text)]">{Math.round(d.stayedFixedRate * 100)}% stayed fixed</b></>}</span>}
-      </h2>
+      </div>
       {summary.isError && <p role="alert" className="mt-2 text-sm">ServiceHub couldn’t read the recovery summary. <RetryLink onRetry={() => void summary.refetch()} /></p>}
       {d && d.total === 0 && <p className="mt-3 text-sm text-[var(--color-text-muted)]">No recoveries in this window.</p>}
       {d && d.total > 0 && (

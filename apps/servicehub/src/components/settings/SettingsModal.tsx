@@ -1,3 +1,6 @@
+import { withoutDrawers } from '../../lib/urlState'
+import { InfoTip } from '../ui/InfoTip'
+import { sectionHelp } from '../../content/sections'
 import { Bell, Cloud, DatabaseBackup, KeyRound, Link2, Lock, OctagonAlert, SlidersHorizontal, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
@@ -66,11 +69,11 @@ export default function SettingsModal() {
 function Connections({ admin }: { admin: { allowed: boolean; reason: string | null } }) {
   const namespaces = useNamespaces()
   const { pathname, search } = useLocation()
-  const addHref = (() => { const q = new URLSearchParams(search); q.set('modal', 'add-cloud'); return `${pathname}?${q}` })()
+  const addHref = (() => { const q = withoutDrawers(new URLSearchParams(search)); q.set('modal', 'add-cloud'); return `${pathname}?${q}` })()
   return (
     <section id="settings-connections" aria-label="Connections">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className={h2}>Connections</h2>
+        <h2 className={`${h2} flex items-center`}>Connections<InfoTip help={sectionHelp.settings.connections} /></h2>
         <Link to={addHref} className={primary}>+ Add a cloud</Link>
       </div>
       {namespaces.isPending && <Skeleton label="Reading connections…" rows={3} />}
@@ -124,7 +127,7 @@ function Notifications({ data, admin }: { data: api.Settings; admin: { allowed: 
   const [adding, setAdding] = useState<api.ChannelFormat | null>(null)
   return (
     <section id="settings-notifications" aria-label="Notifications">
-      <h2 className={h2}>Notifications</h2>
+      <h2 className={`${h2} flex items-center`}>Notifications<InfoTip help={sectionHelp.settings.notifications} /></h2>
       <p className="mb-3 text-sm text-[var(--color-text-muted)]">Sent only when the Agent stops and needs a person — never for routine activity.</p>
       <ul className="divide-y divide-[var(--color-border)]">
         <li className="flex items-center gap-3 py-3">
@@ -221,7 +224,7 @@ function Preferences() {
   const seg = (active: boolean) => `flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${active ? 'bg-[var(--color-surface)] shadow' : 'text-[var(--color-text-muted)]'}`
   return (
     <section id="settings-preferences" aria-label="Preferences">
-      <h2 className={`${h2} mb-3`}>Preferences</h2>
+      <h2 className={`${h2} mb-3 flex items-center`}>Preferences<InfoTip help={sectionHelp.settings.preferences} /></h2>
       <div className="grid gap-4 md:grid-cols-2">
         <div>
           <p className="mb-1 text-sm font-semibold">Theme</p>
@@ -254,7 +257,7 @@ function Access({ data }: { data: api.Settings }) {
   const isAdmin = permission(me, 'Admin', 'manage roles')
   return (
     <section id="settings-access" aria-label="Access and security" className="space-y-4">
-      <h2 className={h2}>Access &amp; security</h2>
+      <h2 className={`${h2} flex items-center`}>Access &amp; security<InfoTip help={sectionHelp.settings.access} /></h2>
       <div className="rounded-xl border border-[var(--color-border)] p-4 text-sm">
         <p>
           You are <b>{me?.actor.label ?? '…'}</b>

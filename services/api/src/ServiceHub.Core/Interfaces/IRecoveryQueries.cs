@@ -10,7 +10,13 @@ public interface IRecoveryQueries
     Task<RecoverySummary> SummariseAsync(RecoveryScope scope, string window, CancellationToken cancellationToken);
 
     /// <summary>Ledger entries in scope, newest first, optionally only one state.</summary>
-    Task<RecoveryEntryPage> ListAsync(RecoveryScope scope, string window, RecoveryEntryState? state, int page, int pageSize, CancellationToken cancellationToken);
+    Task<RecoveryEntryPage> ListAsync(RecoveryScope scope, string window, RecoveryEntryState? state, int page, int pageSize, CancellationToken cancellationToken, RecoveryListFilter? filter = null);
+
+    /// <summary>
+    /// Names failure signatures in words — "MaxDeliveryCountExceeded on orders (Azure)" — from a dead letter that carries each hash.
+    /// A hash no recorded dead letter carries any more is simply left out; the caller says "a failure" rather than inventing a name.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, string>> DescribeSignaturesAsync(string ownerId, IReadOnlyCollection<string> hashes, CancellationToken cancellationToken);
 
     /// <summary>One entry and its events, or null when it is not in scope.</summary>
     Task<RecoveryEntryDetail?> GetAsync(RecoveryScope scope, Guid entryId, CancellationToken cancellationToken);

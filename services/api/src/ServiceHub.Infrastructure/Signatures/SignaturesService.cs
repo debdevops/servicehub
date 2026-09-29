@@ -26,9 +26,21 @@ public sealed class SignaturesService : ISignaturesService
     /// <inheritdoc />
     public async Task<SignaturePage> ListAsync(
         string ownerId, IReadOnlySet<Guid>? allowed, CloudProviderType? provider, int days, string? tab, string sort, int page, int pageSize, CancellationToken ct,
-        Guid? namespaceId = null, EnvironmentType? environment = null)
+        Guid? namespaceId = null, EnvironmentType? environment = null, string? by = null, string? entity = null, string? search = null)
     {
         var all = await BuildAsync(ownerId, allowed, provider, Math.Clamp(days, 1, 30), ct, namespaceId, environment).ConfigureAwait(false);
+        // Narrowed like the ledger: who replayed it, which queue, and a word in the reason, error or queue. Tab counts follow.
+        if (by == "people") all = [.. all.Where(x => x.Replays.ByPeople > 0)];
+        else if (by == "autonomous") all = [.. all.Where(x => x.Replays.ByAutonomy > 0)];
+        if (!string.IsNullOrWhiteSpace(entity)) all = [.. all.Where(x => x.Entities.Contains(entity.Trim()))];
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var word = search.Trim();
+            all = [.. all.Where(x => x.Reason.Contains(word, StringComparison.OrdinalIgnoreCase)
+                || (x.ExampleError?.Contains(word, StringComparison.OrdinalIgnoreCase) ?? false)
+                || x.Entities.Any(en => en.Contains(word, StringComparison.OrdinalIgnoreCase)))];
+        }
+
         IEnumerable<SignatureSummary> shown = tab switch
         {
             "growing" => all.Where(s => s.Growing),
@@ -77,7 +89,7 @@ public sealed class SignaturesService : ISignaturesService
         var byMessage = messages.ToDictionary(m => m.Id);
         var replays = await (from h in _db.ReplayHistories.AsNoTracking().Where(h => h.OwnerId == ownerId && h.RecoveryEntryId != null)
                              join e in _db.RecoveryLedgerEntries.AsNoTracking() on h.RecoveryEntryId equals e.Id
-                             select new { h.DlqMessageId, e.State }).ToListAsync(ct).ConfigureAwait(false);
+                             select new { h.DlqMessageId, e.State, h.RuleId }).ToListAsync(ct).ConfigureAwait(false);
 
         var now = _time.GetUtcNow();
         var today = new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero);
@@ -102,7 +114,7 @@ public sealed class SignaturesService : ISignaturesService
                 g.Key.Item1, g.Key.CloudProvider, first.DeadLetterReason ?? "Unknown", first.DeadLetterErrorDescription is { Length: > 300 } e ? e[..300] : first.DeadLetterErrorDescription,
                 [.. rows.Select(r => r.EntityName).Distinct().Order(StringComparer.Ordinal)], rows.Count, rows.Count(r => r.Status == DlqMessageStatus.Active),
                 first.DetectedAtUtc, newest.DetectedAtUtc, daily, recent >= 3 && recent >= 2 * Math.Max(1, earlier),
-                new SignatureReplays(mine.Count, fixedCount, returned, mine.Count - verified), verdict,
+                new SignatureReplays(mine.Count, fixedCount, returned, mine.Count - verified, mine.Count(r => r.RuleId == null), mine.Count(r => r.RuleId != null)), verdict,
                 [.. rows.GroupBy(r => r.NamespaceId).Where(n => byNamespace.ContainsKey(n.Key))
                     .Select(n => new SignatureNamespace(n.Key, byNamespace[n.Key].Name, byNamespace[n.Key].DisplayName, byNamespace[n.Key].Environment, n.Count()))
                     // Production first: it is the environment a reader most needs to see it in.

@@ -69,7 +69,13 @@ public sealed class AgentsController : ApiControllerBase
         if (state.Descriptor.LedgerActor is { } actor)
         {
             var events = await _queries.EventsByActorAsync(OwnerId, actor, TimelineLimit, cancellationToken);
-            items.AddRange(events.Select(e => new AgentActivityItem(e.OccurredAt, "ledger", e.EventType.ToString(), LedgerWords(e.EventType), null)));
+            // A promotion or demotion is about one failure: say which, and from what level to what, not only "a failure".
+            var moves = events.Where(e => e.EventType is RecoveryEventType.AutonomyGrantPromoted or RecoveryEventType.AutonomyGrantDemoted)
+                .ToDictionary(e => e.Seq, e => MoveOf(e.DetailJson));
+            var names = await _queries.DescribeSignaturesAsync(OwnerId, [.. moves.Values.Where(m => m.Hash is not null).Select(m => m.Hash!).Distinct()], cancellationToken);
+            items.AddRange(events.Select(e => new AgentActivityItem(
+                e.OccurredAt, "ledger", e.EventType.ToString(),
+                moves.TryGetValue(e.Seq, out var m) ? MoveWords(e.EventType, m, m.Hash is not null ? names.GetValueOrDefault(m.Hash) : null) : LedgerWords(e.EventType), null)));
         }
 
         foreach (var action in new[] { AuditActions.AgentPause, AuditActions.AgentResume })
@@ -142,6 +148,34 @@ public sealed class AgentsController : ApiControllerBase
             d.May ?? [], d.MayNot ?? [], Camel((late && s.Health == AgentHealth.Healthy ? AgentHealth.Failing : s.Health).ToString()), late, s.IsPaused,
             s.LastRunUtc, s.LastResult is { } r ? new AgentCycleResponse(r.Examined, r.Changed, r.Summary, r.Degraded) : null,
             s.LastFailure, s.ConsecutiveFailures);
+    }
+
+    private sealed record Move(string? Hash, string? From, string? To);
+
+    private static Move MoveOf(string? json)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json ?? "{}");
+            string? Str(string name) => doc.RootElement.TryGetProperty(name, out var v) ? v.GetString() : null;
+            return new Move(Str("signatureHash"), Str("previousLevel"), Str("newLevel"));
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return new Move(null, null, null);
+        }
+    }
+
+    private static string LevelWord(string? level) => level switch
+    {
+        "Approve" => "L3 Approve", "Standing" => "L4 Standing", "Unattended" => "L5 Unattended", _ => level ?? "?",
+    };
+
+    private static string MoveWords(RecoveryEventType type, Move m, string? failure)
+    {
+        var who = failure ?? "A failure";
+        var verb = type == RecoveryEventType.AutonomyGrantPromoted ? "earned replay without asking" : "lost replay without asking";
+        return m.From is null || m.To is null ? $"{who} {verb}" : $"{who} {verb}: {LevelWord(m.From)} → {LevelWord(m.To)}";
     }
 
     private static string CycleKind(AgentCycleResult r, bool canAct) =>

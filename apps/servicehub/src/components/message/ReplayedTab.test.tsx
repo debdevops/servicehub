@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as replayApi from '../../lib/api/replay'
@@ -16,11 +17,11 @@ const row = (over: Partial<ReplayListItem> = {}): ReplayListItem => ({
 })
 const page = (items: ReplayListItem[]): ReplayPage => ({ items, total: items.length, page: 1, pageSize: 25 })
 
-function renderTab() {
+function renderTab(url = '/?tab=replayed') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/?tab=replayed']}>
+      <MemoryRouter initialEntries={[url]}>
         <ReplayedTab provider="azure" choice={{ ns: null, env: null, namespaces: [] }} />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -81,5 +82,34 @@ describe('the Replayed tab', () => {
     listMock.mockResolvedValue(page([]))
     renderTab()
     expect(await screen.findByText(/Nothing has been replayed in Azure yet/)).toBeInTheDocument()
+  })
+
+  it('asks for the last 24 hours by default and passes the chosen result, who and word to the API', async () => {
+    listMock.mockResolvedValue(page([row()]))
+    renderTab()
+    await screen.findByRole('table')
+    expect(listMock).toHaveBeenLastCalledWith(expect.objectContaining({ provider: 'azure', window: '24h', ending: undefined, by: undefined }))
+    await userEvent.selectOptions(screen.getByLabelText('Result'), 'returned')
+    await userEvent.selectOptions(screen.getByLabelText('Replayed by'), 'autonomous')
+    await userEvent.selectOptions(screen.getByLabelText('Time window'), '7d')
+    await screen.findByRole('table')
+    expect(listMock).toHaveBeenLastCalledWith(expect.objectContaining({ ending: 'returned', by: 'autonomous', window: '7d' }))
+  })
+
+  it('shows each replay’s own message ID in full, and Details puts away any other window left in the address', async () => {
+    listMock.mockResolvedValue(page([row({ messageId: 'cloud-msg-0001-abcd' })]))
+    renderTab('/?tab=replayed&modal=send&active=4')
+    expect(await screen.findByText('cloud-msg-0001-abcd')).toBeInTheDocument()
+    const href = screen.getByRole('link', { name: 'Details of message cloud-msg-0001-abcd' }).getAttribute('href')!
+    expect(href).toContain('message=7')
+    expect(href).not.toContain('modal=')
+    expect(href).not.toContain('active=')
+  })
+
+  it('says filters matched nothing, and offers to clear them', async () => {
+    listMock.mockResolvedValue(page([]))
+    renderTab('/?tab=replayed&ending=fixed')
+    expect(await screen.findByText('No replays match these filters.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Clear the filters' })).toBeInTheDocument()
   })
 })

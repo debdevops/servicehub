@@ -55,9 +55,23 @@ export function Pager({
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
-        <span className="px-2 tabular">
-          Page {page} of {pages}
-        </span>
+        <span className="sr-only">Page {page} of {pages}</span>
+        {pageNumbers(page, pages).map((n, i) =>
+          n === null ? (
+            <span key={`gap${i}`} aria-hidden="true" className="px-1">…</span>
+          ) : (
+            <button
+              key={n}
+              type="button"
+              aria-label={`Go to page ${n}`}
+              aria-current={n === page ? 'page' : undefined}
+              onClick={() => onPage(n)}
+              className={`tabular min-w-8 rounded-lg px-2 py-1 ${n === page ? 'bg-[var(--color-primary-50)] font-semibold text-[var(--color-primary-700)] ring-1 ring-[var(--color-primary-200)]' : 'hover:bg-[var(--color-surface-muted)]'}`}
+            >
+              {n}
+            </button>
+          ),
+        )}
         <button
           type="button"
           aria-label="Next page"
@@ -70,4 +84,12 @@ export function Pager({
       </span>
     </nav>
   )
+}
+
+/** 1 2 3 … 60: the first pages, the ones around this page, and the last — `null` is a gap. */
+function pageNumbers(page: number, pages: number): (number | null)[] {
+  if (pages <= 7) return Array.from({ length: pages }, (_, i) => i + 1)
+  const wanted = new Set([1, 2, 3, page - 1, page, page + 1, pages].filter((n) => n >= 1 && n <= pages))
+  const sorted = [...wanted].sort((a, b) => a - b)
+  return sorted.flatMap((n, i) => (i > 0 && n - sorted[i - 1]! > 1 ? [null, n] : [n]))
 }

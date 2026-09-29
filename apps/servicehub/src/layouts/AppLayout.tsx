@@ -18,6 +18,7 @@ import { useEventStream } from '../hooks/useEventStream'
 import { useNamespaces } from '../hooks/useNamespaces'
 import { readLastAdvancedPath, rememberAdvancedPath } from '../lib/lastAdvancedPage'
 import { connectedProviders } from '../lib/providers'
+import { withoutDrawers } from '../lib/urlState'
 import { ADVANCED_ROOT, hrefOf, navigation, landingPath, surfaceOf, visibleEntries, type NavEntry, type NavGroup, type OverlayEntry } from '../nav/navigation'
 import { LandingRedirect } from './LandingRedirect'
 
@@ -211,7 +212,9 @@ function NavSection({ label, entries, bare }: { label?: string; entries: readonl
 
   // A tab or panel open on Home is the place you are: it is lit instead of Home (exactly one row is highlighted).
   const params = new URLSearchParams(search)
-  const isHere = (e: NavEntry) => pathname === '/' && ((e.kind === 'tab' && params.get('tab') === e.value) || (e.kind === 'panel' && e.id === 'auto-replay' && params.get('panel') === e.value))
+  // Auto Replay opens over whatever tab was behind it; that tab is then not "where you are", so exactly one of the two is lit.
+  const rulesOpen = params.get('panel') === 'rules'
+  const isHere = (e: NavEntry) => pathname === '/' && ((e.kind === 'tab' && !rulesOpen && params.get('tab') === e.value) || (e.kind === 'panel' && e.id === 'auto-replay' && params.get('panel') === e.value))
   const here = navigation.some(isHere)
 
   return (
@@ -224,14 +227,20 @@ function NavSection({ label, entries, bare }: { label?: string; entries: readonl
       <ul>
         {entries.map((entry) => (
           <li key={entry.id}>
-            {entry.kind === 'page' ? (
+            {entry.kind === 'page' && entry.path === '/' && here ? (
+              // Home while a Home tab or panel is the place you are: not current, to the eye or to a screen reader.
+              <Link to={entry.path} title={entry.description} className={[itemClass, idleClass].join(' ')}>
+                <entry.icon className="h-4 w-4 shrink-0" />
+                {entry.label}
+              </Link>
+            ) : entry.kind === 'page' ? (
               <NavLink
                 to={entry.path}
                 // `end` for the roots: "/" and the Advanced Overview would otherwise match every page beneath them,
                 // leaving two rows highlighted. The design highlights exactly one.
                 end={entry.path === '/' || entry.path === ADVANCED_ROOT}
                 title={entry.description}
-                className={({ isActive }) => [itemClass, isActive && !(entry.path === '/' && here) ? activeClass : idleClass].join(' ')}
+                className={({ isActive }) => [itemClass, isActive ? activeClass : idleClass].join(' ')}
               >
                 <entry.icon className="h-4 w-4 shrink-0" />
                 {entry.label}
@@ -253,7 +262,8 @@ function NavSection({ label, entries, bare }: { label?: string; entries: readonl
 }
 
 function overlayHref(entry: OverlayEntry, pathname: string, search: string): string {
-  const params = new URLSearchParams(search)
+  // A drawer left open beside the page is put away: the click opens the one window it names.
+  const params = withoutDrawers(new URLSearchParams(search))
   params.set(entry.kind, entry.value)
   return `${pathname}?${params.toString()}`
 }

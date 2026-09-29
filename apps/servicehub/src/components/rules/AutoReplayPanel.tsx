@@ -3,7 +3,7 @@ import { useMe } from '../../hooks/useIdentity'
 import { permission } from '../../lib/permissions'
 import { NotAllowed } from '../ui/NotAllowed'
 import type { OverlayBodyProps } from '../overlays/registry'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Clock, Eye, Plus, Zap } from 'lucide-react'
 import { useProviderScope } from '../provider/providerScope'
@@ -14,6 +14,7 @@ import { providerLabel } from '../../lib/providers'
 import { RetryLink } from '../ui/RetryLink'
 import { Skeleton } from '../ui/Skeleton'
 import { heldWords } from '../../lib/heldWords'
+import { waitingHref } from '../../lib/urlState'
 
 const rulesKey = (p: CloudProvider) => ['rules', p] as const
 
@@ -139,7 +140,7 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
       {r.enabled && r.askedCount > 0 && (
         <p className="mt-3 flex items-start gap-2 rounded-lg border border-[#fde68a] bg-[var(--color-warning-light)] px-3 py-2 text-[12.5px] text-[#78350f]">
           <Eye className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          <span><b>{heldWords([r])} matching {r.askedCount === 1 && !r.askedIsLowerBound ? 'message is' : 'messages are'} waiting for a person.</b> {holdWords(r.lastAskedReason)}</span>
+          <span><b>{heldWords([r])} matching {r.askedCount === 1 && !r.askedIsLowerBound ? 'message is' : 'messages are'} waiting for a person.</b> {holdWords(r.lastAskedReason)}{' '}<Link to={waitingHref(r)} className="font-semibold underline">See {r.askedCount === 1 && !r.askedIsLowerBound ? 'it' : 'them'} ›</Link></span>
         </p>
       )}
 

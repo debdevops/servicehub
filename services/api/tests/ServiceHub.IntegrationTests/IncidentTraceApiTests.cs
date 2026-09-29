@@ -77,6 +77,7 @@ public sealed class IncidentTraceApiTests
         var timeline = body.GetProperty("timeline").EnumerateArray().ToList();
         timeline.Select(i => i.GetProperty("kind").GetString()).Should().Equal("came_back", "first_seen");
         timeline[0].GetProperty("text").GetString().Should().StartWith("2 more");
+        timeline[1].GetProperty("text").GetString().Should().MatchRegex(@"\(message \S+\)", "the first sighting names the message, not only the queue");
 
         (await host.Client.GetAsync("/api/v1/signatures/sig-1/incident")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await host.Client.GetAsync("/api/v1/signatures/sig-1/incident?provider=Aws")).StatusCode.Should().Be(HttpStatusCode.NotFound);

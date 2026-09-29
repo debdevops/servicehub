@@ -399,7 +399,7 @@ public sealed class DlqReplayService : IDlqReplayService
 
     /// <inheritdoc />
     public async Task<ReplayPage> ListAsync(
-        IReadOnlyCollection<Guid> namespaceIds, string? result, long? dlqMessageId, int page, int pageSize, CancellationToken cancellationToken, long? ruleId = null)
+        IReadOnlyCollection<Guid> namespaceIds, string? result, long? dlqMessageId, int page, int pageSize, CancellationToken cancellationToken, long? ruleId = null, ReplayFilter? filter = null)
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
@@ -419,6 +419,41 @@ public sealed class DlqReplayService : IDlqReplayService
         if (ruleId is { } rule)
         {
             rows = rows.Where(r => r.RuleId == rule);
+        }
+
+        if (filter is not null)
+        {
+            if (filter.Since is { } since) rows = rows.Where(r => r.ReplayedAt >= since);
+            if (filter.By == "autonomous") rows = rows.Where(r => r.RuleId != null);
+            else if (filter.By == "people") rows = rows.Where(r => r.RuleId == null);
+            if (!string.IsNullOrWhiteSpace(filter.Entity))
+            {
+                var entity = filter.Entity.Trim();
+                rows = rows.Where(r => r.SourceEntity == entity);
+            }
+
+            if (!string.IsNullOrWhiteSpace(filter.Search))
+            {
+                var like = $"%{filter.Search.Trim().Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_")}%";
+                rows = rows.Where(r => EF.Functions.Like(r.MessageId, like, "\\") || EF.Functions.Like(r.SourceEntity, like, "\\") || EF.Functions.Like(r.ReplayedBy, like, "\\"));
+            }
+
+            switch (filter.Ending)
+            {
+                case "notsent":
+                    rows = rows.Where(r => r.OutcomeStatus == "rejected");
+                    break;
+                case "fixed" or "watching" or "returned" or "unproven":
+                    var state = filter.Ending switch
+                    {
+                        "fixed" => RecoveryEntryState.Recovered,
+                        "watching" => RecoveryEntryState.Observing,
+                        "returned" => RecoveryEntryState.Returned,
+                        _ => RecoveryEntryState.Unverified,
+                    };
+                    rows = rows.Where(r => _db.RecoveryLedgerEntries.Any(e => e.Id == r.RecoveryEntryId && e.State == state));
+                    break;
+            }
         }
 
         var total = await rows.CountAsync(cancellationToken);

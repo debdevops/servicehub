@@ -51,6 +51,22 @@ public sealed class SignaturesApiTests
     }
 
     [Fact]
+    public async Task Signatures_can_be_narrowed_by_a_word_by_queue_and_by_who_replayed_them()
+    {
+        using var host = DeadLettersApiTests.Host();
+        var ns = await DeadLettersApiTests.Connect(host.Client, "azure");
+        await DeadLettersApiTests.Seed(host, ns, CloudProviderType.Azure, 3, reason: "Timeout");
+        await DeadLettersApiTests.Seed(host, ns, CloudProviderType.Azure, 2, reason: "Validation", prefix: "v");
+        await Sign(host);
+
+        (await Get(host.Client, "/api/v1/signatures?q=valid")).GetProperty("total").GetInt32().Should().Be(1);
+        (await Get(host.Client, "/api/v1/signatures?entity=nowhere")).GetProperty("total").GetInt32().Should().Be(0);
+        (await Get(host.Client, "/api/v1/signatures?by=autonomous")).GetProperty("total").GetInt32().Should().Be(0, "nothing was replayed by a rule");
+        (await Get(host.Client, "/api/v1/signatures?by=people")).GetProperty("total").GetInt32().Should().Be(0, "nothing was replayed by a person either");
+        await Get(host.Client, "/api/v1/signatures?by=robots", HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task Signatures_are_counted_over_one_namespace_or_one_environment_when_asked()
     {
         using var host = DeadLettersApiTests.Host();

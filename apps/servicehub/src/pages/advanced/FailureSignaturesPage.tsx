@@ -5,13 +5,15 @@ import { usePageSize } from '../../lib/pageSize'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ExplainerCard, ExplainerToggle } from '../../components/explainer/Explainer'
 import { useExplainer } from '../../components/explainer/useExplainer'
-import { HelpLabel } from '../../components/ui/InfoTip'
-import { columnHelp } from '../../content/columns'
+import { HelpLabel, InfoTip } from '../../components/ui/InfoTip'
+import { sectionHelp } from '../../content/sections'
+import { columnHelp, type ColumnHelp } from '../../content/columns'
 import { useProviderScope } from '../../components/provider/providerScope'
 import { Pager } from '../../components/ui/Pager'
+import { TabBar } from '../../components/ui/TabBar'
 import { fetchSignatures, fetchSignatureTrust, type Signature, type SignatureTab } from '../../lib/api/signatures'
 import { trustWords } from '../../lib/trustWords'
-import { NamespaceScope } from '../../components/provider/NamespaceScope'
+import { AdvancedFilters, asBy } from '../../components/advanced/AdvancedFilters'
 import { environmentMeta, resolveScope } from '../../components/provider/scopeChoice'
 import { useNamespaces } from '../../hooks/useNamespaces'
 import type { CloudProvider } from '../../lib/api/namespaces'
@@ -25,6 +27,16 @@ import { Skeleton } from '../../components/ui/Skeleton'
 const asTab = (v: string | null): SignatureTab => (v === 'growing' || v === 'helps' || v === 'doesnt' ? v : 'all')
 const asProvider = (v: string | null): CloudProvider | undefined => (v === 'azure' || v === 'aws' || v === 'gcp' ? v : undefined)
 const asDays = (v: string | null) => (v === '14' ? 14 : v === '30' ? 30 : 7)
+
+const signatureTone: Record<SignatureTab, 'bad' | 'good' | 'neutral' | undefined> = { all: undefined, growing: 'bad', helps: 'good', doesnt: 'neutral' }
+
+/** One line under the tabs saying what the chosen tab is showing, so a person never has to guess what "Growing" means. */
+const tabSummary: Record<SignatureTab, string> = {
+  all: 'Every way of failing ServiceHub has recorded in this window.',
+  growing: 'Getting worse: at least 3 new messages lately, and twice as many as earlier in the window.',
+  helps: 'Replaying these has worked — at least half of the checked replays stayed fixed.',
+  doesnt: 'Replaying these mostly fails again — fix the cause before replaying more.',
+}
 
 /** The words for how replaying has gone, from the ledger — never a guess, and never "verified" where nothing was verified. */
 function replayWords(s: Signature): string {
@@ -67,9 +79,12 @@ export default function FailureSignaturesPage() {
   const choice = resolveScope(inScope, params)
   const namespaceId = choice.ns?.id
   const environment = choice.env ?? undefined
+  const by = asBy(params.get('by'))
+  const entity = params.get('entity') ?? undefined
+  const search = params.get('q') ?? undefined
   const list = useQuery({
-    queryKey: ['signatures', provider, namespaceId, environment, days, tab, sort, page, pageSize],
-    queryFn: () => fetchSignatures({ provider, namespaceId, environment, days, tab, sort, page, pageSize }),
+    queryKey: ['signatures', provider, namespaceId, environment, days, tab, sort, page, pageSize, by, entity, search],
+    queryFn: () => fetchSignatures({ provider, namespaceId, environment, days, tab, sort, page, pageSize, by, entity, q: search }),
   })
   const change = (patch: Record<string, string | null>) =>
     setParams((c) => {
@@ -87,7 +102,7 @@ export default function FailureSignaturesPage() {
   const now = new Date()
   const tabs: { id: SignatureTab; label: string; n: number | undefined }[] = [
     { id: 'all', label: 'All', n: data?.all },
-    { id: 'growing', label: 'Growing', n: data?.growing },
+    { id: 'growing', label: 'Growing (getting worse)', n: data?.growing },
     { id: 'helps', label: 'Replay helps', n: data?.replayHelps },
     { id: 'doesnt', label: 'Replay doesn’t help', n: data?.replayDoesNotHelp },
   ]
@@ -108,7 +123,6 @@ export default function FailureSignaturesPage() {
                 className={`rounded-md px-2.5 py-1 font-semibold ${(id === 'trace') === tracing ? 'bg-[var(--color-surface)] shadow-sm' : 'text-[var(--color-text-muted)]'}`}>{label}</button>
             ))}
           </div>
-          {(namespaces.data?.length ?? 0) > 1 && <NamespaceScope namespaces={namespaces.data ?? []} cloud={provider ? providerLabel[provider] : 'All clouds'} cloudParam="provider" compact />}
           <Select label="Window" value={String(days)} onChange={(v) => change({ days: v === '7' ? null : v })}>
             <option value="7">Last 7 days</option><option value="14">Last 14 days</option><option value="30">Last 30 days</option>
           </Select>
@@ -123,15 +137,11 @@ export default function FailureSignaturesPage() {
       {!tracing && data && (
         <div className="flex items-start gap-3.5">
           <div className="min-w-0 flex-1 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
-            <div className="flex items-center gap-1 border-b border-[var(--color-border)] px-3">
-              <nav aria-label="Signature views" className="flex">
-                {tabs.map((t) => (
-                  <button key={t.id} type="button" aria-current={t.id === tab ? 'page' : undefined} onClick={() => change({ tab: t.id === 'all' ? null : t.id })}
-                    className={`-mb-px border-b-2 px-3 py-3 text-[13px] font-semibold ${t.id === tab ? 'border-[var(--color-primary-600)] text-[var(--color-primary-700)]' : 'border-transparent text-[var(--color-text-muted)]'}`}>
-                    {t.label} <span className="ml-1 rounded-full bg-[var(--color-surface-muted)] px-1.5 text-[11px]">{t.n ?? 0}</span>
-                  </button>
-                ))}
-              </nav>
+            <TabBar variant="pills" label="Signature views" active={tab} onSelect={(id) => change({ tab: id === 'all' ? null : id })}
+              tabs={tabs.map((t) => ({ id: t.id, label: t.label, count: t.n ?? 0, help: columnHelp.signatureTabs[t.id], tone: signatureTone[t.id] }))} />
+            <AdvancedFilters namespaces={namespaces.data ?? []} searchPlaceholder="Search signatures, errors or queues…" />
+            <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-4 py-2">
+              <p className="text-[12.5px] text-[var(--color-text-muted)]">{tabSummary[tab]}</p>
               <label className="ml-auto text-[12px] text-[var(--color-text-muted)]">Sort{' '}
                 <select value={sort} onChange={(e) => change({ sort: e.target.value === 'messages' ? null : e.target.value })} className="rounded-lg border border-[var(--color-border)] px-2 py-1 text-[12px]">
                   <option value="messages">most messages</option><option value="recent">most recent</option>
@@ -227,27 +237,26 @@ function Detail({ s, days, now, onClose }: { s: Signature; days: number; now: Da
         <span className="text-[11.5px] text-[var(--color-text-muted)]">first {formatAgo(s.firstSeenAt, now)} · last {formatAgo(s.lastSeenAt, now)}</span>
         <button type="button" onClick={onClose} aria-label="Close" className="text-sm text-[var(--color-text-muted)]">✕</button>
       </div>
-      <nav aria-label="Signature detail" className="flex gap-1 border-b border-[#f3f4f6] px-3">
-        {(['summary', 'incident'] as const).map((v) => (
-          <button key={v} type="button" aria-current={view === v ? 'page' : undefined} onClick={() => setView(v)}
-            className={`-mb-px border-b-2 px-2.5 py-2 text-[12.5px] font-semibold ${view === v ? 'border-[var(--color-primary-600)] text-[var(--color-primary-700)]' : 'border-transparent text-[var(--color-text-muted)]'}`}>{v === 'summary' ? 'Summary' : 'Incident'}</button>
-        ))}
-      </nav>
+      <TabBar label="Signature detail" active={view} onSelect={(id) => setView(id as 'summary' | 'incident')}
+        tabs={[
+          { id: 'summary', label: 'Summary', count: 'none', help: sectionHelp.tabs.summary },
+          { id: 'incident', label: 'Incident', count: 'none', help: sectionHelp.tabs.incident },
+        ]} />
       {view === 'incident' ? <div className="px-4 py-4 text-[13px]"><IncidentTimeline hash={s.signatureHash} provider={s.provider} /></div> : (
       <div className="space-y-4 px-4 py-4 text-[13px]">
         <div>
           <p className="text-[15px] font-bold">{s.exampleError ?? 'No error text was recorded'}</p>
           <p className="mt-1 text-[var(--color-text-muted)]"><b className="text-[var(--color-text)]">{s.messages.toLocaleString()} messages</b> · <span className="font-mono text-[12px]">{s.entities.join(' · ')}</span> · {providerLabel[s.provider]} · {s.activeNow} still in the queue</p>
         </div>
-        <Section title="Is it getting worse?">
+        <Section title="Is it getting worse?" help={sectionHelp.signatures.worse}>
           <div className="flex h-16 items-end gap-1" role="img" aria-label={`Messages per day over ${days} days: ${s.daily.join(', ')}`}>
             {s.daily.map((n, i) => <span key={i} className="flex-1 rounded-t bg-[#fca5a5]" style={{ height: `${Math.max(4, (n / max) * 100)}%`, opacity: n === 0 ? 0.3 : 1 }} />)}
           </div>
           {s.growing && <p className="mt-2 flex items-start gap-2 rounded-lg border border-[#fecaca] bg-[#fef2f2] px-3 py-2 text-[12.5px] text-[#7f1d1d]"><TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" /><span><b>Growing.</b> The recent days hold at least twice what the earlier ones did.</span></p>}
         </Section>
-        <Section title="Does replaying help?"><p>{help}</p></Section>
-        <Section title="Can ServiceHub replay it on its own?"><Earned hash={s.signatureHash} provider={s.provider} /></Section>
-        <Section title="Seen in">
+        <Section title="Does replaying help?" help={sectionHelp.signatures.helps}><p>{help}</p></Section>
+        <Section title="Can ServiceHub replay it on its own?" help={sectionHelp.signatures.onItsOwn}><Earned hash={s.signatureHash} provider={s.provider} /></Section>
+        <Section title="Seen in" help={sectionHelp.signatures.seenIn}>
           {s.namespaces.length === 0 ? (
             <p className="text-[var(--color-text-muted)]">No connected namespace holds it now.</p>
           ) : (
@@ -262,7 +271,7 @@ function Detail({ s, days, now, onClose }: { s: Signature; days: number; now: Da
             </ul>
           )}
         </Section>
-        <Section title="Where">
+        <Section title="Where" help={sectionHelp.signatures.where}>
           <p className="flex flex-wrap gap-x-4 gap-y-1 font-semibold text-[var(--color-primary-600)]">
             <button type="button" className="hover:underline" onClick={() => { select(s.provider); navigate(`/?tab=dlq&reason=${encodeURIComponent(s.reason)}`) }}>See the {s.messages} messages in Home ›</button>
             <Link className="hover:underline" to={`/advanced/ledger?provider=${s.provider}`}>Ledger entries ›</Link>
@@ -291,10 +300,10 @@ function Earned({ hash, provider }: { hash: string; provider: Signature['provide
   )
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, help, children }: { title: string; help: ColumnHelp; children: React.ReactNode }) {
   return (
     <section>
-      <h3 className="mb-1.5 text-[10.5px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">{title}</h3>
+      <h3 className="mb-1.5 flex items-center text-[10.5px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">{title}<InfoTip help={help} /></h3>
       {children}
     </section>
   )

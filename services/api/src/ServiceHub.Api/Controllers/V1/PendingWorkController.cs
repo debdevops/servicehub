@@ -143,7 +143,9 @@ public sealed class PendingWorkController : ApiControllerBase
 
     // Only an item the caller can currently see is answerable — the same scoping as the list, allow-list included.
     private async Task<PendingWorkItem?> WaitingAsync(Guid entryId, CancellationToken cancellationToken) =>
-        (await _pending.ListAsync(new PendingWorkScope(OwnerId, AllowedNamespaceIds), 500, cancellationToken)).Items
+        // Asked for by id, not found by scanning the list: the list is capped at 500, and an answer must never depend on where
+        // in a long queue the question sits (live 2026-09-29: with 603 waiting, approving one beyond the 500th was a 404).
+        (await _pending.ListAsync(new PendingWorkScope(OwnerId, AllowedNamespaceIds, EntryId: entryId), 1, cancellationToken)).Items
             .FirstOrDefault(i => i.EntryId == entryId);
 
     // Every open screen should look again: the bell and the strip drop the answered item.

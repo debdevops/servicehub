@@ -6,6 +6,8 @@ import { useMinimizable } from '../../hooks/useMinimizable'
 import { pendingRows, type PendingRow } from '../../lib/pendingRows'
 import { formatAge } from '../../lib/format'
 import { useResolveHref } from './PendingWorkList'
+import { InfoTip } from '../ui/InfoTip'
+import { sectionHelp } from '../../content/sections'
 
 const MaxCards = 3
 const icons = {
@@ -49,7 +51,7 @@ export function NeedsYouStrip() {
   return (
     <section aria-label="Needs your attention" className="overflow-hidden rounded-xl border border-[#fcd34d] bg-[#fffbeb]">
       <header className="flex items-center justify-between px-4 py-3">
-        <h2 className="text-[15px] font-bold text-[#92400e]">Needs your attention</h2>
+        <h2 className="flex items-center text-[15px] font-bold text-[#92400e]">Needs your attention<InfoTip help={sectionHelp.home.needsYou} /></h2>
         <div className="flex items-center gap-3">
           {count}
           <button

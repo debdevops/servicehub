@@ -119,6 +119,35 @@ public sealed class BulkOperationsApiTests : IDisposable
     }
 
     [Fact]
+    public async Task A_long_run_reports_in_between_so_the_agent_never_looks_stopped_and_still_sends_every_message_once()
+    {
+        // A cycle is the agent's heartbeat and only counts when it returns. One cycle for the whole run once made a long bulk
+        // replay look like "An agent stopped working" (the watchdog's limit is about a minute). Here a tiny slice forces several.
+        Environment.SetEnvironmentVariable("BulkReplay__SliceSeconds", "0.1");
+        Environment.SetEnvironmentVariable("BulkReplay__PerSecond", "20");
+        try
+        {
+            var (host, log, ids) = await Seeded(8);
+            using var _ = host;
+            // The fake cloud's queue is empty, so the DLQ monitor would mark the seeded messages gone between cycles; a real queue still holds them.
+            host.Services.GetRequiredService<ServiceHub.Core.Interfaces.IAgentRegistry>().SetPaused("dlq-monitor", true);
+            var id = (await Post(host.Client, "/api/v1/bulk-operations/preview", new { dlqMessageIds = ids })).GetProperty("previewId").GetGuid();
+
+            await Post(host.Client, "/api/v1/bulk-operations", new { previewId = id }, "bulk-replay", HttpStatusCode.Accepted);
+            var done = await WaitFor(host.Client, id, "completed");
+
+            done.GetProperty("sent").GetInt32().Should().Be(8, done.ToString());
+            log.Replays.Should().Be(8, "carrying on in the next cycle must never send a message twice");
+            host.Services.GetRequiredService<ServiceHub.Core.Interfaces.IAgentRegistry>().RecentCycles("bulk-replay")
+                .Count(c => c.Result is { Changed: > 0 }).Should().BeGreaterThan(1, "the run was split across cycles, each of which reported");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("BulkReplay__SliceSeconds", null);
+        }
+    }
+
+    [Fact]
     public async Task A_preview_can_be_started_only_once()
     {
         var (host, _, ids) = await Seeded(1);

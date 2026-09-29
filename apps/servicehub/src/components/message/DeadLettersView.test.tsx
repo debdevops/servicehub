@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,6 +9,7 @@ import * as ns from '../../lib/api/namespaces'
 import type { Namespace } from '../../lib/api/namespaces'
 import { DeadLettersView } from './DeadLettersView'
 import { expectNoAxeViolations } from '../../test/axe'
+import { bulkSelection } from '../../lib/bulkSelection'
 
 vi.mock('../../lib/api/deadLetters')
 const fetchMock = vi.mocked(dl.fetchDeadLetters)
@@ -69,7 +70,7 @@ describe('the Dead letters view', () => {
 
     const table = await screen.findByRole('table', { name: 'Dead-lettered messages, newest first' })
     expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(
-      ['', 'When', 'Queue or topic', 'Failed because', 'Tries', 'Waiting', 'Size', 'Details'],
+      ['', 'When', 'Queue or topic', 'Failed because', 'Tries', 'Waiting', 'Size', 'Actions'],
     )
     expect(within(table).getAllByRole('row')).toHaveLength(3)
     expect(lastQuery()).toMatchObject({ provider: 'azure', status: 'active', pageSize: 10, page: 1 })
@@ -127,7 +128,7 @@ describe('the Dead letters view', () => {
     fetchMock.mockResolvedValue(pageOf([row(1)], { paging: { total: 60, page: 3, pageSize: 25 } }))
     renderView('azure', [azure], '/?tab=dlq&page=3')
 
-    await userEvent.selectOptions(await screen.findByLabelText('Window'), '7d')
+    await userEvent.selectOptions(await screen.findByLabelText('Time window'), '7d')
 
     await waitFor(() => expect(where()).toBe('/?tab=dlq&range=7d'))
     expect(lastQuery()).toMatchObject({ range: '7d', page: 1 })
@@ -164,20 +165,37 @@ describe('the Dead letters view', () => {
     renderView('azure', [azure], '/?tab=dlq&reason=Validation')
 
     await userEvent.click(await screen.findByRole('checkbox', { name: 'Select all on this page' }))
-    expect(screen.getByText('2 messages selected')).toBeInTheDocument()
+    expect(screen.getAllByText('2 messages selected')).toHaveLength(2) // the bar above the table and the one below
 
-    await userEvent.click(screen.getByRole('button', { name: 'Select all 47 Validation' }))
-    expect(screen.getByText('47 messages selected')).toBeInTheDocument()
+    await userEvent.click(screen.getAllByRole('button', { name: 'Select all 47 Validation' })[0]!)
+    expect(screen.getAllByText('47 messages selected')).toHaveLength(2)
   })
 
   it('drops the selection when the filter changes — a selection you cannot see is a hazard', async () => {
     renderView()
     await userEvent.click(await screen.findByRole('checkbox', { name: 'Select message m-1' }))
-    expect(screen.getByRole('region', { name: 'Selected messages' })).toBeInTheDocument()
+    expect(screen.getAllByRole('link', { name: 'Replay selected…' })).toHaveLength(2)
 
-    await userEvent.selectOptions(screen.getByLabelText('Window'), '24h')
+    await userEvent.selectOptions(screen.getByLabelText('Time window'), '24h')
 
-    await waitFor(() => expect(screen.queryByRole('region', { name: 'Selected messages' })).not.toBeInTheDocument())
+    // The bar stays, but with nothing ticked Replay selected is a disabled button, not a link.
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'Replay selected…' })).not.toBeInTheDocument())
+    expect(screen.getAllByRole('button', { name: 'Replay selected…' })[0]).toBeDisabled()
+  })
+
+  it('shows Replay selected disabled — top and bottom — until something is ticked, and frees it again once a bulk run has ended', async () => {
+    renderView()
+    await screen.findByRole('checkbox', { name: 'Select message m-1' })
+    const bars = screen.getAllByRole('button', { name: 'Replay selected…' })
+    expect(bars).toHaveLength(2)
+    bars.forEach((b) => expect(b).toBeDisabled())
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select message m-1' }))
+    expect(screen.getAllByRole('link', { name: 'Replay selected…' })).toHaveLength(2)
+
+    act(() => bulkSelection.finished()) // the run that carried the selection has ended
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Replay selected…' })).toHaveLength(2))
+    expect(screen.getByRole('checkbox', { name: 'Select message m-1' })).not.toBeChecked()
   })
 
   it('links each row to its message, keeping the filters', async () => {
@@ -260,7 +278,7 @@ describe('the Dead letters view', () => {
     expect(where()).toContain('status=resolved')
     const table = await screen.findByRole('table', { name: /what became of them/ })
     expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(
-      ['When', 'Queue or topic', 'Failed because', 'Tries', 'Now', 'Size', 'Details'],
+      ['When', 'Queue or topic', 'Failed because', 'Tries', 'Now', 'Size', 'Actions'],
     )
     expect(within(table).getByText('Replayed by ServiceHub')).toBeInTheDocument()
     // Absence proves it is gone, never who removed it.

@@ -114,4 +114,12 @@ public sealed record ReplayListItem(
     ReplayVerification Verification);
 
 /// <summary>A page of replays, newest first.</summary>
+/// <summary>What narrows the Replayed list beyond cloud, namespace and outcome. A null narrows nothing.</summary>
+/// <param name="Ending">How it ended: <c>fixed</c>, <c>watching</c>, <c>returned</c>, <c>unproven</c> (sent, but the cloud cannot prove it) or <c>notsent</c>.</param>
+/// <param name="By"><c>people</c> — a person or their key · <c>autonomous</c> — an Auto Replay rule on its own.</param>
+/// <param name="Entity">Only replays from this queue or subscription.</param>
+/// <param name="Search">Text found in the message ID, the queue or who replayed it.</param>
+/// <param name="Since">Only replays at or after this moment.</param>
+public sealed record ReplayFilter(string? Ending = null, string? By = null, string? Entity = null, string? Search = null, DateTimeOffset? Since = null);
+
 public sealed record ReplayPage(IReadOnlyList<ReplayListItem> Items, int Total, int Page, int PageSize);

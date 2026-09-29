@@ -1,21 +1,23 @@
+import { CircleAlert, Eye, RotateCcw, ShieldCheck } from 'lucide-react'
 import { useRecoverySummary } from '../../hooks/useRecoverySummary'
 import type { CloudProvider } from '../../lib/api/namespaces'
+import type { RecoveryWindow } from '../../lib/api/recovery'
 import type { ScopeChoice } from '../provider/scopeChoice'
 import { RetryLink } from '../ui/RetryLink'
 
 const count = (states: readonly { state: string; count: number }[] | undefined, name: string) => states?.find((s) => s.state === name)?.count ?? 0
+const windowWords: Record<RecoveryWindow, string> = { '24h': 'last 24 hours', '7d': 'last 7 days', '30d': 'last 30 days', all: 'all time' }
 
 /**
- * The four numbers above the Replayed table: replayed today · stayed fixed · being watched · came back. They come
- * from the ONE recovery summary the Advanced ledger also reads (2.12), so the figures can never disagree between
- * Simple and Advanced. Nothing is computed here beyond reading them; "stayed fixed" is Recovered out of Recovered +
- * Returned, and says how many that was — an Unverified replay is on neither side, and no checkable replay is a dash,
- * never 0% (R4, R5).
+ * The four numbers above the Replayed table: replayed · stayed fixed · being watched · came back, for the chosen time window. They come
+ * from the ONE recovery summary the Advanced ledger also reads (2.12), so the figures can never disagree between Simple and
+ * Advanced. "Stayed fixed" is Recovered out of Recovered + Returned, and says how many that was — an Unverified replay is on neither
+ * side, and no checkable replay is a dash, never 0% (R4, R5). There is no "change since yesterday": no earlier period is kept.
  */
-export function ReplayedNumbers({ provider, choice }: { provider: CloudProvider; choice: ScopeChoice }) {
-  const { data, isPending, isError, refetch } = useRecoverySummary({ window: '24h', provider, namespaceId: choice.ns?.id, environment: choice.env ?? undefined })
+export function ReplayedNumbers({ provider, choice, window = '24h' }: { provider: CloudProvider; choice: ScopeChoice; window?: RecoveryWindow }) {
+  const { data, isPending, isError, refetch } = useRecoverySummary({ window, provider, namespaceId: choice.ns?.id, environment: choice.env ?? undefined })
   // Loading draws the four tiles' shape (6.1), so the table below does not jump when the numbers arrive.
-  if (isPending) return <div className="mb-4 grid gap-3 sm:grid-cols-4" aria-hidden="true">{[0, 1, 2, 3].map((i) => <div key={i} className="h-[74px] animate-pulse rounded-xl bg-[var(--color-border)]" />)}</div>
+  if (isPending) return <div className="mb-4 grid gap-3 sm:grid-cols-4" aria-hidden="true">{[0, 1, 2, 3].map((i) => <div key={i} className="h-[92px] animate-pulse rounded-2xl bg-[var(--color-border)]" />)}</div>
   if (isError || !data) return <p role="alert" className="mb-4 text-sm text-[var(--color-text-muted)]">ServiceHub couldn’t read the replay numbers just now; the list below is unaffected. <RetryLink onRetry={() => void refetch()} /></p>
 
   const recovered = count(data.states, 'Recovered')
@@ -23,27 +25,23 @@ export function ReplayedNumbers({ provider, choice }: { provider: CloudProvider;
   const checkable = recovered + returned
   const watching = count(data.states, 'Observing')
   const rate = data.stayedFixedRate
+  const words = windowWords[window]
 
   return (
-    <div className="mb-4 grid gap-3 sm:grid-cols-4" aria-label="Replays in the last 24 hours">
-      <Tile value={data.replaysAccepted.toLocaleString()} note="messages replayed, last 24 hours" />
-      <Tile
-        tone="good"
-        value={rate === null ? '—' : `${Math.round(rate * 100)}%`}
-        note={rate === null ? 'nothing has been checked yet' : `stayed fixed — ${recovered} of ${checkable} that could be checked`}
-      />
-      <Tile value={watching.toLocaleString()} note="being watched now" />
-      <Tile tone={returned > 0 ? 'bad' : undefined} value={returned.toLocaleString()} note={returned > 0 ? 'came back — needs a look' : 'came back'} />
-    </div>
+    <section className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label={`Replays, ${words}`}>
+      <Tile Icon={RotateCcw} tone="bg-[#dbeafe] text-[#1d4ed8]" value={data.replaysAccepted.toLocaleString()} label="messages replayed" note={words} />
+      <Tile Icon={ShieldCheck} tone="bg-[#d1fae5] text-[#047857]" box="bg-[#f0fdf4]" value={rate === null ? '—' : `${Math.round(rate * 100)}%`} label="stayed fixed" note={rate === null ? 'nothing has been checked yet' : `${recovered} of ${checkable} that could be checked`} />
+      <Tile Icon={Eye} tone="bg-[#f3e8ff] text-[#7e22ce]" box="bg-[#faf5ff]" value={watching.toLocaleString()} label="being watched now" note="inside their watch window" />
+      <Tile Icon={CircleAlert} tone="bg-[#fee2e2] text-[#dc2626]" box={returned > 0 ? 'bg-[#fef2f2]' : undefined} value={returned.toLocaleString()} label={returned > 0 ? 'came back — needs a look' : 'came back'} note="failed the same way again" />
+    </section>
   )
 }
 
-function Tile({ value, note, tone }: { value: string; note: string; tone?: 'good' | 'bad' }) {
-  const box = tone === 'good' ? 'bg-[var(--color-success-light)]' : tone === 'bad' ? 'bg-[var(--color-error-light)]' : 'bg-[var(--color-surface)]'
+function Tile({ Icon, tone, box, value, label, note }: { Icon: typeof Eye; tone: string; box?: string; value: string; label: string; note: string }) {
   return (
-    <div className={`rounded-xl border border-[var(--color-border)] p-4 ${box}`}>
-      <div className="tabular text-2xl font-semibold">{value}</div>
-      <div className={`mt-0.5 text-xs ${tone ? 'text-[#374151]' : 'text-[var(--color-text-muted)]'}`}>{note}</div>
+    <div className={`flex items-center gap-4 rounded-2xl border border-[var(--color-border)] px-5 py-4 ${box ?? 'bg-[var(--color-surface)]'}`}>
+      <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${tone}`}><Icon className="h-6 w-6" aria-hidden="true" /></span>
+      <span className="min-w-0"><span className="tabular block text-2xl font-extrabold leading-none">{value}</span><span className="mt-1 block text-sm font-semibold">{label}</span><span className="block text-xs text-[var(--color-text-muted)]">{note}</span></span>
     </div>
   )
 }

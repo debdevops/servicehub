@@ -49,6 +49,33 @@ describe('Bulk Replay modal', () => {
     expect(bulk.startBulk).not.toHaveBeenCalled()
   })
 
+  it('pages the list of messages ten at a time', async () => {
+    const ids = Array.from({ length: 23 }, (_, i) => i + 1)
+    bulkSelection.set({ ids })
+    vi.mocked(bulk.previewBulk).mockResolvedValue(preview({ selected: 23, willReplay: 23, heldBackCount: 0, heldBack: [] }))
+    const dl = await import('../../lib/api/deadLetters')
+    const fetchOne = vi.spyOn(dl, 'fetchDeadLetter').mockImplementation(async (id) => ({ item: { id, messageId: `m-${id}`, namespaceId: 'n', entityName: 'orders', topicName: null, deadLetterReason: 'Validation', detectedAtUtc: new Date().toISOString(), deliveryCount: 1, sizeInBytes: 10 } } as never))
+    renderModal()
+    await screen.findByText('m-1')
+    expect(screen.getByText('m-10')).toBeInTheDocument()
+    expect(screen.queryByText('m-11')).not.toBeInTheDocument()
+    expect(screen.getByText(/1–10 of 23/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Next page' }))
+    expect(await screen.findByText('m-11')).toBeInTheDocument()
+    expect(screen.queryByText('m-1')).not.toBeInTheDocument()
+    fetchOne.mockRestore()
+  })
+
+  it('names a held-back message by its own ID, not only ServiceHub’s number', async () => {
+    vi.mocked(bulk.previewBulk).mockResolvedValue(preview())
+    const dl = await import('../../lib/api/deadLetters')
+    const one = vi.spyOn(dl, 'fetchDeadLetter').mockImplementation(async (id) => ({ item: { id, messageId: `cloud-msg-${id}`, namespaceId: 'n', entityName: 'orders', topicName: null, deadLetterReason: 'Validation', detectedAtUtc: new Date().toISOString(), deliveryCount: 1, sizeInBytes: 10 } } as never))
+    renderModal()
+    const held = await screen.findByRole('region', { name: 'Held back' })
+    expect(await within(held).findByText('cloud-msg-9')).toBeInTheDocument()
+    one.mockRestore()
+  })
+
   it('a failed preview says nothing was sent and Try again works, without re-opening (6.1)', async () => {
     vi.mocked(bulk.previewBulk).mockRejectedValueOnce(new Error('down')).mockResolvedValue(preview())
     renderModal()
