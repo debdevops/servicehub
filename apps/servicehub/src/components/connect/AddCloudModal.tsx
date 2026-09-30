@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { useMe } from '../../hooks/useIdentity'
 import { permission } from '../../lib/permissions'
 import { NotAllowed } from '../ui/NotAllowed'
+import { Select } from '../ui/Select'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { CheckCircle2, CircleHelp, Eye, EyeOff, ShieldCheck, TriangleAlert } from 'lucide-react'
 import { useProviderScope } from '../provider/providerScope'
@@ -17,6 +18,30 @@ const clouds: readonly { readonly id: CloudProvider; readonly label: string }[] 
   { id: 'azure', label: 'Azure Service Bus' },
   { id: 'aws', label: 'AWS SQS / SNS' },
   { id: 'gcp', label: 'Google Pub/Sub' },
+]
+
+const awsRegions: readonly { readonly id: string; readonly name: string }[] = [
+  { id: 'us-east-1', name: 'N. Virginia' },
+  { id: 'us-east-2', name: 'Ohio' },
+  { id: 'us-west-1', name: 'N. California' },
+  { id: 'us-west-2', name: 'Oregon' },
+  { id: 'ca-central-1', name: 'Canada (Central)' },
+  { id: 'sa-east-1', name: 'São Paulo' },
+  { id: 'eu-west-1', name: 'Ireland' },
+  { id: 'eu-west-2', name: 'London' },
+  { id: 'eu-west-3', name: 'Paris' },
+  { id: 'eu-central-1', name: 'Frankfurt' },
+  { id: 'eu-north-1', name: 'Stockholm' },
+  { id: 'eu-south-1', name: 'Milan' },
+  { id: 'me-south-1', name: 'Bahrain' },
+  { id: 'af-south-1', name: 'Cape Town' },
+  { id: 'ap-south-1', name: 'Mumbai' },
+  { id: 'ap-northeast-1', name: 'Tokyo' },
+  { id: 'ap-northeast-2', name: 'Seoul' },
+  { id: 'ap-northeast-3', name: 'Osaka' },
+  { id: 'ap-southeast-1', name: 'Singapore' },
+  { id: 'ap-southeast-2', name: 'Sydney' },
+  { id: 'ap-east-1', name: 'Hong Kong' },
 ]
 
 const environments: readonly { readonly id: EnvironmentKind; readonly label: string }[] = [
@@ -240,7 +265,14 @@ export default function AddCloudModal({ close }: OverlayBodyProps) {
             )}
           </Field>
           <Field label="Region">
-            {(id) => <input id={id} className={inputClass} value={form.awsRegion} onChange={(e) => set('awsRegion', e.target.value)} placeholder="us-east-1" autoComplete="off" />}
+            {(id) => (
+              <Select id={id} value={form.awsRegion} onChange={(v) => set('awsRegion', v)}>
+                <option value="">Select a region</option>
+                {awsRegions.map((r) => (
+                  <option key={r.id} value={r.id}>{r.id} — {r.name}</option>
+                ))}
+              </Select>
+            )}
           </Field>
           <Hint>
             To watch: <code>sqs:ListQueues</code>, <code>sqs:GetQueueUrl</code>, <code>sqs:GetQueueAttributes</code>,{' '}

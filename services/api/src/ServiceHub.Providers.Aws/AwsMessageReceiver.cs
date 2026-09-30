@@ -185,6 +185,10 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
 
     private const string DeadLetterDescriptionAttribute = "DeadLetterErrorDescription";
 
+    // SQS writes no reason when it redrives a message itself, so a producer that tags its failures with this
+    // attribute (the ServiceHub sample workload does) is the only reason such a message can carry.
+    private const string ProducerErrorTypeAttribute = "shs-error-type";
+
     private const string RecoveryMarkerAttribute = "x-servicehub-recovery-id";
 
     /// <summary>Default/floor upper bound of receive batches when scanning for a target message.</summary>
@@ -1026,7 +1030,11 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                 EntityName = entityName,
                 IsFromDeadLetter = fromDlq,
                 DeadLetterSource = msg.Attributes.GetValueOrDefault("DeadLetterQueueSourceArn"),
-                DeadLetterReason = dlReason?.StringValue,
+                DeadLetterReason = dlReason?.StringValue
+                    ?? (fromDlq && msg.MessageAttributes.TryGetValue(ProducerErrorTypeAttribute, out var producerReason)
+                        && !string.IsNullOrWhiteSpace(producerReason.StringValue)
+                        ? producerReason.StringValue
+                        : null),
                 DeadLetterErrorDescription = dlDescription?.StringValue,
                 State = ServiceHub.Core.Enums.MessageState.Active
             });

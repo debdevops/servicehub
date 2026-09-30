@@ -306,6 +306,35 @@ public sealed class AwsMessageReceiverRegressionTests
     }
 
     [Fact]
+    public async Task PeekDeadLetterMessagesAsync_FallsBackToProducerErrorTypeWhenSqsRecordedNoReason()
+    {
+        var withType = new Dictionary<string, MessageAttributeValue>
+        {
+            ["shs-error-type"] = new() { DataType = "String", StringValue = "DownstreamUnavailable" },
+        };
+        var explicitReason = new Dictionary<string, MessageAttributeValue>
+        {
+            ["DeadLetterReason"] = new() { DataType = "String", StringValue = "Explicit" },
+            ["shs-error-type"] = new() { DataType = "String", StringValue = "DownstreamUnavailable" },
+        };
+        var (sut, _, _) = BuildSut(new ReceiveMessageResponse
+        {
+            Messages =
+            [
+                BuildSqsMessage("m-a", "rh-a", "a", withType),
+                BuildSqsMessage("m-b", "rh-b", "b", explicitReason),
+                BuildSqsMessage("m-c", "rh-c", "c", new Dictionary<string, MessageAttributeValue>()),
+            ],
+        });
+
+        var result = await sut.PeekDeadLetterMessagesAsync(new GetMessagesRequest(TestNamespaceId, QueueName, null, true, 10));
+
+        result.Value.Single(m => m.MessageId == "m-a").DeadLetterReason.Should().Be("DownstreamUnavailable");
+        result.Value.Single(m => m.MessageId == "m-b").DeadLetterReason.Should().Be("Explicit");
+        result.Value.Single(m => m.MessageId == "m-c").DeadLetterReason.Should().BeNull();
+    }
+
+    [Fact]
     public async Task PeekDeadLetterMessagesAsync_MapsDeadLetterQueueSourceArnToDeadLetterSource()
     {
         // Mirrors Azure's DeadLetterSource mapping (ServiceBusClientWrapper), which SQS
