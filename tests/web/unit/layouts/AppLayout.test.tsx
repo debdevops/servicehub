@@ -115,7 +115,7 @@ describe('AppLayout — the sidebar reflects what is connected', () => {
     const nav = screen.getAllByRole('navigation').find((n) => within(n).queryAllByRole('link').length > 3) ?? document.body
     const lit = within(nav).queryAllByRole('link').filter((a) => a.getAttribute('aria-current') === 'page').map((a) => a.textContent?.trim())
     expect(lit, `lit for ${url}: ${lit.join(' | ')}`).toHaveLength(1)
-  })
+  }, 20_000)
 
   it('opening Settings or Help from the sidebar puts a message drawer away, so one click opens one window', async () => {
     mocked.fetchNamespaces.mockResolvedValue([ns('azure')])

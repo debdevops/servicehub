@@ -32,6 +32,8 @@ public sealed class PendingWorkApiTests
     {
         var aws = new PeekLog { OnReplay = () => Result<bool>.Success(true) };
         var host = DeadLettersApiTests.Host(new PeekLog(), aws);
+        // The fake cloud's queue is empty, so a DLQ monitor cycle on a loaded machine would mark the seeded messages gone.
+        host.Services.GetRequiredService<IAgentRegistry>().SetPaused("dlq-monitor", true);
         var ns = await DeadLettersApiTests.Connect(host.Client, "aws");
         await DeadLettersApiTests.Seed(host, ns, CloudProviderType.Aws, count, reason: "Timeout");
         using var scope = host.Services.CreateScope();
