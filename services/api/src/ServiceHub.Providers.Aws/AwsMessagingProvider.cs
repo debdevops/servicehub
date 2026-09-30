@@ -111,6 +111,15 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
         => await ListEntitiesInternalAsync(namespaceId, ct).ConfigureAwait(false);
 
     /// <summary>
+    /// The queue's creation time as a real instant. The AWS SDK hands <c>CreatedTimestamp</c> back as a local-kind
+    /// <see cref="DateTime"/>, so relabelling it UTC shifts it by the machine's offset — on a machine ahead of UTC the
+    /// queue then looks created in the future, and every dead letter seen since looks like it belongs to an earlier queue.
+    /// Epoch-zero means the attribute did not come back; it is not a real creation time.
+    /// </summary>
+    internal static DateTimeOffset? ToCreatedAt(DateTime created)
+        => created.ToUniversalTime() > DateTime.UnixEpoch ? new DateTimeOffset(created.ToUniversalTime()) : null;
+
+    /// <summary>
     /// Shared implementation behind <see cref="ListEntitiesAsync"/> and
     /// <see cref="ListEntitiesForReconciliationAsync"/>. AWS's per-entity discovery calls
     /// (GetQueueAttributes, SNS ListTopics/ListSubscriptionsByTopic) can each fail independently
@@ -181,10 +190,7 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
                     // Extract queue name from URL
                     var queueName = queueUrl.Split('/').LastOrDefault() ?? queueUrl;
 
-                    // Epoch-zero means the attribute did not come back; it is not a real creation time.
-                    DateTimeOffset? createdAt = attrs.CreatedTimestamp > DateTime.UnixEpoch
-                        ? new DateTimeOffset(DateTime.SpecifyKind(attrs.CreatedTimestamp, DateTimeKind.Utc))
-                        : null;
+                    var createdAt = ToCreatedAt(attrs.CreatedTimestamp);
 
                     queueSnapshots.Add((queueName, visible + inFlight, ParseRedriveTargetName(attrs), createdAt));
                 }

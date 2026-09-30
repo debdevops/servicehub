@@ -98,7 +98,8 @@ public sealed class DlqMonitorAgent : IAgent
         {
             if (scope.ServiceProvider.GetService<IPlatformEventBus>() is { } bus)
             {
-                foreach (var (ns, result) in scanned.Where(s => s.Result.NewMessages > 0 || s.Result.Resolved > 0))
+                // Every scan counts, not only the peeked ones: a cloud not looked into still has rows the listing proves are gone.
+                foreach (var (ns, result) in scans.Where(s => s.Result.NewMessages > 0 || s.Result.Resolved > 0))
                 {
                     await bus.PublishAsync(new PlatformEvent
                     {
@@ -113,7 +114,7 @@ public sealed class DlqMonitorAgent : IAgent
         {
             $"looked at {QueuesOrSubscriptions(scanned.Sum(s => s.Result.EntitiesExamined))} in {Count(scanned.Count, "cloud")}",
             $"{Count(scanned.Sum(s => s.Result.NewMessages), "new dead letter")}",
-            $"{Count(scanned.Sum(s => s.Result.Resolved), "gone from the queue")}",
+            $"{Count(scans.Sum(s => s.Result.Resolved), "gone from the queue")}",
         };
         if (skipped.Count > 0) parts.Add($"{Count(skipped.Count, "cloud")} not watched automatically");
         if (failed.Count > 0) parts.Add($"{Count(failed.Count, "cloud")} could not be read");

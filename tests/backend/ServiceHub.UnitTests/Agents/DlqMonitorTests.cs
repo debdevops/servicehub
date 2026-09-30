@@ -546,6 +546,23 @@ public sealed class DlqMonitorTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_cycle_reports_what_it_resolved_on_a_cloud_it_does_not_look_into()
+    {
+        // Live 2026-09-30: an AWS namespace (never peeked by the timer) had 100 rows resolved by the listing, yet every
+        // cycle said "0 gone from the queues" — the resolutions were invisible to the person reading the activity log.
+        var cloud = Aws();
+        cloud.Entities.Add(Queue("other", 0));
+        var ns = AwsNs();
+        var (agent, _) = BuildAgent(cloud, ns);
+        await SeedActiveRow(ns, "orders", 1, _time.GetUtcNow().AddDays(-1));
+
+        var result = await agent.ExecuteCycleAsync(CancellationToken.None);
+
+        result.Summary.Should().Contain("1 gone from the queue");
+        cloud.PeekCalls.Should().Be(0);
+    }
+
+    [Fact]
     public async Task A_cloud_that_cannot_be_read_makes_the_cycle_degraded_and_deletes_nothing()
     {
         var cloud = Azure();
