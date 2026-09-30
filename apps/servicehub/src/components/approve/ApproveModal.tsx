@@ -23,6 +23,7 @@ import { environmentMeta } from '../provider/scopeChoice'
 import type { OverlayBodyProps } from '../overlays/registry'
 import { RetryLink } from '../ui/RetryLink'
 import { Skeleton } from '../ui/Skeleton'
+import { Select } from '../ui/Select'
 
 /**
  * Approve and Decline (5.10) — `?modal=approve&group=<cloud>:<namespace>` or `&entry=<id>`. One modal, five doors: the bell,
@@ -178,11 +179,11 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
             {matching.length === 0 && <p className="mt-2 text-xs text-[var(--color-text-muted)]">Nothing matches “{search.trim()}”. Ticked messages stay ticked.</p>}
             {matching.length > 0 && (
               <nav aria-label="Pages of waiting messages" className="mt-2 flex flex-wrap items-center gap-3 text-xs text-[var(--color-text-muted)]">
-                <label className="flex items-center gap-1.5">Rows per page
-                  <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1) }} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-1">
+                <div className="flex items-center gap-1.5">Rows per page
+                  <Select variant="inline" ariaLabel="Rows per page" value={String(pageSize)} onChange={(v) => { setPageSize(Number(v)); setPage(1) }}>
                     {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
-                  </select>
-                </label>
+                  </Select>
+                </div>
                 <span aria-live="polite">{(at - 1) * pageSize + 1}–{Math.min(at * pageSize, matching.length)} of {matching.length}</span>
                 <span className="ml-auto flex items-center gap-1">
                   <button type="button" onClick={() => setPage(at - 1)} disabled={at <= 1} aria-label="Previous page" className="rounded-md border border-[var(--color-border)] px-2 py-1 font-semibold disabled:opacity-40">‹</button>

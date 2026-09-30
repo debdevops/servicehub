@@ -19,6 +19,7 @@ import { providerLabel } from '../../lib/providers'
 import { Skeleton } from '../ui/Skeleton'
 import { ExplainerCard, ExplainerToggle } from '../explainer/Explainer'
 import { useExplainer } from '../explainer/useExplainer'
+import { Select } from '../ui/Select'
 
 
 const endings = [
@@ -176,14 +177,14 @@ export function ReplayedTab({ provider, choice }: { provider: CloudProvider; cho
 
       <div className="mb-3 flex flex-wrap items-end gap-3 text-sm">
         <div><label className={label} htmlFor="replayed-result">Result</label>
-          <select id="replayed-result" value={ending ?? ''} onChange={(e) => change({ ending: e.target.value })} className={field}>{endings.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}</select></div>
+          <Select id="replayed-result" value={ending ?? ''} onChange={(v) => change({ ending: v })}>{endings.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}</Select></div>
         <div className="min-w-[13rem]"><span className={label}>Queue or topic</span>
           <EntityPicker namespaces={choice.namespaces} cloud={cloud} recorded={[]} value={entity} onChange={(e) => change({ entity: e })} /></div>
         <div><label className={label} htmlFor="replayed-by">Replayed by</label>
-          <select id="replayed-by" value={by ?? ''} onChange={(e) => change({ by: e.target.value })} className={field}>
-            <option value="">All</option><option value="people">People</option><option value="autonomous">ServiceHub autonomous</option></select></div>
+          <Select id="replayed-by" value={by ?? ''} onChange={(v) => change({ by: v })}>
+            <option value="">All</option><option value="people">People</option><option value="autonomous">ServiceHub autonomous</option></Select></div>
         <div><label className={label} htmlFor="replayed-window">Time window</label>
-          <select id="replayed-window" value={windowId} onChange={(e) => change({ window: e.target.value === '24h' ? null : e.target.value })} className={field}>{windows.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}</select></div>
+          <Select id="replayed-window" value={windowId} onChange={(v) => change({ window: v === '24h' ? null : v })}>{windows.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}</Select></div>
         <div className="min-w-[14rem] flex-1"><label className={label} htmlFor="replayed-search">Search</label>
           <span className="relative block"><Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]" />
             <input id="replayed-search" type="search" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Message ID, queue, who…" data-shortcut="filter" className={`${field} w-full pl-8`} /></span></div>

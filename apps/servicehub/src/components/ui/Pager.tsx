@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { PAGE_SIZES } from '../../lib/pageSize'
+import { Select } from './Select'
 
 /**
  * "1–25 of 128" and previous/next. Counts the set it is given: unfiltered that is everything, filtered
@@ -35,16 +36,12 @@ export function Pager({
       </span>
       <span className="flex items-center gap-1">
         {onPageSize && (
-          <label className="mr-3 flex items-center gap-1.5 text-[12px]">
+          <div className="mr-3 flex items-center gap-1.5 text-[12px]">
             Rows per page
-            <select
-              value={pageSize}
-              onChange={(e) => onPageSize(Number(e.target.value))}
-              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-1 text-[12px] text-[var(--color-text)]"
-            >
+            <Select variant="inline" ariaLabel="Rows per page" value={String(pageSize)} onChange={(v) => onPageSize(Number(v))} className="text-[12px]">
               {PAGE_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </label>
+            </Select>
+          </div>
         )}
         <button
           type="button"

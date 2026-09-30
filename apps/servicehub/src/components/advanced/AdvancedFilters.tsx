@@ -7,6 +7,7 @@ import { sectionHelp } from '../../content/sections'
 import type { CloudProvider, Namespace } from '../../lib/api/namespaces'
 import { providerLabel } from '../../lib/providers'
 import { asCloud, environmentMeta, environmentOrder, resolveScope } from '../provider/scopeChoice'
+import { Select } from '../ui/Select'
 
 export type By = 'people' | 'autonomous'
 export const asBy = (v: string | null): By | undefined => (v === 'people' || v === 'autonomous' ? v : undefined)
@@ -65,25 +66,24 @@ export function AdvancedFilters({ namespaces, searchPlaceholder }: { namespaces:
   return (
     <div className="flex flex-wrap items-end gap-3 border-b border-[var(--color-border)] px-4 py-3">
       <Field label="Cloud" help={sectionHelp.filters.cloud} className="w-44">
-        <select aria-label="Cloud" value={provider ?? ''} onChange={(e) => set({ provider: e.target.value || null, ns: null, env: null, entity: null })} className={selectClass}>
+        <Select ariaLabel="Cloud" value={provider ?? ''} onChange={(v) => set({ provider: v || null, ns: null, env: null, entity: null })}>
           <option value="">All clouds</option>
           {clouds.map((c) => <option key={c} value={c}>{providerLabel[c]}</option>)}
-        </select>
+        </Select>
       </Field>
       <Field label="Namespace" help={sectionHelp.filters.namespace} className="w-52">
-        <select
-          aria-label="Namespace"
+        <Select
+          ariaLabel="Namespace"
           value={nsValue}
-          onChange={(e) => {
-            const [kind, id] = e.target.value.split(':')
+          onChange={(v) => {
+            const [kind, id] = v.split(':')
             set({ ns: kind === 'ns' ? id : null, env: kind === 'env' ? id : null, entity: null })
           }}
-          className={selectClass}
         >
           <option value="">All namespaces</option>
           {envs.length > 1 && envs.map((e) => <option key={e} value={`env:${e}`}>All {environmentMeta[e].label}</option>)}
           {pool.map((n) => <option key={n.id} value={`ns:${n.id}`}>{n.displayName ?? n.name}</option>)}
-        </select>
+        </Select>
       </Field>
       <Field label="Queue or topic" help={sectionHelp.filters.entity} className="w-64 flex-1">
         <EntityPicker
@@ -95,14 +95,11 @@ export function AdvancedFilters({ namespaces, searchPlaceholder }: { namespaces:
         />
       </Field>
       <Field label="By" help={sectionHelp.filters.by} className="w-56">
-        <span className="relative">
-          <ByIcon aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]" />
-          <select aria-label="By" value={by ?? ''} onChange={(e) => set({ by: e.target.value || null })} className={`${selectClass} pl-8`}>
-            <option value="">All</option>
-            <option value="people">People</option>
-            <option value="autonomous">ServiceHub autonomous</option>
-          </select>
-        </span>
+        <Select ariaLabel="By" value={by ?? ''} onChange={(v) => set({ by: v || null })} icon={<ByIcon aria-hidden="true" className="h-4 w-4 shrink-0 text-[var(--color-text-muted)]" />}>
+          <option value="">All</option>
+          <option value="people">People</option>
+          <option value="autonomous">ServiceHub autonomous</option>
+        </Select>
       </Field>
       <Field label="Search" help={sectionHelp.filters.search} className="w-72 flex-1">
         <span className="relative">

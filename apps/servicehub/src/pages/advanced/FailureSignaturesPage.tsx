@@ -23,6 +23,7 @@ import { useState } from 'react'
 import { IncidentTimeline, TraceView } from '../../components/advanced/SignatureStory'
 import { RetryLink } from '../../components/ui/RetryLink'
 import { Skeleton } from '../../components/ui/Skeleton'
+import { Select as UiSelect } from '../../components/ui/Select'
 
 const asTab = (v: string | null): SignatureTab => (v === 'growing' || v === 'helps' || v === 'doesnt' ? v : 'all')
 const asProvider = (v: string | null): CloudProvider | undefined => (v === 'azure' || v === 'aws' || v === 'gcp' ? v : undefined)
@@ -142,11 +143,11 @@ export default function FailureSignaturesPage() {
             <AdvancedFilters namespaces={namespaces.data ?? []} searchPlaceholder="Search signatures, errors or queues…" />
             <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-4 py-2">
               <p className="text-[12.5px] text-[var(--color-text-muted)]">{tabSummary[tab]}</p>
-              <label className="ml-auto text-[12px] text-[var(--color-text-muted)]">Sort{' '}
-                <select value={sort} onChange={(e) => change({ sort: e.target.value === 'messages' ? null : e.target.value })} className="rounded-lg border border-[var(--color-border)] px-2 py-1 text-[12px]">
+              <div className="ml-auto flex items-center gap-1.5 text-[12px] text-[var(--color-text-muted)]">Sort
+                <UiSelect variant="inline" ariaLabel="Sort" value={sort} onChange={(v) => change({ sort: v === 'messages' ? null : v })} className="text-[12px]">
                   <option value="messages">most messages</option><option value="recent">most recent</option>
-                </select>
-              </label>
+                </UiSelect>
+              </div>
             </div>
             {data.items.length === 0 ? (
               <p className="px-5 py-8 text-center text-sm text-[var(--color-text-muted)]">
@@ -206,12 +207,7 @@ export default function FailureSignaturesPage() {
 }
 
 function Select({ label, value, onChange, children }: { label: string; value: string; onChange: (v: string) => void; children: React.ReactNode }) {
-  return (
-    <label className="rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface)] px-[13px] py-1.5 shadow-[var(--shadow-card)]">
-      <span className="block text-[9.5px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)} className="bg-transparent text-[12.5px] font-semibold">{children}</select>
-    </label>
-  )
+  return <UiSelect variant="card" label={label} ariaLabel={label} value={value} onChange={onChange}>{children}</UiSelect>
 }
 
 function Detail({ s, days, now, onClose }: { s: Signature; days: number; now: Date; onClose: () => void }) {

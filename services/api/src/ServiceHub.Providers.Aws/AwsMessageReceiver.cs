@@ -57,6 +57,126 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
     private static SemaphoreSlim GetScanGate(string queueUrl) =>
         _queueScanGates.GetOrAdd(queueUrl, static _ => new SemaphoreSlim(1, 1));
 
+    // Bulk replay/purge issues one call per message. Scanning the queue afresh for each call is
+    // O(depth) per message, and every fresh scan is another chance for SQS's randomized host
+    // sampling to miss the target. Instead a scan keeps the messages it inspected locked (hidden)
+    // and remembers them by sequence number, so the next call in the same batch is an O(1) lookup.
+    // Held messages are released after HoldIdleSeconds without a further lookup, or immediately
+    // when anything else scans the same queue. All access happens under the queue's scan gate.
+    private sealed class HeldScan
+    {
+        public readonly Dictionary<long, (SqsMessage Message, DateTime ExpiresUtc)> Messages = new();
+        public IAmazonSQS Sqs = default!;
+        public CancellationTokenSource? IdleTimer;
+    }
+
+    private static readonly ConcurrentDictionary<string, HeldScan> _heldScans = new();
+
+    /// <summary>Seconds without a lookup before held (locked) messages are released back to the queue.</summary>
+    private const int HoldIdleSeconds = 10;
+
+    /// <summary>Safety margin: a held receipt handle is not trusted this close to its lock expiring.</summary>
+    private const int HeldExpiryMarginSeconds = 15;
+
+    private async Task ReleaseMessagesAsync(IAmazonSQS sqs, string queueUrl, IEnumerable<SqsMessage> messages)
+    {
+        foreach (var chunk in messages.Chunk(SqsMaxBatchSize))
+        {
+            try
+            {
+                await sqs.ChangeMessageVisibilityBatchAsync(new ChangeMessageVisibilityBatchRequest
+                {
+                    QueueUrl = queueUrl,
+                    Entries = chunk.Select((m, idx) => new ChangeMessageVisibilityBatchRequestEntry
+                    {
+                        Id = idx.ToString(),
+                        ReceiptHandle = m.ReceiptHandle,
+                        VisibilityTimeout = 0
+                    }).ToList()
+                }, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (AmazonSQSException ex)
+            {
+                _logger.LogWarning(ex, "Failed to release visibility for scanned messages; they will reappear after {Seconds}s", ScanLockSeconds);
+            }
+        }
+    }
+
+    /// <summary>Releases everything held for <paramref name="queueUrl"/>. Caller must hold the scan gate.</summary>
+    private async Task ReleaseHeldLockedAsync(string queueUrl)
+    {
+        if (!_heldScans.TryRemove(queueUrl, out var held))
+            return;
+
+        held.IdleTimer?.Cancel();
+        held.IdleTimer?.Dispose();
+        await ReleaseMessagesAsync(held.Sqs, queueUrl, held.Messages.Values.Select(v => v.Message)).ConfigureAwait(false);
+    }
+
+    /// <summary>Test seam: releases everything held for <paramref name="queueUrl"/> now, as the idle timer would.</summary>
+    internal async Task FlushHeldScanAsync(string queueUrl)
+    {
+        var gate = GetScanGate(queueUrl);
+        await gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            await ReleaseHeldLockedAsync(queueUrl).ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    /// <summary>Test seam: forgets held state for the given queues without calling SQS (static state outlives a receiver).</summary>
+    internal static void DiscardHeldScans(params string[] queueUrls)
+    {
+        foreach (var url in queueUrls)
+        {
+            if (_heldScans.TryRemove(url, out var held))
+            {
+                held.IdleTimer?.Cancel();
+                held.IdleTimer?.Dispose();
+            }
+        }
+    }
+
+    private void ScheduleIdleRelease(string queueUrl, HeldScan held)
+    {
+        held.IdleTimer?.Cancel();
+        held.IdleTimer?.Dispose();
+        var cts = new CancellationTokenSource();
+        held.IdleTimer = cts;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(HoldIdleSeconds), cts.Token).ConfigureAwait(false);
+                var gate = GetScanGate(queueUrl);
+                await gate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                try
+                {
+                    // A newer lookup replaced the timer: leave the held set alone.
+                    if (ReferenceEquals(held.IdleTimer, cts))
+                        await ReleaseHeldLockedAsync(queueUrl).ConfigureAwait(false);
+                }
+                finally
+                {
+                    gate.Release();
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Superseded by a newer lookup or an explicit release.
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+            {
+                _logger.LogWarning(ex, "Idle release of held scan messages failed; they will reappear after {Seconds}s", ScanLockSeconds);
+            }
+        });
+    }
+
     private const int MaxMessageAttributes = 10;
 
     private const string OverflowAttributeName = "shs-overflow-properties";
@@ -321,6 +441,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
             await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                await ReleaseHeldLockedAsync(sourceUrl).ConfigureAwait(false);
                 for (var i = 0; i < MaxScanBatches && receivedById.Count < count; i++)
                 {
                     var received = await sqs.ReceiveMessageAsync(new ReceiveMessageRequest
@@ -761,6 +882,7 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
         await gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            await ReleaseHeldLockedAsync(queueUrl).ConfigureAwait(false);
             // Each SQS receive samples a subset of the queue's distributed hosts, so
             // enumerating even a small queue takes several rounds. Hold the scan lock
             // while iterating so each message is received exactly once per peek —
@@ -1001,15 +1123,16 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
     }
 
     /// <summary>
-    /// Scans a queue for the message whose MessageId hashes to <paramref name="sequenceNumber"/>,
-    /// locking received messages behind a visibility window during the scan. The target (if found)
-    /// stays locked and is returned with a fresh receipt handle; all other messages are released.
+    /// Finds the message whose MessageId hashes to <paramref name="sequenceNumber"/> and returns it
+    /// locked behind a visibility window. A message already inspected by an earlier call in the
+    /// same batch is served from the held set without touching SQS; otherwise the queue is scanned
+    /// and every other message inspected is kept locked (and remembered) for the next lookup, then
+    /// released after <see cref="HoldIdleSeconds"/> of inactivity.
     /// </summary>
     private async Task<SqsMessage?> FindAndLockMessageAsync(
         IAmazonSQS sqs, string queueUrl, long sequenceNumber, CancellationToken ct)
     {
         SqsMessage? target = null;
-        var nonTargets = new List<SqsMessage>();
         var seenIds = new HashSet<string>(StringComparer.Ordinal);
 
         var maxBatches = await ResolveScanBatchLimitAsync(sqs, queueUrl, ct).ConfigureAwait(false);
@@ -1018,9 +1141,25 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
         await gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            var held = _heldScans.GetOrAdd(queueUrl, static _ => new HeldScan());
+            held.Sqs = sqs;
+
+            // Drop entries whose lock is about to lapse — their receipt handles can't be trusted.
+            var now = DateTime.UtcNow;
+            var stale = held.Messages.Where(kv => kv.Value.ExpiresUtc <= now).ToList();
+            foreach (var kv in stale)
+                held.Messages.Remove(kv.Key);
+
+            if (held.Messages.Remove(sequenceNumber, out var cached))
+            {
+                ScheduleIdleRelease(queueUrl, held);
+                return cached.Message;
+            }
+
             var quietRounds = 0;
             for (var i = 0; i < maxBatches && target is null; i++)
             {
+                var received = DateTime.UtcNow;
                 var response = await sqs.ReceiveMessageAsync(new ReceiveMessageRequest
                 {
                     QueueUrl = queueUrl,
@@ -1038,10 +1177,16 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                         continue;
 
                     progressed = true;
-                    if (ComputeSequenceNumber(message.MessageId) == sequenceNumber)
+                    var seq = ComputeSequenceNumber(message.MessageId);
+                    if (seq == sequenceNumber)
+                    {
                         target = message;
-                    else
-                        nonTargets.Add(message);
+                    }
+                    else if (!held.Messages.TryAdd(seq, (message, received.AddSeconds(ScanLockSeconds - HeldExpiryMarginSeconds))))
+                    {
+                        // Sequence-number collision with an already held message: don't hide it.
+                        await ReleaseMessagesAsync(sqs, queueUrl, new[] { message }).ConfigureAwait(false);
+                    }
                 }
 
                 // A quiet round (nothing new) does not mean the queue is exhausted — SQS
@@ -1059,38 +1204,16 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                     quietRounds = 0;
                 }
             }
+
+            // Keep the inspected messages for the next lookup; release them if nothing follows.
+            if (held.Messages.Count > 0)
+                ScheduleIdleRelease(queueUrl, held);
+            else
+                await ReleaseHeldLockedAsync(queueUrl).ConfigureAwait(false);
         }
         finally
         {
-            try
-            {
-                // Release the messages we merely inspected; if this fails they become
-                // visible again on their own once the scan lock expires.
-                foreach (var chunk in nonTargets.Chunk(SqsMaxBatchSize))
-                {
-                    try
-                    {
-                        await sqs.ChangeMessageVisibilityBatchAsync(new ChangeMessageVisibilityBatchRequest
-                        {
-                            QueueUrl = queueUrl,
-                            Entries = chunk.Select((m, idx) => new ChangeMessageVisibilityBatchRequestEntry
-                            {
-                                Id = idx.ToString(),
-                                ReceiptHandle = m.ReceiptHandle,
-                                VisibilityTimeout = 0
-                            }).ToList()
-                        }, CancellationToken.None).ConfigureAwait(false);
-                    }
-                    catch (AmazonSQSException ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to release visibility for scanned messages; they will reappear after {Seconds}s", ScanLockSeconds);
-                    }
-                }
-            }
-            finally
-            {
-                gate.Release();
-            }
+            gate.Release();
         }
 
         return target;

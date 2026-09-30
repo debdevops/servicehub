@@ -13,6 +13,7 @@ import type { OverlayBodyProps } from '../overlays/registry'
 import { useProviderScope } from '../provider/providerScope'
 import { environmentMeta } from '../provider/scopeChoice'
 import { NotAllowed } from '../ui/NotAllowed'
+import { Select } from '../ui/Select'
 
 const input = 'w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm'
 const label = 'mb-1 block text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]'
@@ -70,21 +71,21 @@ export default function SendMessageModal({ close }: OverlayBodyProps) {
     <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); submit() }}>
       <div className="grid gap-3 sm:grid-cols-2">
         {candidates.length > 1 && (
-          <label className="block">
+          <div className="block">
             <span className={label}>Namespace</span>
-            <select className={input} value={ns?.id} onChange={(e) => { setNsId(e.target.value); setEntity('') }}>
+            <Select ariaLabel="Namespace" value={ns?.id ?? ''} onChange={(v) => { setNsId(v); setEntity('') }}>
               {candidates.map((n) => <option key={n.id} value={n.id}>{providerLabel[n.provider]} · {n.displayName ?? n.name} · {environmentMeta[n.environment].label}</option>)}
-            </select>
-          </label>
+            </Select>
+          </div>
         )}
-        <label className="block">
+        <div className="block">
           <span className={label}>Queue or topic</span>
-          <select className={input} value={target?.name ?? ''} onChange={(e) => setEntity(e.target.value)} disabled={!entities.data}>
-            {entities.isPending && <option>Reading…</option>}
+          <Select ariaLabel="Queue or topic" value={target?.name ?? ''} onChange={setEntity} disabled={!entities.data}>
+            {entities.isPending && <option value="">Reading…</option>}
             {targets.map((e) => <option key={e.name} value={e.name}>{e.name}{e.kind === 'topic' ? ' (topic)' : ''}</option>)}
-          </select>
+          </Select>
           {entities.data && targets.length === 0 && <span className="mt-1 block text-xs text-[var(--color-text-muted)]">No queues or topics were found here.</span>}
-        </label>
+        </div>
       </div>
       <label className="block">
         <span className={label}>Body</span>

@@ -19,6 +19,7 @@ import { RetryLink } from '../../components/ui/RetryLink'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { sectionHelp } from '../../content/sections'
 import { TabBar } from '../../components/ui/TabBar'
+import { Select } from '../../components/ui/Select'
 
 const windows: readonly { id: RecoveryWindow; label: string; days: number }[] = [
   { id: '24h', label: 'Last 24 hours', days: 1 },
@@ -69,17 +70,13 @@ export default function AdvancedOverviewPage() {
           <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">The control plane. What Simple states as an outcome, Advanced states as a breakdown.</p>
         </div>
         <div className="flex gap-2 text-sm">
-          <label className="flex flex-col text-xs uppercase tracking-wide text-[var(--color-text-muted)]">Scope
-            <select value={provider ?? ''} onChange={(e) => set('provider', e.target.value || null)} className="mt-0.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm normal-case text-[var(--color-text)]">
-              <option value="">All clouds</option>
-              {clouds.map((c) => <option key={c} value={c}>{providerLabel[c]}</option>)}
-            </select>
-          </label>
-          <label className="flex flex-col text-xs uppercase tracking-wide text-[var(--color-text-muted)]">Window
-            <select value={window.id} onChange={(e) => set('window', e.target.value === '24h' ? null : e.target.value)} className="mt-0.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm normal-case text-[var(--color-text)]">
-              {windows.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
-            </select>
-          </label>
+          <Select variant="card" label="Scope" ariaLabel="Scope" value={provider ?? ''} onChange={(v) => set('provider', v || null)}>
+            <option value="">All clouds</option>
+            {clouds.map((c) => <option key={c} value={c}>{providerLabel[c]}</option>)}
+          </Select>
+          <Select variant="card" label="Window" ariaLabel="Window" value={window.id} onChange={(v) => set('window', v === '24h' ? null : v)}>
+            {windows.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
+          </Select>
         </div>
       </header>
 

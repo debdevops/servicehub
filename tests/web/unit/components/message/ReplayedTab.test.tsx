@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { choose } from '../../../support/choose'
 import { render, screen, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as replayApi from '@/lib/api/replay'
@@ -95,9 +95,9 @@ describe('the Replayed tab', () => {
     renderTab()
     await screen.findByRole('table')
     expect(listMock).toHaveBeenLastCalledWith(expect.objectContaining({ provider: 'azure', window: '24h', ending: undefined, by: undefined }))
-    await userEvent.selectOptions(screen.getByLabelText('Result'), 'returned')
-    await userEvent.selectOptions(screen.getByLabelText('Replayed by'), 'autonomous')
-    await userEvent.selectOptions(screen.getByLabelText('Time window'), '7d')
+    await choose(screen.getByLabelText('Result'), 'returned')
+    await choose(screen.getByLabelText('Replayed by'), 'autonomous')
+    await choose(screen.getByLabelText('Time window'), '7d')
     await screen.findByRole('table')
     expect(listMock).toHaveBeenLastCalledWith(expect.objectContaining({ ending: 'returned', by: 'autonomous', window: '7d' }))
   })

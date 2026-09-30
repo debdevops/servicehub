@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { choose } from '../../../support/choose'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
@@ -68,7 +69,7 @@ describe('Auto Replay panel', () => {
     renderPanel()
 
     await userEvent.click(await screen.findByRole('button', { name: /New rule/ }))
-    await userEvent.selectOptions(await screen.findByLabelText('Based on'), 'h1')
+    await choose(await screen.findByLabelText('Based on'), 'h1')
 
     const form = screen.getByRole('form', { name: 'New rule' })
     expect(await within(form).findByText(/would have matched/)).toHaveTextContent('5 messages')

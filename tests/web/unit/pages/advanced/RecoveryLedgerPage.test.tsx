@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { openSelect } from '../../../support/choose'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
@@ -64,6 +65,7 @@ describe('the Recovery Ledger (Advanced)', () => {
     await waitFor(() => expect(api.fetchLedger).toHaveBeenLastCalledWith(expect.objectContaining({ environment: 'prod' })))
     expect(api.fetchRecoverySummary).toHaveBeenLastCalledWith(expect.objectContaining({ environment: 'prod' }))
     // With no cloud chosen, every namespace of every cloud is on offer.
+    await openSelect('Namespace')
     expect(await screen.findByRole('option', { name: /AWS Dev/ })).toBeInTheDocument()
   })
 

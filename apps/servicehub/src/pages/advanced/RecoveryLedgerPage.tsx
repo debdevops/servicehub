@@ -27,6 +27,7 @@ import { formatWhen } from '../../lib/format'
 import { providerLabel } from '../../lib/providers'
 import type { CloudProvider, Namespace } from '../../lib/api/namespaces'
 import { Skeleton } from '../../components/ui/Skeleton'
+import { Select } from '../../components/ui/Select'
 
 
 const windows: readonly { id: RecoveryWindow; label: string }[] = [
@@ -121,12 +122,9 @@ export default function RecoveryLedgerPage() {
           <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">Every recovery action, who took it, the evidence, and how it ended. Append-only and tamper-evident.</p>
         </div>
         <div className="flex flex-wrap items-end gap-2 text-sm">
-          <label className="flex flex-col text-xs uppercase tracking-wide text-[var(--color-text-muted)]">
-            Window
-            <select value={window} onChange={(e) => change({ window: e.target.value === '24h' ? null : e.target.value })} className="mt-0.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm normal-case text-[var(--color-text)]">
-              {windows.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
-            </select>
-          </label>
+          <Select variant="card" label="Window" ariaLabel="Window" value={window} onChange={(v) => change({ window: v === '24h' ? null : v })}>
+            {windows.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
+          </Select>
           <ExportEvidence window={window} />
         </div>
       </header>
@@ -195,13 +193,13 @@ function WaitingView({ page, pending, failed }: { page: PendingWorkPage | undefi
   return (
     <div>
       {codes.length > 1 && (
-        <label className="flex items-center gap-2 px-5 pt-3 text-xs text-[var(--color-text-muted)]">
+        <div className="flex items-center gap-2 px-5 pt-3 text-xs text-[var(--color-text-muted)]">
           Reason
-          <select value={reason} onChange={(e) => setReason(e.target.value)} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-sm text-[var(--color-text)]">
+          <Select variant="inline" ariaLabel="Reason" value={reason} onChange={setReason} className="text-sm">
             <option value="">All reasons</option>
             {codes.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </label>
+          </Select>
+        </div>
       )}
       <PendingWorkList rows={rows} now={new Date()} primaryFirst={false} />
       <p className="border-t border-[var(--color-border)] px-5 py-2 text-xs text-[var(--color-text-muted)]">Approving opens right here and goes through the same safety checks as any replay.</p>

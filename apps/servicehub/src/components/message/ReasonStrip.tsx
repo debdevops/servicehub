@@ -3,7 +3,6 @@ import { useDeadLetterTrend } from '../../hooks/useDeadLetters'
 import type { CloudProvider } from '../../lib/api/namespaces'
 import type { DeadLetterPage } from '../../lib/api/deadLetters'
 import { InfoTip } from '../ui/InfoTip'
-import { NO_REASON } from './FailureGroups'
 import { sectionHelp } from '../../content/sections'
 
 const tones = [
@@ -22,7 +21,7 @@ export function ReasonStrip({ provider, page, namespaceId, environment }: { prov
   const groups = [...page.groups].sort((a, b) => b.count - a.count)
   const top = groups.slice(0, 2)
   const rest = groups.slice(2).reduce((n, g) => n + g.count, 0) + (page.otherReasons?.count ?? 0)
-  const items = [...top.map((g) => ({ label: g.reason ?? NO_REASON, n: g.count })), ...(rest > 0 ? [{ label: 'Other errors', n: rest }] : [])]
+  const items = [...top.map((g) => ({ label: g.reason ?? 'No reason recorded', n: g.count })), ...(rest > 0 ? [{ label: 'Other errors', n: rest }] : [])]
   const series = trend.data?.series.map((d) => d.new) ?? []
   const max = Math.max(1, ...series)
   const points = series.map((n, i) => `${(i / Math.max(1, series.length - 1)) * 96},${28 - (n / max) * 26}`).join(' ')

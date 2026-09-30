@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { choose } from '../../../support/choose'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
@@ -128,7 +129,7 @@ describe('the Dead letters view', () => {
     fetchMock.mockResolvedValue(pageOf([row(1)], { paging: { total: 60, page: 3, pageSize: 25 } }))
     renderView('azure', [azure], '/?tab=dlq&page=3')
 
-    await userEvent.selectOptions(await screen.findByLabelText('Time window'), '7d')
+    await choose(await screen.findByLabelText('Time window'), '7d')
 
     await waitFor(() => expect(where()).toBe('/?tab=dlq&range=7d'))
     expect(lastQuery()).toMatchObject({ range: '7d', page: 1 })
@@ -176,7 +177,7 @@ describe('the Dead letters view', () => {
     await userEvent.click(await screen.findByRole('checkbox', { name: 'Select message m-1' }))
     expect(screen.getAllByRole('link', { name: 'Replay selected…' })).toHaveLength(2)
 
-    await userEvent.selectOptions(screen.getByLabelText('Time window'), '24h')
+    await choose(screen.getByLabelText('Time window'), '24h')
 
     // The bar stays, but with nothing ticked Replay selected is a disabled button, not a link.
     await waitFor(() => expect(screen.queryByRole('link', { name: 'Replay selected…' })).not.toBeInTheDocument())
@@ -277,13 +278,12 @@ describe('the Dead letters view', () => {
   })
 
   it('shows history as one filter: no longer stuck rows say when and how they left, as recorded, and cannot be selected', async () => {
-    const user = userEvent.setup()
     fetchMock.mockResolvedValue(pageOf([
       row(1, { status: 'resolved', resolvedAt: '2026-09-25T08:00:00Z', resolutionCause: 'replayedByServiceHub' }),
       row(2, { status: 'resolved', resolvedAt: '2026-09-25T09:00:00Z', resolutionCause: 'vanishedExternally' }),
     ]))
     renderView()
-    await user.selectOptions(await screen.findByLabelText('Showing'), 'resolved')
+    await choose(await screen.findByLabelText('Showing'), 'resolved')
 
     await waitFor(() => expect(lastQuery()).toMatchObject({ status: 'resolved' }))
     expect(where()).toContain('status=resolved')
@@ -298,9 +298,8 @@ describe('the Dead letters view', () => {
   })
 
   it('stuck now is the default and is not written into the link', async () => {
-    const user = userEvent.setup()
     renderView('azure', [azure], '/?tab=dlq&status=all')
-    await user.selectOptions(await screen.findByLabelText('Showing'), 'active')
+    await choose(await screen.findByLabelText('Showing'), 'active')
     await waitFor(() => expect(where()).not.toContain('status='))
     expect(lastQuery()).toMatchObject({ status: 'active' })
   })

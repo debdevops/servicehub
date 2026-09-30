@@ -19,6 +19,7 @@ import { environmentMeta } from '../provider/scopeChoice'
 import { NotAllowed } from '../ui/NotAllowed'
 import { BackupSection } from './BackupSection'
 import { Skeleton } from '../ui/Skeleton'
+import { Select } from '../ui/Select'
 
 const sections = [
   { id: 'connections', label: 'Connections', Icon: Cloud },
@@ -233,12 +234,12 @@ function Preferences() {
             <span className={`${seg(false)} cursor-not-allowed`} aria-disabled="true" title="Dark mode is not built yet">Dark <span className="text-xs font-normal">soon</span></span>
           </div>
         </div>
-        <label className="block text-sm font-semibold">Times shown in
-          <select value={prefs.timeZone} onChange={(e) => writePreferences({ timeZone: e.target.value })} className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 font-normal">
+        <div className="block text-sm font-semibold"><span id="tz-label">Times shown in</span>
+          <Select ariaLabel="Times shown in" value={prefs.timeZone} onChange={(v) => writePreferences({ timeZone: v })} className="mt-1">
             <option value="browser">Your browser — {browserTimeZone()}</option>
             {zones.map((z) => <option key={z} value={z}>{z}</option>)}
-          </select>
-        </label>
+          </Select>
+        </div>
         <div>
           <p className="mb-1 text-sm font-semibold">Open on</p>
           <div className="flex rounded-xl bg-[var(--color-surface-muted)] p-1" role="radiogroup" aria-label="Open on">
@@ -304,18 +305,18 @@ function Roles({ canManage, reason, governanceActive }: { canManage: boolean; re
           <label className="flex flex-col text-xs">Who
             <input value={who} onChange={(e) => setWho(e.target.value)} required placeholder={kind === 'ApiKey' ? 'API key name' : 'sign-in name'} className="mt-1 rounded-lg border border-[var(--color-border)] px-2 py-1.5 text-sm" />
           </label>
-          <label className="flex flex-col text-xs">Kind
-            <select value={kind} onChange={(e) => setKind(e.target.value as 'ApiKey' | 'User')} className="mt-1 rounded-lg border border-[var(--color-border)] px-2 py-1.5 text-sm"><option value="ApiKey">API key</option><option value="User">Signed-in user</option></select>
-          </label>
-          <label className="flex flex-col text-xs">Role
-            <select value={role} onChange={(e) => setRole(e.target.value as Role)} className="mt-1 rounded-lg border border-[var(--color-border)] px-2 py-1.5 text-sm">{(['Viewer', 'Operator', 'Approver', 'Admin'] as const).map((r) => <option key={r}>{r}</option>)}</select>
-          </label>
-          <label className="flex flex-col text-xs">Where
-            <select value={ns} onChange={(e) => setNs(e.target.value)} className="mt-1 rounded-lg border border-[var(--color-border)] px-2 py-1.5 text-sm">
+          <div className="flex flex-col text-xs">Kind
+            <Select ariaLabel="Kind" value={kind} onChange={(v) => setKind(v as 'ApiKey' | 'User')} className="mt-1 text-sm"><option value="ApiKey">API key</option><option value="User">Signed-in user</option></Select>
+          </div>
+          <div className="flex flex-col text-xs">Role
+            <Select ariaLabel="Role" value={role} onChange={(v) => setRole(v as Role)} className="mt-1 text-sm">{(['Viewer', 'Operator', 'Approver', 'Admin'] as const).map((r) => <option key={r}>{r}</option>)}</Select>
+          </div>
+          <div className="flex flex-col text-xs">Where
+            <Select ariaLabel="Where" value={ns} onChange={setNs} className="mt-1 text-sm">
               <option value="">Every namespace</option>
               {(namespaces.data ?? []).map((n) => <option key={n.id} value={n.id}>{n.displayName ?? n.name}</option>)}
-            </select>
-          </label>
+            </Select>
+          </div>
           <button type="submit" className={primary} disabled={grant.isPending || !who.trim()}>Grant</button>
         </form>
       )}

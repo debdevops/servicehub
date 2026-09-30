@@ -1,4 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { openSelect } from '../../../support/choose'
+import { choose } from '../../../support/choose'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
@@ -53,11 +55,13 @@ describe('Active messages tab', () => {
     })
     const view = renderTab('azure', [named('a', 'Azure Prod'), named('b', 'Azure Dev')])
 
+    await openSelect('Queue or topic')
     expect(await screen.findByRole('option', { name: 'Azure Prod / orders · 2 waiting' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Azure Dev / orders · 2 waiting' })).toBeInTheDocument()
     view.unmount()
 
     renderTab('azure', [named('a', 'Azure Prod')])
+    await openSelect('Queue or topic')
     expect(await screen.findByRole('option', { name: 'orders · 2 waiting' })).toBeInTheDocument()
   })
 
@@ -104,10 +108,10 @@ describe('Active messages tab', () => {
     peeked()
     renderTab('azure', ns('azure', true))
     await screen.findByRole('table', { name: 'Active messages in orders' })
-    await userEvent.selectOptions(screen.getByLabelText('Message state'), 'retried')
+    await choose(screen.getByLabelText('Message state'), 'retried')
     expect(screen.getByText('1 message of 2 peeked')).toBeInTheDocument()
     expect(screen.queryByText('msg-aaa')).toBeNull()
-    await userEvent.selectOptions(screen.getByLabelText('Message state'), 'all')
+    await choose(screen.getByLabelText('Message state'), 'all')
     await userEvent.type(screen.getByLabelText('Search'), 'corr-1')
     expect(screen.getByText('1 message of 2 peeked')).toBeInTheDocument()
     expect(within(screen.getByRole('table')).getByText('msg-aaa')).toBeInTheDocument()

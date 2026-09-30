@@ -18,8 +18,11 @@ export function QueuesCard({ summary, namespaces }: { summary: CloudSummary; nam
   const nameOf = new Map(namespaces.map((n) => [n.id, namespaceTag(n)]))
   const several = namespaces.length > 1
   const canCount = summary.active !== null || summary.deadLetters !== null
+  // A queue that is only another queue's dead-letter queue (AWS) is that queue's dead letters, not a queue of its own.
+  const dlqTargets = new Set(summary.entities.flatMap((r) => (r.entity.deadLetterTargetName ? [`${r.namespaceId}:${r.entity.deadLetterTargetName}`] : [])))
   const rows = summary.entities
     .filter((r) => r.entity.kind !== 'topic')
+    .filter((r) => !dlqTargets.has(`${r.namespaceId}:${r.entity.name}`))
     .filter((r) => (r.entity.deadLetterMessages ?? 0) > 0 || (r.entity.activeMessages ?? 0) > 0)
     .sort((a, b) => (b.entity.deadLetterMessages ?? 0) - (a.entity.deadLetterMessages ?? 0))
     .slice(0, SHOWN)

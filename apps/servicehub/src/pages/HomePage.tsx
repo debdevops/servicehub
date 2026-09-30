@@ -20,6 +20,7 @@ import { useProviderScope } from '../components/provider/providerScope'
 import { useNamespaces } from '../hooks/useNamespaces'
 import { useHomeScope } from '../lib/home/scope'
 import { connectedProviders, providerLabel } from '../lib/providers'
+import { Select } from '../components/ui/Select'
 
 /**
  * Home — the one Simple page (D48, 2026-09-27): everything that used to be split across Home and Fleet
@@ -119,17 +120,10 @@ function HomeBody({ connected, allNamespaces, homeScope }: {
             What needs you, how every cloud you’ve connected is doing, and the detail for the one you pick.
           </p>
         </div>
-        <label className="rounded-[10px] border border-[var(--color-border)] bg-[var(--color-surface)] px-[13px] py-1.5 shadow-[var(--shadow-card)]">
-          <span className="block text-[9.5px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">Window</span>
-          <select
-            value={homeScope.window}
-            onChange={(e) => homeScope.setWindow(e.target.value === '7d' ? '7d' : '24h')}
-            className="bg-transparent text-[12.5px] font-semibold text-[#1f2937]"
-          >
-            <option value="24h">{windowLabel['24h']}</option>
-            <option value="7d">{windowLabel['7d']}</option>
-          </select>
-        </label>
+        <Select variant="card" label="Window" ariaLabel="Window" value={homeScope.window} onChange={(v) => homeScope.setWindow(v === '7d' ? '7d' : '24h')}>
+          <option value="24h">{windowLabel['24h']}</option>
+          <option value="7d">{windowLabel['7d']}</option>
+        </Select>
       </header>
 
       {explainer.shown && <ExplainerCard id="home" onDismiss={explainer.dismiss} />}

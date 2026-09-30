@@ -15,6 +15,7 @@ import { RetryLink } from '../ui/RetryLink'
 import { Skeleton } from '../ui/Skeleton'
 import { heldWords } from '../../lib/heldWords'
 import { waitingHref } from '../../lib/urlState'
+import { Select } from '../ui/Select'
 
 const rulesKey = (p: CloudProvider) => ['rules', p] as const
 
@@ -205,13 +206,13 @@ function NewRule({ provider, onDone }: { provider: CloudProvider; onDone: () => 
     >
       <p className="text-[15px] font-bold">New rule <span className="text-[12.5px] font-normal text-[var(--color-text-muted)]">— start from a failure you’ve already seen</span></p>
 
-      <label className="block text-[13px] font-semibold">
+      <div className="block text-[13px] font-semibold">
         Based on
-        <select value={source?.signatureHash ?? ''} onChange={(e) => pick(e.target.value)} className="mt-1 block w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-normal">
+        <Select ariaLabel="Based on" value={source?.signatureHash ?? ''} onChange={pick} className="mt-1">
           <option value="">{sources.isPending ? 'Reading recent failures…' : 'Choose a failure…'}</option>
           {sources.data?.map((s) => <option key={s.signatureHash} value={s.signatureHash}>{s.reason} · {s.entityName} · {s.messages} {s.messages === 1 ? 'message' : 'messages'}</option>)}
-        </select>
-      </label>
+        </Select>
+      </div>
       {sources.data?.length === 0 && <p className="text-[12.5px] text-[var(--color-text-muted)]">No failures have been recorded in this cloud yet, so there is nothing to base a rule on. ServiceHub records failures where it can look on its own.</p>}
 
       {source && (

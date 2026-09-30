@@ -23,6 +23,7 @@ import { environmentMeta, resolveScope } from '../provider/scopeChoice'
 import type { CloudProvider, Namespace } from '../../lib/api/namespaces'
 import { providerLabel } from '../../lib/providers'
 import { Skeleton } from '../ui/Skeleton'
+import { Select } from '../ui/Select'
 
 
 const ranges: readonly { id: DeadLetterRange; label: string }[] = [
@@ -209,22 +210,22 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
           />
 
           <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
-            <label className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
               <span className="text-[var(--color-text-muted)]">Showing</span>
-              <select value={showing} onChange={(e) => change({ status: e.target.value === 'active' ? null : e.target.value })} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5">
+              <Select variant="inline" ariaLabel="Showing" value={showing} onChange={(v) => change({ status: v === 'active' ? null : v })}>
                 {showings.map((o) => (
                   <option key={o.id} value={o.id}>{o.label}</option>
                 ))}
-              </select>
-            </label>
-            <label className="flex items-center gap-2">
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
               <span className="text-[var(--color-text-muted)]">Time window</span>
-              <select value={range} onChange={(e) => change({ range: e.target.value === 'all' ? null : e.target.value })} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5">
+              <Select variant="inline" ariaLabel="Time window" value={range} onChange={(v) => change({ range: v === 'all' ? null : v })}>
                 {ranges.map((r) => (
                   <option key={r.id} value={r.id}>{r.label}</option>
                 ))}
-              </select>
-            </label>
+              </Select>
+            </div>
             <div className="flex items-center gap-2">
               <span className="text-[var(--color-text-muted)]">Queue or topic</span>
               <EntityPicker namespaces={namespaces} cloud={cloud} recorded={data.entities} value={entity} onChange={(e) => change({ entity: e })} />

@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { choose } from '../../../support/choose'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
@@ -97,7 +98,7 @@ describe('Approve and Decline', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Next page' }))
     expect(screen.getByText('11–20 of 30')).toBeInTheDocument()
     expect(screen.getByText('Page 2 of 3')).toBeInTheDocument()
-    await userEvent.selectOptions(screen.getByLabelText('Rows per page'), '20')
+    await choose(screen.getByLabelText('Rows per page'), '20')
     expect(screen.getByText('1–20 of 30')).toBeInTheDocument()
     expect(screen.getAllByRole('checkbox', { name: 'Include orders-sqs' })).toHaveLength(20)
   })

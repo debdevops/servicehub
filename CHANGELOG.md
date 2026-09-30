@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Changed / Fixed — 2026-09-30 (uncommitted work verified live against AWS)
+
+- **One dropdown for the whole app.** Every native `<select>` (page-size, filters, Settings, Send message, Approve, Auto Replay) is now the same rounded, keyboard-driven list the namespace picker uses (`ui/Select`). Verified live: every screen opens and closes each dropdown, choices reach the URL/preferences, no side-scroll at 1366×768.
+- **AWS bulk replay and purge no longer rescan the queue for every message.** A scan keeps the messages it inspected locked and remembers them, so the next message in the batch is an O(1) lookup; they are released after 10 s idle or as soon as anything else scans the queue. Verified live: 4 dead letters replayed, each removed from the DLQ (original ids gone, one copy each), and nothing left hidden afterwards (0 not-visible).
+- **Dead letters showed the internal key `__none__` as a reason name** in the strip beside the title when a cloud records no reason (AWS never does). It now reads "No reason recorded", like the reason chips. Regression test added.
+
 ### Fixed — found while re-verifying the documentation, 2026-09-29
 
 - **`docker compose up --build` and the CI container smoke test crashed at start.** A Production start with no encryption key refuses to run (by design), and neither compose nor the smoke test supplied one. `docker-compose.yml` now requires `SERVICEHUB_ENCRYPTION_KEY` (with a clear message if it is missing) and the smoke test passes a throw-away key.

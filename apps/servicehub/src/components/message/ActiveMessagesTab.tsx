@@ -22,6 +22,7 @@ import { environmentOrder, namespaceTag } from '../provider/scopeChoice'
 import { namespaceKeys } from '../../hooks/useNamespaces'
 import { RetryLink } from '../ui/RetryLink'
 import { Skeleton } from '../ui/Skeleton'
+import { Select } from '../ui/Select'
 
 /** A peek is one request for up to this many of the oldest messages (the API's ceiling); the grid pages through them locally. */
 const PEEK_MAX = 100
@@ -203,25 +204,24 @@ function Browser({ rows }: { rows: readonly Row[] }) {
           <div className="flex flex-wrap items-end gap-3 border-b border-[var(--color-border)] px-4 py-3">
             <div className="min-w-[14rem] flex-1">
               <label className={label} htmlFor="active-queue">Queue or topic</label>
-              <select
+              <Select
                 id="active-queue"
                 value={keyOf(chosen)}
-                onChange={(e) => { setParams((c) => { const n = new URLSearchParams(c); n.set('queue', e.target.value); n.delete('active'); return n }); setPage(1); setTicked(new Set()) }}
-                className={`${field} w-full`}
+                onChange={(v) => { setParams((c) => { const n = new URLSearchParams(c); n.set('queue', v); n.delete('active'); return n }); setPage(1); setTicked(new Set()) }}
               >
                 {rows.map((r) => (
                   <option key={keyOf(r)} value={keyOf(r)}>
                     {several ? `${nameOf(r.namespace)} / ` : ''}{optionLabel(r)} · {r.entity.activeMessages === null ? "can't count" : `${r.entity.activeMessages.toLocaleString()} waiting`}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
             {view === 'browse' && (
               <>
                 <div><label className={label} htmlFor="active-state">Message state</label>
-                  <select id="active-state" value={state} onChange={(e) => { setState(e.target.value as typeof state); setPage(1) }} className={field}>{STATES.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select></div>
+                  <Select id="active-state" value={state} onChange={(v) => { setState(v as typeof state); setPage(1) }}>{STATES.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</Select></div>
                 <div><label className={label} htmlFor="active-window">Time window</label>
-                  <select id="active-window" value={windowId} onChange={(e) => { setWindowId(e.target.value as typeof windowId); setPage(1) }} className={field}>{WINDOWS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select></div>
+                  <Select id="active-window" value={windowId} onChange={(v) => { setWindowId(v as typeof windowId); setPage(1) }}>{WINDOWS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</Select></div>
                 <div className="min-w-[14rem] flex-1"><label className={label} htmlFor="active-search">Search</label>
                   <span className="relative block"><Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]" />
                     <input id="active-search" type="search" value={text} onChange={(e) => { setText(e.target.value); setPage(1) }} placeholder="Message ID, correlation ID, subject…" className={`${field} w-full pl-8`} /></span></div>
@@ -232,10 +232,10 @@ function Browser({ rows }: { rows: readonly Row[] }) {
             </label>
             {view === 'browse' && (
               <>
-                <label className="flex items-center gap-1.5 pb-2 text-[12.5px] text-[var(--color-text-muted)]">
-                  <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} /> Auto-refresh every
-                  <select aria-label="Auto-refresh interval" value={every} onChange={(e) => setEvery(Number(e.target.value) as typeof every)} className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 py-0.5">{INTERVALS.map((n) => <option key={n} value={n}>{n}s</option>)}</select>
-                </label>
+                <div className="flex items-center gap-1.5 pb-2 text-[12.5px] text-[var(--color-text-muted)]">
+                  <label className="flex items-center gap-1.5"><input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} /> Auto-refresh every</label>
+                  <Select variant="inline" ariaLabel="Auto-refresh interval" value={String(every)} onChange={(v) => setEvery(Number(v) as typeof every)}>{INTERVALS.map((n) => <option key={n} value={n}>{n}s</option>)}</Select>
+                </div>
                 <button type="button" onClick={() => void peek.refetch()} disabled={peek.isFetching} className="flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-semibold">
                   <RefreshCw className={`h-4 w-4 ${peek.isFetching ? 'animate-spin' : ''}`} aria-hidden="true" /> {peek.isFetching ? 'Refreshing…' : 'Refresh'}
                 </button>

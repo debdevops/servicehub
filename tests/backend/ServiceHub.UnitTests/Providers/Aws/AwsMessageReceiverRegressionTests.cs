@@ -69,6 +69,7 @@ public sealed class AwsMessageReceiverRegressionTests
     private static (AwsMessageReceiver Sut, Mock<IAmazonSQS> Sqs, List<ChangeMessageVisibilityBatchRequest> Releases)
         BuildSut(params ReceiveMessageResponse[] rounds)
     {
+        AwsMessageReceiver.DiscardHeldScans(QueueUrl, DlqUrl);
         var ns = BuildNamespace();
         var repo = new Mock<INamespaceRepository>();
         repo.Setup(r => r.GetByIdAsync(TestNamespaceId, It.IsAny<CancellationToken>()))
@@ -356,7 +357,9 @@ public sealed class AwsMessageReceiverRegressionTests
         sqs.Verify(s => s.DeleteMessageAsync(
             It.Is<DeleteMessageRequest>(r => r.QueueUrl == DlqUrl && r.ReceiptHandle == "rh-replay"),
             It.IsAny<CancellationToken>()), Times.Once);
-        // The non-target message inspected during the scan must be released.
+        // The non-target message inspected during the scan stays locked for the next lookup in a
+        // batch and is released once the batch goes idle.
+        await sut.FlushHeldScanAsync(DlqUrl);
         releases.SelectMany(r => r.Entries).Select(e => e.ReceiptHandle).Should().Contain("rh-other");
     }
 
@@ -574,8 +577,73 @@ public sealed class AwsMessageReceiverRegressionTests
         sqs.Verify(s => s.DeleteMessageAsync(
             It.Is<DeleteMessageRequest>(r => r.QueueUrl == QueueUrl && r.ReceiptHandle == "rh-purge"),
             It.IsAny<CancellationToken>()), Times.Once);
+        await sut.FlushHeldScanAsync(QueueUrl);
         releases.SelectMany(r => r.Entries).Select(e => e.ReceiptHandle)
             .Should().Contain("rh-keep").And.NotContain("rh-purge");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Bulk replay — one scan serves the whole batch
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ReplayMessageAsync_BulkBatch_ScansDlqOnce_AndServesLaterTargetsFromHeldMessages()
+    {
+        var (sut, sqs, releases) = BuildSut(new ReceiveMessageResponse
+        {
+            Messages =
+            [
+                BuildSqsMessage("m-a", "rh-a", "body a"),
+                BuildSqsMessage("m-b", "rh-b", "body b"),
+                BuildSqsMessage("m-c", "rh-c", "body c"),
+            ],
+        });
+        sqs.Setup(s => s.SendMessageAsync(It.IsAny<SqsSendRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SendMessageResponse { MessageId = "new" });
+        sqs.Setup(s => s.DeleteMessageAsync(It.IsAny<DeleteMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DeleteMessageResponse());
+
+        foreach (var id in new[] { "m-a", "m-b", "m-c" })
+        {
+            var result = await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, ComputeSequenceNumber(id), null);
+            result.IsSuccess.Should().BeTrue($"{id} was received by the first scan and must still be replayable");
+        }
+
+        // The first scan received all three; the second and third replays never touched SQS's receive.
+        // (Received once for the first target plus the quiet rounds that end that scan.)
+        var receivesAfterFirstScan = sqs.Invocations.Count(i => i.Method.Name == nameof(IAmazonSQS.ReceiveMessageAsync));
+        receivesAfterFirstScan.Should().BeLessThanOrEqualTo(1,
+            "the first target is found in the first round, so no further receive rounds should run for the batch");
+        foreach (var handle in new[] { "rh-a", "rh-b", "rh-c" })
+        {
+            sqs.Verify(s => s.DeleteMessageAsync(
+                It.Is<DeleteMessageRequest>(r => r.QueueUrl == DlqUrl && r.ReceiptHandle == handle),
+                It.IsAny<CancellationToken>()), Times.Once);
+        }
+        // Everything was consumed, so nothing is left locked to release.
+        await sut.FlushHeldScanAsync(DlqUrl);
+        releases.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task PeekMessagesAsync_ReleasesMessagesHeldByAnEarlierReplayScan()
+    {
+        var (sut, sqs, releases) = BuildSut(new ReceiveMessageResponse
+        {
+            Messages = [BuildSqsMessage("m-a", "rh-a"), BuildSqsMessage("m-held", "rh-held")],
+        });
+        sqs.Setup(s => s.SendMessageAsync(It.IsAny<SqsSendRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SendMessageResponse());
+        sqs.Setup(s => s.DeleteMessageAsync(It.IsAny<DeleteMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DeleteMessageResponse());
+
+        await sut.ReplayMessageAsync(TestNamespaceId, QueueName, null, ComputeSequenceNumber("m-a"), null);
+        releases.Should().BeEmpty("the inspected message stays locked for the rest of the batch");
+
+        // Anything else scanning the DLQ (a UI browse) must not see a hole where held messages are.
+        await sut.PeekDeadLetterMessagesAsync(new GetMessagesRequest(TestNamespaceId, QueueName, null, true, 50));
+
+        releases.SelectMany(r => r.Entries).Select(e => e.ReceiptHandle).Should().Contain("rh-held");
     }
 
     // ─────────────────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { openSelect } from '../../../support/choose'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
@@ -42,13 +43,14 @@ describe('Send a message', () => {
 
   it('has no accessibility violations (6.6)', async () => {
     const { container } = wrap()
-    await screen.findByRole('option', { name: 'orders' })
+    await openSelect('Queue or topic')
     await expectNoAxeViolations(container)
   })
 
   it('never offers a production namespace, or a subscription as a target', async () => {
     wrap()
     expect(await screen.findByText(/Production namespaces are not listed/)).toBeInTheDocument()
+    await openSelect('Queue or topic')
     expect(await screen.findByRole('option', { name: 'orders' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'events (topic)' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: /events\/sub/ })).not.toBeInTheDocument()
@@ -58,7 +60,7 @@ describe('Send a message', () => {
   it('checks JSON before sending, then sends one message with its properties and says what the cloud accepted', async () => {
     const user = userEvent.setup()
     wrap()
-    await screen.findByRole('option', { name: 'orders' })
+    await openSelect('Queue or topic')
     const body = screen.getByLabelText('Body')
     await user.clear(body)
     await user.type(body, 'not json')
