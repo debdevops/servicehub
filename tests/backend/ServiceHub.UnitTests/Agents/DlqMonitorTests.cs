@@ -328,6 +328,65 @@ public sealed class DlqMonitorTests : IAsyncLifetime
         (await Rows()).Should().BeEmpty();
     }
 
+    // Rows from an earlier incarnation of the infrastructure must not read as "stuck now" on a cloud that is never peeked on a timer.
+    private async Task SeedActiveRow(Namespace ns, string entity, long seq, DateTimeOffset detectedAt)
+    {
+        await using var db = NewDb();
+        db.DlqMessages.Add(new DlqMessage
+        {
+            MessageId = $"old-{seq}", SequenceNumber = seq, BodyHash = "h", NamespaceId = ns.Id, CloudProvider = ns.Provider, OwnerId = ns.OwnerId,
+            EntityName = entity, EntityType = ServiceBusEntityType.Queue, EnqueuedTimeUtc = detectedAt, DetectedAtUtc = detectedAt,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task A_queue_that_no_longer_exists_resolves_its_rows_without_a_peek()
+    {
+        var cloud = Aws();
+        cloud.Entities.Add(Queue("other", 0));
+        var ns = AwsNs();
+        await SeedActiveRow(ns, "orders", 1, _time.GetUtcNow().AddDays(-1));
+
+        var result = await Scan(cloud, ns);
+
+        result.Outcome.Should().Be(ScanOutcome.Skipped);
+        result.Resolved.Should().Be(1);
+        cloud.PeekCalls.Should().Be(0);
+        (await Rows()).Single().Status.Should().Be(DlqMessageStatus.Resolved);
+    }
+
+    [Fact]
+    public async Task A_queue_re_created_after_the_row_was_recorded_does_not_keep_the_old_rows_stuck()
+    {
+        var cloud = Aws();
+        var created = _time.GetUtcNow().AddHours(-2);
+        cloud.Entities.Add(new CloudEntity { Name = "orders", EntityType = "Queue", DeadLetterCount = 316, DeadLetterQueueCreatedAt = created });
+        var ns = AwsNs();
+        await SeedActiveRow(ns, "orders", 1, created.AddHours(-20));  // from the queue that was destroyed
+        await SeedActiveRow(ns, "orders", 2, created.AddMinutes(30)); // recorded after this queue existed
+
+        var result = await Scan(cloud, ns);
+
+        result.Resolved.Should().Be(1);
+        cloud.PeekCalls.Should().Be(0);
+        var rows = await Rows();
+        rows[0].Status.Should().Be(DlqMessageStatus.Resolved);
+        rows[1].Status.Should().Be(DlqMessageStatus.Active);
+    }
+
+    [Fact]
+    public async Task A_listing_that_could_not_vouch_for_a_queue_leaves_its_rows_alone()
+    {
+        var cloud = Aws();
+        cloud.IncompleteQueues.Add("orders");
+        var ns = AwsNs();
+        await SeedActiveRow(ns, "orders", 1, _time.GetUtcNow().AddDays(-1));
+
+        (await Scan(cloud, ns)).Resolved.Should().Be(0);
+        (await Rows()).Single().Status.Should().Be(DlqMessageStatus.Active);
+    }
+
     [Fact]
     public async Task A_person_asking_to_look_is_the_consent_the_timer_never_has()
     {

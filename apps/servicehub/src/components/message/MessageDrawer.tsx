@@ -14,6 +14,7 @@ import { Attribution } from '../Attribution'
 import { WatchCard } from '../agent/WatchCard'
 import { useReplays } from '../../hooks/useReplay'
 import { useDeadLetter } from '../../hooks/useDeadLetter'
+import { useNamespace } from '../../hooks/useNamespaces'
 import type { DeadLetterDetail } from '../../lib/api/deadLetters'
 import { explainFailure } from '../../lib/analyzer'
 import { useMe } from '../../hooks/useIdentity'
@@ -103,9 +104,19 @@ export function MessageDrawer() {
   )
 }
 
+/**
+ * On a cloud with no repeatable peek (AWS, Google Cloud) the delivery counter is the cloud's receive counter, and ServiceHub's
+ * own "Look now" is a receive — so the number can include ServiceHub's looks, not only the app's tries. Said where it is shown.
+ */
+const OWN_LOOKS_NOTE = 'includes ServiceHub’s own looks'
+function useCountIncludesOurLooks(namespaceId: string): boolean {
+  return useNamespace(namespaceId).data?.capabilities?.supportsRepeatablePeek === false
+}
+
 function Content({ detail, full, tab, onTab, onReplay }: { detail: DeadLetterDetail; full: boolean; tab: Tab; onTab: (t: Tab) => void; onReplay: () => void }) {
   const m = detail.item
   const now = new Date()
+  const ownLooks = useCountIncludesOurLooks(m.namespaceId)
   const explanation = explainFailure(m.deadLetterReason, m.deadLetterErrorDescription, m.deliveryCount, { body: detail.bodyPreview, propertiesJson: detail.applicationPropertiesJson })
   const show = (t: Tab) => full || tab === t
   // The latest replay of this message, if any: while it is being watched the slot is the watch card, after that the outcome.
@@ -139,7 +150,7 @@ function Content({ detail, full, tab, onTab, onReplay }: { detail: DeadLetterDet
             </span>
             <p className="mt-2 text-sm text-[var(--color-text)]">
               <span className="font-mono text-[13px]">{describeEntity(m.entityName, m.entityType, m.topicName).topic ? `${describeEntity(m.entityName, m.entityType, m.topicName).topic} › ` : ''}{describeEntity(m.entityName, m.entityType, m.topicName).name}</span>
-              {m.deliveryCount > 0 ? ` · tried ${m.deliveryCount} ${m.deliveryCount === 1 ? 'time' : 'times'}` : ''} ·{' '}
+              {m.deliveryCount > 0 ? ` · tried ${m.deliveryCount} ${m.deliveryCount === 1 ? 'time' : 'times'}${ownLooks ? ` (${OWN_LOOKS_NOTE})` : ''}` : ''} ·{' '}
               {formatBytes(m.sizeInBytes)}{detail.contentType ? ` · ${detail.contentType}` : ''} · set aside {formatAgo(m.detectedAtUtc, now)}
             </p>
             {m.deadLetterErrorDescription && <p className="mt-1 text-sm text-[var(--color-text-muted)]">{m.deadLetterErrorDescription}</p>}
@@ -398,6 +409,7 @@ function Row({ label, help, children }: { label: string; help?: ColumnHelp; chil
 
 function Details({ detail, now }: { detail: DeadLetterDetail; now: Date }) {
   const m = detail.item
+  const ownLooks = useCountIncludesOurLooks(m.namespaceId)
   return (
     <section aria-label="Details">
       <h3 className="mb-1 flex items-center text-sm font-semibold">Details<InfoTip help={sectionHelp.message.details} /></h3>
@@ -408,7 +420,7 @@ function Details({ detail, now }: { detail: DeadLetterDetail; now: Date }) {
         </Row>
         <Row label="Queue or topic" help={columnHelp.drawer.where}><EntityCell size="sm" entityName={m.entityName} entityType={m.entityType} topicName={m.topicName} /></Row>
         <Row label="Enqueued" help={columnHelp.drawer.enqueued}>{formatWhen(m.enqueuedTimeUtc, now)}</Row>
-        <Row label="Tries" help={columnHelp.drawer.tries}>{m.deliveryCount > 0 ? m.deliveryCount : '—'}</Row>
+        <Row label="Tries" help={columnHelp.drawer.tries}>{m.deliveryCount > 0 ? <>{m.deliveryCount}{ownLooks && <span className="text-[var(--color-text-muted)]"> ({OWN_LOOKS_NOTE})</span>}</> : '—'}</Row>
       </dl>
     </section>
   )
@@ -461,11 +473,12 @@ function Headers({ detail }: { detail: DeadLetterDetail }) {
 
 function Delivery({ detail, now }: { detail: DeadLetterDetail; now: Date }) {
   const m = detail.item
+  const ownLooks = useCountIncludesOurLooks(m.namespaceId)
   return (
     <section aria-label="Delivery">
       <h3 className="mb-1 flex items-center text-sm font-semibold">Delivery<InfoTip help={sectionHelp.message.delivery} /></h3>
       <dl className="grid grid-cols-[170px_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
-        <Row label="Delivery attempts">{m.deliveryCount}</Row>
+        <Row label="Delivery attempts">{m.deliveryCount}{ownLooks && <span className="text-[var(--color-text-muted)]"> ({OWN_LOOKS_NOTE})</span>}</Row>
         <Row label="Enqueued" help={columnHelp.drawer.enqueued}>{formatWhen(m.enqueuedTimeUtc, now)}</Row>
         <Row label="First seen set aside">{formatWhen(m.detectedAtUtc, now)}</Row>
         <Row label="Recorded reason">{m.deadLetterReason ?? 'none'}</Row>

@@ -72,6 +72,7 @@ public sealed class DlqScanner
     private const int MaxScanBatchesPerEntity = 50;
     private const int LookupChunk = 400;
     private const string SubscriptionPathSegment = "/subscriptions/";
+    private const string NotWatchedReason = "Looking at a message there counts as a delivery attempt, so it is not watched automatically.";
     private const string RecoveryMarkerProperty = "x-servicehub-recovery-id";
 
     private readonly ServiceHubDbContext _db;
@@ -118,25 +119,30 @@ public sealed class DlqScanner
 
         var provider = _router.Resolve(ns.Provider);
 
-        // No non-destructive peek → looking changes what is being looked at. Decided before any call.
-        if (!askedByPerson
-            && !provider.Capabilities.SupportsRepeatablePeek
-            && !_configuration.GetValue($"DlqMonitor:AllowDestructivePeek:{ns.Provider}", false))
-        {
-            return new NamespaceScanResult(
-                ScanOutcome.Skipped,
-                Reason: "Looking at a message there counts as a delivery attempt, so it is not watched automatically.");
-        }
+        // No non-destructive peek → looking changes what is being looked at. Decided before any peek.
+        var mayPeek = askedByPerson
+            || provider.Capabilities.SupportsRepeatablePeek
+            || _configuration.GetValue($"DlqMonitor:AllowDestructivePeek:{ns.Provider}", false);
 
+        // Listing is read-only on every cloud, so it is done either way: what no longer exists in the cloud
+        // must not keep showing as stuck just because looking inside a queue is not allowed.
         var listed = await provider.ListEntitiesForReconciliationAsync(ns.Id, ct).ConfigureAwait(false);
         if (listed.IsFailure)
         {
             // Nothing is reconciled on a failed listing.
             _logger.LogWarning("Could not list entities for namespace {NamespaceId}: {Error}", ns.Id, listed.Error.Message);
-            return new NamespaceScanResult(ScanOutcome.Failed, Reason: "The cloud could not be read.");
+            return mayPeek
+                ? new NamespaceScanResult(ScanOutcome.Failed, Reason: "The cloud could not be read.")
+                : new NamespaceScanResult(ScanOutcome.Skipped, Reason: NotWatchedReason);
         }
 
         var scan = listed.Value;
+        var gone = await ResolveWhatCannotBeThereAsync(ns, scan, ct).ConfigureAwait(false);
+        if (!mayPeek)
+        {
+            return new NamespaceScanResult(ScanOutcome.Skipped, Resolved: gone, Reason: NotWatchedReason);
+        }
+
         var receiver = provider.GetMessageReceiver();
 
         var examined = 0;
@@ -189,7 +195,7 @@ public sealed class DlqScanner
         // Unconfirmed = entities whose peek could not be trusted, plus stored entities the listing did not
         // vouch for. Either way their rows were left exactly as they were.
         return new NamespaceScanResult(
-            ScanOutcome.Scanned, examined, totalNew, resolvedInEntities + reconciled, Math.Max(unconfirmed.Count, unconfirmedRows));
+            ScanOutcome.Scanned, examined, totalNew, gone + resolvedInEntities + reconciled, Math.Max(unconfirmed.Count, unconfirmedRows));
     }
 
     private sealed record EntityScan(int NewCount, int LiveCount, bool Complete, int Resolved = 0);
@@ -369,6 +375,86 @@ public sealed class DlqScanner
 #pragma warning restore CA1031
     }
 
+    // True when the listing could not vouch for this entity either way (a per-entity call failed, or SNS failed outright).
+    private static bool ListingUnconfirmed(Core.Models.EntityScanResult scan, string name)
+    {
+        var sub = name.IndexOf(SubscriptionPathSegment, StringComparison.Ordinal);
+        if (sub < 0)
+        {
+            return scan.IncompleteQueueNames.Contains(name);
+        }
+
+        return scan.SnsListingFailed
+            || scan.IncompleteTopicNames.Contains(name[..sub])
+            || scan.IncompleteQueueNames.Contains(name[(sub + SubscriptionPathSegment.Length)..]);
+    }
+
+    /// <summary>
+    /// Resolves stored Active rows the listing alone proves are not there — no peek, so it is safe on every
+    /// cloud, including those where looking inside a queue counts as a delivery attempt. Two proofs:
+    /// the queue or subscription no longer exists; or the queue exists but was created <i>after</i> the row
+    /// was recorded, so the row belongs to an earlier queue that had the same name (infrastructure torn down
+    /// and re-created). Anything the listing could not vouch for is left exactly as it was.
+    /// </summary>
+    private async Task<int> ResolveWhatCannotBeThereAsync(Namespace ns, Core.Models.EntityScanResult scan, CancellationToken ct)
+    {
+        try
+        {
+            var listed = new Dictionary<string, DateTimeOffset?>();
+            foreach (var entity in scan.Entities.Where(e => e.EntityType is "Queue" or "Subscription"))
+            {
+                var (entityName, topicName, _) = ParseEntity(entity.Name, entity.EntityType);
+                listed[topicName is null ? entityName : $"{topicName}{SubscriptionPathSegment}{entityName}"] = entity.DeadLetterQueueCreatedAt;
+            }
+
+            var active = await _db.DlqMessages
+                .Where(m => m.NamespaceId == ns.Id && m.Status == DlqMessageStatus.Active)
+                .ToListAsync(ct).ConfigureAwait(false);
+
+            var now = _time.GetUtcNow();
+            var resolved = 0;
+            foreach (var row in active)
+            {
+                if (ListingUnconfirmed(scan, row.EntityName))
+                {
+                    continue;
+                }
+
+                var stale = listed.TryGetValue(row.EntityName, out var createdAt)
+                    ? createdAt is { } created && row.DetectedAtUtc < created
+                    : true;
+                if (!stale)
+                {
+                    continue;
+                }
+
+                row.Status = DlqMessageStatus.Resolved;
+                row.ResolvedAt = now;
+                row.ResolutionCause = DlqResolutionCause.VanishedExternally;
+                resolved++;
+            }
+
+            if (resolved > 0)
+            {
+                await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            }
+
+            return resolved;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+#pragma warning disable CA1031 // Tidying stale rows must never fail the scan that follows.
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not check stored dead letters against what exists in namespace {NamespaceId}", ns.Id);
+            _db.ChangeTracker.Clear();
+            return 0;
+        }
+#pragma warning restore CA1031
+    }
+
     /// <summary>
     /// Marks Active rows Resolved for entities that are provably empty or provably gone. Returns
     /// (resolved, skippedBecauseUnconfirmed).
@@ -387,23 +473,7 @@ public sealed class DlqScanner
 
             // Absence means "gone" only if the listing was complete and this entity's peek was confirmed.
             // An incomplete listing or an unconfirmed peek means the scan did not look, not that it is gone.
-            bool IsUnconfirmed(string name)
-            {
-                if (unconfirmed.Contains(name))
-                {
-                    return true;
-                }
-
-                var sub = name.IndexOf(SubscriptionPathSegment, StringComparison.Ordinal);
-                if (sub < 0)
-                {
-                    return scan.IncompleteQueueNames.Contains(name);
-                }
-
-                return scan.SnsListingFailed
-                    || scan.IncompleteTopicNames.Contains(name[..sub])
-                    || scan.IncompleteQueueNames.Contains(name[(sub + SubscriptionPathSegment.Length)..]);
-            }
+            bool IsUnconfirmed(string name) => unconfirmed.Contains(name) || ListingUnconfirmed(scan, name);
 
             var skipped = activeEntities.Count(IsUnconfirmed);
             var toResolve = activeEntities

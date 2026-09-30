@@ -23,12 +23,15 @@ export function WhyMessagesFailed({
   namespaceId,
   environment,
   scopeQuery,
+  recordedOnly = false,
 }: {
   provider: CloudProvider
   namespaceId?: string
   environment?: EnvironmentKind
   /** `&ns=…` / `&env=…` for the links, so opening a reason keeps the scope. */
   scopeQuery: string
+  /** True for a cloud ServiceHub does not watch: the reasons are only those of dead letters it has recorded, which may be none yet. */
+  recordedOnly?: boolean
 }) {
   const cloud = providerLabel[provider]
   const { data, isPending, isError, refetch } = useDeadLetters({ provider, namespaceId, environment, status: 'active', pageSize: 1 })
@@ -41,9 +44,13 @@ export function WhyMessagesFailed({
 
   return (
     <InsightCard title="Why messages failed" help={widgetHelp.whyFailed} note={total > 0 ? `${total.toLocaleString()} dead-lettered` : undefined}>
-      {isPending && <Skeleton label={`Reading {cloud}…`} rows={4} />}
+      {isPending && <Skeleton label={`Reading ${cloud}…`} rows={4} />}
       {isError && <p role="alert" className="text-[13px] text-[var(--color-text-muted)]">ServiceHub couldn’t read the reasons just now. <RetryLink onRetry={() => void refetch()} /></p>}
-      {data && total === 0 && <p className="text-[13px] text-[var(--color-text-muted)]">Nothing is dead-lettered in {cloud} right now, so there is nothing to explain.</p>}
+      {data && total === 0 && <p className="text-[13px] text-[var(--color-text-muted)]">
+        {recordedOnly
+          ? `ServiceHub has no recorded dead letters in ${cloud} to explain yet. Use Look now to read them.`
+          : `Nothing is dead-lettered in ${cloud} right now, so there is nothing to explain.`}
+      </p>}
       {data && total > 0 && (
         <ul className="space-y-3">
           {shown.map((g) => {

@@ -96,7 +96,7 @@ export function CloudView({ provider, allInCloud, choice, window }: {
               <StatTile
                 label="Dead letters"
                 value={summary.summary.deadLetters}
-                note={traits.watched ? 'right now' : 'recorded'}
+                note={traits.watched ? 'right now' : `counted by ${cloud}`}
                 unavailable={`${cloud} does not report message counts.`}
                 to={`/?provider=${provider}&tab=dlq${nsQuery}`}
                 action="See dead letters"
@@ -147,7 +147,7 @@ export function CloudView({ provider, allInCloud, choice, window }: {
           ) : (
             <TwoColumnStack
               left={[
-                <WhyMessagesFailed key="why" provider={provider} namespaceId={choice.ns?.id} environment={choice.env ?? undefined} scopeQuery={nsQuery} />,
+                <WhyMessagesFailed key="why" provider={provider} namespaceId={choice.ns?.id} environment={choice.env ?? undefined} scopeQuery={nsQuery} recordedOnly />,
                 traits.listsSubscriptionsOnly ? <SubscriptionsCard key="subs" namespaces={namespaces} /> : <QueuesCard key="queues" summary={summary.summary} namespaces={namespaces} />,
               ]}
               right={[
@@ -221,7 +221,9 @@ function ReplayedTile({ provider, recovery, traits, cloud, nsQuery }: {
     : traits.confirms
       ? `${count('Recovered')} verified · ${count('Observing')} being watched`
       : (replayed ?? 0) > 0
-        ? `sent back — ${cloud} can’t confirm a fix held yet`
+        ? count('Returned') > 0
+          ? `${count('Returned')} came back — ${cloud} can’t confirm the rest held`
+          : `sent back — ${cloud} can’t confirm a fix held yet`
         : 'nothing replayed yet'
   return (
     <StatTile

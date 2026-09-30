@@ -18,6 +18,11 @@ describe('agentLine — computed from capability, never from a cloud name', () =
     expect(l.text).toContain('Not watching AWS on its own')
     expect(l.text).toContain('asks you before every replay')
   })
+  it('does not claim nothing is watched when only some namespaces are', () => {
+    const text = agentLine('your clouds', [ns(true), ns(false), ns(false)], 12, agents).text
+    expect(text).toContain('Watching 1 of 3 namespaces on its own')
+    expect(text).not.toContain('Not watching')
+  })
   it('does not trust a name: an "Azure" namespace without proof still asks first', () => expect(agentLine('Azure', [ns(false, true)], 1, agents).text).toContain('asks you before every replay'))
   it('says "will not act", never "stopped", when every acting agent is paused — and keeps watching', () => {
     const l = agentLine('Azure', [ns(true)], 12, [agent('Auto Replay', true, true), agent('Bulk Replay', true, true), agent('DLQ Monitor', false)])

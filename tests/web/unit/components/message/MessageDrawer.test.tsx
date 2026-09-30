@@ -5,6 +5,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as dl from '@/lib/api/deadLetters'
 import * as replayApi from '@/lib/api/replay'
+import * as nsApi from '@/lib/api/namespaces'
 import type { DeadLetterDetail } from '@/lib/api/deadLetters'
 import { explainFailure } from '@/lib/analyzer'
 import { MessageDrawer } from '@/components/message/MessageDrawer'
@@ -12,6 +13,7 @@ import { expectNoAxeViolations } from '@tests/support/axe'
 
 vi.mock('@/lib/api/deadLetters')
 vi.mock('@/lib/api/replay')
+vi.mock('@/lib/api/namespaces')
 const fetchOne = vi.mocked(dl.fetchDeadLetter)
 
 const detail = (over: Partial<DeadLetterDetail> = {}): DeadLetterDetail => ({
@@ -44,6 +46,7 @@ function renderDrawer(url = '/?tab=dlq&message=7') {
 describe('the message drawer', () => {
   beforeEach(() => {
     fetchOne.mockReset()
+    vi.mocked(nsApi.fetchNamespace).mockResolvedValue({ id: 'n1', capabilities: { supportsRepeatablePeek: true } } as unknown as Awaited<ReturnType<typeof nsApi.fetchNamespace>>)
     vi.mocked(replayApi.fetchReplays).mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 1 })
   })
 
@@ -51,6 +54,18 @@ describe('the message drawer', () => {
     renderDrawer()
     await new Promise((r) => setTimeout(r, 150))
     await expectNoAxeViolations(document.body)
+  })
+
+  it('says the tries count includes ServiceHub’s own looks on a cloud with no repeatable peek, and only there', async () => {
+    fetchOne.mockResolvedValue(detail())
+    const { unmount } = renderDrawer()
+    await screen.findByText(/tried 3 times/)
+    expect(screen.queryByText(/includes ServiceHub’s own looks/)).toBeNull()
+    unmount()
+
+    vi.mocked(nsApi.fetchNamespace).mockResolvedValue({ id: 'n1', capabilities: { supportsRepeatablePeek: false } } as unknown as Awaited<ReturnType<typeof nsApi.fetchNamespace>>)
+    renderDrawer()
+    expect(await screen.findByText(/tried 3 times \(includes ServiceHub’s own looks\)/)).toBeInTheDocument()
   })
 
   it('draws nothing without ?message=', () => {

@@ -59,11 +59,11 @@ export function StatTile({
           <div className="mt-px flex items-center text-[11.5px] font-semibold text-[var(--color-text-muted)]">{label}{info && <InfoTip help={info} />}</div>
         </div>
       </div>
-      <div className="mt-[13px] flex items-center justify-between border-t border-[#f3f4f6] pt-[11px]">
-        <Link to={to} className="text-[11.5px] font-semibold text-[var(--color-primary-600)] hover:underline">
+      <div className="mt-[13px] flex flex-wrap items-start justify-between gap-x-3 gap-y-1 border-t border-[#f3f4f6] pt-[11px]">
+        <Link to={to} className="shrink-0 text-[11.5px] font-semibold text-[var(--color-primary-600)] hover:underline">
           {action} →
         </Link>
-        <span className="text-[11.5px] text-[var(--color-text-muted)]">{note}</span>
+        <span className="min-w-0 text-[11.5px] text-[var(--color-text-muted)]">{note}</span>
       </div>
     </div>
   )

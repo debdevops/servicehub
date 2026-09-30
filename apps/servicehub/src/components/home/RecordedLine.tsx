@@ -6,6 +6,6 @@ import { formatWhen } from '../../lib/format'
  * `detectedAtUtc`; `null` means nothing has been recorded there yet.
  */
 export function RecordedLine({ total, newestIso, now = new Date() }: { total: number; newestIso: string | null; now?: Date }) {
-  if (total === 0 || newestIso === null) return <>nothing recorded yet — Look now</>
+  if (total === 0 || newestIso === null) return <>No stuck dead letter is recorded yet — press Look now</>
   return <>{total.toLocaleString()} recorded · newest {formatWhen(newestIso, now)}</>
 }

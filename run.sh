@@ -35,6 +35,34 @@ case "${1:-}" in
   *) echo "Unknown option: $1" >&2; usage; exit 1 ;;
 esac
 
+# Start fresh: if a previous ServiceHub API / Vite dev server (from this checkout) still holds a port, stop
+# exactly that PID and wait for the port to free. Anything else on the port is not ours, so we refuse.
+listener_pids() { { lsof -nP -tiTCP:"$1" -sTCP:LISTEN 2>/dev/null || true; } | sort -u; }
+free_port() {
+  local port="$1" pattern="$2" label="$3" pid cmd
+  local found; found="$(listener_pids "$port")"
+  [ -z "$found" ] && return 0
+  for pid in $found; do
+    cmd="$(ps -o command= -p "$pid" 2>/dev/null || true)"
+    if [[ "$cmd" == *"$pattern"* ]]; then
+      echo "↻ Stopping previous ${label} on :${port} (pid ${pid})"
+      kill "$pid" 2>/dev/null || true
+    else
+      echo "✖ Port ${port} is held by something else (pid ${pid}: ${cmd:0:100}). Free it or change the port." >&2
+      exit 1
+    fi
+  done
+  for _ in $(seq 1 100); do
+    [ -z "$(listener_pids "$port")" ] && return 0
+    sleep 0.1
+  done
+  for pid in $(listener_pids "$port"); do kill -9 "$pid" 2>/dev/null || true; done
+  sleep 0.5
+  [ -z "$(listener_pids "$port")" ] || { echo "✖ Could not free port ${port}." >&2; exit 1; }
+}
+[ "$MODE" != "web" ] && free_port "$API_PORT" "ServiceHub.Api" "API"
+[ "$MODE" != "api" ] && free_port "$WEB_PORT" "$ROOT/node_modules" "dev server"
+
 pids=()
 cleanup() {
   for pid in "${pids[@]:-}"; do
@@ -57,8 +85,14 @@ fi
 if [ "$MODE" != "api" ]; then
   echo "▶ Web      http://localhost:${WEB_PORT}"
   VITE_PROXY_TARGET="http://localhost:${API_PORT}" \
-    npm run dev -w apps/servicehub -- --port "${WEB_PORT}" &
+    npm run dev -w apps/servicehub -- --port "${WEB_PORT}" --strictPort &
   pids+=("$!")
 fi
 
-wait
+# Stop everything as soon as either process exits, so a crashed API is not hidden behind a live dev server.
+while :; do
+  for pid in "${pids[@]}"; do
+    kill -0 "$pid" 2>/dev/null || { wait "$pid" || true; exit 1; }
+  done
+  sleep 1
+done

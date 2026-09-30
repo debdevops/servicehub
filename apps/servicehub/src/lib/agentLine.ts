@@ -19,10 +19,13 @@ export function agentLine(cloud: string, namespaces: readonly Namespace[], queue
   const paused = acting.filter((a) => a.isPaused)
   const status: AgentLine['status'] = acting.length > 0 && paused.length === acting.length ? 'will-not-act' : paused.length > 0 ? 'partly-paused' : 'watching'
 
-  const watched = namespaces.length > 0 && namespaces.every((n) => n.capabilities?.supportsRepeatablePeek === true)
-  const watching = watched
-    ? queues === null ? `Watching ${cloud}` : `Watching ${plural(queues, 'queue')} and subscriptions`
-    : `Not watching ${cloud} on its own — ask it to look from Dead letters`
+  const watchedCount = namespaces.filter((n) => n.capabilities?.supportsRepeatablePeek === true).length
+  const watching =
+    watchedCount === namespaces.length && watchedCount > 0
+      ? queues === null ? `Watching ${cloud}` : `Watching ${plural(queues, 'queue')} and subscriptions`
+      : watchedCount === 0
+        ? `Not watching ${cloud} on its own — ask it to look from Dead letters`
+        : `Watching ${watchedCount} of ${namespaces.length} namespaces on its own — the rest when you ask it to look from Dead letters`
 
   if (status === 'will-not-act') return { status, text: `${watching} · Paused: the Agent will not act here until someone resumes it` }
 

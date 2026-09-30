@@ -155,7 +155,7 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
                 queuesNextToken = listResponse.NextToken;
             } while (!string.IsNullOrEmpty(queuesNextToken));
 
-            var queueSnapshots = new List<(string Name, long ActiveCount, string? RedriveTargetName)>();
+            var queueSnapshots = new List<(string Name, long ActiveCount, string? RedriveTargetName, DateTimeOffset? CreatedAt)>();
 
             foreach (var queueUrl in queueUrls)
             {
@@ -169,6 +169,7 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
                             {
                                 "ApproximateNumberOfMessages",
                                 "ApproximateNumberOfMessagesNotVisible",
+                                "CreatedTimestamp",
                                 "RedrivePolicy"
                             }
                         }, token).ConfigureAwait(false),
@@ -180,7 +181,12 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
                     // Extract queue name from URL
                     var queueName = queueUrl.Split('/').LastOrDefault() ?? queueUrl;
 
-                    queueSnapshots.Add((queueName, visible + inFlight, ParseRedriveTargetName(attrs)));
+                    // Epoch-zero means the attribute did not come back; it is not a real creation time.
+                    DateTimeOffset? createdAt = attrs.CreatedTimestamp > DateTime.UnixEpoch
+                        ? new DateTimeOffset(DateTime.SpecifyKind(attrs.CreatedTimestamp, DateTimeKind.Utc))
+                        : null;
+
+                    queueSnapshots.Add((queueName, visible + inFlight, ParseRedriveTargetName(attrs), createdAt));
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -192,19 +198,20 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
             // SQS surfaces the DLQ as a separate queue; report its depth as the source
             // queue's dead-letter count so the UI's Azure-style DLQ tab shows real numbers.
             var countsByName = queueSnapshots.ToDictionary(q => q.Name, q => q.ActiveCount, StringComparer.OrdinalIgnoreCase);
+            var createdByName = queueSnapshots.ToDictionary(q => q.Name, q => q.CreatedAt, StringComparer.OrdinalIgnoreCase);
 
             // A source queue's DeadLetterCount below falls back to 0 when its redrive target is
             // missing from countsByName. That fallback is only trustworthy when the target
             // genuinely wasn't returned by ListQueues — if instead GetQueueAttributes failed for
             // the target (target name is in incompleteQueueNames), the source's count is
             // unconfirmed too and must not be reconciled as a confirmed-empty DLQ.
-            foreach (var (queueName, _, redriveTargetName) in queueSnapshots)
+            foreach (var (queueName, _, redriveTargetName, _) in queueSnapshots)
             {
                 if (redriveTargetName is not null && incompleteQueueNames.Contains(redriveTargetName))
                     incompleteQueueNames.Add(queueName);
             }
 
-            foreach (var (queueName, activeCount, redriveTargetName) in queueSnapshots)
+            foreach (var (queueName, activeCount, redriveTargetName, _) in queueSnapshots)
             {
                 entities.Add(new CloudEntity
                 {
@@ -216,7 +223,10 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
                         ? dlqCount
                         : 0,
                     Provider = CloudProviderType.Aws,
-                    DeadLetterTargetName = redriveTargetName
+                    DeadLetterTargetName = redriveTargetName,
+                    DeadLetterQueueCreatedAt = redriveTargetName is not null && createdByName.TryGetValue(redriveTargetName, out var dlqCreated)
+                        ? dlqCreated
+                        : null
                 });
             }
 
