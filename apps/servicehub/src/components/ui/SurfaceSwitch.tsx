@@ -20,7 +20,7 @@ export function SurfaceSwitch({
       <Link
         to={href}
         aria-current={active ? 'page' : undefined}
-        className={`rounded-md px-3 py-1 text-sm ${active ? 'bg-[var(--color-surface)] font-semibold text-[var(--color-text)] shadow-sm' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'}`}
+        className={`rounded-md px-2 py-1 text-xs sm:px-3 sm:text-sm ${active ? 'bg-[var(--color-surface)] font-semibold text-[var(--color-text)] shadow-sm' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'}`}
       >
         {label}
       </Link>

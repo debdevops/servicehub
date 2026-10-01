@@ -29,12 +29,12 @@ export function Pager({
   const pages = Math.ceil(total / pageSize)
 
   return (
-    <nav aria-label="Pages" className="flex items-center justify-between gap-3 px-4 py-3 text-sm text-[var(--color-text-muted)]">
+    <nav aria-label="Pages" className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm text-[var(--color-text-muted)]">
       <span aria-live="polite">
         {first.toLocaleString()}–{last.toLocaleString()} of {total.toLocaleString()}
         {filtered && ' matching'}
       </span>
-      <span className="flex items-center gap-1">
+      <span className="flex flex-wrap items-center gap-1">
         {onPageSize && (
           <div className="mr-3 flex items-center gap-1.5 text-[12px]">
             Rows per page

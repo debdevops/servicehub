@@ -32,13 +32,13 @@ export function AccountMenu() {
 
   return (
     <div ref={box} className="relative">
-      <button type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-[var(--color-surface-muted)]">
+      <button type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="flex items-center gap-2 rounded-lg px-0.5 py-1 sm:px-1.5 hover:bg-[var(--color-surface-muted)]">
         <span aria-hidden="true" className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-primary-700)] text-xs font-bold text-white">{me.actor.isSession ? '·' : initials(me.actor.label)}</span>
         <span className="hidden text-left leading-tight sm:block">
           <span className="block text-[13px] font-semibold text-[var(--color-text)]">{who}</span>
           <span className="block text-[11px] text-[var(--color-text-muted)]">{role}</span>
         </span>
-        <ChevronDown className="h-4 w-4 text-[var(--color-text-muted)]" aria-hidden="true" />
+        <ChevronDown className="hidden h-4 w-4 sm:block text-[var(--color-text-muted)]" aria-hidden="true" />
       </button>
       {open && (
         <div role="menu" className="absolute right-0 top-11 z-40 w-64 overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl">

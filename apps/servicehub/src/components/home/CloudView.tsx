@@ -133,13 +133,13 @@ export function CloudView({ provider, allInCloud, allNamespaces, choice, window 
           {traits.watched ? (
             <>
               <div className="grid items-start gap-3.5 xl:grid-cols-12">
-                <div className="xl:col-span-5">
+                <div className="min-w-0 xl:col-span-5">
                   <Suspense fallback={<Skeleton label="Reading the trend…" variant="block" />}>
                     <TrendChart provider={provider} namespaceId={choice.ns?.id} environment={choice.env ?? undefined} />
                   </Suspense>
                 </div>
-                <div className="xl:col-span-4"><WhyMessagesFailed provider={provider} namespaceId={choice.ns?.id} environment={choice.env ?? undefined} scopeQuery={nsQuery} /></div>
-                <div className="xl:col-span-3"><RecoveryOutcomes provider={provider} namespaceId={choice.ns?.id} environment={choice.env ?? undefined} window={window === '7d' ? '7d' : '24h'} /></div>
+                <div className="min-w-0 xl:col-span-4"><WhyMessagesFailed provider={provider} namespaceId={choice.ns?.id} environment={choice.env ?? undefined} scopeQuery={nsQuery} /></div>
+                <div className="min-w-0 xl:col-span-3"><RecoveryOutcomes provider={provider} namespaceId={choice.ns?.id} environment={choice.env ?? undefined} window={window === '7d' ? '7d' : '24h'} /></div>
               </div>
               <div className="grid items-start gap-3.5 md:grid-cols-2">
                 <QueuesCard summary={summary.summary} namespaces={namespaces} />

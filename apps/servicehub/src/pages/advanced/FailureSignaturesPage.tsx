@@ -111,8 +111,8 @@ export default function FailureSignaturesPage() {
 
   return (
     <section className="px-[22px] pb-6 pt-5">
-      <header className="mb-4 flex items-start gap-5">
-        <div>
+      <header className="mb-4 flex flex-wrap items-start gap-3 sm:gap-5">
+        <div className="min-w-0">
           <h1 className="flex items-center gap-2.5 text-2xl font-extrabold tracking-tight">
             <Fingerprint className="h-6 w-6 text-[var(--color-primary-600)]" aria-hidden="true" /> Failure Signatures <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} />
           </h1>

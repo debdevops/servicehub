@@ -99,8 +99,8 @@ export default function AgentsPage() {
             <Link to="?panel=help" className="inline-flex items-center gap-1 rounded-lg border border-[#bae6fd] bg-white px-4 py-2 text-sm font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">Learn more <ChevronRight className="h-4 w-4" aria-hidden="true" /></Link>
           </div>
 
-          <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_400px]">
-            <div className="space-y-4">
+          <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_400px]">
+            <div className="min-w-0 space-y-4">
               {(show === null || show !== 'watching') && (
                 <Group title={`Acting Agents (${acting.length})`} tone="acting" summary={groupHealth(acting)}>
                   {acting.map((a) => <AgentRow key={a.id} agent={a} now={now} selected={a.id === selectedId} onSelect={() => select(a.id)} onPause={() => pause(a)} pausing={setPaused.isPending || !mayPause.allowed} />)}

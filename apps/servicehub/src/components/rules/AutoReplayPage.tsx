@@ -85,8 +85,8 @@ export function AutoReplayPage({ provider, onClose }: { provider: CloudProvider;
 
   return (
     <div className="space-y-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold text-[var(--color-text)]">{cloud} — Auto Replay</h1>
           <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
             What ServiceHub may retry on its own — {list.length} {list.length === 1 ? 'rule' : 'rules'}, {on} on
@@ -94,7 +94,7 @@ export function AutoReplayPage({ provider, onClose }: { provider: CloudProvider;
           </p>
           <NotAllowed reason={mayCreate.reason} />
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => void rules.refetch()}

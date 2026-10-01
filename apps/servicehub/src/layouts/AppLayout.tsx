@@ -78,7 +78,7 @@ export function AppLayout() {
         {loaded && cloudCount > 0 && <SafetyBanners />}
         <DemoBanner />
         <header
-          className="sticky top-0 z-20 flex items-center gap-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5"
+          className="sticky top-0 z-20 flex items-center gap-1.5 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3 sm:gap-4 sm:px-5"
           style={{ height: 'var(--header-height)' }}
         >
           <button
@@ -99,7 +99,7 @@ export function AppLayout() {
             >
               S
             </span>
-            <div>
+            <div className="max-[420px]:hidden">
               <div className="text-[17px] font-extrabold leading-[1.1] tracking-tight text-[var(--color-text)]">
                 Service<span className="text-[var(--color-primary-600)]">Hub</span>
               </div>
@@ -121,7 +121,7 @@ export function AppLayout() {
           <button type="button" aria-label="Search" onClick={() => setSearchOpen(true)} className="ml-auto rounded-lg p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)] md:hidden">
             <Search className="h-5 w-5" aria-hidden="true" />
           </button>
-          <div className="flex items-center gap-2 md:ml-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 md:ml-0">
             {loaded && cloudCount > 0 && <Bell />}
             <SurfaceSwitch
               surface={surface}

@@ -65,11 +65,11 @@ export default function AdvancedOverviewPage() {
   return (
     <section className="px-6 py-6">
       <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h1 className="flex items-center gap-2 text-2xl font-semibold"><LayoutGrid className="h-6 w-6 text-[var(--color-primary-600)]" aria-hidden="true" /> Advanced Overview</h1>
           <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">The control plane. What Simple states as an outcome, Advanced states as a breakdown.</p>
         </div>
-        <div className="flex gap-2 text-sm">
+        <div className="flex flex-wrap gap-2 text-sm">
           <Select variant="card" label="Scope" ariaLabel="Scope" value={provider ?? ''} onChange={(v) => set('provider', v || null)}>
             <option value="">All clouds</option>
             {clouds.map((c) => <option key={c} value={c}>{providerLabel[c]}</option>)}

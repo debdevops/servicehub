@@ -75,8 +75,8 @@ export function AllCloudsView({ window, onOpen }: { window: HomeWindow; onOpen: 
       <NamespaceByCloudTable namespaces={list} fleet={fleet.data} liveOf={liveOf} window={window} />
 
       <div className="grid items-start gap-3.5 xl:grid-cols-12">
-        <div className="xl:col-span-7"><LatestEverywhere connected={connected} namespaces={list} /></div>
-        <div className="xl:col-span-5"><TopFailuresByCloud failures={fleet.data?.topFailures ?? []} /></div>
+        <div className="min-w-0 xl:col-span-7"><LatestEverywhere connected={connected} namespaces={list} /></div>
+        <div className="min-w-0 xl:col-span-5"><TopFailuresByCloud failures={fleet.data?.topFailures ?? []} /></div>
       </div>
 
       <ActivityEverywhere />
@@ -312,14 +312,15 @@ function LatestEverywhere({ connected, namespaces }: { connected: readonly Cloud
         <h2 className="flex items-center text-sm font-semibold text-[var(--color-text)]">Latest dead letters, every cloud<InfoTip help={widgetHelp.latest} /></h2>
         <a href="?tab=dlq" className="text-sm font-medium text-[var(--color-primary-700)] hover:underline">See dead letters →</a>
       </div>
+      <div className="relative overflow-x-auto">
       <table className="w-full border-collapse text-left text-[12.5px]">
         <caption className="sr-only">The five most recent dead letters across every cloud</caption>
         <thead>
           <tr className="border-y border-[var(--color-border)] bg-[var(--color-surface-muted)] text-[10px] uppercase tracking-[0.6px] text-[var(--color-text-muted)]">
-            <th scope="col" className="px-4 py-2 font-bold">When</th>
-            <th scope="col" className="px-4 py-2 font-bold">Queue or topic</th>
-            <th scope="col" className="px-4 py-2 font-bold">Failed because</th>
-            <th scope="col" className="px-4 py-2 font-bold"><span className="sr-only">Details</span></th>
+            <th scope="col" className="px-3 py-2 font-bold">When</th>
+            <th scope="col" className="px-3 py-2 font-bold">Queue or topic</th>
+            <th scope="col" className="px-3 py-2 font-bold">Failed because</th>
+            <th scope="col" className="px-3 py-2 font-bold"><span className="sr-only">Details</span></th>
           </tr>
         </thead>
         <tbody>
@@ -327,22 +328,23 @@ function LatestEverywhere({ connected, namespaces }: { connected: readonly Cloud
             const ns = nameOf.get(m.namespaceId)
             return (
               <tr key={m.id} className="border-b border-[#f3f4f6] last:border-b-0">
-                <td className="px-4 py-2.5 text-[var(--color-text-muted)]">{formatWhen(m.detectedAtUtc, new Date())}</td>
-                <td className="px-4 py-2.5">
+                <td className="px-3 py-2.5 text-[var(--color-text-muted)]">{formatWhen(m.detectedAtUtc, new Date())}</td>
+                <td className="px-3 py-2.5">
                   <span className="inline-flex items-center gap-1.5 font-mono font-medium">
                     {ns && <span aria-hidden="true" className="inline-block h-4 w-4 rounded text-center text-[9px] font-extrabold leading-4" style={{ background: `${cloudColor[ns.provider]}22`, color: cloudColor[ns.provider] }}>{providerLabel[ns.provider].charAt(0)}</span>}
-                    {m.entityName}
+                    <span className="min-w-0 [overflow-wrap:anywhere]">{m.entityName}</span>
                   </span>
                   {ns && <div className="text-[11px] text-[var(--color-text-muted)]">{providerLabel[ns.provider]} · {ns.displayName ?? ns.name}</div>}
                   <div title={`Message ID: ${m.messageId}`} className="max-w-[16rem] truncate font-mono text-[11px] text-[var(--color-text-muted)]">{m.messageId}</div>
                 </td>
-                <td className="px-4 py-2.5">{m.deadLetterReason ? <span className="rounded-full bg-[var(--color-error-light)] px-2.5 py-0.5 text-[11px] font-bold text-[#b91c1c]">{m.deadLetterReason}</span> : <span className="text-[var(--color-text-muted)]">Reason not recorded</span>}</td>
-                <td className="px-4 py-2.5 text-right"><a href={`?tab=dlq&message=${m.id}`} className="font-semibold text-[var(--color-primary-600)] hover:underline">Details →</a></td>
+                <td className="px-3 py-2.5">{m.deadLetterReason ? <span className="rounded-full bg-[var(--color-error-light)] px-2.5 py-0.5 text-[11px] font-bold text-[#b91c1c]">{m.deadLetterReason}</span> : <span className="text-[var(--color-text-muted)]">Reason not recorded</span>}</td>
+                <td className="px-3 py-2.5 text-right"><a href={`?tab=dlq&message=${m.id}`} className="font-semibold text-[var(--color-primary-600)] hover:underline">Details →</a></td>
               </tr>
             )
           })}
         </tbody>
       </table>
+      </div>
     </section>
   )
 }

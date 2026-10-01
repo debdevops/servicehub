@@ -22,7 +22,7 @@ export function LookNow({ cloud, namespaces }: { cloud: string; namespaces: read
   return (
     <section aria-label={`Look at ${cloud}'s dead letters`} className="mb-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-4 py-3 text-sm">
       <div className="flex flex-wrap items-center gap-3">
-        <p className="min-w-0 flex-1 text-[var(--color-text-muted)]">
+        <p className="min-w-0 flex-[1_1_16rem] text-[var(--color-text-muted)]">
           ServiceHub doesn’t look in {cloud} on its own: reading a dead letter there counts as one delivery attempt. Ask it to
           look and it reads up to 100 per queue and keeps them here, so you can open, read and replay them.
         </p>

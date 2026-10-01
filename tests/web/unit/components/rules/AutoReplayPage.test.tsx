@@ -20,10 +20,10 @@ const rule = (over: Partial<rulesApi.Rule> = {}): rulesApi.Rule => ({
   verifiedOutcomes: 0, stayedFixed: 0, sampleSize: 20, successFloor: 0.5, ...over,
 })
 
-function renderPage() {
+function renderPage(provider: 'azure' | 'gcp' = 'azure') {
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <MemoryRouter><AutoReplayPage provider="azure" onClose={() => {}} /></MemoryRouter>
+      <MemoryRouter><AutoReplayPage provider={provider} onClose={() => {}} /></MemoryRouter>
     </QueryClientProvider>,
   )
 }
@@ -36,12 +36,11 @@ describe('Auto Replay page', () => {
     vi.mocked(identity.fetchMe).mockResolvedValue({ ownerId: 'o', authMethod: 'session', actor: { identity: 's', kind: 'user', label: 'l', isSession: true }, effectiveRole: 'Admin', governanceActive: false } as identity.Me)
   })
 
-  it('shows every connected cloud\u2019s rules and switches between them, so a cloud with rules is never "missing"', async () => {
-    vi.spyOn(nsApi, 'fetchNamespaces').mockResolvedValue([{ id: 'a', provider: 'azure' }, { id: 'g', provider: 'gcp' }] as nsApi.Namespace[])
+  it('shows the chosen cloud\u2019s own rules and count (the cloud switcher now lives in NamespaceScope on Home)', async () => {
     vi.mocked(rulesApi.fetchRules).mockImplementation(async (p) => (p === 'gcp' ? [rule({ id: 2, provider: 'gcp' })] : []))
-    renderPage()
-    expect(await screen.findByRole('button', { name: 'Google Cloud · 1 rule, 1 on' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Azure · 0 rules' })).toHaveAttribute('aria-current', 'page')
+    renderPage('gcp')
+    expect(await screen.findByText(/1 rule, 1 on/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /Google Cloud/ })).toBeInTheDocument()
   })
 
   it('Replay all is disabled, with the reason as its tooltip, when nothing matching is waiting', async () => {
