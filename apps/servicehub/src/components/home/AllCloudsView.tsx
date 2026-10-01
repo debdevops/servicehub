@@ -201,17 +201,17 @@ function NamespaceByCloudTable({
         <span className="text-[11px] text-[var(--color-text-muted)]">worst first inside each cloud</span>
       </div>
       <div className="relative overflow-x-auto">
-        <table className="w-full min-w-[860px] border-collapse text-left text-[12.5px]">
+        <table className="w-full min-w-[640px] border-collapse text-left text-[12.5px]">
           <caption className="sr-only">Every namespace, worst first inside its cloud</caption>
           <thead>
             <tr className="border-y border-[var(--color-border)] bg-[var(--color-surface-muted)] text-[10px] uppercase tracking-[0.6px] text-[var(--color-text-muted)]">
               <th scope="col" className="px-3 py-2 font-bold">Namespace</th>
-              <th scope="col" className="px-3 py-2 font-bold">Environment</th>
+              <th scope="col" className="px-3 py-2 font-bold max-xl:hidden">Environment</th>
               <th scope="col" className="px-3 py-2 font-bold">Dead letters</th>
               <th scope="col" className="px-3 py-2 font-bold">Active</th>
               <th scope="col" className="px-3 py-2 font-bold">New / resolved · {window}</th>
               <th scope="col" className="px-3 py-2 font-bold">Top failure</th>
-              <th scope="col" className="px-3 py-2 font-bold">How ServiceHub sees it</th>
+              <th scope="col" className="px-3 py-2 font-bold max-xl:hidden">How ServiceHub sees it</th>
               <th scope="col" className="px-3 py-2 font-bold">Health</th>
               <th scope="col" className="px-3 py-2 font-bold"><span className="sr-only">Open</span></th>
             </tr>
@@ -259,12 +259,12 @@ function NamespaceByCloudTable({
                               <span className="font-mono font-medium">{r.displayName ?? r.name}</span>
                               <div className="text-[11px] text-[var(--color-text-muted)]">{ns?.awsRegion ?? ns?.gcpProjectId ?? ''}</div>
                             </td>
-                            <td className="px-3 py-2.5"><span className={`rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${meta.chip}`}>{meta.label}</span></td>
+                            <td className="px-3 py-2.5 max-xl:hidden"><span className={`rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${meta.chip}`}>{meta.label}</span></td>
                             <td className="tabular px-3 py-2.5 text-[13px] font-bold">{typeof live.deadLetters === 'number' ? live.deadLetters.toLocaleString() : <span className="text-[11px] font-normal text-[var(--color-text-muted)]">{missingWords(live.state, 'can’t count')}</span>}</td>
                             <td className="tabular px-3 py-2.5">{typeof live.active === 'number' ? live.active.toLocaleString() : <span className="text-[11px] font-normal text-[var(--color-text-muted)]">{missingWords(live.state, 'can’t count')}</span>}</td>
                             <td className="tabular px-3 py-2.5">{r.watched ? <><span className="font-bold text-[#b91c1c]">+{r.newInWindow}</span> <span className="text-[var(--color-text-muted)]">/</span> <span className="font-bold text-[#047857]">−{r.resolvedInWindow}</span></> : <span className="text-[11px] font-normal text-[var(--color-text-muted)]">not watched</span>}</td>
                             <td className="px-3 py-2.5">{r.topFailure ? <span className="rounded-full bg-[var(--color-error-light)] px-2.5 py-0.5 text-[11px] font-bold text-[#b91c1c]">{r.topFailure.reason}</span> : <span className="text-[var(--color-text-muted)]">—</span>}</td>
-                            <td className="px-3 py-2.5 text-[11.5px] text-[var(--color-text-muted)]">{r.watched ? 'Watched automatically · every 10 s' : 'Recorded when you look'}</td>
+                            <td className="px-3 py-2.5 text-[11.5px] text-[var(--color-text-muted)] max-xl:hidden">{r.watched ? 'Watched automatically · every 10 s' : 'Recorded when you look'}</td>
                             <td className="px-3 py-2.5"><span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${h.cls}`}>{h.text}</span></td>
                             <td className="whitespace-nowrap px-3 py-2.5 text-right">
                               {!r.watched && (

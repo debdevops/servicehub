@@ -1,6 +1,7 @@
 import { api } from './client'
 import { Intent, withIntent } from './intentHeaders'
 import type { CloudProvider, EnvironmentKind } from './namespaces'
+import type { MessageGist } from './messageGist'
 
 export type CheckState = 'passed' | 'warning' | 'blocked'
 
@@ -93,6 +94,8 @@ export interface ReplayListItem {
   readonly observationWindowEndsAt: string | null
   readonly markerApplied: boolean
   readonly verification: ReplayVerification
+  /** What the replayed message was, from the dead letter it came from. */
+  readonly gist?: MessageGist | null
 }
 
 export interface ReplayPage {

@@ -4,7 +4,7 @@ import { InfoTip } from '../ui/InfoTip'
 import { sectionHelp } from '../../content/sections'
 import { EntityCell } from './EntityCell'
 import { PurgeAction } from './PurgeAction'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Check, Copy, Download, Maximize2, Minimize2, Play, Sparkles } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -51,6 +51,21 @@ export function MessageDrawer() {
   const full = params.get('view') === 'full' || modalOnly
   const { data, isPending, isError, error, refetch } = useDeadLetter(id)
   const [tab, setTab] = useState<Tab>('overview')
+
+  // A replay that was accepted takes the message out of the dead-letter queue. When its proposal is put away (Done, ✕ or Esc),
+  // the panel behind it has nothing left to act on — so it goes too, instead of lingering on a message that is no longer there.
+  const replayWasOpen = useRef(false)
+  const replayOpenNow = params.get('modal') === 'replay'
+  useEffect(() => {
+    const justClosed = replayWasOpen.current && !replayOpenNow
+    replayWasOpen.current = replayOpenNow
+    if (!justClosed || id === null) return
+    void refetch().then((r) => {
+      if (r.data && r.data.item.status !== 'active') {
+        setParams((c) => { const n = new URLSearchParams(c); n.delete('message'); n.delete('view'); return n }, { replace: true })
+      }
+    })
+  }, [replayOpenNow, id, refetch, setParams])
 
   if (raw === null) return null
 

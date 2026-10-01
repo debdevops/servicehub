@@ -90,6 +90,21 @@ public sealed class RulesApiTests : IDisposable
     }
 
     [Fact]
+    public async Task A_rule_for_Unknown_picks_up_the_messages_whose_cloud_recorded_no_reason()
+    {
+        // Regression: Google Cloud often records no dead-letter reason. Every screen calls that "Unknown", so a rule made from one says
+        // "Unknown" — but the matcher compared it to NULL and found nothing, so the rule sat there on "0 messages" forever.
+        using var host = DeadLettersApiTests.Host(new PeekLog { OnReplay = () => ServiceHub.Core.Results.Result<bool>.Success(true) });
+        var ns = await DeadLettersApiTests.Connect(host.Client, "azure");
+        await DeadLettersApiTests.Seed(host, ns, CloudProviderType.Azure, 4, reason: null);
+        await DeadLettersApiTests.Seed(host, ns, CloudProviderType.Azure, 2, reason: "Timeout", prefix: "t");
+
+        var test = await Send(host.Client, "/api/v1/rules/test", new { provider = "azure", reason = "Unknown" });
+
+        test.GetProperty("matched").GetInt32().Should().Be(4, "the four with no recorded reason, not the two that say Timeout");
+    }
+
+    [Fact]
     public async Task Messages_already_gone_from_the_queue_are_matched_but_not_held_back()
     {
         using var host = DeadLettersApiTests.Host();

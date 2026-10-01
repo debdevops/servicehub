@@ -13,6 +13,8 @@ import { DemoBanner } from '../components/banners/DemoEntry'
 import { usePendingWork } from '../hooks/usePendingWork'
 import { rememberPage } from '../lib/preferences'
 import { EscalationToast } from '../components/pending/EscalationToast'
+import { ActionNotice } from '../components/ui/ActionNotice'
+import { ReplayAllDock } from '../components/message/ReplayAllDock'
 import { OverlayHost } from '../components/overlays/OverlayHost'
 import { useEventStream } from '../hooks/useEventStream'
 import { useNamespaces } from '../hooks/useNamespaces'
@@ -85,7 +87,7 @@ export function AppLayout() {
             aria-expanded={menuOpen}
             aria-controls="main-nav"
             onClick={() => setMenuOpen((o) => !o)}
-            className="-ml-2 rounded-lg p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)] lg:hidden"
+            className="-ml-2 rounded-lg p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)] nav:hidden"
           >
             <Menu className="h-5 w-5" aria-hidden="true" />
           </button>
@@ -131,11 +133,11 @@ export function AppLayout() {
         </header>
 
         <div className="flex">
-          {menuOpen && <div className="fixed inset-0 z-20 bg-black/30 lg:hidden" aria-hidden="true" onClick={() => setMenuOpen(false)} />}
+          {menuOpen && <div className="fixed inset-0 z-20 bg-black/30 nav:hidden" aria-hidden="true" onClick={() => setMenuOpen(false)} />}
           <nav
             id="main-nav"
             aria-label="Main"
-            className={`sticky shrink-0 overflow-y-auto max-lg:fixed max-lg:left-0 max-lg:z-30 max-lg:transition-transform ${menuOpen ? '' : 'max-lg:invisible max-lg:-translate-x-full'} border-r border-[var(--color-border)] bg-[var(--color-surface)] px-3 pb-[18px] pt-3.5`}
+            className={`sticky shrink-0 overflow-y-auto max-nav:fixed max-nav:left-0 max-nav:z-30 max-nav:transition-transform ${menuOpen ? '' : 'max-nav:invisible max-nav:-translate-x-full'} border-r border-[var(--color-border)] bg-[var(--color-surface)] px-3 pb-[18px] pt-3.5`}
             style={{
               width: 'var(--sidebar-width)',
               top: 'var(--header-height)',
@@ -191,6 +193,8 @@ export function AppLayout() {
         <CommandPalette open={searchOpen} onClose={() => setSearchOpen(false)} connectedCloudCount={cloudCount} />
       </div>
       {loaded && cloudCount > 0 && <EscalationToast />}
+      <ActionNotice />
+      <ReplayAllDock />
     </ProviderScopeProvider>
   )
 }

@@ -226,10 +226,10 @@ function LedgerTable({ rows, namespaces, selected, onSelect }: { rows: readonly 
     { key: 'entity', header: 'Queue / topic', info: help.entity, render: (r) => <EntityCell size="sm" entityName={r.entityName} entityType={r.entityType ?? (r.entityName.includes('/') ? 'subscription' : 'queue')} /> },
     ...(selected ? [] : [{ key: 'msg', header: 'Message', info: columnHelp.drawer.messageId, render: (r: LedgerEntry) => r.messageId ? <span title={r.messageId} className="block max-w-[5rem] truncate font-mono text-[11.5px]">{r.messageId}</span> : <span className="text-[var(--color-text-muted)]">—</span> }]),
     { key: 'by', header: 'By', info: help.by, render: (r) => <ByCell actor={r.actor} at={r.begunAt} /> },
-    ...(selected ? [] : [{ key: 'what', header: 'What', info: help.what, render: (r: LedgerEntry) => r.kind }]),
+    ...(selected ? [] : [{ key: 'what', secondary: true, header: 'What', info: help.what, render: (r: LedgerEntry) => r.kind }]),
     { key: 'outcome', header: 'Outcome', info: help.outcome, render: (r) => <StateChip state={r.state} /> },
-    { key: 'level', header: 'Level', info: help.level, render: (r) => <LevelChip level={r.level} /> },
-    ...(selected || !rows.some((r) => r.confidence) ? [] : [{ key: 'match', header: 'Match', info: help.match, render: (r: LedgerEntry) => r.confidence ?? '—' }]),
+    { key: 'level', secondary: true, header: 'Level', info: help.level, render: (r) => <LevelChip level={r.level} /> },
+    ...(selected || !rows.some((r) => r.confidence) ? [] : [{ key: 'match', secondary: true, header: 'Match', info: help.match, render: (r: LedgerEntry) => r.confidence ?? '—' }]),
     {
       key: 'open',
       header: 'Details',

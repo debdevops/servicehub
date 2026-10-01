@@ -1,3 +1,4 @@
+import { reasonParam } from '../../lib/urlState'
 import { Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Fingerprint, TriangleAlert } from 'lucide-react'
@@ -269,7 +270,7 @@ function Detail({ s, days, now, onClose }: { s: Signature; days: number; now: Da
         </Section>
         <Section title="Where" help={sectionHelp.signatures.where}>
           <p className="flex flex-wrap gap-x-4 gap-y-1 font-semibold text-[var(--color-primary-600)]">
-            <button type="button" className="hover:underline" onClick={() => { select(s.provider); navigate(`/?tab=dlq&reason=${encodeURIComponent(s.reason)}`) }}>See the {s.messages} messages in Home ›</button>
+            <button type="button" className="hover:underline" onClick={() => { select(s.provider); navigate(`/?tab=dlq&reason=${encodeURIComponent(reasonParam(s.reason))}`) }}>See the {s.messages} messages in Home ›</button>
             <Link className="hover:underline" to={`/advanced/ledger?provider=${s.provider}`}>Ledger entries ›</Link>
             <button type="button" className="hover:underline" onClick={() => { select(s.provider); navigate(`?${new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(window.location.search)), panel: 'rules', rule: s.signatureHash })}`) }}>Create an auto-replay rule from this ›</button>
           </p>

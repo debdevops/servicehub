@@ -71,7 +71,7 @@ describe('the Dead letters view', () => {
 
     const table = await screen.findByRole('table', { name: 'Dead-lettered messages, newest first' })
     expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(
-      ['', 'When', 'Queue or topic', 'Failed because', 'Tries', 'Waiting', 'Size', 'Actions'],
+      ['', 'When', 'Queue or topic', 'Message', 'Failed because', 'Tries', 'Waiting', 'Size', 'Actions'],
     )
     expect(within(table).getAllByRole('row')).toHaveLength(3)
     expect(lastQuery()).toMatchObject({ provider: 'azure', status: 'active', pageSize: 10, page: 1 })
@@ -289,7 +289,7 @@ describe('the Dead letters view', () => {
     expect(where()).toContain('status=resolved')
     const table = await screen.findByRole('table', { name: /what became of them/ })
     expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(
-      ['When', 'Queue or topic', 'Failed because', 'Tries', 'Now', 'Size', 'Actions'],
+      ['When', 'Queue or topic', 'Message', 'Failed because', 'Tries', 'Now', 'Size', 'Actions'],
     )
     expect(within(table).getByText('Replayed by ServiceHub')).toBeInTheDocument()
     // Absence proves it is gone, never who removed it.

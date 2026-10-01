@@ -51,6 +51,12 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> _scanGates = new();
 
     private const int MaxScanBatches = 5;
+
+    // A replay/purge must reach ONE specific message wherever it sits, so its scan walks the whole backlog. Pub/Sub's first
+    // pull is often short (a live subscription returned 3, then 100, 100, 100, 38), so five pulls reached only ~340 messages
+    // and a deeper DLQ made roughly half of a bulk replay fail "not found" — each after a ~19s empty long-poll. 40 x 100
+    // covers 4,000; the scan still stops the moment the target, or an empty pull, is seen.
+    private const int MaxFindBatches = 40;
     private const int ScanBatchSize = 100;
     private const int ScanLockSeconds = 30;
 
@@ -663,7 +669,7 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         await gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            for (var i = 0; i < MaxScanBatches && target is null; i++)
+            for (var i = 0; i < MaxFindBatches && target is null; i++)
             {
                 var response = await subscriber.PullAsync(new PullRequest
                 {
@@ -694,12 +700,10 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
                     // Hold everything we've seen so far behind a real lock for the rest of the
                     // scan — otherwise it becomes redeliverable to another puller before we've
                     // decided whether it's the target.
-                    await subscriber.ModifyAckDeadlineAsync(new ModifyAckDeadlineRequest
-                    {
-                        Subscription = subscriptionResourceName,
-                        AckIds = { newlySeen.Select(m => m.AckId) },
-                        AckDeadlineSeconds = ScanLockSeconds
-                    }, ct).ConfigureAwait(false);
+                    // Every message held so far, not just this batch's: a deep scan outlasts one lock, and a lock that
+                    // lapsed mid-scan would hand a held message back as a "duplicate" and end the scan early.
+                    await ModifyAckDeadlineChunkedAsync(subscriber, subscriptionResourceName,
+                        nonTargets.Concat(target is null ? [] : [target]).Select(m => m.AckId), ScanLockSeconds, ct).ConfigureAwait(false);
                 }
 
                 if (!progressed)
@@ -714,12 +718,8 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
                 {
                     try
                     {
-                        await subscriber.ModifyAckDeadlineAsync(new ModifyAckDeadlineRequest
-                        {
-                            Subscription = subscriptionResourceName,
-                            AckIds = { nonTargets.Select(m => m.AckId) },
-                            AckDeadlineSeconds = 0
-                        }, CancellationToken.None).ConfigureAwait(false);
+                        await ModifyAckDeadlineChunkedAsync(subscriber, subscriptionResourceName,
+                            nonTargets.Select(m => m.AckId), 0, CancellationToken.None).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
@@ -736,6 +736,21 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
         }
 
         return target;
+    }
+
+    /// <summary>ModifyAckDeadline in requests small enough for Pub/Sub's request-size limit, however deep the scan went.</summary>
+    private static async Task ModifyAckDeadlineChunkedAsync(
+        SubscriberServiceApiClient subscriber, string subscriptionResourceName, IEnumerable<string> ackIds, int seconds, CancellationToken ct)
+    {
+        foreach (var chunk in ackIds.Chunk(500))
+        {
+            await subscriber.ModifyAckDeadlineAsync(new ModifyAckDeadlineRequest
+            {
+                Subscription = subscriptionResourceName,
+                AckIds = { chunk },
+                AckDeadlineSeconds = seconds
+            }, ct).ConfigureAwait(false);
+        }
     }
 
     private List<Message> MapToMessages(

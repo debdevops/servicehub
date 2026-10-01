@@ -62,6 +62,7 @@ export function HomePage() {
     return (
       <>
         <section className="px-6 py-6">
+          <div className="mb-4"><NamespaceScope namespaces={namespaces.data} cloud={providerLabel[rulesProvider]} cloudParam="provider" activeCloud={rulesProvider} allowAll={false} /></div>
           <AutoReplayPage provider={rulesProvider} onClose={() => setParams((p) => { const n = new URLSearchParams(p); n.delete('panel'); n.delete('rule'); return n }, { replace: true })} />
         </section>
         <MessageDrawer />
@@ -75,7 +76,7 @@ export function HomePage() {
     const inCloud = namespaces.data.filter((n) => n.provider === tabProvider)
     const choice = resolveScope(inCloud, params)
     const cloud = providerLabel[tabProvider]
-    const picker = inCloud.length > 0 ? <div className="px-[22px] pt-4"><NamespaceScope namespaces={inCloud} cloud={cloud} /></div> : null
+    const picker = inCloud.length > 0 ? <div className="px-[22px] pt-4"><NamespaceScope namespaces={namespaces.data} cloud={cloud} cloudParam="provider" activeCloud={tabProvider} allowAll={false} /></div> : null
     return (
       <DrawerAside>
         {tab === 'dlq' && <>{picker}<DeadLettersView provider={tabProvider} namespaces={choice.namespaces} /></>}
@@ -106,6 +107,9 @@ function HomeBody({ connected, allNamespaces, homeScope }: {
   const windowLabel = { '24h': 'Last 24 hours', '7d': 'Last 7 days' } as const
 
   const provider = homeScope.provider
+  const agentNamespaces = allNamespaces.filter((n) => n.capabilities?.canProveDlqAbsence === true)
+  const agentProviders = [...new Set(agentNamespaces.map((n) => n.provider))]
+  const agentProvider = agentProviders.length === 1 ? agentProviders[0] : undefined
   const inCloud = provider ? allNamespaces.filter((n) => n.provider === provider) : []
   const choice = provider ? resolveScope(inCloud, params) : null
 
@@ -129,7 +133,13 @@ function HomeBody({ connected, allNamespaces, homeScope }: {
       {explainer.shown && <ExplainerCard id="home" onDismiss={explainer.dismiss} />}
 
       <div className="mb-3.5"><NeedsYouStrip /></div>
-      <div className="mb-3.5"><AgentBar namespaces={allNamespaces} queues={null} /></div>
+      {/* The Agent acts only where a fix can be verified (Azure today). On AWS and Google a person looks and replays, so the bar — and its
+          numbers — are about the clouds it can work on, and absent when there are none. */}
+      {agentNamespaces.length > 0 && (
+        <div className="mb-3.5">
+          <AgentBar namespaces={agentNamespaces} cloud={agentProvider ? providerLabel[agentProvider] : undefined} provider={agentProvider} queues={null} />
+        </div>
+      )}
 
       {connected.length > 1 && (
         <div className="mb-3.5">
@@ -138,7 +148,7 @@ function HomeBody({ connected, allNamespaces, homeScope }: {
       )}
 
       {provider && choice ? (
-        <CloudView provider={provider} allInCloud={inCloud} choice={choice} window={homeScope.window} />
+        <CloudView provider={provider} allInCloud={inCloud} allNamespaces={allNamespaces} choice={choice} window={homeScope.window} />
       ) : (
         <AllCloudsView window={homeScope.window} onOpen={homeScope.setProvider} />
       )}

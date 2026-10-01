@@ -15,6 +15,8 @@ export interface PendingRow {
   readonly since: string
   readonly action: { readonly label: string; readonly href: string }
   readonly items: readonly PendingWorkItem[]
+  /** A person decides every replay on this cloud, always (it cannot prove a fix held): no agent or autonomy wording, and no live toast. */
+  readonly manual?: boolean
 }
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
@@ -27,7 +29,9 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
  * `capped`: the server sent only the first page of what is waiting (`items.length < total`). A group's size is then a floor, so it
  * reads "100+ replays" — never a page size presented as a count (found live, 2026-09-29: "100 replays" beside "612 need you").
  */
-export function pendingRows(items: readonly PendingWorkItem[], { capped = false }: { capped?: boolean } = {}): PendingRow[] {
+export const MANUAL_WHY = 'This cloud can’t confirm a replay fixed it, so each replay is your decision.'
+
+export function pendingRows(items: readonly PendingWorkItem[], { capped = false, manual }: { capped?: boolean; manual?: (item: PendingWorkItem) => boolean } = {}): PendingRow[] {
   const rows: PendingRow[] = []
   const groups = new Map<string, PendingWorkItem[]>()
   for (const i of items) {
@@ -65,7 +69,8 @@ export function pendingRows(items: readonly PendingWorkItem[], { capped = false 
       ...r,
       title: capped ? `${g.length}+ replays need your approval` : `${plural(g.length, 'replay')} ${g.length === 1 ? 'needs' : 'need'} your approval`,
       where: [cloud, first.namespaceName, entities.slice(0, 3).join(', ') + (entities.length > 3 ? ` +${entities.length - 3}` : '')].filter(Boolean).join(' · '),
-      why: first.reason,
+      why: manual?.(first) ? MANUAL_WHY : first.reason,
+      manual: manual?.(first) || undefined,
       count: g.length,
       action: { label: 'Review', href: `?modal=approve&group=${encodeURIComponent(r.key)}` },
       items: g,

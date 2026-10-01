@@ -22,7 +22,7 @@ export const stateChip: Readonly<Record<EntryState, string>> = {
 export const stateMeaning: Readonly<Record<EntryState, string>> = {
   Executing: 'the cloud call is in flight',
   Observing: 'accepted — ServiceHub is watching for it to come back',
-  ExecutionFailed: 'the cloud rejected the call, so nothing was sent back',
+  ExecutionFailed: 'nothing was sent back — the cloud refused it, or the message could not be found in the dead-letter queue',
   ExecutionUnknown: 'contact was lost mid-call — whether it was sent is not known',
   Recovered: 'did not return',
   Returned: 'the failure came back',
@@ -59,7 +59,13 @@ export function describeEvent(e: LedgerEvent, cloud: string): { title: string; n
     case 'OperationOpened': return { title: 'Decision recorded', note: null }
     case 'EntryBegun': return { title: 'Replay begun', note: null }
     case 'ProviderAccepted': return { title: `Sent, and accepted by ${cloud}`, note: null }
-    case 'ProviderRejected': return { title: `${cloud} rejected it`, note: typeof d.errorCode === 'string' ? d.errorCode : null }
+    case 'ProviderRejected': {
+      const code = typeof d.errorCode === 'string' ? d.errorCode : null
+      // "Not found" is not a refusal: the cloud was never asked to take it, because the message was not in the dead-letter queue.
+      return /NotFound|NOT_FOUND/.test(code ?? '')
+        ? { title: 'Not sent — the message was not found in the dead-letter queue', note: code }
+        : { title: `${cloud} rejected it`, note: code }
+    }
     case 'ExecutionUnknown': return { title: 'Outcome unknown', note: 'contact was lost before it was known whether it was sent' }
     case 'ObservationWindowOpened':
       return { title: 'Watching', note: typeof d.appliedObservationWindowHours === 'number' ? `${d.appliedObservationWindowHours} hour window` : null }

@@ -3,6 +3,7 @@ import { Check, ChevronDown, Layers, Search } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import type { CloudProvider, EnvironmentKind, Namespace } from '../../lib/api/namespaces'
 import { providerLabel } from '../../lib/providers'
+import { useProviderScope } from './providerScope'
 import { asCloud, cloudColor, environmentMeta, groupByCloudEnvironment, groupByEnvironment, resolveScope } from './scopeChoice'
 
 type Pick = { cloud?: CloudProvider; env?: EnvironmentKind; ns?: string }
@@ -23,21 +24,28 @@ export function NamespaceScope({
   namespaces,
   cloud,
   cloudParam,
+  activeCloud,
+  allowAll = true,
   compact = false,
 }: {
   namespaces: readonly Namespace[]
   /** Names the scope on the card: "Azure", or "All clouds". */
   cloud: string
   cloudParam?: string
+  /** The cloud the page is already showing, when it is not (only) in the URL — e.g. the sidebar's choice. */
+  activeCloud?: CloudProvider
+  /** False on a page that is always one cloud's own table: there is no "All namespaces" to go back to. */
+  allowAll?: boolean
   compact?: boolean
 }) {
   const [params, setParams] = useSearchParams()
+  const { select } = useProviderScope()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const root = useRef<HTMLDivElement>(null)
   const listId = useId()
 
-  const cloudChoice = cloudParam ? asCloud(params.get(cloudParam)) : null
+  const cloudChoice = cloudParam ? (activeCloud ?? asCloud(params.get(cloudParam))) : null
   const pool = cloudChoice ? namespaces.filter((n) => n.provider === cloudChoice) : namespaces
   const choice = resolveScope(pool, params)
 
@@ -71,6 +79,8 @@ export function NamespaceScope({
       ;['page', 'entity', 'message', 'entry', 'signature'].forEach((k) => out.delete(k))
       return out
     })
+    // Choosing in another cloud moves the whole page (and the sidebar) there.
+    if (next.cloud && cloudParam) select(next.cloud)
     setOpen(false)
     setQuery('')
   }
@@ -87,11 +97,11 @@ export function NamespaceScope({
         : 'All namespaces'
   const sub = choice.ns
     ? `${cloudParam && nsCloud ? `${nsCloud} · ` : ''}${environmentMeta[choice.ns.environment].label}`
-    : `${choice.namespaces.length} of ${namespaces.length} ${namespaces.length === 1 ? 'namespace' : 'namespaces'}`
+    : `${choice.namespaces.length} of ${pool.length} ${pool.length === 1 ? 'namespace' : 'namespaces'}`
   const dot = choice.ns ? environmentMeta[choice.ns.environment].dot : choice.env ? environmentMeta[choice.env].dot : cloudChoice ? cloudColor[cloudChoice] : 'var(--color-primary-500)'
 
   const nsRow = (n: Namespace, indent: 1 | 2) => (
-    <Row key={n.id} selected={choice.ns?.id === n.id} onPick={() => pick({ ns: n.id })} indent={indent}>
+    <Row key={n.id} selected={choice.ns?.id === n.id} onPick={() => pick({ ns: n.id, cloud: n.provider })} indent={indent}>
       <span className="truncate">{n.displayName ?? n.name}</span>
       <span className="shrink-0 text-[11px] text-[var(--color-text-muted)]">{n.awsRegion ?? n.gcpProjectId ?? ''}</span>
     </Row>
@@ -154,10 +164,12 @@ export function NamespaceScope({
             </label>
           )}
           <ul id={listId} role="listbox" aria-label="Namespaces" className="max-h-[380px] overflow-y-auto p-1.5">
-            <Row selected={!choice.ns && !choice.env && !cloudChoice} onPick={() => pick({})}>
-              <span className="font-semibold">All namespaces</span>
-              <span className="text-[11.5px] text-[var(--color-text-muted)]">{namespaces.length}</span>
-            </Row>
+            {allowAll && (
+              <Row selected={!choice.ns && !choice.env && !cloudChoice} onPick={() => pick({})}>
+                <span className="font-semibold">All namespaces</span>
+                <span className="text-[11.5px] text-[var(--color-text-muted)]">{namespaces.length}</span>
+              </Row>
+            )}
 
             {tree.map(({ provider, environments }) => {
               const count = environments.reduce((n, e) => n + e.items.length, 0)

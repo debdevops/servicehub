@@ -10,7 +10,7 @@ import { expectNoAxeViolations } from '@tests/support/axe'
 
 vi.mock('@/lib/api/agents', async (original) => ({
   ...(await original<typeof api>()),
-  fetchAgents: vi.fn(), fetchAgentActivity: vi.fn(), pauseAgent: vi.fn(), resumeAgent: vi.fn(),
+  fetchAgents: vi.fn(), fetchDormantAgents: vi.fn().mockResolvedValue([]), fetchAgentActivity: vi.fn(), pauseAgent: vi.fn(), resumeAgent: vi.fn(),
 }))
 
 const agent = (over: Partial<Agent>): Agent => ({
@@ -36,6 +36,18 @@ describe('the Agents page', () => {
     vi.mocked(api.fetchAgents).mockResolvedValue(agents)
     vi.mocked(api.fetchAgentActivity).mockResolvedValue({ agentId: 'auto-replay', cyclesSinceUtc: null, items: [] })
     vi.mocked(api.pauseAgent).mockResolvedValue(agents[1])
+  })
+
+  it('says which agents are off because no connected cloud needs them, and says nothing when none are', async () => {
+    renderPage()
+    await screen.findByText('Dead-letter Monitor')
+    expect(screen.queryByText(/because none of your connected clouds needs/)).not.toBeInTheDocument()
+  })
+
+  it('names the agents that are off, so a missing one is explained', async () => {
+    vi.mocked(api.fetchDormantAgents).mockResolvedValue([{ id: 'autonomy-evaluation', name: 'Trust Evaluator', needs: 'VerifiableCloud' }, { id: 'insights-anomaly', name: 'Spike Watcher', needs: 'WatchedCloud' }])
+    renderPage()
+    expect(await screen.findByText(/2 agents are off because none of your connected clouds needs them: Trust Evaluator, Spike Watcher\./)).toBeInTheDocument()
   })
 
   it('has no accessibility violations (6.6)', async () => {

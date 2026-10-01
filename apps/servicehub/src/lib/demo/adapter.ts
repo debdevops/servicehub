@@ -76,6 +76,7 @@ const routes: Route[] = [
   [/^\/recovery\/chain$/, () => ({ ownerId: 'demo', isValid: true, eventsChecked: demoLedger.length * 3, firstDivergentSeq: null, reason: null })],
   [/^\/pending-work$/, (_m, p) => { const provider = lower(p.provider); const items = demoPending.filter((i) => !provider || i.provider === provider); return { items, total: items.length, byProvider: items.length ? [{ provider: 'aws', count: items.length }] : [], agents: 0 } }],
   [/^\/agents$/, () => demoAgents],
+  [/^\/agents\/dormant$/, () => []],
   [/^\/agents\/([^/]+)\/activity$/, (m) => ({ agentId: m[1], cyclesSinceUtc: null, items: [] })],
   [/^\/me$/, () => demoMe],
   [/^\/settings\/emergency-stop$/, () => ({ active: false, by: null, at: null, reason: null })],

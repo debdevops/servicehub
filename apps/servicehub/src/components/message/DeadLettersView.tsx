@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { namespaceTag } from '../provider/scopeChoice'
 import { usePageSize } from '../../lib/pageSize'
 import { Link, useSearchParams } from 'react-router-dom'
-import { CheckCircle2, RefreshCw, TriangleAlert } from 'lucide-react'
+import { CheckCircle2, ListRestart, RefreshCw, TriangleAlert } from 'lucide-react'
 import { InfoTip } from '../ui/InfoTip'
 import { sectionHelp } from '../../content/sections'
 import { formatAgo } from '../../lib/format'
@@ -17,6 +17,9 @@ import { LookNow } from './LookNow'
 import { MessageTable } from './MessageTable'
 import { WorkTabs } from './WorkTabs'
 import { useDeadLetters } from '../../hooks/useDeadLetters'
+import { useMe } from '../../hooks/useIdentity'
+import { permission } from '../../lib/permissions'
+import { openReplayAll, useReplayAll } from '../../lib/replayAll'
 import type { DeadLetterRange } from '../../lib/api/deadLetters'
 import { bulkSelection } from '../../lib/bulkSelection'
 import { environmentMeta, resolveScope } from '../provider/scopeChoice'
@@ -79,6 +82,10 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
     pageSize,
   }
   const { data, isPending, isError, refetch, isFetching, dataUpdatedAt } = useDeadLetters(query)
+  const mayReplay = permission(useMe().data, 'Operator', 'replay these messages', { recover: true })
+  const replayAllRun = useReplayAll()
+  const replayAllBusy = replayAllRun?.phase === 'running'
+  const scopeLabel = scope.ns ? `${cloud} · ${scope.ns.displayName ?? scope.ns.name}` : scope.env ? `All ${environmentMeta[scope.env].label} namespaces in ${cloud}` : `All namespaces in ${cloud}`
 
   const change = (patch: Record<string, string | null>) =>
     setParams(
@@ -158,10 +165,10 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
   )
 
   return (
-    <section className="px-6 py-6">
-      <header className="mb-4 flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+    <section className="px-[22px] pb-6 pt-5">
+      <header className="mb-4 min-h-[76px] flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold text-[var(--color-text)]">
+        <h1 className="flex items-center gap-2 text-2xl font-extrabold tracking-tight text-[var(--color-text)]">
           {cloud} — Dead letters <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} />
         </h1>
         <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
@@ -182,12 +189,12 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
         </div>
         {data && <ReasonStrip provider={provider} page={data} namespaceId={scope.ns?.id} environment={scope.env ?? undefined} />}
       </header>
+      <WorkTabs current="dlq" counts={data ? { dlq: total } : {}} />
 
       {!watched && <LookNow cloud={cloud} namespaces={namespaces.filter((n) => n.capabilities?.supportsRepeatablePeek !== true)} />}
 
       {explainer.shown && <ExplainerCard id="dead-letters" onDismiss={explainer.dismiss} />}
 
-      <WorkTabs current="dlq" counts={data ? { dlq: total } : {}} />
 
       {isPending && <Skeleton label="Reading dead letters…" rows={6} />}
 
@@ -242,6 +249,17 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
               />
             </label>
             <span className="ml-auto flex items-center gap-3 text-xs text-[var(--color-text-muted)]">
+              {showing === 'active' && total > 0 && (
+                <button
+                  type="button"
+                  disabled={!mayReplay.allowed}
+                  title={mayReplay.allowed ? (replayAllBusy ? 'A replay-all run is in progress — open it' : 'Replay every stuck message in this scope, one by one, in the background') : (mayReplay.reason ?? 'You cannot replay these messages')}
+                  onClick={() => void openReplayAll({ provider, namespaceId: scope.ns?.id, environment: scope.env ?? undefined }, scopeLabel)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-primary-600)] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[var(--color-primary-700)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <ListRestart className="h-4 w-4" aria-hidden="true" /> {replayAllBusy ? 'Replay all (running…)' : 'Replay All Messages'}
+                </button>
+              )}
               <button type="button" onClick={() => void refetch()} disabled={isFetching} className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-semibold text-[var(--color-text)] hover:bg-[var(--color-surface-muted)] disabled:opacity-60">
                 <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} aria-hidden="true" /> Refresh
               </button>

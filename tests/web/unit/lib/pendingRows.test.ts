@@ -34,4 +34,11 @@ describe('pendingRows', () => {
     expect(pendingRows(items, { capped: true })[0]!.title).toBe('2+ replays need your approval')
     expect(pendingRows(items)[0]!.title).toBe('2 replays need your approval')
   })
+
+  it('marks a cloud where a person always decides, and words it without agents or earned trust', () => {
+    const rows = pendingRows([item({ reasonCode: 'AUTONOMY_GRANT_INSUFFICIENT', reason: 'needs 10 verified fixes at 95%' })], { manual: () => true })
+    expect(rows[0]!.manual).toBe(true)
+    expect(rows[0]!.why).toBe('This cloud can’t confirm a replay fixed it, so each replay is your decision.')
+    expect(pendingRows([item({})], { manual: () => false })[0]!.manual).toBeUndefined()
+  })
 })

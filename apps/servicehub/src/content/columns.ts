@@ -18,12 +18,14 @@ export const columnHelp = {
     where: h('Queue or topic', 'Where the message is stuck. A plain queue shows its name. A message stuck under a topic shows the topic and the subscription that could not deliver it, because a topic itself holds nothing — its subscriptions do. The small tag says which one it is.'),
     failedBecause: h('Failed because', 'The coloured tag is the reason the cloud or your application recorded — a fact. Under it is the error text that came with it, then ServiceHub’s plain-English reading (marked with a lightbulb — a suggestion, not something the cloud reported). If the cloud gave no error text, it says so.'),
     tries: h('Tries', 'How many times a consumer picked this message up before it was set aside. Many tries on a message that fails at once usually means the message itself is wrong; one or two usually means something else was down. A dash means this cloud does not report it.'),
+    message: h('Message', 'What tells this message from the next: the start of its body, then small tags for its content type, correlation and session IDs and a few of its own properties, then its ID. All of it was recorded with the message — nothing here is ServiceHub’s guess. A part the message did not carry is simply not shown. Open Details for the whole body.'),
     waiting: h('Waiting', 'How long it has been sitting in the dead-letter queue since ServiceHub first saw it. A long wait is not a problem by itself — nothing is lost — but old messages are worth a look first.'),
     now: h('Now', 'Whether it is still in the dead-letter queue. If it left, when ServiceHub noticed and how, as far as anything recorded it. “Did not see how” means it is gone — drained by another tool, expired, or consumed — not that anyone fixed it.'),
     size: h('Size', 'The size of the message body. Very large messages are a common cause of timeouts and rejections.'),
     details: h('Details', 'Opens this message beside the table: why it failed, its body, its properties and its history. From there you can replay it. Nothing is changed by opening it.'),
   },
   active: {
+    message: h('Message', 'What tells this message from the next: the start of its body, small tags for its content type, subject, correlation and session IDs and a few of its own properties, then its ID. These are the sender’s own words, not ServiceHub’s. Open Details for the whole body.'),
     enqueued: h('Enqueued', 'When the message was put on the queue. It is waiting to be picked up; it has not failed.'),
     where: h('Queue or topic', 'The queue, or the topic subscription, this message is waiting in.'),
     delivery: h('Delivery', 'How many times a consumer has picked this message up so far. A climbing number is an early sign it may end up dead-lettered.'),
@@ -36,6 +38,7 @@ export const columnHelp = {
   },
   replayed: {
     replayed: h('Replayed', 'When the message was sent back to be processed again.'),
+    message: h('Message', 'Which message this was: the start of its body, small tags for its content type, correlation and session IDs and a few of its own properties, then its ID — taken from the dead letter it was replayed from.'),
     from: h('From', 'The queue or subscription the message was put back onto.'),
     by: h('By', 'Who asked for the replay: a person, a rule, or the Agent. Where nobody signed in, it says “from this browser session” rather than inventing a name.'),
     messages: h('Messages', 'How many messages this replay covered.'),

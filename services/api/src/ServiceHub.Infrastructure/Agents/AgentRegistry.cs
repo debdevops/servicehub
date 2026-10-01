@@ -26,6 +26,7 @@ public sealed class AgentRegistry : IAgentRegistry
 
     private readonly ConcurrentDictionary<string, AgentRuntimeState> _states = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, LinkedList<AgentCycleRecord>> _cycles = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _dormant = new(StringComparer.Ordinal);
     private readonly IReadOnlyList<string> _order;
 
     /// <summary>Creates the registry from every agent registered in the container.</summary>
@@ -83,7 +84,39 @@ public sealed class AgentRegistry : IAgentRegistry
 
     /// <inheritdoc />
     public IReadOnlyList<AgentRuntimeState> All() =>
-        [.. _order.Select(id => _states[id])];
+        [.. _order.Where(id => !_dormant.ContainsKey(id)).Select(id => _states[id])];
+
+    /// <inheritdoc />
+    public IReadOnlyList<AgentDescriptor> Dormant() =>
+        [.. _order.Where(_dormant.ContainsKey).Select(id => _states[id].Descriptor)];
+
+    /// <summary>
+    /// Marks an agent as running (it has something to do) or dormant (no connected cloud gives it anything). Going dormant forgets
+    /// its last cycle — it is not "late", it is off — but keeps whatever pause a person set, so it comes back as it was left.
+    /// </summary>
+    internal void SetDormant(string agentId, bool dormant)
+    {
+        if (!_states.TryGetValue(agentId, out var current))
+        {
+            return;
+        }
+
+        if (!dormant)
+        {
+            _dormant.TryRemove(agentId, out _);
+            return;
+        }
+
+        _dormant[agentId] = 0;
+        _states[agentId] = current with
+        {
+            Health = current.IsPaused ? AgentHealth.Paused : AgentHealth.Unknown,
+            LastRunUtc = null,
+            LastResult = null,
+            LastFailure = null,
+            ConsecutiveFailures = 0,
+        };
+    }
 
     /// <inheritdoc />
     public AgentRuntimeState? StateOf(string agentId) =>

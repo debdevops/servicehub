@@ -44,7 +44,8 @@ public sealed record DlqListItem(
     string? DeadLetterErrorDescription,
     DlqMessageStatus Status,
     DateTimeOffset? ResolvedAt = null,
-    DlqResolutionCause? ResolutionCause = null);
+    DlqResolutionCause? ResolutionCause = null,
+    MessageGist? Gist = null);
 
 /// <summary>How many messages share one recorded reason.</summary>
 /// <param name="Reason">The reason the cloud or the application recorded; null when none was.</param>

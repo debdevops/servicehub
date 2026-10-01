@@ -475,6 +475,13 @@ public sealed class DlqReplayService : IDlqReplayService
             .Where(e => e.EntryId is not null)
             .ToDictionary(e => e.EntryId!.Value, e => ReasonOf(e.DetailJson));
 
+        // What each replayed message was, from the dead letter it came from — so two replays of one queue can be told apart.
+        var dlqIds = pageRows.Select(r => r.DlqMessageId).Distinct().ToList();
+        var gists = (await _db.DlqMessages.AsNoTracking().Where(m => dlqIds.Contains(m.Id))
+            .Select(m => new { m.Id, m.BodyPreview, m.ContentType, m.CorrelationId, m.SessionId, m.ApplicationPropertiesJson })
+            .ToListAsync(cancellationToken))
+            .ToDictionary(m => m.Id, m => MessageGist.From(m.BodyPreview, m.ContentType, m.CorrelationId, m.SessionId, m.ApplicationPropertiesJson));
+
         var items = pageRows.Select(r =>
         {
             entries.TryGetValue(r.RecoveryEntryId ?? Guid.Empty, out var entry);
@@ -483,7 +490,8 @@ public sealed class DlqReplayService : IDlqReplayService
                 r.Id, r.DlqMessageId, r.NamespaceId, providers.TryGetValue(r.NamespaceId, out var provider) ? provider.ToString().ToLowerInvariant() : "unknown",
                 r.MessageId, r.SourceEntity, r.ReplayedToEntity, r.ReplayedAt, r.ReplayedBy, ActorOf(r.ReplayedBy),
                 r.OutcomeStatus, entry?.State.ToString(), entry?.ObservationWindowEndsAt, entry?.MarkerApplied ?? false,
-                VerificationOf(r, entry, reason, CanConfirm(r.NamespaceId)));
+                VerificationOf(r, entry, reason, CanConfirm(r.NamespaceId)),
+                gists.GetValueOrDefault(r.DlqMessageId));
         }).ToList();
 
         return new ReplayPage(items, total, page, pageSize);

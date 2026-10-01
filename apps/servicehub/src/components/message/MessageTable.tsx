@@ -5,6 +5,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { columnHelp } from '../../content/columns'
 import { explainFailure } from '../../lib/analyzer'
 import { EntityCell } from './EntityCell'
+import { MessageCell } from './MessageCell'
 import type { DeadLetter } from '../../lib/api/deadLetters'
 import { formatAge, formatAgo, formatBytes, formatWhen } from '../../lib/format'
 import { resolutionWords } from '../../lib/resolutionWords'
@@ -69,30 +70,32 @@ export function MessageTable({
       render: (r) => (
         <>
           <EntityCell entityName={r.entityName} entityType={r.entityType} topicName={r.topicName} note={showNamespace ? namespaceNames?.get(r.namespaceId) : undefined} />
-          {/* Which message, in the cloud's own words — the queue alone cannot tell two rows apart. */}
-          <p title={`Message ID: ${r.messageId}`} className={`mt-1 ${glance ? 'max-w-[7rem]' : 'max-w-[12rem]'} truncate font-mono text-[11px] text-[var(--color-text-muted)]`}>{r.messageId}</p>
+          {/* The glance has no room for a Message column, so it keeps the ID under the queue. */}
+          {glance && <p title={`Message ID: ${r.messageId}`} className="mt-1 max-w-[7rem] truncate font-mono text-[11px] text-[var(--color-text-muted)]">{r.messageId}</p>}
         </>
       ),
     },
+    // Which message this is: the start of its body, its labels and its ID — the queue alone cannot tell two rows apart.
+    { key: 'message', header: 'Message', info: help.message, width: 'min-w-[10rem] w-[18%]', render: (r) => <MessageCell messageId={r.messageId} gist={r.gist} idWidth="max-w-[9rem]" /> },
     {
       // The widest column, on purpose: it is the one a person reads to decide what to do.
       key: 'reason',
       header: 'Failed because',
       info: help.failedBecause,
-      width: 'w-[44%] min-w-[14rem]',
+      width: 'w-[44%] min-w-[11rem]',
       render: (r) => <FailedBecause row={r} />,
     },
-    { key: 'tries', header: 'Tries', info: help.tries, numeric: true, render: (r) => (r.deliveryCount > 0 ? r.deliveryCount : <span title="This cloud does not report how many times the message was delivered." className="text-[var(--color-text-muted)]">—</span>) },
+    { key: 'tries', secondary: true, header: 'Tries', info: help.tries, numeric: true, render: (r) => (r.deliveryCount > 0 ? r.deliveryCount : <span title="This cloud does not report how many times the message was delivered." className="text-[var(--color-text-muted)]">—</span>) },
     showOutcome
       ? { key: 'now', header: 'Now', info: help.now, className: 'min-w-[11rem]', render: (r) => <Now row={r} now={now} /> }
       : { key: 'waiting', header: 'Waiting', info: help.waiting, className: 'whitespace-nowrap', render: (r) => formatAge(r.detectedAtUtc, now) },
-    { key: 'size', header: 'Size', info: help.size, numeric: true, className: 'whitespace-nowrap', render: (r) => formatBytes(r.sizeInBytes) },
+    { key: 'size', secondary: true, header: 'Size', info: help.size, numeric: true, className: 'whitespace-nowrap', render: (r) => formatBytes(r.sizeInBytes) },
     {
       key: 'open',
       header: 'Actions',
       info: help.details,
       render: (r) => (
-        <span className="flex items-center gap-2">
+        <span className="flex flex-col items-start gap-1.5 2xl:flex-row 2xl:items-center 2xl:gap-2">
           <Link
             to={openHref(r)}
             aria-label={`Details of message ${r.messageId}`}

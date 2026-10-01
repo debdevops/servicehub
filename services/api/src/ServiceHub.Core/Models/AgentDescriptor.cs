@@ -41,6 +41,10 @@ namespace ServiceHub.Core.Models;
 /// timeline can come from the ledger rather than a new table (unit 4.4). Null for an agent that acts as the person who
 /// asked (Bulk Replay) or records nothing in the ledger.
 /// </param>
+/// <param name="Needs">
+/// What the connected clouds must offer for this agent to have anything to do. When no connected cloud offers it, the host does
+/// not run the agent and the Agents screen does not list it; connecting one that does starts it again.
+/// </param>
 public sealed record AgentDescriptor(
     string Id,
     string Name,
@@ -51,8 +55,17 @@ public sealed record AgentDescriptor(
     string? Notes = null,
     IReadOnlyList<string>? May = null,
     IReadOnlyList<string>? MayNot = null,
-    string? LedgerActor = null)
+    string? LedgerActor = null,
+    AgentNeeds Needs = AgentNeeds.None)
 {
+    /// <summary>True when at least one of these connected clouds gives this agent something to do.</summary>
+    public bool IsMeaningfulFor(IEnumerable<CloudProviderType> connected) => Needs switch
+    {
+        AgentNeeds.WatchedCloud => connected.Any(p => ProviderCapabilities.For(p).SupportsRepeatablePeek),
+        AgentNeeds.VerifiableCloud => connected.Any(p => ProviderCapabilities.For(p).CanProveDlqAbsence),
+        _ => true,
+    };
+
     /// <summary>
     /// True when this agent can change something outside ServiceHub. The Agents screen leads with
     /// these, and there should be very few of them.

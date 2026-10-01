@@ -2,6 +2,7 @@ import { usePageSize } from '../../lib/pageSize'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { Download, RefreshCw, Search, TriangleAlert, Zap } from 'lucide-react'
+import { allManual } from '../../hooks/useManualApproval'
 import { EntityPicker } from './EntityPicker'
 import { Pager } from '../ui/Pager'
 import { DataTable, type Column } from '../ui/DataTable'
@@ -11,6 +12,7 @@ import { ReplayedNumbers } from './ReplayedNumbers'
 import { Attribution } from '../Attribution'
 import { columnHelp } from '../../content/columns'
 import { EntityCell } from './EntityCell'
+import { MessageCell } from './MessageCell'
 import { useReplays } from '../../hooks/useReplay'
 import type { ReplayListItem } from '../../lib/api/replay'
 import type { CloudProvider } from '../../lib/api/namespaces'
@@ -47,23 +49,27 @@ function ResultChip({ row }: { row: ReplayListItem }) {
   const v = row.verification
   switch (v.status) {
     case 'verified':
-      return <Chip tone="success">Verified — stayed fixed</Chip>
+      return <Chip tone="success" title="Sent back, did not fail again while ServiceHub watched, and the cloud can prove the queue stayed empty.">Verified — stayed fixed</Chip>
     case 'verification_required':
-      return <Chip tone="warning">Verification required</Chip>
+      return <Chip tone="warning" title="Sent back and nothing was seen failing again, but this cloud cannot prove the queue stayed empty, so it is not called fixed.">Verification required</Chip>
     case 'returned':
-      return <Chip tone="error">Came back</Chip>
+      return <Chip tone="error" title={`The replayed message failed again and is back in the dead letters${v.confidence === 'Heuristic' ? ' (matched by its contents, not a recovery ID)' : ' (matched by its recovery ID)'}. Nothing retries it; the next step is yours.`}>Came back</Chip>
     case 'not_sent':
-      return <Chip tone="error">Not accepted</Chip>
+      return <Chip tone="error" title="Nothing was sent back. The cloud refused it, or the message could no longer be found in the dead-letter queue. The original is still there.">Not accepted</Chip>
     case 'unknown':
-      return <Chip tone="warning">Outcome unknown</Chip>
+      return <Chip tone="warning" title="Contact was lost mid-call, so it is not known whether it was sent. Look in the queue before trying again.">Outcome unknown</Chip>
     default:
-      return <Chip tone="neutral">{v.watchUntil ? `Watching · until ${formatWhen(v.watchUntil, new Date())}` : 'Watching'}</Chip>
+      return (
+        <Chip tone="neutral" title={v.watchUntil ? `Sent back and accepted by the cloud. ServiceHub watches until ${formatWhen(v.watchUntil, new Date())} for the same message to fail again; the result is set when that window ends.` : 'Sent back and accepted by the cloud. ServiceHub is watching for the same message to fail again.'}>
+          {v.watchUntil ? `Watching · until ${formatWhen(v.watchUntil, new Date())}` : 'Watching'}
+        </Chip>
+      )
   }
 }
 
-function Chip({ tone, children }: { tone: 'neutral' | 'error' | 'warning' | 'success'; children: string }) {
+function Chip({ tone, children, title }: { tone: 'neutral' | 'error' | 'warning' | 'success'; children: string; title?: string }) {
   const bg = tone === 'success' ? 'bg-[var(--color-success-light)]' : tone === 'error' ? 'bg-[var(--color-error-light)]' : tone === 'warning' ? 'bg-[var(--color-warning-light)]' : 'bg-[var(--color-surface-muted)]'
-  return <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium text-[var(--color-text)] ${bg}`}>{children}</span>
+  return <span title={title} className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium text-[var(--color-text)] ${bg}`}>{children}</span>
 }
 
 /**
@@ -137,8 +143,8 @@ export function ReplayedTab({ provider, choice }: { provider: CloudProvider; cho
   const columns: Column<ReplayListItem>[] = [
     { key: 'when', header: 'Replayed', info: help.replayed, className: 'whitespace-nowrap', render: (r) => (<><span className="block font-medium">{formatWhen(r.replayedAt, now)}</span><span className="block text-xs text-[var(--color-text-muted)]">{formatAgo(r.replayedAt, now)}</span></>) },
     { key: 'from', header: 'Queue or topic', info: help.from, render: (r) => <EntityCell entityName={r.sourceEntity} entityType={r.sourceEntity.includes('/') ? 'subscription' : 'queue'} /> },
-    { key: 'msg', header: 'Message ID', info: columnHelp.drawer.messageId, render: (r) => <span className="font-mono text-[12px] [overflow-wrap:anywhere]">{r.messageId}</span> },
-    { key: 'to', header: 'Sent back to', render: (r) => r.targetEntity },
+    { key: 'msg', header: 'Message', info: help.message, width: 'min-w-[13rem]', render: (r) => <MessageCell messageId={r.messageId} gist={r.gist} /> },
+    { key: 'to', secondary: true, header: 'Sent back to', render: (r) => r.targetEntity },
     { key: 'by', header: 'By', info: help.by, render: (r) => <Attribution actor={r.actor} at={r.replayedAt} compact /> },
     { key: 'result', header: 'Result', info: help.result, width: 'min-w-[11rem]', render: (r) => <ResultChip row={r} /> },
     {
@@ -156,10 +162,10 @@ export function ReplayedTab({ provider, choice }: { provider: CloudProvider; cho
   const label = 'mb-0.5 block text-[12px] font-medium text-[var(--color-text-muted)]'
 
   return (
-    <section className="px-6 py-6">
-      <header className="mb-4 flex items-start justify-between">
+    <section className="px-[22px] pb-6 pt-5">
+      <header className="mb-4 min-h-[76px] flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-[var(--color-text)]">{cloud} — Replayed <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} /></h1>
+          <h1 className="flex items-center gap-2 text-2xl font-extrabold tracking-tight text-[var(--color-text)]">{cloud} — Replayed <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} /></h1>
           <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">Everything that was put back, by whom, and how it went.</p>
         </div>
         <button
@@ -170,10 +176,10 @@ export function ReplayedTab({ provider, choice }: { provider: CloudProvider; cho
           <Zap className="h-4 w-4" aria-hidden="true" /> Auto Replay rules
         </button>
       </header>
+      <WorkTabs current="replayed" />
 
       {explainer.shown && <ExplainerCard id="replayed" onDismiss={explainer.dismiss} />}
       <ReplayedNumbers provider={provider} choice={choice} window={windowId} />
-      <WorkTabs current="replayed" />
 
       <div className="mb-3 flex flex-wrap items-end gap-3 text-sm">
         <div><label className={label} htmlFor="replayed-result">Result</label>
@@ -182,7 +188,7 @@ export function ReplayedTab({ provider, choice }: { provider: CloudProvider; cho
           <EntityPicker namespaces={choice.namespaces} cloud={cloud} recorded={[]} value={entity} onChange={(e) => change({ entity: e })} /></div>
         <div><label className={label} htmlFor="replayed-by">Replayed by</label>
           <Select id="replayed-by" value={by ?? ''} onChange={(v) => change({ by: v })}>
-            <option value="">All</option><option value="people">People</option><option value="autonomous">ServiceHub autonomous</option></Select></div>
+            <option value="">All</option><option value="people">People</option>{!allManual(choice.namespaces) && <option value="autonomous">ServiceHub autonomous</option>}</Select></div>
         <div><label className={label} htmlFor="replayed-window">Time window</label>
           <Select id="replayed-window" value={windowId} onChange={(v) => change({ window: v === '24h' ? null : v })}>{windows.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}</Select></div>
         <div className="min-w-[14rem] flex-1"><label className={label} htmlFor="replayed-search">Search</label>

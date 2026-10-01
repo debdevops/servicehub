@@ -50,6 +50,7 @@ public sealed class DlqMonitorAgent : IAgent
             Kind: AgentKind.Watch,
             Authority: AgentAuthority.Observes,
             Cadence: interval,
+            Needs: AgentNeeds.WatchedCloud,
             Notes: "AWS and Google Cloud are not watched automatically: looking at a message there counts as a delivery attempt. A person can ask it to look now from the Dead letters tab.",
             May: ["Read every connected Azure queue's dead letters and keep a list of them", "Group new dead letters by how they failed", "Notice when a dead letter has gone from the queue"],
             MayNot: ["Replay, move or delete any message", "Look at AWS or Google Cloud on its own — only when a person asks", "Say a queue is empty when it could not read it"],

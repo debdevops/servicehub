@@ -1,5 +1,7 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 
@@ -27,14 +29,25 @@ public sealed class AgentHost : BackgroundService
     private readonly AgentRegistry _registry;
     private readonly ILogger<AgentHost> _logger;
     private readonly TimeProvider _time;
+    private readonly IServiceScopeFactory? _scopes;
+    private readonly Dictionary<string, (CancellationTokenSource Cts, Task Loop)> _running = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _decidedDormant = new(StringComparer.Ordinal);
 
-    /// <summary>Creates the host over every agent registered in the container.</summary>
+    /// <summary>How often the host re-checks which agents the connected clouds still give something to do.</summary>
+    internal static readonly TimeSpan ReconcileEvery = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Creates the host over every agent registered in the container. Without <paramref name="scopes"/> there is no way to read
+    /// which clouds are connected, so every agent runs.
+    /// </summary>
     public AgentHost(
         IEnumerable<IAgent> agents,
         AgentRegistry registry,
         ILogger<AgentHost> logger,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IServiceScopeFactory? scopes = null)
     {
+        _scopes = scopes;
         ArgumentNullException.ThrowIfNull(agents);
         _agents = [.. agents];
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
@@ -58,7 +71,89 @@ public sealed class AgentHost : BackgroundService
             _agents.Count,
             string.Join(", ", _agents.Select(a => a.Descriptor.Id)));
 
-        await Task.WhenAll(_agents.Select(agent => RunLoopAsync(agent, stoppingToken))).ConfigureAwait(false);
+        try
+        {
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                await ReconcileAsync(stoppingToken).ConfigureAwait(false);
+                await Task.Delay(ReconcileEvery, _time, stoppingToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutdown.
+        }
+        finally
+        {
+            foreach (var (cts, _) in _running.Values)
+            {
+                await cts.CancelAsync().ConfigureAwait(false);
+            }
+
+            await Task.WhenAll(_running.Values.Select(r => r.Loop)).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Runs the agents the connected clouds give something to do, and stops (and delists) the rest — so an agent that could only
+    /// ever do nothing costs no cycles and raises no false "stalled". Connecting a cloud that needs one starts it again; a pause a
+    /// person set is untouched either way. Internal so a test can drive it without waiting.
+    /// </summary>
+    internal async Task ReconcileAsync(CancellationToken ct)
+    {
+        IReadOnlyList<CloudProviderType>? connected = null;
+        if (_scopes is not null && _agents.Any(a => a.Descriptor.Needs != AgentNeeds.None))
+        {
+            try
+            {
+                using var scope = _scopes.CreateScope();
+                var namespaces = await scope.ServiceProvider.GetRequiredService<INamespaceRepository>().GetActiveAsync(ct).ConfigureAwait(false);
+                if (namespaces.IsSuccess)
+                {
+                    connected = [.. namespaces.Value.Select(n => n.Provider).Distinct()];
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+#pragma warning disable CA1031 // Not knowing which clouds are connected must leave every agent as it is, never switch one off.
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not read the connected clouds; agents stay as they are.");
+            }
+#pragma warning restore CA1031
+        }
+
+        foreach (var agent in _agents)
+        {
+            var descriptor = agent.Descriptor;
+            var id = descriptor.Id;
+            var meaningful = connected is null ? !_decidedDormant.Contains(id) : descriptor.IsMeaningfulFor(connected);
+
+            if (meaningful && !_running.ContainsKey(id))
+            {
+                _decidedDormant.Remove(id);
+                _registry.SetDormant(id, false);
+                var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                _running[id] = (cts, RunLoopAsync(agent, cts.Token));
+                _logger.LogInformation("Agent {AgentId} started: a connected cloud gives it something to do.", id);
+            }
+            else if (!meaningful && _running.Remove(id, out var running))
+            {
+                await running.Cts.CancelAsync().ConfigureAwait(false);
+                await running.Loop.ConfigureAwait(false);
+                running.Cts.Dispose();
+                _decidedDormant.Add(id);
+                _registry.SetDormant(id, true);
+                _logger.LogInformation("Agent {AgentId} stopped: no connected cloud gives it anything to do.", id);
+            }
+            else if (!meaningful && !_running.ContainsKey(id))
+            {
+                _decidedDormant.Add(id);
+                _registry.SetDormant(id, true);
+            }
+        }
     }
 
     private async Task RunLoopAsync(IAgent agent, CancellationToken stoppingToken)

@@ -9,6 +9,8 @@ import { usePageSize } from '../../lib/pageSize'
 import { DataTable, type Column } from '../ui/DataTable'
 import { columnHelp } from '../../content/columns'
 import { EntityCell } from './EntityCell'
+import { MessageCell } from './MessageCell'
+import { gistOfMessage } from '../../lib/api/messageGist'
 import { describeEntity, subscriptionParts } from '../../lib/entities'
 import { WorkTabs } from './WorkTabs'
 import { OverlayFrame } from '../overlays/OverlayFrame'
@@ -16,7 +18,7 @@ import { LiveTail } from './LiveTail'
 import { ScheduledView } from './ScheduledView'
 import { fetchEntities, type CloudProvider, type Entity, type Namespace } from '../../lib/api/namespaces'
 import { peekMessages, type Message } from '../../lib/api/messages'
-import { formatAge, formatBytes, formatWhen } from '../../lib/format'
+import { formatAge, formatAgo, formatBytes, formatWhen } from '../../lib/format'
 import { providerLabel } from '../../lib/providers'
 import { environmentOrder, namespaceTag } from '../provider/scopeChoice'
 import { namespaceKeys } from '../../hooks/useNamespaces'
@@ -56,7 +58,7 @@ export function ActiveMessagesTab({ provider, namespaces }: { provider: CloudPro
 
   return (
     <section className="px-[22px] pb-6 pt-5">
-      <header className="mb-4">
+      <header className="mb-4 min-h-[76px]">
         <h1 className="flex flex-wrap items-center gap-2 text-2xl font-extrabold tracking-tight text-[var(--color-text)]">
           {cloud} — Active messages <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} />
           <SendLink />
@@ -67,9 +69,9 @@ export function ActiveMessagesTab({ provider, namespaces }: { provider: CloudPro
             : 'What is in flight right now, counted per queue.'}
         </p>
       </header>
+      <WorkTabs current="active" />
 
       {explainer.shown && <ExplainerCard id="active" onDismiss={explainer.dismiss} />}
-      <WorkTabs current="active" />
 
       {lists.some((l) => l.isPending) && <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading {cloud}…</p>}
       {lists.some((l) => l.isError) && (
@@ -171,13 +173,12 @@ function Browser({ rows }: { rows: readonly Row[] }) {
   const label = 'mb-0.5 block text-[12px] font-medium text-[var(--color-text-muted)]'
 
   const columns: Column<Message>[] = [
-    { key: 'enq', header: 'Received at', info: columnHelp.active.enqueued, className: 'whitespace-nowrap', render: (m) => (<><span className="block font-medium">{formatWhen(m.enqueuedTime, now)}</span><span className="block text-xs text-[var(--color-text-muted)]">{formatAge(m.enqueuedTime, now)} ago</span></>) },
+    { key: 'enq', header: 'Received at', info: columnHelp.active.enqueued, className: 'whitespace-nowrap', render: (m) => (<><span className="block font-medium">{formatWhen(m.enqueuedTime, now)}</span><span className="block text-xs text-[var(--color-text-muted)]">{formatAgo(m.enqueuedTime, now)}</span></>) },
     { key: 'q', header: 'Queue or topic', info: columnHelp.active.where, render: () => <EntityCell size="sm" entityName={chosen.entity.name} entityType={chosen.entity.kind} /> },
-    { key: 'id', header: 'Message ID', info: columnHelp.drawer.messageId, render: (m) => <span title={m.messageId} className="block max-w-[12rem] truncate font-mono text-[11.5px]">{m.messageId}</span> },
-    { key: 'size', header: 'Size', info: columnHelp.active.size, numeric: true, className: 'whitespace-nowrap', render: (m) => formatBytes(m.sizeInBytes) },
-    { key: 'd', header: 'Delivery count', info: columnHelp.active.delivery, numeric: true, render: (m) => m.deliveryCount },
+    { key: 'id', header: 'Message', info: columnHelp.active.message, width: 'min-w-[13rem]', render: (m) => <MessageCell messageId={m.messageId} gist={gistOfMessage(m)} subject={m.subject} /> },
+    { key: 'size', secondary: true, header: 'Size', info: columnHelp.active.size, numeric: true, className: 'whitespace-nowrap', render: (m) => formatBytes(m.sizeInBytes) },
+    { key: 'd', secondary: true, header: 'Delivery count', info: columnHelp.active.delivery, numeric: true, render: (m) => m.deliveryCount },
     { key: 'age', header: 'Age', info: columnHelp.active.age, numeric: true, className: 'whitespace-nowrap', render: (m) => formatAge(m.enqueuedTime, now) },
-    { key: 'labels', header: 'Labels', info: columnHelp.active.labels, render: (m) => (m.subject ? <span className="rounded-full bg-[var(--color-surface-muted)] px-2 py-0.5 text-xs font-medium">{m.subject}</span> : <span className="text-[var(--color-text-muted)]">—</span>) },
     {
       key: 'view',
       header: 'Actions',

@@ -42,6 +42,14 @@ public sealed class AgentsController : ApiControllerBase
     [ProducesResponseType(typeof(IReadOnlyList<AgentResponse>), StatusCodes.Status200OK)]
     public IActionResult List() => Ok(_registry.All().Select(ToResponse).ToList());
 
+    /// <summary>
+    /// Agents this build has that are not running, because no connected cloud gives them anything to do — so the screen can say
+    /// why one it has heard of is not listed. They return by themselves when such a cloud is connected.
+    /// </summary>
+    [HttpGet("dormant")]
+    [ProducesResponseType(typeof(IReadOnlyList<DormantAgentResponse>), StatusCodes.Status200OK)]
+    public IActionResult Dormant() => Ok(_registry.Dormant().Select(d => new DormantAgentResponse(d.Id, d.Name, d.Needs.ToString())).ToList());
+
     /// <summary>One agent.</summary>
     [HttpGet("{id}")]
     [ProducesResponseType(typeof(AgentResponse), StatusCodes.Status200OK)]
@@ -199,3 +207,9 @@ public sealed class AgentsController : ApiControllerBase
 
     private static string Camel(string s) => string.IsNullOrEmpty(s) ? s : char.ToLowerInvariant(s[0]) + s[1..];
 }
+
+/// <summary>An agent that is registered but off, and what it is waiting for.</summary>
+/// <param name="Id">Its stable id.</param>
+/// <param name="Name">What a person calls it.</param>
+/// <param name="Needs">What a connected cloud would have to offer: <c>WatchedCloud</c> or <c>VerifiableCloud</c>.</param>
+public sealed record DormantAgentResponse(string Id, string Name, string Needs);

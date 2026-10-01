@@ -35,12 +35,21 @@ public sealed class AgentsApiTests
         using var host = new ServiceHubApiFactory();
         using var client = host.CreateClient();
 
-        var agents = (await Json(await client.GetAsync("/api/v1/agents"))).EnumerateArray().ToList();
+        // Nothing is connected here, so only the agents that matter whatever is connected run. The six that need a cloud ServiceHub
+        // watches on its own, or one that can prove a fix held, are off and not listed — the host decides on its first pass.
+        List<JsonElement> agents = [];
+        for (var i = 0; i < 100 && agents.Count != 3; i++)
+        {
+            agents = (await Json(await client.GetAsync("/api/v1/agents"))).EnumerateArray().ToList();
+            if (agents.Count != 3) await Task.Delay(50);
+        }
 
         agents.Select(a => a.GetProperty("id").GetString()).Should().BeEquivalentTo(
-            ["dlq-monitor", "recovery-verification", "bulk-replay", "auto-replay", "autonomy-evaluation",
-             "insights-anomaly", "insights-backlog", "insights-correlation", "insights-narration"],
-            "the screen can only show what the registry holds — never 4.0.0's twenty workers (the four Insights agents arrived with 6.18; the backup agent only when scheduled)");
+            ["recovery-verification", "bulk-replay", "auto-replay"],
+            "the screen can only show what runs — and an agent no connected cloud gives anything to do does not (Auto Replay is always kept)");
+        (await Json(await client.GetAsync("/api/v1/agents/dormant"))).EnumerateArray().Select(d => d.GetProperty("id").GetString()).Should().BeEquivalentTo(
+            ["dlq-monitor", "autonomy-evaluation", "insights-anomaly", "insights-backlog", "insights-correlation", "insights-narration"],
+            "the page can say which agents are off, and why");
         agents.Where(a => a.GetProperty("canAct").GetBoolean()).Select(a => a.GetProperty("id").GetString())
             .Should().BeEquivalentTo(["bulk-replay", "auto-replay"], "only two agents can change anything outside ServiceHub");
         foreach (var a in agents)

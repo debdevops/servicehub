@@ -230,7 +230,7 @@ public sealed class BulkOperationService : IBulkOperationService
             job.Id, job.Status, job.Items.Count, willReplay, Count(BulkItemState.Sent), Count(BulkItemState.Failed), Count(BulkItemState.Unknown),
             Count(BulkItemState.Queued) + Count(BulkItemState.Sending), Count(BulkItemState.HeldBack), job.SampleOnly, job.EndedReason,
             job.PreviewedAt, job.StartedAt, job.EndedAt, job.Kind,
-            [.. job.Items.Where(i => i.State is BulkItemState.Failed or BulkItemState.Unknown).OrderBy(i => i.Position).Take(10).Select(i =>
+            [.. job.Items.Where(i => i.State is BulkItemState.Failed or BulkItemState.Unknown).OrderBy(i => i.Position).Select(i =>
                 new BulkProblem(i.DlqMessageId, i.EntityName, i.State == BulkItemState.Failed ? "failed" : "unknown", i.ReasonCode,
                     string.IsNullOrWhiteSpace(i.Remedy) ? "The cloud did not accept it, so nothing was sent back." : i.Remedy))]);
     }

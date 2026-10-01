@@ -339,6 +339,41 @@ public sealed class GcpMessageReceiverRegressionTests
     // ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
+    public async Task PurgeMessageAsync_TargetBeyondTheFifthBatch_StillFindsAndAcknowledgesIt()
+    {
+        // Regression: a replay/purge scan stopped after five pulls (500 messages), and Pub/Sub's first pull is often short — so
+        // in a deep DLQ about half a bulk replay failed "not found". The scan now walks the whole backlog.
+        var ns = BuildNamespace();
+        var (peeker, _) = BuildSut(ns, SubId, new PullResponse { ReceivedMessages = { BuildReceived("ack-t", "target-msg", "body") } });
+        var seq = (await peeker.PeekMessagesAsync(new GetMessagesRequest(TestNamespaceId, SubId, null, false, 10))).Value[0].SequenceNumber;
+
+        PullResponse Batch(int from, int count)
+        {
+            var r = new PullResponse();
+            for (var i = from; i < from + count; i++) r.ReceivedMessages.Add(BuildReceived($"ack-{i}", $"other-{i}", "x"));
+            return r;
+        }
+
+        var last = Batch(600, 3);
+        last.ReceivedMessages.Add(BuildReceived("ack-target", "target-msg", "body"));
+        var (sut, subscriber) = BuildSut(ns, SubId, new PullResponse());
+        subscriber.Reset();
+        subscriber.SetupSequence(s => s.PullAsync(It.IsAny<PullRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Batch(0, 3)).ReturnsAsync(Batch(100, 100)).ReturnsAsync(Batch(200, 100)).ReturnsAsync(Batch(300, 100))
+            .ReturnsAsync(Batch(400, 100)).ReturnsAsync(Batch(500, 100)).ReturnsAsync(last);
+        subscriber.Setup(s => s.ModifyAckDeadlineAsync(It.IsAny<ModifyAckDeadlineRequest>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        subscriber.Setup(s => s.AcknowledgeAsync(It.IsAny<AcknowledgeRequest>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var factory = new Mock<IGcpClientFactory>();
+        factory.Setup(f => f.GetSubscriberClientAsync(ns, SubId, It.IsAny<CancellationToken>())).ReturnsAsync(subscriber.Object);
+        sut = new GcpMessageReceiver(factory.Object, BuildRepo(ns).Object, NullLogger<GcpMessageReceiver>.Instance);
+
+        var purge = await sut.PurgeMessageAsync(TestNamespaceId, SubId, null, seq, fromDeadLetter: false);
+
+        purge.IsSuccess.Should().BeTrue();
+        subscriber.Verify(s => s.AcknowledgeAsync(It.Is<AcknowledgeRequest>(r => r.AckIds.Contains("ack-target")), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task PurgeMessageAsync_AfterPeek_AcknowledgesOnSourceSubscription()
     {
         var ns = BuildNamespace();

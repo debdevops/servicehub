@@ -11,6 +11,9 @@ public interface IAgentRegistry
     /// <summary>Every registered agent's current state, in a stable order.</summary>
     IReadOnlyList<AgentRuntimeState> All();
 
+    /// <summary>Agents registered in this build but not running now, because no connected cloud gives them anything to do.</summary>
+    IReadOnlyList<AgentDescriptor> Dormant();
+
     /// <summary>One agent's state, or <c>null</c> when no agent has that id.</summary>
     AgentRuntimeState? StateOf(string agentId);
 

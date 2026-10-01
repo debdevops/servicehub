@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { usePendingWork } from '../../hooks/usePendingWork'
 import { useMinimizable } from '../../hooks/useMinimizable'
 import { pendingRows, type PendingRow } from '../../lib/pendingRows'
+import { useManualApproval } from '../../hooks/useManualApproval'
 import { formatAge } from '../../lib/format'
 import { useResolveHref } from './PendingWorkList'
 import { InfoTip } from '../ui/InfoTip'
@@ -31,11 +32,12 @@ const icons = {
  */
 export function NeedsYouStrip() {
   const pending = usePendingWork()
+  const manual = useManualApproval()
   const [expanded, setExpanded] = useState(false)
   const panel = useMinimizable('needs-your-attention')
 
   if (!pending.data) return null
-  const rows = pendingRows(pending.data.items, { capped: pending.data.items.length < pending.data.total })
+  const rows = pendingRows(pending.data.items, { capped: pending.data.items.length < pending.data.total, manual })
 
   if (rows.length === 0) {
     return (
@@ -97,11 +99,21 @@ function NeedsYouCard({ row }: { row: PendingRow }) {
         <p className="text-[12px] text-[var(--color-text-muted)]">{row.where}{row.where ? ' — ' : ''}{row.why}</p>
         <p className="mt-0.5 text-[11px] text-[var(--color-text-muted)]">waiting {formatAge(row.since, new Date())}</p>
         {row.kind === 'agent' ? (
-          // An agent stopping is ServiceHub's own machinery, not a cloud page — stay on Home and point at
-          // the bar that resumes it, rather than sending someone to Advanced (plan §7: never link there).
-          <a href="#agent-bar" onClick={(e) => { e.preventDefault(); document.getElementById('agent-bar')?.scrollIntoView({ block: 'center' }) }} className="mt-1.5 inline-block text-[12px] font-semibold text-[#b45309] hover:underline">
-            Look at the Agent bar ↓
-          </a>
+          // An agent stopping is ServiceHub's own machinery, not a cloud page. Where Home has the Agent bar (a cloud that can verify a
+          // fix) it resumes the agent right here; where it has none (AWS and Google only) there is nothing on Home to point at, so
+          // this opens the Agents page in Advanced.
+          <Link
+            to={resolve(row.action.href)}
+            onClick={(e) => {
+              const bar = document.getElementById('agent-bar')
+              if (!bar) return
+              e.preventDefault()
+              bar.scrollIntoView({ block: 'center' })
+            }}
+            className="mt-1.5 inline-block text-[12px] font-semibold text-[#b45309] hover:underline"
+          >
+            Open Agents →
+          </Link>
         ) : (
           <Link to={resolve(row.action.href)} className="mt-1.5 inline-block text-[12px] font-semibold text-[#b45309] hover:underline">
             {row.action.label} →

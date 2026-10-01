@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { usePendingWork } from '../../hooks/usePendingWork'
 import { pendingRows, type PendingRow } from '../../lib/pendingRows'
 import { useResolveHref } from './PendingWorkList'
+import { useManualApproval } from '../../hooks/useManualApproval'
 
 /**
  * The live toast (5.4): something new is waiting, said while you are looking. It watches the DURABLE pending list — which a
@@ -16,6 +17,7 @@ export function EscalationToast() {
   const seen = useRef<Set<string> | null>(null)
   const [fresh, setFresh] = useState<PendingRow | null>(null)
   const resolve = useResolveHref()
+  const manual = useManualApproval()
 
   useEffect(() => {
     const items = pending.data?.items
@@ -26,7 +28,10 @@ export function EscalationToast() {
     }
     const added = items.filter((i) => !seen.current!.has(i.id))
     added.forEach((i) => seen.current!.add(i.id))
-    if (added.length > 0) setFresh(pendingRows(added)[0])
+    // Where a person decides every replay anyway (AWS, Google), the bell holds it — a toast would only talk about agents that cannot act there.
+    const toastable = pendingRows(added, { manual }).filter((r) => !r.manual)
+    if (toastable.length > 0) setFresh(toastable[0])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pending.data])
 
   if (!fresh) return null

@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, useLocation } from 'react-router-dom'
+import { MemoryRouter, useLocation, useSearchParams } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as dl from '@/lib/api/deadLetters'
 import * as replayApi from '@/lib/api/replay'
@@ -228,5 +228,37 @@ describe('explainFailure', () => {
     const e = explainFailure('Weird', 'no idea', 1)
     expect(e.failingField).toBeNull()
     expect(e.summary).toMatch(/no reading/)
+  })
+
+  it('goes away when the replay proposal is put away and the message has left the dead-letter queue', async () => {
+    const user = userEvent.setup()
+    fetchOne.mockResolvedValueOnce(detail())
+    function PutAway() {
+      const [, set] = useSearchParams()
+      return <button type="button" onClick={() => set((c) => { const n = new URLSearchParams(c); n.delete('modal'); return n })}>put replay away</button>
+    }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/?tab=dlq&message=7&modal=replay']}><Where /><MessageDrawer /><PutAway /></MemoryRouter></QueryClientProvider>)
+    await screen.findByText('Message details')
+    // The replay was accepted: the next read says the message is no longer in the queue.
+    fetchOne.mockResolvedValue(detail({ item: { ...detail().item, status: 'resolved' } }))
+    await user.click(screen.getByRole('button', { name: 'put replay away' }))
+    await waitFor(() => expect(screen.getByTestId('where').textContent).toBe('?tab=dlq'))
+    expect(screen.queryByText('Message details')).not.toBeInTheDocument()
+  })
+
+  it('stays when the replay proposal is cancelled and the message is still a dead letter', async () => {
+    const user = userEvent.setup()
+    fetchOne.mockResolvedValue(detail())
+    function PutAway() {
+      const [, set] = useSearchParams()
+      return <button type="button" onClick={() => set((c) => { const n = new URLSearchParams(c); n.delete('modal'); return n })}>put replay away</button>
+    }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/?tab=dlq&message=7&modal=replay']}><Where /><MessageDrawer /><PutAway /></MemoryRouter></QueryClientProvider>)
+    await screen.findByText('Message details')
+    await user.click(screen.getByRole('button', { name: 'put replay away' }))
+    await new Promise((r) => setTimeout(r, 100))
+    expect(screen.getByTestId('where').textContent).toBe('?tab=dlq&message=7')
   })
 })

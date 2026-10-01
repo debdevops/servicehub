@@ -4,11 +4,13 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '@/lib/api/pendingWork'
+import * as nsApi from '@/lib/api/namespaces'
 import type { PendingWorkItem, PendingWorkPage } from '@/lib/api/pendingWork'
 import { Bell } from '@/components/pending/Bell'
 import { EscalationToast } from '@/components/pending/EscalationToast'
 import { NeedsYouStrip } from '@/components/pending/NeedsYouStrip'
 
+vi.mock('@/lib/api/namespaces', async (o) => ({ ...(await o<typeof nsApi>()), fetchNamespaces: vi.fn().mockResolvedValue([]) }))
 vi.mock('@/lib/api/pendingWork', async (original) => ({ ...(await original<typeof api>()), fetchPendingWork: vi.fn() }))
 
 const item = (id: string, over: Partial<PendingWorkItem> = {}): PendingWorkItem => ({
@@ -104,5 +106,35 @@ describe('Needs your attention', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Show needs your attention' }))
     expect(await screen.findByText('1 replay needs your approval')).toBeInTheDocument()
+  })
+})
+
+describe('where a person decides every replay (AWS, Google)', () => {
+  const cloud = (provider: 'aws' | 'azure', canProve: boolean) => ({ id: 'n1', name: 'ns', provider, environment: 'dev', capabilities: { canProveDlqAbsence: canProve } }) as unknown as nsApi.Namespace
+  beforeEach(() => vi.clearAllMocks())
+
+  async function newItemArrives(provider: 'aws' | 'azure', canProve: boolean) {
+    vi.mocked(nsApi.fetchNamespaces).mockResolvedValue([cloud(provider, canProve)])
+    vi.mocked(api.fetchPendingWork).mockResolvedValue(page([item('old', { provider })]))
+    const view = wrap(<><EscalationToast /><Bell /></>)
+    await screen.findByRole('button', { name: 'Waiting for you: 1' })
+    vi.mocked(api.fetchPendingWork).mockResolvedValue(page([item('old', { provider }), item('new', { provider })]))
+    await act(async () => { await view.client.invalidateQueries() })
+    return view
+  }
+
+  it('does not toast about agents — and the bell still holds it, in plain words', async () => {
+    await newItemArrives('aws', false)
+    await screen.findByRole('button', { name: 'Waiting for you: 2' })
+    expect(screen.queryByText('The Agent stopped and asked you')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Waiting for you: 2' }))
+    expect(await screen.findByText('2 replays need your approval')).toBeInTheDocument()
+    expect(screen.getByText(/each replay is your decision/)).toBeInTheDocument()
+    expect(screen.queryByText(/earned|10 verified|agent/i)).not.toBeInTheDocument()
+  })
+
+  it('still toasts on a cloud that can verify a fix (Azure)', async () => {
+    await newItemArrives('azure', true)
+    expect(await screen.findByText('The Agent stopped and asked you')).toBeInTheDocument()
   })
 })

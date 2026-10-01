@@ -31,7 +31,8 @@ public abstract class InsightAgent : IAgent
         var minutes = Math.Clamp((configuration ?? throw new ArgumentNullException(nameof(configuration))).GetValue("Insights:IntervalMinutes", 15), 1, 24 * 60);
         Descriptor = new AgentDescriptor(id, name, purpose, AgentKind.Watch, AgentAuthority.Observes, TimeSpan.FromMinutes(minutes),
             Notes: "Counts only what ServiceHub has recorded. A finding is information — it never acts.",
-            May: may, MayNot: ["Replay, purge or change anything", "Open a rule or change what a failure may do on its own", "Use AI or guesses"]);
+            May: may, MayNot: ["Replay, purge or change anything", "Open a rule or change what a failure may do on its own", "Use AI or guesses"],
+            Needs: AgentNeeds.WatchedCloud);
     }
 
     /// <inheritdoc />

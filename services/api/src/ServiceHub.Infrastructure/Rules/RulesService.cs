@@ -208,7 +208,8 @@ public sealed class RulesService : IRulesService
         var made = new List<RuleView>();
         foreach (var s in sources.Where(s => !covered.Contains(s.SignatureHash)).OrderByDescending(s => s.Messages).Take(Math.Clamp(max, 1, 10)))
         {
-            var name = $"Auto: {s.Reason} in {s.EntityName}";
+            // "Unknown" is the word the matcher uses for "no reason recorded"; a person reads that as a failure called Unknown, so the NAME says it plainly.
+            var name = $"Auto: {(s.Reason == "Unknown" ? "No recorded reason" : s.Reason)} in {s.EntityName.Replace("/subscriptions/", " › ", StringComparison.Ordinal)}";
             var result = await CreateAsync(ownerId, provider, name.Length > 120 ? name[..120] : name, s.Reason, s.EntityName, s.SignatureHash, 10, 120, true, ct).ConfigureAwait(false);
             if (result.IsSuccess)
             {
@@ -285,7 +286,13 @@ public sealed class RulesService : IRulesService
     public IQueryable<DlqMessage> Matching(AutoReplayRule rule)
     {
         var q = _db.DlqMessages.AsNoTracking().Where(m => m.OwnerId == rule.OwnerId && m.CloudProvider == rule.Provider);
-        if (rule.Reason is { } reason) q = q.Where(m => m.DeadLetterReason == reason);
+        // A cloud that records no reason (Google Cloud, often) leaves it empty, and every screen and signature calls that "Unknown" — so a rule
+        // saying "Unknown" has to pick those up too, or it would match nothing and never say why.
+        if (rule.Reason is { } reason)
+        {
+            q = reason == "Unknown" ? q.Where(m => m.DeadLetterReason == null || m.DeadLetterReason == "" || m.DeadLetterReason == reason) : q.Where(m => m.DeadLetterReason == reason);
+        }
+
         if (rule.EntityName is { } entity) q = q.Where(m => m.EntityName == entity);
         if (rule.SignatureHash is { } sig) q = q.Where(m => m.SignatureHash == sig);
         return q;

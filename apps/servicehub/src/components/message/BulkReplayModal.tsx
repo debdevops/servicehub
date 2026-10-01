@@ -20,7 +20,7 @@ import { Pager } from '../ui/Pager'
 import { sectionHelp } from '../../content/sections'
 
 /** Preview · Run · Watch — the same three steps in both views, so a person always knows where they are. */
-function Steps({ at }: { at: 1 | 2 | 3 }) {
+export function Steps({ at }: { at: 1 | 2 | 3 }) {
   const step = (n: number, label: string) => (
     <li key={n} className="flex items-center gap-2">
       <span
@@ -155,7 +155,7 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
       </section>
 
       {p.heldBack.length > 0 && (
-        <section aria-label="Held back" className="space-y-2">
+        <section aria-label="Held back" className="max-h-56 space-y-2 overflow-y-auto" tabIndex={0}>
           {p.heldBack.map((h) => (
             <div key={h.dlqMessageId} className="flex items-start gap-2.5 rounded-xl border border-[#fde68a] bg-[var(--color-warning-light)] px-3.5 py-2.5 text-[13px] text-[#78350f]">
               <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-[#d97706]" aria-hidden="true" />
@@ -187,8 +187,10 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
       </section>
 
       <section aria-label="After they are sent back" className="rounded-xl border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-3.5 py-2.5">
-        <Collapsible title="After they are sent back" defaultOpen={false} help={sectionHelp.bulk.after}>
-          <p className="text-[13px]">ServiceHub <b>watches</b> each one. Where the cloud can prove a message stayed fixed, each verified fix builds ServiceHub’s track record for that kind of failure, and later ones may not need a person. That is a suggestion, not a promise — nothing is approved for you.</p>
+        <Collapsible title="After they are sent back" defaultOpen={false} help={p.canProveDlqAbsence ? sectionHelp.bulk.after : sectionHelp.bulk.afterManual}>
+          {p.canProveDlqAbsence
+            ? <p className="text-[13px]">ServiceHub <b>watches</b> each one. Where the cloud can prove a message stayed fixed, each verified fix builds ServiceHub’s track record for that kind of failure, and later ones may not need a person. That is a suggestion, not a promise — nothing is approved for you.</p>
+            : <p className="text-[13px]">ServiceHub <b>watches</b> each one and records what it finds. This cloud can’t confirm a replay fixed the problem, so each is marked <b>verification required</b> — never “fixed”.</p>}
         </Collapsible>
       </section>
 
@@ -377,7 +379,7 @@ function Running({ id, close }: { id: string; close: () => void }) {
   return <Progress p={data} close={close} />
 }
 
-function Progress({ p, close }: { p: BulkProgress; close: () => void }) {
+export function Progress({ p, close, onStop, onMinimize }: { p: BulkProgress; close: () => void; onStop?: () => void; onMinimize?: () => void }) {
   const [stopping, setStopping] = useState(false)
   const target = p.sampleOnly ? Math.min(1, p.willReplay) : p.willReplay
   const done = p.sent + p.failed + p.unknown
@@ -419,14 +421,28 @@ function Progress({ p, close }: { p: BulkProgress; close: () => void }) {
 
       {p.problems && p.problems.length > 0 && (
         <section aria-label="Why some did not go" className="space-y-1.5">
-          <h4 className="text-[11px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">Why some did not go</h4>
-          <ul className="space-y-1.5">
-            {p.problems.map((x) => (
-              <li key={x.dlqMessageId} className="rounded-xl border border-[#fecaca] bg-[var(--color-error-light)] px-3.5 py-2 text-[13px]">
-                <b><MessageRef id={x.dlqMessageId} /></b> <span className="text-[var(--color-text-muted)]">({x.entityName})</span> — {x.why}{x.reasonCode && <span className="ml-1 font-mono text-[11px] opacity-70">{x.reasonCode}</span>}
-              </li>
-            ))}
-          </ul>
+          <h4 className="text-[11px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">Why some did not go · {p.problems.length.toLocaleString()}</h4>
+          {/* Hundreds can fail at once: they scroll here, so the verdict and the buttons below never get pushed out of reach. */}
+          <div className="max-h-56 overflow-auto rounded-xl border border-[#fecaca]" tabIndex={0} role="region" aria-label="Messages that did not go">
+            <table className="w-full text-left text-[12.5px]">
+              <thead className="sticky top-0 bg-[var(--color-error-light)] text-[11px] uppercase tracking-wide text-[#7f1d1d]">
+                <tr>
+                  <th scope="col" className="px-3 py-1.5">Message</th>
+                  <th scope="col" className="px-3 py-1.5">Sent back to</th>
+                  <th scope="col" className="px-3 py-1.5">Why</th>
+                </tr>
+              </thead>
+              <tbody>
+                {p.problems.map((x) => (
+                  <tr key={x.dlqMessageId} className="border-t border-[#fecaca] align-top">
+                    <td className="px-3 py-1.5"><MessageRef id={x.dlqMessageId} bare /></td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-[var(--color-text-muted)]">{x.entityName}</td>
+                    <td className="px-3 py-1.5">{x.why}{x.reasonCode && <span className="ml-1 font-mono text-[11px] opacity-70">{x.reasonCode}</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
 
@@ -435,7 +451,7 @@ function Progress({ p, close }: { p: BulkProgress; close: () => void }) {
       {ended && (
         <p className="flex items-start gap-2.5 rounded-xl border border-[#a7f3d0] bg-[#ecfdf5] px-3.5 py-2.5 text-[13px]">
           <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#047857]" aria-hidden="true" />
-          <span><b>{p.sent.toLocaleString()} {p.kind === 'purge' ? 'deleted' : 'replayed'}</b> and sent to cloud — navigate to <b>Replayed</b> tab to see the results.</span>
+          <span><b>{p.sent.toLocaleString()} {p.kind === 'purge' ? 'deleted' : 'replayed'}</b> and sent to cloud — navigate to <b>Replayed</b> tab to see the results. {p.kind === 'purge' ? '' : 'Sent back is not the same as fixed: each one is now watched, and any that fail again show as Came back.'}</span>
         </p>
       )}
 
@@ -446,24 +462,25 @@ function Progress({ p, close }: { p: BulkProgress; close: () => void }) {
         </p>
       )}
 
-      <footer className="flex items-center gap-3 border-t border-[var(--color-border)] pt-4">
+      <footer className="sticky bottom-0 z-10 -mx-5 -mb-4 flex items-center gap-3 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-3">
         {!ended && (
           <button
             type="button"
             disabled={stopping || p.status !== 'running'}
-            onClick={() => { setStopping(true); void cancelBulk(p.id) }}
+            onClick={() => { setStopping(true); if (onStop) onStop(); else void cancelBulk(p.id) }}
             className="flex items-center gap-2 rounded-lg border border-[#fecaca] px-4 py-2 text-sm font-semibold text-[#b91c1c] disabled:opacity-50"
           >
             <CircleStop className="h-4 w-4" aria-hidden="true" /> {stopping ? 'Stopping…' : 'Stop now'}
           </button>
         )}
-        <button type="button" onClick={close} className="ml-auto rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold">Close</button>
+        {onMinimize && !ended && <button type="button" onClick={onMinimize} className="ml-auto rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold">Minimize</button>}
+        <button type="button" onClick={close} className={`${onMinimize && !ended ? '' : 'ml-auto '}rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold`}>Close</button>
       </footer>
     </div>
   )
 }
 
-function Box({ value, label, tone }: { value: number; label: string; tone: 'plain' | 'green' | 'amber' }) {
+export function Box({ value, label, tone }: { value: number; label: string; tone: 'plain' | 'green' | 'amber' }) {
   const cls = tone === 'green' ? 'border-[#a7f3d0] bg-[#ecfdf5]' : tone === 'amber' ? 'border-[#fde68a] bg-[#fffbeb]' : 'border-[var(--color-border)]'
   return (
     <div className={`rounded-xl border px-3.5 py-3 ${cls}`}>
@@ -494,7 +511,8 @@ function Row({ ok, children }: { ok: boolean; children: React.ReactNode }) {
 }
 
 /** A message named by its own ID, the one it carries in the cloud — never only ServiceHub's internal number. */
-function MessageRef({ id }: { id: number }) {
+function MessageRef({ id, bare = false }: { id: number; bare?: boolean }) {
   const { data } = useQuery({ queryKey: ['dead-letter', id], queryFn: () => fetchDeadLetter(id), staleTime: 30_000, retry: false })
+  if (bare) return <span className="font-mono text-[11.5px] [overflow-wrap:anywhere]">{data?.item ? data.item.messageId : `#${id}`}</span>
   return <span>{data?.item ? <>Message <span className="font-mono text-[12px] [overflow-wrap:anywhere]">{data.item.messageId}</span> <span className="font-normal text-[var(--color-text-muted)]">({data.item.topicName ?? data.item.entityName})</span></> : <>Message #{id}</>}</span>
 }

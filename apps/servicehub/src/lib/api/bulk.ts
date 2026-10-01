@@ -54,7 +54,7 @@ export interface BulkProgress {
   readonly startedAt: string | null
   readonly endedAt: string | null
   readonly kind?: BulkKind
-  /** Up to ten messages the run tried and could not send, each with the reason in words. */
+  /** Every message the run tried and could not send, each with the reason in words. */
   readonly problems?: readonly { readonly dlqMessageId: number; readonly entityName: string; readonly state: 'failed' | 'unknown'; readonly reasonCode: string | null; readonly why: string }[]
 }
 

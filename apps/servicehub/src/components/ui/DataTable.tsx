@@ -14,7 +14,11 @@ export interface Column<Row> {
   readonly info?: ColumnHelp
   /** A minimum width (a Tailwind class) for a column that needs room, such as the one that explains a failure. */
   readonly width?: string
+  /** Detail that can wait: dropped below 1280 px (tablet, small laptop) so the column that matters — Details — stays on screen. Still in the drawer. */
+  readonly secondary?: boolean
 }
+
+const hideNarrow = 'max-xl:hidden'
 
 export interface Selection {
   readonly selected: ReadonlySet<string>
@@ -66,9 +70,10 @@ export function DataTable<Row>({
         <thead>
           <tr className="border-b border-[var(--color-border)] text-xs uppercase tracking-wide text-[var(--color-text-muted)]">
             {selection && (
-              <th scope="col" className="w-10 px-3 py-2">
+              <th scope="col" className="w-12 py-2 pl-4 pr-2 align-middle">
                 <input
                   type="checkbox"
+                  className="block h-4 w-4"
                   aria-label="Select all on this page"
                   checked={allOnPage}
                   ref={(el) => {
@@ -79,7 +84,7 @@ export function DataTable<Row>({
               </th>
             )}
             {columns.map((c) => (
-              <th key={c.key} scope="col" className={`${compact ? 'px-1.5' : 'px-4'} py-2 font-semibold whitespace-nowrap ${c.numeric ? 'text-right' : ''} ${c.width ?? ''}`}>
+              <th key={c.key} scope="col" className={`${compact ? 'px-1.5' : 'px-4'} py-2 font-semibold whitespace-nowrap ${c.numeric ? 'text-right' : ''} ${c.width ?? ''} ${c.secondary ? hideNarrow : ''}`}>
                 {c.header}
                 {c.info && <InfoTip help={c.info} />}
               </th>
@@ -104,9 +109,10 @@ export function DataTable<Row>({
                 className={`border-b border-[var(--color-border)] last:border-b-0 ${isSelected ? 'bg-[var(--color-primary-50)]' : 'hover:bg-[var(--color-surface-muted)]'}`}
               >
                 {selection && (
-                  <td className="w-10 px-3 py-2">
+                  <td className={`w-12 pl-4 pr-2 align-top ${compact ? 'py-2.5' : 'pt-3.5 pb-3'}`}>
                     <input
                       type="checkbox"
+                      className="block h-4 w-4"
                       aria-label={rowLabel ? rowLabel(row) : 'Select row'}
                       checked={isSelected}
                       onChange={() => selection.onToggle(key)}
@@ -114,7 +120,7 @@ export function DataTable<Row>({
                   </td>
                 )}
                 {columns.map((c) => (
-                  <td key={c.key} className={`${pad} align-top ${c.numeric ? 'tabular text-right' : ''} ${c.className ?? ''}`}>
+                  <td key={c.key} className={`${pad} align-top ${c.numeric ? 'tabular text-right' : ''} ${c.className ?? ''} ${c.secondary ? hideNarrow : ''}`}>
                     {c.render(row)}
                   </td>
                 ))}

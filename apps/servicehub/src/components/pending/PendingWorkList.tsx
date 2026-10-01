@@ -41,7 +41,7 @@ export function PendingWorkList({ rows, now, primaryFirst = true, dense = false 
               <p className="text-[12.5px] text-[var(--color-text-muted)]">
                 {r.where}{r.where ? ' — ' : ''}{r.why}
               </p>
-              <p className="mt-0.5 text-[11px] text-[var(--color-text-muted)]">waiting {formatAge(r.since, now)} · <span className="font-mono">{r.reasonCode}</span></p>
+              <p className="mt-0.5 text-[11px] text-[var(--color-text-muted)]">waiting {formatAge(r.since, now)}{!r.manual && <> · <span className="font-mono">{r.reasonCode}</span></>}</p>
             </div>
             <Link
               to={resolve(r.action.href)}

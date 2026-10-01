@@ -48,6 +48,17 @@ export async function fetchAgents(): Promise<Agent[]> {
   return (await api.get<Agent[]>('/agents')).data
 }
 
+/** An agent this build has that is off, because no connected cloud gives it anything to do. */
+export interface DormantAgent {
+  readonly id: string
+  readonly name: string
+  readonly needs: 'WatchedCloud' | 'VerifiableCloud'
+}
+
+export async function fetchDormantAgents(): Promise<DormantAgent[]> {
+  return (await api.get<DormantAgent[]>('/agents/dormant')).data
+}
+
 export async function fetchAgentActivity(id: string): Promise<AgentActivity> {
   return (await api.get<AgentActivity>(`/agents/${encodeURIComponent(id)}/activity`)).data
 }

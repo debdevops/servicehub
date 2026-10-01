@@ -61,6 +61,7 @@ function build(ns: Namespace, entity: string, count: number, status: DeadLetter[
       id, namespaceId: ns.id, messageId: `${ns.provider}-${entity.replace(/\W/g, '')}-${1000 + id}`, sequenceNumber: 5000 + id, entityName: entity,
       entityType: topic ? 'subscription' : 'queue', topicName: topic, detectedAtUtc: iso((i * 5 + 1) * H), enqueuedTimeUtc: iso((i * 5 + 2) * H),
       deliveryCount: ns.provider === 'gcp' ? 0 : 5 + (i % 5), sizeInBytes: 900 + i * 37, deadLetterReason: r?.reason ?? null, deadLetterErrorDescription: r?.error ?? null, status,
+      gist: { preview: `{"orderId":"ORD-${id * 7919 % 100000}","customerId":"CUS-${id * 31}","amount":"${(id * 13.37).toFixed(2)}","currency":"EUR"}`, contentType: 'application/json', correlationId: `corr-${id * 977 % 100000}`, sessionId: null, properties: { source: ['checkout', 'mobile', 'partner-api'][id % 3], tenant: `T-${100 + (id % 7)}` } },
       resolvedAt: status === 'resolved' ? iso(i * H) : null, resolutionCause: status === 'resolved' ? (ns.provider === 'azure' ? 'replayedByServiceHub' : 'vanishedExternally') : null,
     }
   })
@@ -82,7 +83,7 @@ function replay(id: number, d: DeadLetter, status: VerificationStatus, state: En
   const ns = demoNamespaces.find((n) => n.id === d.namespaceId)!
   return {
     id, dlqMessageId: d.id, namespaceId: d.namespaceId, provider: ns.provider, messageId: d.messageId, sourceEntity: d.entityName, targetEntity: d.topicName ?? d.entityName,
-    replayedAt: iso(hoursAgo * H), replayedBy: actor.identity, actor, outcomeStatus: 'accepted', entryState: state, observationWindowEndsAt: iso((hoursAgo - 24) * H), markerApplied: true,
+    replayedAt: iso(hoursAgo * H), replayedBy: actor.identity, actor, gist: d.gist, outcomeStatus: 'accepted', entryState: state, observationWindowEndsAt: iso((hoursAgo - 24) * H), markerApplied: true,
     verification: { status, reasonCode: status === 'verification_required' ? 'PROVIDER_CANNOT_VERIFY_ABSENCE' : null, confidence: status === 'returned' ? 'Exact' : null, watchUntil: status === 'watching' ? iso(-20 * H) : null, canConfirm: ns.capabilities!.canProveDlqAbsence, remedy: status === 'verification_required' ? 'SETUP_DLQ_OBSERVER' : null },
   }
 }

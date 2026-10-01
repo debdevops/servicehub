@@ -111,7 +111,8 @@ public sealed record ReplayListItem(
     string? EntryState,
     DateTimeOffset? ObservationWindowEndsAt,
     bool MarkerApplied,
-    ReplayVerification Verification);
+    ReplayVerification Verification,
+    MessageGist? Gist = null);
 
 /// <summary>A page of replays, newest first.</summary>
 /// <summary>What narrows the Replayed list beyond cloud, namespace and outcome. A null narrows nothing.</summary>

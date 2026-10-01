@@ -32,9 +32,13 @@ async function sideScrolls(page: Page) {
   })
 }
 
-test.describe('no horizontal scroll at 1366×768 (6.7)', () => {
-  for (const [name, path] of screens) {
-    test(name, async ({ page }) => {
+/** Small laptop, the 1366 machine, a desktop and a large monitor. Tablets (768) are not asserted: a table may scroll inside its own box there, the page may not. */
+const widths = [1024, 1280, 1366, 1920] as const
+
+test.describe('no horizontal scroll from 1024 px up (6.7)', () => {
+  for (const width of widths) for (const [name, path] of screens) {
+    test(`${name} at ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 768 })
       await page.goto('/demo/azure')
       await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible()
       await page.goto(path)
@@ -42,6 +46,16 @@ test.describe('no horizontal scroll at 1366×768 (6.7)', () => {
       expect(await sideScrolls(page)).toEqual([])
     })
   }
+
+  test('the page itself never scrolls sideways on a 768 px tablet', async ({ page }) => {
+    await page.setViewportSize({ width: 768, height: 1024 })
+    await page.goto('/demo/azure')
+    for (const [, path] of screens) {
+      await page.goto(path)
+      await page.waitForLoadState('networkidle')
+      expect((await sideScrolls(page)).filter((s) => s.startsWith('page:'))).toEqual([])
+    }
+  })
 
   test('Recovery Ledger with an entry open (the docked pane takes 360 px)', async ({ page }) => {
     await page.goto('/demo/azure')

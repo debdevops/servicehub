@@ -34,9 +34,11 @@ const TrendChart = lazy(() => import('../TrendChart'))
  * One cloud's detail (plan §5.3). Which cards show up is decided by `traitsOf` — never by `provider`
  * directly — so this file reads the same for Azure, AWS and Google Cloud; only the words differ.
  */
-export function CloudView({ provider, allInCloud, choice, window }: {
+export function CloudView({ provider, allInCloud, allNamespaces, choice, window }: {
   provider: CloudProvider
   allInCloud: readonly Namespace[]
+  /** Every connected cloud's namespaces — the picker lists them all, so a second cloud is never hidden. */
+  allNamespaces: readonly Namespace[]
   choice: ScopeChoice
   window: HomeWindow
 }) {
@@ -59,7 +61,7 @@ export function CloudView({ provider, allInCloud, choice, window }: {
         <div>
           <h2 className="flex items-center gap-2 text-[17px] font-extrabold tracking-tight text-[var(--color-text)]">{cloud}</h2>
           <p className="text-[12.5px] text-[var(--color-text-muted)]">How your {providerService[provider]} is holding up.</p>
-          {allInCloud.length > 1 && <div className="mt-1.5"><NamespaceScope namespaces={allInCloud} cloud={cloud} compact /></div>}
+          {allNamespaces.length > 1 && <div className="mt-1.5"><NamespaceScope namespaces={allNamespaces} cloud={cloud} cloudParam="provider" activeCloud={provider} allowAll={false} compact /></div>}
         </div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className={`rounded-full px-[13px] py-1.5 text-xs font-semibold ${connection.ok === false ? 'bg-[var(--color-warning-light)] text-[#92400e]' : connection.ok ? 'bg-[var(--color-success-light)] text-[#047857]' : 'bg-[var(--color-surface-muted)]'}`}>
@@ -125,7 +127,7 @@ export function CloudView({ provider, allInCloud, choice, window }: {
           </div>
 
           {allInCloud.length > 1 && namespaces.length > 1 && (
-            <NamespaceScope namespaces={allInCloud} cloud={cloud} />
+            <NamespaceScope namespaces={allNamespaces} cloud={cloud} cloudParam="provider" activeCloud={provider} allowAll={false} />
           )}
 
           {traits.watched ? (

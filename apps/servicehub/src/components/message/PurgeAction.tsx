@@ -1,6 +1,8 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Trash2 } from 'lucide-react'
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { showNotice } from '../../lib/notice'
 import { useMe } from '../../hooks/useIdentity'
 import { useNamespaces } from '../../hooks/useNamespaces'
 import { deadLetterKeys } from '../../hooks/useDeadLetters'
@@ -17,16 +19,34 @@ export function PurgeAction({ dlqMessageId, namespaceId, active }: { dlqMessageI
   const ns = useNamespaces().data?.find((n) => n.id === namespaceId)
   const may = permission(useMe().data, 'Operator', 'purge this message', { recover: true, namespaceId })
   const client = useQueryClient()
-  const purge = useMutation({ mutationFn: (reason: string) => purgeMessage(dlqMessageId, reason), onSettled: () => void client.invalidateQueries({ queryKey: deadLetterKeys.all }) })
+  const [, setParams] = useSearchParams()
+  const purge = useMutation({
+    mutationFn: (reason: string) => purgeMessage(dlqMessageId, reason),
+    onSuccess: (outcome) => {
+      // Purged: the message is gone, so its detail panel has nothing left to show. Say how it ended, then put the panel away.
+      // A refusal or an unknown outcome leaves the message where it is, so the panel stays and says so beside the button.
+      if (outcome.result !== 'accepted') return
+      showNotice({ tone: 'good', title: 'Purged', text: outcome.message })
+      setParams((c) => { const n = new URLSearchParams(c); n.delete('message'); n.delete('view'); return n }, { replace: true })
+    },
+    onSettled: () => void client.invalidateQueries({ queryKey: deadLetterKeys.all }),
+  })
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState('')
 
-  if (!ns || !active) return null
+  if (!ns) return null
+  // A purge that was not accepted keeps the panel open on the failure, even after the list refresh.
+  if (!active && !purge.isSuccess) return null
   if (!ns.capabilities?.supportsPurge) {
     return <p className="text-center text-xs text-[var(--color-text-muted)]">Purge isn’t offered here: this cloud can’t delete one message on its own.</p>
   }
   if (purge.isSuccess) {
-    return <p role="status" className="rounded-lg bg-[var(--color-surface-muted)] px-3 py-2 text-sm">{purge.data.message}</p>
+    const refused = purge.data.result !== 'accepted'
+    return (
+      <p role={refused ? 'alert' : 'status'} className={`rounded-lg px-3 py-2 text-sm ${refused ? 'border border-[#fecaca] bg-[#fef2f2] text-[#991b1b]' : 'bg-[var(--color-surface-muted)]'}`}>
+        <b>{refused ? (purge.data.result === 'unknown' ? 'Outcome unknown. ' : 'Not purged. ') : 'Purged. '}</b>{purge.data.message}
+      </p>
+    )
   }
   return (
     <div className="text-sm">

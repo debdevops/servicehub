@@ -97,8 +97,8 @@ describe('Bulk Replay modal', () => {
 
   it('starts only when the person chooses to, and moves to the running view in the URL', async () => {
     vi.mocked(bulk.previewBulk).mockResolvedValue(preview())
-    vi.mocked(bulk.startBulk).mockResolvedValue({ id: 'job1' } as bulk.BulkProgress)
-    vi.mocked(bulk.fetchBulk).mockResolvedValue({ id: 'job1', status: 'running', selected: 7, willReplay: 6, sent: 2, failed: 0, unknown: 0, remaining: 4, heldBack: 1, sampleOnly: false } as bulk.BulkProgress)
+    vi.mocked(bulk.startBulk).mockResolvedValue({ id: 'job1' } as unknown as bulk.BulkProgress)
+    vi.mocked(bulk.fetchBulk).mockResolvedValue({ id: 'job1', status: 'running', selected: 7, willReplay: 6, sent: 2, failed: 0, unknown: 0, remaining: 4, heldBack: 1, sampleOnly: false } as unknown as bulk.BulkProgress)
     renderModal()
 
     // Replay sits at the top (always in view) and at the bottom.
@@ -113,7 +113,7 @@ describe('Bulk Replay modal', () => {
 
   it('offers a sample of 1 when everything failed on validation', async () => {
     vi.mocked(bulk.previewBulk).mockResolvedValue(preview())
-    vi.mocked(bulk.startBulk).mockResolvedValue({ id: 'job2' } as bulk.BulkProgress)
+    vi.mocked(bulk.startBulk).mockResolvedValue({ id: 'job2' } as unknown as bulk.BulkProgress)
     renderModal()
 
     await userEvent.click(await screen.findByRole('button', { name: /Replay a sample of 1/ }))
@@ -133,12 +133,26 @@ describe('Bulk Replay modal', () => {
     vi.mocked(bulk.fetchBulk).mockResolvedValue({
       id: 'j', status: 'stopped', selected: 9, willReplay: 9, sent: 0, failed: 5, unknown: 0, remaining: 0, heldBack: 0, sampleOnly: false,
       endedReason: 'Stopped itself: 5 messages in a row were not accepted. Nothing further was sent.',
-    } as bulk.BulkProgress)
+    } as unknown as bulk.BulkProgress)
     renderModal('/?modal=bulk-replay&job=j')
 
     expect(await screen.findByRole('heading', { name: 'Bulk replay stopped itself' })).toBeInTheDocument()
     expect(screen.getAllByRole('status').some((e) => e.textContent === 'Bulk replay stopped itself')).toBe(true) // the verdict is announced, not just drawn
     expect(screen.getByText(/5 messages in a row were not accepted/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Stop now' })).not.toBeInTheDocument()
+  })
+
+  it('lists every message that failed in a scrolling grid, with the buttons still reachable', async () => {
+    const problems = Array.from({ length: 40 }, (_, n) => ({ dlqMessageId: n + 1, entityName: 'orders', state: 'failed' as const, reasonCode: 'GCP.PubSub.MessageNotFound', why: `Message ${n + 1} not found.` }))
+    vi.mocked(bulk.fetchBulk).mockResolvedValue({
+      id: 'j', status: 'completed', selected: 50, willReplay: 50, sent: 10, failed: 40, unknown: 0, remaining: 0, heldBack: 0, sampleOnly: false, endedReason: null, problems,
+    } as unknown as bulk.BulkProgress)
+    renderModal('/?modal=bulk-replay&job=j')
+
+    const grid = await screen.findByRole('region', { name: 'Messages that did not go' })
+    expect(within(grid).getAllByRole('row')).toHaveLength(41) // header + all 40, not the first ten
+    expect(grid.className).toContain('overflow-auto')
+    expect(grid.className).toContain('max-h-')
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument()
   })
 })

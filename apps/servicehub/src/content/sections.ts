@@ -67,6 +67,7 @@ export const sectionHelp = {
     where: h('Where each one goes', 'One row per message so you can check what is about to be sent, and to which queue or topic, before anything runs. Ten rows a page.'),
     run: h('How it will run', 'The pace (messages a second) and when the run stops by itself. Both are chosen to be gentle on the consumer that failed.'),
     after: h('After they are sent back', 'ServiceHub keeps watching each replayed message. Where the cloud can prove a fix held, that builds track record; where it cannot, it is recorded as Unverified — never as success.'),
+    afterManual: h('After they are sent back', 'ServiceHub keeps watching each replayed message. This cloud cannot prove a fix held, so each one is recorded as verification required — never as fixed.'),
   },
   approve: {
     why: h('Why it asked instead of acting', 'The safety check that made the Agent stop and ask. Nothing is sent until a person approves, and declining deletes nothing.'),

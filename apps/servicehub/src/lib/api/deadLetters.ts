@@ -1,5 +1,6 @@
 import { api } from './client'
 import type { CloudProvider, EnvironmentKind } from './namespaces'
+import type { MessageGist } from './messageGist'
 
 /**
  * One dead letter ServiceHub has seen — the durable list, not a live peek. There is no body here:
@@ -26,6 +27,8 @@ export interface DeadLetter {
   readonly resolvedAt?: string | null
   /** What is known about how it left — recorded by whatever saw it happen, never inferred (R5). */
   readonly resolutionCause?: ResolutionCause | null
+  /** The start of the body, its labels and a few properties — what tells this message from its neighbours. Absent on rows recorded before it was kept. */
+  readonly gist?: MessageGist | null
 }
 
 /** The API's lifecycle words, camelCase as it sends them (a PascalCase compare once hid Replay for every message). */

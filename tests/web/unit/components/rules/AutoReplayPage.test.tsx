@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as rulesApi from '@/lib/api/rules'
 import * as replayApi from '@/lib/api/replay'
+import * as nsApi from '@/lib/api/namespaces'
 import * as identity from '@/lib/api/identity'
 import { bulkSelection } from '@/lib/bulkSelection'
 import { AutoReplayPage } from '@/components/rules/AutoReplayPage'
@@ -31,7 +32,25 @@ describe('Auto Replay page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(rulesApi.fetchRuleSources).mockResolvedValue([])
+    vi.spyOn(nsApi, 'fetchNamespaces').mockResolvedValue([])
     vi.mocked(identity.fetchMe).mockResolvedValue({ ownerId: 'o', authMethod: 'session', actor: { identity: 's', kind: 'user', label: 'l', isSession: true }, effectiveRole: 'Admin', governanceActive: false } as identity.Me)
+  })
+
+  it('shows every connected cloud\u2019s rules and switches between them, so a cloud with rules is never "missing"', async () => {
+    vi.spyOn(nsApi, 'fetchNamespaces').mockResolvedValue([{ id: 'a', provider: 'azure' }, { id: 'g', provider: 'gcp' }] as nsApi.Namespace[])
+    vi.mocked(rulesApi.fetchRules).mockImplementation(async (p) => (p === 'gcp' ? [rule({ id: 2, provider: 'gcp' })] : []))
+    renderPage()
+    expect(await screen.findByRole('button', { name: 'Google Cloud · 1 rule, 1 on' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Azure · 0 rules' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('Replay all is disabled, with the reason as its tooltip, when nothing matching is waiting', async () => {
+    vi.mocked(rulesApi.fetchRules).mockResolvedValue([rule()])
+    vi.mocked(rulesApi.fetchRuleMatches).mockResolvedValue([])
+    renderPage()
+    const button = await screen.findByRole('button', { name: /Replay all/ })
+    await vi.waitFor(() => expect(button).toBeDisabled())
+    expect(button.parentElement).toHaveAttribute('title', expect.stringContaining('Nothing to replay'))
   })
 
   it('a Viewer is told in words, not only a tooltip, what is missing and who can grant it (6.1)', async () => {

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { fetchAgentActivity, fetchAgents, pauseAgent, resumeAgent } from '../lib/api/agents'
+import { fetchAgentActivity, fetchAgents, fetchDormantAgents, pauseAgent, resumeAgent } from '../lib/api/agents'
 
 export const agentKeys = {
   all: ['agents'] as const,
@@ -10,6 +10,11 @@ export const agentKeys = {
 /** The agents running now. Refreshed every 15 s so "last run" and health stay true without a reload. */
 export function useAgents() {
   return useQuery({ queryKey: agentKeys.list(), queryFn: fetchAgents, refetchInterval: 15_000 })
+}
+
+/** The agents that are off for lack of a cloud that needs them — so the page can say why one is not listed. */
+export function useDormantAgents() {
+  return useQuery({ queryKey: [...agentKeys.all, 'dormant'], queryFn: fetchDormantAgents, refetchInterval: 15_000 })
 }
 
 export function useAgentActivity(id: string | null) {

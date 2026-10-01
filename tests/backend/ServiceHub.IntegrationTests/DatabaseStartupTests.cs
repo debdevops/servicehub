@@ -31,13 +31,15 @@ public sealed class DatabaseStartupTests
         // creates it — so a first cycle landing after the delete below would put the file back and turn
         // this test red under load. Let that first cycle finish, then keep the monitor quiet.
         var registry = factory.Services.GetRequiredService<ServiceHub.Core.Interfaces.IAgentRegistry>();
+        // (With no cloud connected the host leaves the monitor off, which is just as quiet: wait for it to decide either way.)
+        bool Settled() => registry.StateOf("dlq-monitor")?.LastRunUtc is not null || registry.Dormant().Any(d => d.Id == "dlq-monitor");
         var deadline = DateTime.UtcNow.AddSeconds(15);
-        while (registry.StateOf("dlq-monitor")?.LastRunUtc is null && DateTime.UtcNow < deadline)
+        while (!Settled() && DateTime.UtcNow < deadline)
         {
             await Task.Delay(20);
         }
 
-        registry.StateOf("dlq-monitor")?.LastRunUtc.Should().NotBeNull("the monitor's first cycle must be over before the file is removed");
+        Settled().Should().BeTrue("the monitor's first cycle (or the host's decision to leave it off) must be over before the file is removed");
         registry.SetPaused("dlq-monitor", true);
 
         // Remove the file behind the running host: readiness must notice, liveness must not.

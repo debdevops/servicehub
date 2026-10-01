@@ -10,7 +10,9 @@ import { useProviderScope } from '../provider/providerScope'
 import { createRule, fetchRules, fetchRuleSources, setRuleEnabled, testRule, type Rule, type RuleSource } from '../../lib/api/rules'
 import type { CloudProvider } from '../../lib/api/namespaces'
 import { formatAgo } from '../../lib/format'
+import { ruleTitle } from '../../lib/ruleName'
 import { providerLabel } from '../../lib/providers'
+import { useCloudIsManual } from '../../hooks/useManualApproval'
 import { RetryLink } from '../ui/RetryLink'
 import { Skeleton } from '../ui/Skeleton'
 import { heldWords } from '../../lib/heldWords'
@@ -20,9 +22,9 @@ import { Select } from '../ui/Select'
 const rulesKey = (p: CloudProvider) => ['rules', p] as const
 
 /** In words: why the safety checks are holding a rule's matches. The code is the fact; this is what it means. */
-function holdWords(code: string | null): string {
+function holdWords(code: string | null, manual = false): string {
   if (!code) return 'The safety checks are holding them for a person.'
-  if (code.startsWith('AUTONOMY')) return 'ServiceHub hasn’t earned the right to replay this failure on its own yet, so it asks first.'
+  if (code.startsWith('AUTONOMY')) return manual ? 'This cloud can’t confirm a replay fixed it, so each replay is your decision.' : 'ServiceHub hasn’t earned the right to replay this failure on its own yet, so it asks first.'
   if (code === 'PRODUCTION_ELEVATION_REQUIRED') return 'Rules never run in Production namespaces.'
   if (code === 'EMERGENCY_STOP_ACTIVE') return 'Emergency stop is on.'
   if (code.startsWith('RECURRENCE_CAP')) return 'They have already been replayed and came back too often.'
@@ -88,6 +90,7 @@ function Panel({ provider }: { provider: CloudProvider }) {
 }
 
 function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }) {
+  const manual = useCloudIsManual(provider)
   // Switching a rule on hands a machine the right to replay (Approver); switching it off only takes that away (Operator).
   const mayToggle = permission(useMe().data, r.enabled ? 'Operator' : 'Approver', r.enabled ? 'switch this rule off' : 'switch this rule on', { recover: true })
   const client = useQueryClient()
@@ -116,7 +119,7 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
         </button>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="text-[15px] font-bold">{r.name}</h3>
+            <h3 className="text-[15px] font-bold" title={r.name}>{ruleTitle(r.name)}</h3>
             {tripped ? (
               <span className="ml-auto rounded-full bg-[var(--color-error-light)] px-2.5 py-0.5 text-[11px] font-bold text-[#b91c1c]">Stopped itself</span>
             ) : r.verifiedOutcomes > 0 ? (
@@ -141,7 +144,7 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
       {r.enabled && r.askedCount > 0 && (
         <p className="mt-3 flex items-start gap-2 rounded-lg border border-[#fde68a] bg-[var(--color-warning-light)] px-3 py-2 text-[12.5px] text-[#78350f]">
           <Eye className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          <span><b>{heldWords([r])} matching {r.askedCount === 1 && !r.askedIsLowerBound ? 'message is' : 'messages are'} waiting for a person.</b> {holdWords(r.lastAskedReason)}{' '}<Link to={waitingHref(r)} className="font-semibold underline">See {r.askedCount === 1 && !r.askedIsLowerBound ? 'it' : 'them'} ›</Link></span>
+          <span><b>{heldWords([r])} matching {r.askedCount === 1 && !r.askedIsLowerBound ? 'message is' : 'messages are'} waiting for a person.</b> {holdWords(r.lastAskedReason, manual)}{' '}<Link to={waitingHref(r)} className="font-semibold underline">See {r.askedCount === 1 && !r.askedIsLowerBound ? 'it' : 'them'} ›</Link></span>
         </p>
       )}
 
@@ -164,6 +167,7 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
 }
 
 function NewRule({ provider, onDone }: { provider: CloudProvider; onDone: () => void }) {
+  const manual = useCloudIsManual(provider)
   const mayCreate = permission(useMe().data, 'Approver', 'create a rule (it starts on)', { recover: true })
   const client = useQueryClient()
   const sources = useQuery({ queryKey: ['rule-sources', provider], queryFn: () => fetchRuleSources(provider) })
@@ -237,7 +241,7 @@ function NewRule({ provider, onDone }: { provider: CloudProvider; onDone: () => 
                 {test.data.stillWaiting === 0
                   ? '; none of them are still waiting in the queue.'
                   : `; ${test.data.stillWaiting} ${test.data.stillWaiting === 1 ? 'is' : 'are'} still waiting — ${test.data.wouldRun} would pass the safety checks today${test.data.heldBack > 0 ? ` and ${test.data.heldBack} would be held back` : ''}.`}
-                {test.data.holds.length > 0 && <span className="mt-1 block text-[12px]">{test.data.holds.map((h) => holdWords(h.reasonCode)).join(' ')}</span>}
+                {test.data.holds.length > 0 && <span className="mt-1 block text-[12px]">{test.data.holds.map((h) => holdWords(h.reasonCode, manual)).join(' ')}</span>}
               </span>
             </p>
           )}

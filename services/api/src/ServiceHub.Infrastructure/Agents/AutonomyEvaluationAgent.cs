@@ -58,6 +58,7 @@ public sealed class AutonomyEvaluationAgent : IAgent
             Kind: AgentKind.Decide,
             Authority: AgentAuthority.Proposes,
             Cadence: interval,
+            Needs: AgentNeeds.VerifiableCloud,
             Notes: "A person approves every replay until a failure has 10 verified fixes at 95% or better, on a cloud that can prove the queue stayed empty. Never in Production.",
             May: ["Let a failure be replayed without asking once its verified record earns it", "Take that back as soon as the record falls"],
             MayNot: ["Replay anything itself", "Skip a step, or promote in a Production namespace", "Promote where the cloud cannot prove a fix held", "Use AI or guesses — only counted outcomes"],

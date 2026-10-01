@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { usePendingWork } from '../../hooks/usePendingWork'
 import { pendingRows } from '../../lib/pendingRows'
+import { useManualApproval } from '../../hooks/useManualApproval'
 import { PendingWorkList } from './PendingWorkList'
 import { Skeleton } from '../ui/Skeleton'
 
@@ -12,6 +13,7 @@ import { Skeleton } from '../ui/Skeleton'
  */
 export function Bell() {
   const pending = usePendingWork()
+  const manual = useManualApproval()
   const [open, setOpen] = useState(false)
   const box = useRef<HTMLDivElement>(null)
   const { pathname, search } = useLocation()
@@ -28,7 +30,7 @@ export function Bell() {
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
   }, [open])
 
-  const rows = pendingRows(pending.data?.items ?? [], { capped: (pending.data?.items.length ?? 0) < (pending.data?.total ?? 0) })
+  const rows = pendingRows(pending.data?.items ?? [], { capped: (pending.data?.items.length ?? 0) < (pending.data?.total ?? 0), manual })
   return (
     <div ref={box} className="relative">
       <button

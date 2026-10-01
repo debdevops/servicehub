@@ -14,6 +14,8 @@
  */
 
 @theme {
+  /* Where the left nav stops fitting beside the tables: below this it becomes the hamburger drawer. 1366 px laptops keep it docked. */
+  --breakpoint-nav: 85rem;
   /* Sky blue — the one accent. Primary buttons, active nav, links, the chart's main series. */
   --color-primary-50: #f0f9ff;
   --color-primary-100: #e0f2fe;
@@ -80,6 +82,11 @@
 }
 :root[data-theme='dark'] {
   /* intentionally empty until the dark-mode unit */
+}
+
+html {
+  /* Reserve the scrollbar's width, so a page that is short enough not to scroll does not shift sideways against one that does. */
+  scrollbar-gutter: stable;
 }
 
 body {

@@ -7,7 +7,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { ExplainerCard, ExplainerToggle } from '../../components/explainer/Explainer'
 import { useExplainer } from '../../components/explainer/useExplainer'
 import { AgentRow, healthTone, healthWord } from '../../components/agent/AgentRow'
-import { agentKeys, useAgentActivity, useAgents, useSetAgentsPaused } from '../../hooks/useAgents'
+import { agentKeys, useAgentActivity, useAgents, useDormantAgents, useSetAgentsPaused } from '../../hooks/useAgents'
 import { authorityWords, cadenceWords, fetchAgentActivity, type Agent, type AgentActivityItem } from '../../lib/api/agents'
 import { formatWhen } from '../../lib/format'
 import { Skeleton } from '../../components/ui/Skeleton'
@@ -29,6 +29,7 @@ export default function AgentsPage() {
   const [params, setParams] = useSearchParams()
   const explainer = useExplainer('agents')
   const agents = useAgents()
+  const dormant = useDormantAgents().data ?? []
   const setPaused = useSetAgentsPaused()
   const now = new Date()
   const mayPause = permission(useMe().data, 'Operator', 'pause an agent')
@@ -111,6 +112,11 @@ export default function AgentsPage() {
                 </Group>
               )}
               <p className="text-xs text-[var(--color-text-muted)]">This list is read from the running server. An agent appears here the moment it is registered, and never before.</p>
+              {dormant.length > 0 && (
+                <p className="text-xs text-[var(--color-text-muted)]">
+                  {dormant.length === 1 ? '1 agent is' : `${dormant.length} agents are`} off because none of your connected clouds needs {dormant.length === 1 ? 'it' : 'them'}: {dormant.map((d) => d.name).join(', ')}. {dormant.length === 1 ? 'It starts' : 'They start'} by themselves when a cloud that does is connected.
+                </p>
+              )}
             </div>
             {selected ? (
               <div className="space-y-2">
