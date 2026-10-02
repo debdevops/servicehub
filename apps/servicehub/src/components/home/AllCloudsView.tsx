@@ -337,7 +337,7 @@ function LatestEverywhere({ connected, namespaces }: { connected: readonly Cloud
                   {ns && <div className="text-[11px] text-[var(--color-text-muted)]">{providerLabel[ns.provider]} · {ns.displayName ?? ns.name}</div>}
                   <div title={`Message ID: ${m.messageId}`} className="max-w-[16rem] truncate font-mono text-[11px] text-[var(--color-text-muted)]">{m.messageId}</div>
                 </td>
-                <td className="px-3 py-2.5">{m.deadLetterReason ? <span className="rounded-full bg-[var(--color-error-light)] px-2.5 py-0.5 text-[11px] font-bold text-[#b91c1c]">{m.deadLetterReason}</span> : <span className="text-[var(--color-text-muted)]">Reason not recorded</span>}</td>
+                <td className="px-3 py-2.5">{m.deadLetterReason ? <span className="inline-block max-w-full [overflow-wrap:anywhere] rounded-full bg-[var(--color-error-light)] px-2.5 py-0.5 text-[11px] font-bold text-[#b91c1c]">{m.deadLetterReason}</span> : <span className="text-[var(--color-text-muted)]">Reason not recorded</span>}</td>
                 <td className="px-3 py-2.5 text-right"><a href={`?tab=dlq&message=${m.id}`} className="font-semibold text-[var(--color-primary-600)] hover:underline">Details →</a></td>
               </tr>
             )
