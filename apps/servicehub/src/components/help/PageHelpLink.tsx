@@ -1,6 +1,6 @@
 import { BookOpen } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
-import { guideTopic } from '../../content/guides'
+import { guideTopic } from '../../content/guides/links'
 import { pageHelpStep } from '../../content/help'
 import { useGuideCloud } from './useGuideCloud'
 

@@ -7,8 +7,8 @@ tamper-evident record of every recovery. It runs as one process with one SQLite 
 to your clouds and, if you add one, to a notification channel (Slack, Teams or a webhook), which gets queue names and
 failure reasons, never message bodies.
 
-> **Status:** this branch is **ServiceHub 4.1.0**, a from-scratch rewrite that is not released yet (`.version` still reads 4.0.0 until it is).
-> The previous release lives, frozen, in [`archive/servicehub-4.0.0/`](archive/servicehub-4.0.0/). See the [changelog](CHANGELOG.md).
+> **Status:** this is **ServiceHub 4.1.0**, a from-scratch rewrite. **There is no upgrade path from 4.0.0** — it starts with a fresh database and cannot open a 4.0.0 file; run it beside 4.0.0 and connect your clouds again.
+> 4.0.0 lives, frozen, in [`archive/servicehub-4.0.0/`](archive/servicehub-4.0.0/). See the [changelog](CHANGELOG.md).
 
 ![Home: what needs you, how each cloud is doing, and the ServiceHub Agent](docs/screenshots/01-home.png)
 

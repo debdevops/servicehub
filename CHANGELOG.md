@@ -1,6 +1,52 @@
 # ServiceHub Changelog
 
-## [Unreleased]
+## [4.1.0] — not yet released (the date is set when the tag is pushed)
+
+> ### ⚠ There is no upgrade path from 4.0.0
+>
+> 4.1.0 is a **from-scratch rewrite**, not an update. It starts with a fresh database (migrations `0001`–`0014`, frozen by
+> ADR-0017) and **cannot open a 4.0.0 SQLite file**. Nothing is migrated: connected clouds,
+> rules, grants, the recovery ledger and audit trail of a 4.0.0 install stay in that install. Run 4.1.0 beside it (different port, different
+> data folder), connect your clouds again, and retire 4.0.0 when you are ready. A 4.0.0 ledger stays readable and offline-verifiable in place (export it from 4.0.0
+> and check it with `scripts/verify-recovery-chain.py`); it does not continue into 4.1.0's new chain. 4.0.0 is frozen, unchanged, in [`archive/servicehub-4.0.0/`](archive/servicehub-4.0.0/) and is
+> still published from `v4.0.x` tags.
+
+### What 4.1.0 is
+
+The same job as 4.0.0 — recover stuck messages in Azure Service Bus, AWS SQS/SNS and GCP Pub/Sub, and prove what was done — in **two Simple pages and
+four read-only Advanced pages** instead of thirty-odd screens.
+
+- **Simple:** Home (one cloud, or *Fleet Overview* for all) with Dead letters, Active messages, Replayed and Auto Replay as tabs. Everything else
+  opens in place as a drawer, modal or panel and lives in the URL.
+- **Advanced:** Overview, Recovery Ledger, Failure Signatures, Agents. Read-only.
+- **One gate for every replay**, human or automatic. It fails closed: a check that cannot run blocks the replay. A replay shows what it will do first.
+- **Autonomy that is earned and stops itself:** the Agent replays alone only for a failure signature it has earned trust on; a circuit breaker and an
+  emergency stop (typed `STOP` / `LIFT`, with a reason, both recorded) halt it. Waiting approvals are approved or declined in one window.
+- **Honest about each cloud:** Azure can confirm a replayed message stayed out of the dead-letter queue. AWS and GCP cannot without the DLQ observer, so
+  they read *"verification required"*, never *"verified"*.
+- **Evidence:** a hash-chained recovery ledger with an offline verifier and *Export evidence*; backup and restore from Settings; credentials encrypted at
+  rest with key rotation.
+- **Tell a person:** bell, toast, and Slack / Teams / generic webhook delivery to every enabled channel, behind an SSRF guard.
+- **Step-by-step guides** for Azure, AWS and Google Cloud, with annotated real screenshots of every control, in the app's Help and in `docs/clouds/`.
+
+### Not in 4.1.0
+
+Left out on purpose; each was a written decision and can return as a tab or panel if you ask:
+
+- **Production replay.** Production namespaces are refused for everyone; there is no elevation.
+- Rehearsal (dry-run) mode, the signature replay worker, recovery ageing, the playbook ledger and prevention rules.
+- The AI companion service (TF-IDF clustering) — failures are grouped by deterministic signatures instead.
+- Slack/Teams *bulk-completed* notifications (4.1.0's bulk operation status differs from 4.0.0's).
+
+### Known limits at this writing
+
+- The release workflow (`publish.yml`) selects the codebase from the tag (`v4.1.x` → repo root, `v4.0.x` → archive) and was proven by running every tag
+  shape locally; it has **not yet run in real GitHub Actions**.
+- Real Slack/Teams delivery has not been exercised against a live workspace (the send path and its test endpoint are covered by tests).
+- The DLQ observer's canary agent, config endpoint and Outcome Card path are not built; the observer's AWS Terraform fix is unapplied and unobserved live.
+  Until it is, AWS/GCP replays stay *"verification required"*.
+
+### Changes since the last entry below (kept as the build log)
 
 ### Changed / Fixed — 2026-09-30 (uncommitted work verified live against AWS)
 
