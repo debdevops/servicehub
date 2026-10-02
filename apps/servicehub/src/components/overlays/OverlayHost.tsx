@@ -2,7 +2,9 @@ import { Suspense } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { visibleEntries, type OverlayEntry } from '../../nav/navigation'
 import { OverlayFrame } from './OverlayFrame'
+import { guideTopic } from '../../content/guides'
 import { screenHelpStep } from '../../content/help'
+import { useGuideCloud } from '../help/useGuideCloud'
 import { overlayBodies, overlayCompanionParams, overlayWide, overlayWider } from './registry'
 
 type OverlayKind = 'modal' | 'panel'
@@ -21,6 +23,7 @@ export function OverlayHost({ connectedCloudCount }: { connectedCloudCount: numb
   const [params, setParams] = useSearchParams()
   const { pathname } = useLocation()
   const offered = visibleEntries(connectedCloudCount)
+  const guideCloud = useGuideCloud()
 
   const find = (kind: OverlayKind): OverlayEntry | undefined => {
     const value = params.get(kind)
@@ -49,7 +52,7 @@ export function OverlayHost({ connectedCloudCount }: { connectedCloudCount: numb
     if (!step || id === 'help') return undefined
     const next = new URLSearchParams(params)
     next.delete('modal'); next.delete('panel')
-    next.set('panel', 'help'); next.set('topic', 'guide-azure'); next.set('step', step)
+    next.set('panel', 'help'); next.set('topic', guideTopic(guideCloud)); next.set('step', step)
     return `${pathname}?${next}`
   }
 

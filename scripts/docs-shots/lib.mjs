@@ -66,36 +66,60 @@ function recordKeys(file, callouts) {
 
 /** Every visible control (button, link, field, tab, switch, menu item) in the frame — the open dialog, else the page — whose
  *  centre is not inside any callout. Written next to keys.json as uncovered.json: the inventory gap, from the running app. */
+/** What each shot of the current scene covered, and what lay out of view (below the fold, or under another element) — see endScene. */
+let sceneShots = []
+const keyOf = (c) => `${c.where}|${c.tag}|${c.name.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/gi, '#').replace(/\d+/g, '#')}`
+
 async function recordCoverage(page, file, boxes, scope) {
   const collect = (root) => {
     root = root || document.querySelector('[role=dialog]') || document
     const sel = 'button, a[href], input, select, textarea, [role=tab], [role=switch], [role=menuitem], [role=checkbox], [role=combobox], summary'
-    return [...root.querySelectorAll(sel)].flatMap((e) => {
-      for (let d = e.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) if (!d.open && !d.querySelector(':scope > summary').contains(e)) return [] // folded away: nobody can see it yet
+    const on = []; const off = []
+    for (const e of root.querySelectorAll(sel)) {
+      let folded = false
+      for (let d = e.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) if (!d.open && !d.querySelector(':scope > summary').contains(e)) folded = true // folded away: nobody can see it yet
+      if (folded) continue
       const r = e.getBoundingClientRect(); const cs = getComputedStyle(e)
-      if (r.width < 4 || r.height < 4 || cs.visibility === 'hidden' || cs.display === 'none' || r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) return []
-      const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) // scrolled out from under the sticky bar: not on screen
-      if (hit && !e.contains(hit) && !hit.contains(e)) return []
+      if (r.width < 4 || r.height < 4 || cs.visibility === 'hidden' || cs.display === 'none') continue
       const name = (e.getAttribute('aria-label') || e.textContent || e.getAttribute('placeholder') || e.getAttribute('title') || e.tagName).trim().replace(/\s+/g, ' ').slice(0, 60)
       const inMain = !!e.closest('main')
-      return [{ name, tag: e.tagName.toLowerCase(), shell: !inMain && !!e.closest('header, nav') && !e.closest('[role=dialog]'), x: r.x + r.width / 2, y: r.y + r.height / 2 }]
-    })
+      const dlgEl = e.closest('[role=dialog]')
+      const c = { where: dlgEl ? `dialog:${dlgEl.getAttribute('aria-label')}` : `page:${location.pathname}${new URLSearchParams(location.search).get('tab') ?? ''}`, th: !!e.closest('th'), name, tag: e.tagName.toLowerCase(), shell: !inMain && !!e.closest('header, nav') && !e.closest('[role=dialog]'), x: r.x + r.width / 2, y: r.y + r.height / 2 }
+      const outside = r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth
+      const hit = outside ? null : document.elementFromPoint(c.x, c.y) // scrolled out from under the sticky bar: not on screen
+      if (outside || (hit && !e.contains(hit) && !hit.contains(e))) off.push(c)
+      else on.push(c)
+    }
+    return { on, off }
   }
   // `scope` limits the check to one part of the screen (a Settings section is one stretch of a long scroll).
-  const controls = scope ? await scope.first().evaluate(collect) : await page.evaluate(collect)
+  const { on: controls, off } = scope ? await scope.first().evaluate(collect) : await page.evaluate(collect)
   // Shared furniture is documented once, where its screenshot owns it, and exempt everywhere else:
   // the top bar and sidebar (05b), every table's column-header "About …" buttons (07), a window's (?) and ✕ (02-add-cloud).
   const base = file.split('/').pop()
   const exempt = (c) =>
     (c.shell !== base.startsWith('05b')) || // 05b documents the shell and only the shell; every other screenshot skips it
-
-    (/^About /.test(c.name) && !base.startsWith('07-')) ||
+    (/^About /.test(c.name) && !c.th) || // a tab's or card's ⓘ is explained once in the text; a column heading's ⓘ is part of the table callout
+    
     (/^(Help for (?!this page)|Close$)/.test(c.name) && base !== '02-add-cloud.png') ||
-    (c.name === 'Help for this page' && !/^(05-home|06-)/.test(base)) // documented on Home and Dead letters, exempt on every other page
+    (c.name === 'Help for this page' && !/^(05-home|06-)/.test(base)) || // documented on Home and Dead letters, exempt on every other page
+    (c.name === 'What am I looking at?' && !/^06/.test(base)) // the (?) that re-shows the short explanation: documented on Dead letters, the same control on every page
   const pad = 6
-  const gap = controls.filter((c) => !exempt(c)).filter((c) => !boxes.some((b) => c.x >= b.x - pad && c.x <= b.x + b.width + pad && c.y >= b.y - pad && c.y <= b.y + b.height + pad))
+  const inBox = (c) => boxes.some((b) => c.x >= b.x - pad && c.x <= b.x + b.width + pad && c.y >= b.y - pad && c.y <= b.y + b.height + pad)
+  const gap = controls.filter((c) => !exempt(c)).filter((c) => !inBox(c))
+  sceneShots.push({ covered: controls.filter((c) => !exempt(c) && inBox(c)).map(keyOf), off: off.filter((c) => !exempt(c)).map((c) => ({ key: keyOf(c), label: `${c.tag}: ${c.name}`, shot: base })) })
   const dir = file.replace(/\/[^/]+$/, ''); const reg = dir + '/uncovered.json'
   let all = {}; try { all = JSON.parse(fs.readFileSync(reg, 'utf8')) } catch {}
-  all[file.split('/').pop()] = gap.map((g) => `${g.tag}: ${g.name}`)
+  all[base] = gap.map((g) => `${g.tag}: ${g.name}`)
   fs.writeFileSync(reg, JSON.stringify(all, null, 1))
+}
+
+/** Call once, when the run ends. A control that was out of view in one shot must have been covered by a callout in another (a scrolled
+ *  shot) somewhere in the run, or it is written to unreached.json — the below-the-fold gap the in-view check alone cannot see. */
+export function finishRun(dir) {
+  const covered = new Set(sceneShots.flatMap((x) => x.covered))
+  const missing = new Map()
+  for (const x of sceneShots) for (const o of x.off) if (!covered.has(o.key)) { const m = missing.get(o.key) ?? { label: o.label, shots: new Set() }; m.shots.add(o.shot); missing.set(o.key, m) }
+  fs.writeFileSync(dir + '/unreached.json', JSON.stringify([...missing.values()].map((m) => `${m.label}  [out of view in ${[...m.shots].join(', ')}]`), null, 1))
+  return missing.size
 }

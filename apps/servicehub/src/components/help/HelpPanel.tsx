@@ -2,8 +2,9 @@ import { Search } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { helpAnswers, shortcuts } from '../../content/help'
-import { azureGuide } from '../../content/guides/azure.generated'
+import { guides, guideTopic } from '../../content/guides'
 import GuideView from './GuideView'
+import { useGuideCloud } from './useGuideCloud'
 
 /**
  * Help (unit 6.4, `?panel=help`): "How do I…" with a search box, the everyday and setting-up questions, and the keyboard
@@ -16,6 +17,9 @@ export default function HelpPanel() {
   const [params] = useSearchParams()
   const topic = params.get('topic')
   const step = params.get('step')
+  const yourCloud = useGuideCloud()
+  const guideOrder = [yourCloud, ...Object.keys(guides).filter((c) => c !== yourCloud)]
+  const topicCloud = Object.keys(guides).find((c) => topic === guideTopic(c))
   const [q, setQ] = useState('')
   const { pathname, search } = useLocation()
   const resolve = (href: string) => {
@@ -30,7 +34,7 @@ export default function HelpPanel() {
 
   useEffect(() => {
     if (!topic) return
-    document.getElementById(step ? `guide-step-${step}` : `help-${topic}`)?.scrollIntoView({ block: 'start' })
+    document.getElementById(step && topicCloud ? `guide-step-${topicCloud}-${step}` : `help-${topic}`)?.scrollIntoView({ block: 'start' })
     // Only on open — a later search should not keep yanking the panel back to this topic.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -67,12 +71,16 @@ export default function HelpPanel() {
       })}
       {matching.length === 0 && <p className="text-[var(--color-text-muted)]">Nothing matches “{q}”. Try fewer words.</p>}
 
-      <section aria-label="Step by step" id="help-guide-azure">
-        <h3 className="mb-1 text-[10.5px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">Step by step — {azureGuide.title}</h3>
-        <details open={topic === 'guide-azure'} className="rounded-xl border border-[var(--color-border)]">
-          <summary className="cursor-pointer px-4 py-2.5 font-semibold">Every screen, with real screenshots</summary>
-          <div className="px-3 pb-3"><GuideView guide={azureGuide} openStep={step} /></div>
-        </details>
+      <section aria-label="Step by step">
+        <h3 className="mb-1 text-[10.5px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">Step by step</h3>
+        <div className="space-y-2">
+          {guideOrder.map((cloud) => (
+            <details key={cloud} id={`help-${guideTopic(cloud)}`} open={topic === guideTopic(cloud)} className="rounded-xl border border-[var(--color-border)]">
+              <summary className="cursor-pointer px-4 py-2.5 font-semibold">Every screen, with real screenshots — {guides[cloud].title}</summary>
+              <div className="px-3 pb-3"><GuideView guide={guides[cloud]} openStep={topic === guideTopic(cloud) ? step : null} /></div>
+            </details>
+          ))}
+        </div>
       </section>
 
       <section aria-label="Keyboard">

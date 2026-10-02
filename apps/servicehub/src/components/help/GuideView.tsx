@@ -9,7 +9,7 @@ export default function GuideView({ guide, openStep }: { guide: Guide; openStep?
           <h4 className="mb-1 text-[10.5px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">{section.part}</h4>
           <ul className="divide-y divide-[var(--color-border)] rounded-xl border border-[var(--color-border)]">
             {section.steps.map((step) => (
-              <li key={step.title} id={`guide-step-${step.title.split(' ')[0]}`}>
+              <li key={step.title} id={`guide-step-${guide.cloud}-${step.title.split(' ')[0]}`}>
                 <details open={!!openStep && step.title.startsWith(`${openStep} `)}>
                   <summary className="cursor-pointer px-4 py-2.5 font-semibold">{step.title}</summary>
                   <div className="space-y-3 px-4 pb-3 text-[var(--color-text-muted)]">

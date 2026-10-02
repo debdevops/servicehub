@@ -276,7 +276,8 @@ export default function AddCloudModal({ close }: OverlayBodyProps) {
           </Field>
           <Hint>
             To watch: <code>sqs:ListQueues</code>, <code>sqs:GetQueueUrl</code>, <code>sqs:GetQueueAttributes</code>,{' '}
-            <code>sqs:ReceiveMessage</code>. To replay also: <code>sqs:SendMessage</code>, <code>sqs:DeleteMessage</code>.
+            <code>sqs:ReceiveMessage</code>, <code>sqs:ChangeMessageVisibility</code> (hands a looked-at message straight back).
+            To replay also: <code>sqs:SendMessage</code>, <code>sqs:DeleteMessage</code>.
           </Hint>
         </>
       )}
