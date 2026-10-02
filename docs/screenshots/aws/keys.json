@@ -722,7 +722,7 @@
   },
   {
    "n": 2,
-   "t": "It is recorded in the ledger (Advanced → Recovery Ledger), with who did it. On AWS the result will read “Verification required”: this cloud cannot prove the queue stayed empty, so ServiceHub never says it held."
+   "t": "It is recorded, with who did it, and shows under Replayed (and in Advanced → Recovery Ledger). On AWS the result will read “Verification required”: this cloud cannot prove the queue stayed empty, so ServiceHub never says it held."
   },
   {
    "n": 3,

@@ -49,7 +49,7 @@ Granting the three roles on the whole project also works and is simpler; grantin
 Sign in to the Google Cloud console, pick your project (note its **Project ID**, not its name) and open **Pub/Sub**. **Topics** lists where messages are published; **Subscriptions** lists who reads them. A queue in ServiceHub is a subscription together with its topic.
 
 
-![1.1 Look at your topics and subscriptions — portal-01-topics](screenshots/gcp-portal/portal-01-topics.png)
+![1.1 Look at your topics and subscriptions — portal-01-topics](../screenshots/gcp-portal/portal-01-topics.png)
 
 
 1. Project picker — shows the project you are in. ServiceHub needs its Project ID, which is the part after projects/ in a topic's full name below (not the project's display name).
@@ -57,7 +57,7 @@ Sign in to the Google Cloud console, pick your project (note its **Project ID**,
 3. Topic name — the full path. The part after projects/ is your Project ID, the first thing you type into ServiceHub.
 
 
-![1.1 Look at your topics and subscriptions — portal-02-subscriptions](screenshots/gcp-portal/portal-02-subscriptions.png)
+![1.1 Look at your topics and subscriptions — portal-02-subscriptions](../screenshots/gcp-portal/portal-02-subscriptions.png)
 
 
 1. Subscription IDs — a queue in ServiceHub is a subscription together with its topic. The one ending -dlq-subscription holds your dead letters.
@@ -70,7 +70,7 @@ Sign in to the Google Cloud console, pick your project (note its **Project ID**,
 Open your main subscription and look at **Dead lettering**. It names the dead-letter topic and the **Maximum delivery attempts** — how many tries before Pub/Sub forwards a message there. The dead-letter topic needs its own subscription, or forwarded messages are not kept: that subscription is what ServiceHub reads as your dead letters.
 
 
-![1.2 Find the dead-letter policy — portal-03-subscription-dead-letter](screenshots/gcp-portal/portal-03-subscription-dead-letter.png)
+![1.2 Find the dead-letter policy — portal-03-subscription-dead-letter](../screenshots/gcp-portal/portal-03-subscription-dead-letter.png)
 
 
 1. Dead lettering — the tab for the same policy, where you can change it.
@@ -83,7 +83,7 @@ Open your main subscription and look at **Dead lettering**. It names the dead-le
 Open **IAM & Admin → Service accounts → Create service account**. Name it (we use `servicehub-app`) and skip the optional role steps for now. Do not use your own account or the default compute account: a separate account can be switched off later without disturbing anything else.
 
 
-![1.3 Create a ServiceHub-only service account — portal-04-service-accounts](screenshots/gcp-portal/portal-04-service-accounts.png)
+![1.3 Create a ServiceHub-only service account — portal-04-service-accounts](../screenshots/gcp-portal/portal-04-service-accounts.png)
 
 
 1. Create service account — start here to make an account just for ServiceHub, not your own.
@@ -96,14 +96,14 @@ Open **IAM & Admin → Service accounts → Create service account**. Name it (w
 Grant the three roles from the table at the start of this guide: **Pub/Sub Viewer** on the project (IAM page), and **Pub/Sub Subscriber** and **Pub/Sub Publisher** on your subscriptions and topics (each resource's **Permissions** panel) — or all three on the project if you prefer one step. If the key ever leaked, it could touch nothing outside Pub/Sub.
 
 
-![1.4 Give it only the Pub/Sub roles it needs — portal-05-iam-roles](screenshots/gcp-portal/portal-05-iam-roles.png)
+![1.4 Give it only the Pub/Sub roles it needs — portal-05-iam-roles](../screenshots/gcp-portal/portal-05-iam-roles.png)
 
 
 1. Grant access — where you give an account a role on the whole project.
 2. The ServiceHub account with Pub/Sub Viewer on the project — it lets ServiceHub list your topics and subscriptions. Pub/Sub Subscriber and Pub/Sub Publisher are granted on the individual subscriptions and topics (next screenshot).
 
 
-![1.4 Give it only the Pub/Sub roles it needs — portal-06-topic-permissions](screenshots/gcp-portal/portal-06-topic-permissions.png)
+![1.4 Give it only the Pub/Sub roles it needs — portal-06-topic-permissions](../screenshots/gcp-portal/portal-06-topic-permissions.png)
 
 
 1. Add principal — grants a role on just this topic. Do the same on each subscription for Pub/Sub Subscriber.
@@ -116,7 +116,7 @@ Grant the three roles from the table at the start of this guide: **Pub/Sub Viewe
 Open the service account, then **Keys → Add key → Create new key → JSON**. A file downloads — **Google shows its private key only once**. Treat the file like a password: ServiceHub encrypts it on arrival and never shows it again, but anyone who has it can use it. Disabling or deleting the key is how you revoke access later.
 
 
-![1.5 Create a key — portal-07-keys](screenshots/gcp-portal/portal-07-keys.png)
+![1.5 Create a key — portal-07-keys](../screenshots/gcp-portal/portal-07-keys.png)
 
 
 1. Google’s reminder that keys are a risk if they leak. Treat the file like a password, and delete the key when you no longer need it.
@@ -134,7 +134,7 @@ Open the service account, then **Keys → Add key → Create new key → JSON**.
 With no cloud connected, ServiceHub opens on a welcome page. Choose **Connect Google**.
 
 
-![2.1 The welcome page — 01-welcome](screenshots/gcp/01-welcome.png)
+![2.1 The welcome page — 01-welcome](../screenshots/gcp/01-welcome.png)
 
 
 1. Connect Google — opens the Add a cloud window on the Google Pub/Sub tab. It asks for a project ID and a service-account key file; nothing is read until you press Connect there.
@@ -149,7 +149,7 @@ With no cloud connected, ServiceHub opens on a welcome page. Choose **Connect Go
 The window opens on the Google Pub/Sub tab. Open **Where do I get the service-account key?** for the same console steps you just did.
 
 
-![2.2 Add a cloud — 02-add-cloud](screenshots/gcp/02-add-cloud.png)
+![2.2 Add a cloud — 02-add-cloud](../screenshots/gcp/02-add-cloud.png)
 
 
 1. Cloud tabs — Google Pub/Sub is selected. The Azure and AWS tabs ask for different credentials.
@@ -165,7 +165,7 @@ The window opens on the Google Pub/Sub tab. Open **Where do I get the service-ac
 11. ✕ — closes the window without saving (Esc does the same).
 
 
-![2.2 Add a cloud — 02-add-cloud-help](screenshots/gcp/02-add-cloud-help.png)
+![2.2 Add a cloud — 02-add-cloud-help](../screenshots/gcp/02-add-cloud-help.png)
 
 
 1. IAM & Admin → Service accounts — in the Google Cloud console, make an account just for ServiceHub (not your own).
@@ -180,7 +180,7 @@ The window opens on the Google Pub/Sub tab. Open **Where do I get the service-ac
 Give it a name, keep the environment as **Development** for your first connection, type the **Project ID**, choose the key file you downloaded, and press **Connect**. ServiceHub reads the file in your browser, tests it, then saves it encrypted (AES-256-GCM).
 
 
-![2.3 Fill it in and connect — 03-add-cloud-filled](screenshots/gcp/03-add-cloud-filled.png)
+![2.3 Fill it in and connect — 03-add-cloud-filled](../screenshots/gcp/03-add-cloud-filled.png)
 
 
 1. A name you will recognise.
@@ -195,7 +195,7 @@ Give it a name, keep the environment as **Development** for your first connectio
 You see what ServiceHub can see: how many topics and subscriptions it found, and that this cloud **cannot yet prove a replayed message stayed fixed** — ServiceHub will say so honestly rather than pretend.
 
 
-![2.4 The result — 04-connected](screenshots/gcp/04-connected.png)
+![2.4 The result — 04-connected](../screenshots/gcp/04-connected.png)
 
 
 1. The result: how many topics and subscriptions ServiceHub found, and whether this cloud can prove a replayed message stayed fixed (Google Cloud cannot yet — it will say so honestly).
@@ -212,7 +212,7 @@ You see what ServiceHub can see: how many topics and subscriptions it found, and
 Home answers: *what needs me* and *how is each cloud doing*. For Google Cloud it shows what the cloud can do (the chips: no message counts, recorded when you look, no browsing, can't confirm fixes yet), the **Look now** button, and what has been recorded. Scroll down for why messages failed, how replays ended, your subscriptions with a Look now beside each, the latest dead letters and a live activity list.
 
 
-![3.1 Home — 05-home](screenshots/gcp/05-home.png)
+![3.1 Home — 05-home](../screenshots/gcp/05-home.png)
 
 
 1. Window — the period Home counts over (24 hours, 7 or 30 days). It changes what you see, never what happens.
@@ -228,7 +228,7 @@ Home answers: *what needs me* and *how is each cloud doing*. For Google Cloud it
 11. Help for this page (the book beside the title) — opens Help on this very page, over it. Every page has one.
 
 
-![3.1 Home — 05c-home-middle](screenshots/gcp/05c-home-middle.png)
+![3.1 Home — 05c-home-middle](../screenshots/gcp/05c-home-middle.png)
 
 
 1. Why messages failed — the reasons among the dead letters ServiceHub has recorded, biggest first, with how many each has. It only counts what you have looked at.
@@ -238,7 +238,7 @@ Home answers: *what needs me* and *how is each cloud doing*. For Google Cloud it
 5. Recent activity — shown in full on the next screenshot.
 
 
-![3.1 Home — 05d-home-end](screenshots/gcp/05d-home-end.png)
+![3.1 Home — 05d-home-end](../screenshots/gcp/05d-home-end.png)
 
 
 1. The five latest dead letters, each with Details → — the same message view as on the Dead letters tab.
@@ -251,7 +251,7 @@ Home answers: *what needs me* and *how is each cloud doing*. For Google Cloud it
 These are the same on every page.
 
 
-![3.2 The bar and the sidebar — 05b-navigation](screenshots/gcp/05b-navigation.png)
+![3.2 The bar and the sidebar — 05b-navigation](../screenshots/gcp/05b-navigation.png)
 
 
 1. Back — returns to the previous place in the app.
@@ -283,7 +283,7 @@ These are the same on every page.
 A **dead letter** is a message your consumer failed to process several times, so Pub/Sub forwarded it to the dead-letter topic. The list starts **empty on Google Cloud** even when messages are waiting, because pulling a message counts as a delivery attempt. Press **Look at Google Cloud's dead letters now**: ServiceHub pulls up to 100 per queue, records them, and hands them straight back. It never deletes or moves anything. It can take up to a minute per queue. Press it again to record more; Google Cloud hands back a sample, so a dead letter not seen on a later look stays in the list.
 
 
-![4.1 The Dead letters tab — 06-dead-letters](screenshots/gcp/06-dead-letters.png)
+![4.1 The Dead letters tab — 06-dead-letters](../screenshots/gcp/06-dead-letters.png)
 
 
 1. Namespace picker — all of Google Cloud, or one project.
@@ -295,7 +295,7 @@ A **dead letter** is a message your consumer failed to process several times, so
 7. Filters and Refresh — Showing, Time window, queue or topic and search narrow the list; Refresh re-reads what ServiceHub has recorded. On Google Cloud Refresh does not look at Google Cloud: only Look now does.
 
 
-![4.1 The Dead letters tab — 06b-after-look](screenshots/gcp/06b-after-look.png)
+![4.1 The Dead letters tab — 06b-after-look](../screenshots/gcp/06b-after-look.png)
 
 
 1. What the look found — when it ran, how many queues had dead letters, and how many new ones were recorded.
@@ -316,7 +316,7 @@ A **dead letter** is a message your consumer failed to process several times, so
 Narrow the list, tick the messages you want, and use **Details** or **Replay** on a row. Pub/Sub records no failure reason, so there is a single reason, *No reason recorded*; choosing it filters the list (with *show all reasons* at the foot to clear it), and the list pages at the bottom. Refresh re-reads what ServiceHub has recorded; only Look now asks Google Cloud.
 
 
-![4.2 Filters, selection and the table — 07-filters-and-table](screenshots/gcp/07-filters-and-table.png)
+![4.2 Filters, selection and the table — 07-filters-and-table](../screenshots/gcp/07-filters-and-table.png)
 
 
 1. Showing — Stuck now, or messages that have since left the queue.
@@ -335,7 +335,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 14. Look at Google Cloud’s dead letters now — records any dead letters not seen before. Each look adds one delivery attempt to the messages it reads.
 
 
-![4.2 Filters, selection and the table — 07a-reason-filter](screenshots/gcp/07a-reason-filter.png)
+![4.2 Filters, selection and the table — 07a-reason-filter](../screenshots/gcp/07a-reason-filter.png)
 
 
 1. Filtering by a reason — the chosen reason is highlighted and “show all reasons” clears the filter. The list below shows only that reason.
@@ -345,7 +345,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 5. The selection bar (which now offers “Select all” for this reason), the table headings and the rows, as on the earlier screenshots.
 
 
-![4.2 Filters, selection and the table — 07a-reason-filter-end](screenshots/gcp/07a-reason-filter-end.png)
+![4.2 Filters, selection and the table — 07a-reason-filter-end](../screenshots/gcp/07a-reason-filter-end.png)
 
 
 1. Show all reasons — at the foot of a filtered list too: clears the reason filter and brings every recorded dead letter back.
@@ -353,14 +353,14 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 3. Paging — rows per page, previous, the page numbers and next.
 
 
-![4.2 Filters, selection and the table — 07c-table-end](screenshots/gcp/07c-table-end.png)
+![4.2 Filters, selection and the table — 07c-table-end](../screenshots/gcp/07c-table-end.png)
 
 
 1. The foot of the table — the same ticks, Details and Replay on every row, and the selection bar repeated underneath.
 2. Paging — rows per page, previous, the page numbers and next. The list holds up to 100 dead letters per queue from each look.
 
 
-![4.2 Filters, selection and the table — 07b-selection](screenshots/gcp/07b-selection.png)
+![4.2 Filters, selection and the table — 07b-selection](../screenshots/gcp/07b-selection.png)
 
 
 1. Row tick — choose which messages to act on. The header tick chooses every row on the page.
@@ -377,7 +377,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 **Details** opens the message: *Reason not recorded* (Pub/Sub keeps none), a plain-words reading drawn from the message's own attributes (marked *Suggestion* because it is a reading, not something Google Cloud reported), and the body. The tabs show the body, the attributes your publisher attached, what Pub/Sub recorded, and delivery — which Google Cloud does not report, so it says so. At the bottom are **Replay this message** and **Purge instead…**, which only opens a form.
 
 
-![4.3 Open a message — 08-message-details](screenshots/gcp/08-message-details.png)
+![4.3 Open a message — 08-message-details](../screenshots/gcp/08-message-details.png)
 
 
 1. Expand — widens the panel for long messages.
@@ -391,7 +391,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 9. Copy message ID — copies the ID so you can search for it elsewhere.
 
 
-![4.3 Open a message — 08b-message-details-end](screenshots/gcp/08b-message-details-end.png)
+![4.3 Open a message — 08b-message-details-end](../screenshots/gcp/08b-message-details-end.png)
 
 
 1. Replay this message — opens the proposal. Nothing is sent from here.
@@ -399,7 +399,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 3. Expand, the body view and the copy buttons — as on the previous screenshots.
 
 
-![4.3 Open a message — 08-message-details-body](screenshots/gcp/08-message-details-body.png)
+![4.3 Open a message — 08-message-details-body](../screenshots/gcp/08-message-details-body.png)
 
 
 1. The message body exactly as it was sent.
@@ -407,21 +407,21 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 3. Formatted / Raw switch the view; Copy body copies it to your clipboard.
 
 
-![4.3 Open a message — 08-message-details-properties](screenshots/gcp/08-message-details-properties.png)
+![4.3 Open a message — 08-message-details-properties](../screenshots/gcp/08-message-details-properties.png)
 
 
 1. The attributes your publisher attached to the message (for example shs-error-type).
 2. Expand widens the panel; the other tabs (Overview, Body, Properties, Headers, Delivery) switch what is shown.
 
 
-![4.3 Open a message — 08-message-details-headers](screenshots/gcp/08-message-details-headers.png)
+![4.3 Open a message — 08-message-details-headers](../screenshots/gcp/08-message-details-headers.png)
 
 
 1. What Pub/Sub recorded: the message ID, the publish time and the subscription it was dead-lettered from.
 2. Expand widens the panel; the other tabs (Overview, Body, Properties, Headers, Delivery) switch what is shown.
 
 
-![4.3 Open a message — 08-message-details-delivery](screenshots/gcp/08-message-details-delivery.png)
+![4.3 Open a message — 08-message-details-delivery](../screenshots/gcp/08-message-details-delivery.png)
 
 
 1. What Google Cloud reports about delivery. It does not report how many times a message was tried, so this says so rather than guess.
@@ -433,7 +433,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 **Replay** never sends straight away. It shows what will happen (the message is published back to the topic it came from and the dead-letter copy is removed once Google Cloud accepts the new one), every safety check, and what happens afterwards. Only the blue button sends. On Google Cloud finding the one message can take up to a minute.
 
 
-![4.4 Replay one message — you see the proposal first — 09-replay-proposal](screenshots/gcp/09-replay-proposal.png)
+![4.4 Replay one message — you see the proposal first — 09-replay-proposal](../screenshots/gcp/09-replay-proposal.png)
 
 
 1. The message — what is about to be replayed: ID, where it is stuck, when and why it was set aside, and its body.
@@ -442,14 +442,14 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 4. Cancel — closes without sending.
 
 
-![4.4 Replay one message — you see the proposal first — 09-replay-proposal-middle](screenshots/gcp/09-replay-proposal-middle.png)
+![4.4 Replay one message — you see the proposal first — 09-replay-proposal-middle](../screenshots/gcp/09-replay-proposal-middle.png)
 
 
 1. The four sections of the proposal — The message, What will happen, Safety checks and After it runs. Each folds open or closed; nothing here sends anything.
 2. Replay 1 message sends it; Cancel closes without sending. Both are repeated at the foot of the window so they are always in reach.
 
 
-![4.4 Replay one message — you see the proposal first — 09-replay-proposal-checks](screenshots/gcp/09-replay-proposal-checks.png)
+![4.4 Replay one message — you see the proposal first — 09-replay-proposal-checks](../screenshots/gcp/09-replay-proposal-checks.png)
 
 
 1. What will happen — where it goes and what happens to the dead-letter copy (it is removed once Google Cloud accepts the new one).
@@ -464,7 +464,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 Tick messages (or use **Replay All Messages**) to get a preview: how many will be replayed, which are held back by a safety check, grouped by how they failed and where each goes. They are sent one at a time, each re-checked, and the run stops by itself after five sends in a row that are not accepted. Further down is **Purge instead…** — a separate, deliberate step to delete messages that are not worth replaying.
 
 
-![4.5 Replay several at once — 13-bulk-replay](screenshots/gcp/13-bulk-replay.png)
+![4.5 Replay several at once — 13-bulk-replay](../screenshots/gcp/13-bulk-replay.png)
 
 
 1. Preview — nothing has run yet. Step 1 of Preview → Run → Watch.
@@ -477,7 +477,7 @@ Tick messages (or use **Replay All Messages**) to get a preview: how many will b
 7. Page controls — move through the list when more messages are chosen than fit on one page.
 
 
-![4.5 Replay several at once — 13b-bulk-replay-end](screenshots/gcp/13b-bulk-replay-end.png)
+![4.5 Replay several at once — 13b-bulk-replay-end](../screenshots/gcp/13b-bulk-replay-end.png)
 
 
 1. How it will run — the pace (a few messages a second, gentle on your consumer) and the automatic stop: five sends in a row that are not accepted.
@@ -491,14 +491,14 @@ Tick messages (or use **Replay All Messages**) to get a preview: how many will b
 
 ### 4.6 The result
 
-ServiceHub says plainly what happened and records it in the ledger. On Google Cloud the result will read **Verification required**: the message was sent back, but Google Cloud cannot prove the dead-letter queue stayed empty, so ServiceHub never says it held. If a consumer is running on the subscription it may pick the message up straight away.
+ServiceHub says plainly what happened and records it under Replayed. On Google Cloud the result will read **Verification required**: the message was sent back, but Google Cloud cannot prove the dead-letter queue stayed empty, so ServiceHub never says it held. If a consumer is running on the subscription it may pick the message up straight away.
 
 
-![4.6 The result — 10-replay-result](screenshots/gcp/10-replay-result.png)
+![4.6 The result — 10-replay-result](../screenshots/gcp/10-replay-result.png)
 
 
 1. The result, in plain words: it was sent back, and ServiceHub will watch for it coming back.
-2. It is recorded in the ledger (Advanced → Recovery Ledger), with who did it. On Google Cloud the result will read “Verification required”: this cloud cannot prove the queue stayed empty, so ServiceHub never says it held.
+2. It is recorded, with who did it, and shows under Replayed (and in Advanced → Recovery Ledger). On Google Cloud the result will read “Verification required”: this cloud cannot prove the queue stayed empty, so ServiceHub never says it held.
 3. Done — closes the window.
 4. Active messages / Replayed — jump to where you can watch this message.
 
@@ -513,7 +513,7 @@ ServiceHub says plainly what happened and records it in the ledger. On Google Cl
 Every replay, who did it, and how it ended. On Google Cloud a replay stays *Watching* for its window and is then recorded as *verification required* — never as success — until a person judges it.
 
 
-![5.1 Replayed — 11-replayed](screenshots/gcp/11-replayed.png)
+![5.1 Replayed — 11-replayed](../screenshots/gcp/11-replayed.png)
 
 
 1. Messages replayed — how many were put back in the window.
@@ -528,7 +528,7 @@ Every replay, who did it, and how it ended. On Google Cloud a replay stays *Watc
 10. The three tabs — Dead letters, Active and Replayed. They switch the list below without leaving the page.
 
 
-![5.1 Replayed — 11b-replayed-end](screenshots/gcp/11b-replayed-end.png)
+![5.1 Replayed — 11b-replayed-end](../screenshots/gcp/11b-replayed-end.png)
 
 
 1. The replays, newest first — each with a tick and Details.
@@ -542,7 +542,7 @@ Every replay, who did it, and how it ended. On Google Cloud a replay stays *Watc
 Your topics and subscriptions. Pub/Sub reports **no message counts**, so each says *can't count here* rather than guess. ServiceHub does not open active messages on Google Cloud, because there is no way to look at one without it counting as a delivery — watching could push a message into the dead-letter topic by itself. For the same reason **Follow live** is not offered here. **Send a message** is the one control here that changes a topic.
 
 
-![5.2 Active messages — 12-active](screenshots/gcp/12-active.png)
+![5.2 Active messages — 12-active](../screenshots/gcp/12-active.png)
 
 
 1. Send a message — puts a test message on a queue. This does change the queue, so use a dev queue.
@@ -565,7 +565,7 @@ Your topics and subscriptions. Pub/Sub reports **no message counts**, so each sa
 A rule names a failure ServiceHub has already seen and how carefully to retry it. It never runs in Production, goes through the same safety checks as you, and **stops itself** if fewer than half of its replays stay fixed. On Google Cloud a rule always waits for a person, because Google Cloud cannot prove a fix held.
 
 
-![6.1 Rules — 14-auto-replay](screenshots/gcp/14-auto-replay.png)
+![6.1 Rules — 14-auto-replay](../screenshots/gcp/14-auto-replay.png)
 
 
 1. Auto Generate Rules — proposes rules from failures already seen. It only proposes; you decide what to turn on.
@@ -577,7 +577,7 @@ A rule names a failure ServiceHub has already seen and how carefully to retry it
 7. Create your first rule — the same as Create rule, shown while there are none.
 
 
-![6.1 Rules — 14-auto-replay-create](screenshots/gcp/14-auto-replay-create.png)
+![6.1 Rules — 14-auto-replay-create](../screenshots/gcp/14-auto-replay-create.png)
 
 
 1. Based on — pick a failure ServiceHub has already seen. A rule can only be made from a seen failure.
@@ -597,7 +597,7 @@ A rule names a failure ServiceHub has already seen and how carefully to retry it
 Connections, Notifications (Slack, Teams, any webhook — sent only when the Agent stops and needs a person), Preferences, Access & security (roles and the emergency stop) and Backup.
 
 
-![7.1 Settings — 15-settings-connections](screenshots/gcp/15-settings-connections.png)
+![7.1 Settings — 15-settings-connections](../screenshots/gcp/15-settings-connections.png)
 
 
 1. Sections — Connections, Notifications, Preferences, Access & security and Backup. Each jumps to that part of this window.
@@ -606,7 +606,7 @@ Connections, Notifications (Slack, Teams, any webhook — sent only when the Age
 4. Remove — forgets this connection and its stored credential. It does not delete anything in Google Cloud.
 
 
-![7.1 Settings — 15-settings-notifications](screenshots/gcp/15-settings-notifications.png)
+![7.1 Settings — 15-settings-notifications](../screenshots/gcp/15-settings-notifications.png)
 
 
 1. In-app bell and pop-up — always on. It cannot be switched off, so it can never be switched off by mistake.
@@ -615,7 +615,7 @@ Connections, Notifications (Slack, Teams, any webhook — sent only when the Age
 4. Add webhook (any other system) — JSON to a URL you choose. Private and internal addresses are refused.
 
 
-![7.1 Settings — 15-settings-preferences](screenshots/gcp/15-settings-preferences.png)
+![7.1 Settings — 15-settings-preferences](../screenshots/gcp/15-settings-preferences.png)
 
 
 1. Theme — Light today; Dark is marked soon.
@@ -623,7 +623,7 @@ Connections, Notifications (Slack, Teams, any webhook — sent only when the Age
 3. Open on — start in Simple every time (Simple), or where you last were (Last used). Kept in this browser only.
 
 
-![7.1 Settings — 15-settings-access](screenshots/gcp/15-settings-access.png)
+![7.1 Settings — 15-settings-access](../screenshots/gcp/15-settings-access.png)
 
 
 1. Who you are — shown from this browser session until roles are switched on. The credential key fingerprint shows what encrypts stored credentials.
@@ -633,7 +633,7 @@ Connections, Notifications (Slack, Teams, any webhook — sent only when the Age
 5. Emergency stop — type STOP, say why, and switch it on to halt every automatic action at once. Nothing already done is undone; switch it off to resume.
 
 
-![7.1 Settings — 15-settings-backup](screenshots/gcp/15-settings-backup.png)
+![7.1 Settings — 15-settings-backup](../screenshots/gcp/15-settings-backup.png)
 
 
 1. Take a backup now — saves a consistent copy of ServiceHub’s own database (not of your clouds).
@@ -644,7 +644,7 @@ Connections, Notifications (Slack, Teams, any webhook — sent only when the Age
 Help is a panel over whatever you are doing. Search (⌘K) jumps anywhere. The bell is the only place the Agent asks you something.
 
 
-![7.2 Help, search and the bell — 16-help](screenshots/gcp/16-help.png)
+![7.2 Help, search and the bell — 16-help](../screenshots/gcp/16-help.png)
 
 
 1. Search — type what you are trying to do.
@@ -654,13 +654,13 @@ Help is a panel over whatever you are doing. Search (⌘K) jumps anywhere. The b
 5. Step by step — one guide per cloud, each with every screen as a real screenshot and a numbered key for every button and link. Yours (Google Cloud) is listed first. The same guides are the articles in docs/clouds.
 
 
-![7.2 Help, search and the bell — 18-search](screenshots/gcp/18-search.png)
+![7.2 Help, search and the bell — 18-search](../screenshots/gcp/18-search.png)
 
 
 1. Search box — type part of a cloud, queue or page name. Enter opens the first result. Esc closes. Searching never changes anything.
 
 
-![7.2 Help, search and the bell — 18-bell](screenshots/gcp/18-bell.png)
+![7.2 Help, search and the bell — 18-bell](../screenshots/gcp/18-bell.png)
 
 
 1. The bell — the only place the Agent asks you something. It lists what is waiting for you and clears when it is resolved, not when you look.
@@ -672,7 +672,7 @@ Help is a panel over whatever you are doing. Search (⌘K) jumps anywhere. The b
 Advanced never changes anything. **Overview** summarises recovery, authority and agents, and says why Google Cloud cannot verify; the **Recovery Ledger** is the tamper-evident record of every action; **Failure Signatures** groups failures (on Google Cloud, with no reason recorded, they group by subscription); **Agents** lists what is acting and what is only watching.
 
 
-![7.3 The Advanced pages (read-only) — 17-advanced-overview](screenshots/gcp/17-advanced-overview.png)
+![7.3 The Advanced pages (read-only) — 17-advanced-overview](../screenshots/gcp/17-advanced-overview.png)
 
 
 1. Scope — all clouds, or one.
@@ -686,7 +686,7 @@ Advanced never changes anything. **Overview** summarises recovery, authority and
 9. Why → — explains why this cloud cannot yet prove a replayed message stayed fixed, and what would unlock it. It opens Help; nothing changes.
 
 
-![7.3 The Advanced pages (read-only) — 17-advanced-ledger](screenshots/gcp/17-advanced-ledger.png)
+![7.3 The Advanced pages (read-only) — 17-advanced-ledger](../screenshots/gcp/17-advanced-ledger.png)
 
 
 1. Export evidence — downloads the ledger so it can be verified offline. It changes nothing.
@@ -700,7 +700,7 @@ Advanced never changes anything. **Overview** summarises recovery, authority and
 9. The table headings — each has an ⓘ that explains that column in a sentence.
 
 
-![7.3 The Advanced pages (read-only) — 17-advanced-signatures](screenshots/gcp/17-advanced-signatures.png)
+![7.3 The Advanced pages (read-only) — 17-advanced-signatures](../screenshots/gcp/17-advanced-signatures.png)
 
 
 1. Trace a message — follow one message across clouds by its ID.
@@ -716,7 +716,7 @@ Advanced never changes anything. **Overview** summarises recovery, authority and
 11. The table headings — Signature, Messages, Days and Replays, each with an ⓘ that explains it.
 
 
-![7.3 The Advanced pages (read-only) — 17-advanced-agents](screenshots/gcp/17-advanced-agents.png)
+![7.3 The Advanced pages (read-only) — 17-advanced-agents](../screenshots/gcp/17-advanced-agents.png)
 
 
 1. Acting agents — the only ones that can change anything, and only after the same safety checks you get.
@@ -727,7 +727,7 @@ Advanced never changes anything. **Overview** summarises recovery, authority and
 6. What am I looking at? — a short reading guide for this page.
 
 
-![7.3 The Advanced pages (read-only) — 17b-advanced-agents-more](screenshots/gcp/17b-advanced-agents-more.png)
+![7.3 The Advanced pages (read-only) — 17b-advanced-agents-more](../screenshots/gcp/17b-advanced-agents-more.png)
 
 
 1. Watching agents — they only look and record; they cannot change anything.

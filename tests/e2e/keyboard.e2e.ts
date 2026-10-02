@@ -39,6 +39,8 @@ test('a dead letter can be opened, its replay proposed and everything closed, by
   await page.keyboard.press('r')
   await expect(page.getByRole('dialog', { name: /replay/i })).toBeVisible()
   await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog', { name: /replay/i })).toHaveCount(0) // the proposal closes first; a person cannot press faster than the page re-renders
+  await expect(page.getByRole('dialog', { name: 'Message details' })).toBeFocused() // focus is back in the drawer, which now takes the next Esc
   await page.keyboard.press('Escape')
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await expect(details).toBeFocused()

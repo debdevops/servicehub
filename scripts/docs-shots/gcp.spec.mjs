@@ -294,7 +294,7 @@ await scene('10', async () => {
   await dlg().getByRole('button', { name: 'Replay 1 message' }).last().click(); await page.getByText('Sent back', { exact: true }).waitFor({ timeout: SLOW }); await settle(1500)
   await shot(page, S('10-replay-result'), [
     { n: 1, loc: page.getByText('Sent back', { exact: true }), t: 'The result, in plain words: it was sent back, and ServiceHub will watch for it coming back.' },
-    { n: 2, loc: page.getByText('Recorded in the ledger.').first(), t: 'It is recorded in the ledger (Advanced → Recovery Ledger), with who did it. On Google Cloud the result will read “Verification required”: this cloud cannot prove the queue stayed empty, so ServiceHub never says it held.' },
+    { n: 2, loc: page.getByText('Recorded in the ledger.').first(), t: 'It is recorded, with who did it, and shows under Replayed (and in Advanced → Recovery Ledger). On Google Cloud the result will read “Verification required”: this cloud cannot prove the queue stayed empty, so ServiceHub never says it held.' },
     { n: 3, loc: btn('Done'), t: 'Done — closes the window.' },
     { n: 4, loc: [dlg().getByRole('link', { name: 'Active messages' }), dlg().getByRole('link', { name: 'Replayed' })], t: 'Active messages / Replayed — jump to where you can watch this message.' },
   ])

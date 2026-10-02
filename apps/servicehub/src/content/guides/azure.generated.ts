@@ -841,7 +841,7 @@ export const azureGuide: Guide = {
     },
     {
      "title": "4.6 The result",
-     "text": "ServiceHub says plainly what happened, records it in the ledger, and starts a 24-hour watch for it coming back.",
+     "text": "ServiceHub says plainly what happened, records it under Replayed, and starts a 24-hour watch for it coming back.",
      "shots": [
       {
        "image": "/help/azure/10-replay-result.png",
@@ -853,7 +853,7 @@ export const azureGuide: Guide = {
         },
         {
          "n": 2,
-         "text": "It is recorded in the ledger (Advanced → Recovery Ledger), with who did it."
+         "text": "It is recorded, with who did it, and shows under Replayed (and in Advanced → Recovery Ledger)."
         },
         {
          "n": 3,

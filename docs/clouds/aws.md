@@ -57,7 +57,7 @@ Why each action: `ListQueues` finds your queues; `GetQueueUrl` and `GetQueueAttr
 Sign in to the AWS console, search for **SQS** and open **Queues**. Note the **region** (top right): queues belong to a region, and you will choose the same one in ServiceHub. The **Messages available** column is what ServiceHub will count.
 
 
-![1.1 Look at your queues — portal-01-queues](screenshots/aws-portal/portal-01-queues.png)
+![1.1 Look at your queues — portal-01-queues](../screenshots/aws-portal/portal-01-queues.png)
 
 
 1. Queue names — your orders queue and its dead-letter queue (the one ending -dlq). ServiceHub finds every queue in the region; you do not list them.
@@ -70,7 +70,7 @@ Sign in to the AWS console, search for **SQS** and open **Queues**. Note the **r
 Open your main queue and choose the **Dead-letter queue** tab. It names the queue that receives failures and the **Maximum receives** — how many tries before SQS moves a message there. If a queue has no dead-letter queue, failed messages are retried until they expire and ServiceHub has nothing to show.
 
 
-![1.2 Find the dead-letter queue — portal-02-orders-queue](screenshots/aws-portal/portal-02-orders-queue.png)
+![1.2 Find the dead-letter queue — portal-02-orders-queue](../screenshots/aws-portal/portal-02-orders-queue.png)
 
 
 1. URL — the address of this queue. ServiceHub builds it for you from the queue's name and your region.
@@ -78,7 +78,7 @@ Open your main queue and choose the **Dead-letter queue** tab. It names the queu
 3. Dead-letter queue tab — shows which queue receives the failures (next screenshot).
 
 
-![1.2 Find the dead-letter queue — portal-03-dead-letter-queue](screenshots/aws-portal/portal-03-dead-letter-queue.png)
+![1.2 Find the dead-letter queue — portal-03-dead-letter-queue](../screenshots/aws-portal/portal-03-dead-letter-queue.png)
 
 
 1. Queue — the dead-letter queue that receives the failures. ServiceHub reads this one to show Dead letters.
@@ -90,7 +90,7 @@ Open your main queue and choose the **Dead-letter queue** tab. It names the queu
 Open **IAM → Users → Create user**. Name it (we use `servicehub-app`), leave **console access** off — it is for programs only — and give it no groups. Do not use your own user or the root account: a separate user can be switched off later without disturbing anything else.
 
 
-![1.3 Create a ServiceHub-only user — portal-04-iam-users](screenshots/aws-portal/portal-04-iam-users.png)
+![1.3 Create a ServiceHub-only user — portal-04-iam-users](../screenshots/aws-portal/portal-04-iam-users.png)
 
 
 1. Create user — start here to make a user just for ServiceHub, not your own.
@@ -102,7 +102,7 @@ Open **IAM → Users → Create user**. Name it (we use `servicehub-app`), leave
 On the user, **Add permissions → Create inline policy**, choose JSON, and paste the policy from the start of this guide with your queue names. The user then has exactly one policy, limited to your queues: if its key ever leaked, it could touch nothing else in your account.
 
 
-![1.4 Give it only the SQS permissions it needs — portal-05-user-permissions](screenshots/aws-portal/portal-05-user-permissions.png)
+![1.4 Give it only the SQS permissions it needs — portal-05-user-permissions](../screenshots/aws-portal/portal-05-user-permissions.png)
 
 
 1. Console access — Disabled. This user is for programs only: nobody can sign in to the AWS console as it.
@@ -110,7 +110,7 @@ On the user, **Add permissions → Create inline policy**, choose JSON, and past
 3. servicehub-sqs — one inline policy, limited to the two queues (next screenshot). The user has no other permissions.
 
 
-![1.4 Give it only the SQS permissions it needs — portal-06-policy-json](screenshots/aws-portal/portal-06-policy-json.png)
+![1.4 Give it only the SQS permissions it needs — portal-06-policy-json](../screenshots/aws-portal/portal-06-policy-json.png)
 
 
 1. Actions — what ServiceHub may do: read queue counts, receive (to look), change visibility (to hand a looked-at message back), send and delete (to replay). Above these, sqs:ListQueues lets it find your queues.
@@ -122,7 +122,7 @@ On the user, **Add permissions → Create inline policy**, choose JSON, and past
 Open the user's **Security credentials** tab and choose **Create access key**. Pick **Application running outside AWS**, then copy the **Access key ID** and the **Secret access key** — AWS shows the secret **once**. Treat both like a password: ServiceHub encrypts them on arrival and never shows them again. Making the key inactive or deleting it is how you revoke access later.
 
 
-![1.5 Create an access key — portal-07-access-keys](screenshots/aws-portal/portal-07-access-keys.png)
+![1.5 Create an access key — portal-07-access-keys](../screenshots/aws-portal/portal-07-access-keys.png)
 
 
 1. Create access key — choose “Application running outside AWS”, then copy the Access key ID and the Secret access key. AWS shows the secret once.
@@ -140,7 +140,7 @@ Open the user's **Security credentials** tab and choose **Create access key**. P
 With no cloud connected, ServiceHub opens on a welcome page. Choose **Connect AWS**.
 
 
-![2.1 The welcome page — 01-welcome](screenshots/aws/01-welcome.png)
+![2.1 The welcome page — 01-welcome](../screenshots/aws/01-welcome.png)
 
 
 1. Connect AWS — opens the Add a cloud window on the AWS tab. It asks for an access key and a region; nothing is read until you press Connect there.
@@ -155,7 +155,7 @@ With no cloud connected, ServiceHub opens on a welcome page. Choose **Connect AW
 The window opens on the AWS tab. Open **Where do I get the AWS access key?** for the same console steps you just did.
 
 
-![2.2 Add a cloud — 02-add-cloud](screenshots/aws/02-add-cloud.png)
+![2.2 Add a cloud — 02-add-cloud](../screenshots/aws/02-add-cloud.png)
 
 
 1. Cloud tabs — AWS SQS / SNS is selected. The Azure and Google tabs ask for different credentials.
@@ -171,7 +171,7 @@ The window opens on the AWS tab. Open **Where do I get the AWS access key?** for
 11. ✕ — closes the window without saving (Esc does the same).
 
 
-![2.2 Add a cloud — 02-add-cloud-help](screenshots/aws/02-add-cloud-help.png)
+![2.2 Add a cloud — 02-add-cloud-help](../screenshots/aws/02-add-cloud-help.png)
 
 
 1. IAM → Users — in the AWS console, make a user just for ServiceHub (not your own).
@@ -186,7 +186,7 @@ The window opens on the AWS tab. Open **Where do I get the AWS access key?** for
 Give it a name, keep the environment as **Development** for your first connection, paste the Access key ID and the Secret access key, choose the region your queues are in, and press **Connect**. ServiceHub tests the key, then saves it encrypted (AES-256-GCM).
 
 
-![2.3 Fill it in and connect — 03-add-cloud-filled](screenshots/aws/03-add-cloud-filled.png)
+![2.3 Fill it in and connect — 03-add-cloud-filled](../screenshots/aws/03-add-cloud-filled.png)
 
 
 1. A name you will recognise.
@@ -197,7 +197,7 @@ Give it a name, keep the environment as **Development** for your first connectio
 6. Cancel and Connect — shown in full on the next screenshot.
 
 
-![2.3 Fill it in and connect — 03b-add-cloud-bottom](screenshots/aws/03b-add-cloud-bottom.png)
+![2.3 Fill it in and connect — 03b-add-cloud-bottom](../screenshots/aws/03b-add-cloud-bottom.png)
 
 
 1. The permissions ServiceHub uses — to watch, and (second sentence) also to replay. Give it nothing more.
@@ -212,7 +212,7 @@ Give it a name, keep the environment as **Development** for your first connectio
 You see exactly what ServiceHub can see: how many queues it found, how many messages are dead-lettered right now, and that this cloud **cannot yet prove a replayed message stayed fixed** — ServiceHub will say so honestly rather than pretend.
 
 
-![2.4 The result — 04-connected](screenshots/aws/04-connected.png)
+![2.4 The result — 04-connected](../screenshots/aws/04-connected.png)
 
 
 1. The result: how many queues ServiceHub found, how many messages are dead-lettered right now, and whether this cloud can prove a replayed message stayed fixed (AWS cannot yet — it will say so honestly).
@@ -229,7 +229,7 @@ You see exactly what ServiceHub can see: how many queues it found, how many mess
 Home answers: *what needs me* and *how is each cloud doing*. For AWS it shows what the cloud can do (count messages, record dead letters when you look), the **Look now** button, and the counts. Scroll down for why messages failed, how replays ended, the queues needing attention, the latest dead letters and a live activity list.
 
 
-![3.1 Home — 05-home](screenshots/aws/05-home.png)
+![3.1 Home — 05-home](../screenshots/aws/05-home.png)
 
 
 1. Window — the period Home counts over (24 hours, 7 or 30 days). It changes what you see, never what happens.
@@ -245,7 +245,7 @@ Home answers: *what needs me* and *how is each cloud doing*. For AWS it shows wh
 11. Help for this page (the book beside the title) — opens Help on this very page, over it. Every page has one.
 
 
-![3.1 Home — 05c-home-middle](screenshots/aws/05c-home-middle.png)
+![3.1 Home — 05c-home-middle](../screenshots/aws/05c-home-middle.png)
 
 
 1. Why messages failed — the reasons among the dead letters ServiceHub has recorded, biggest first, with how many each has. It only counts what you have looked at.
@@ -255,7 +255,7 @@ Home answers: *what needs me* and *how is each cloud doing*. For AWS it shows wh
 5. Recent activity — shown in full on the next screenshot.
 
 
-![3.1 Home — 05d-home-end](screenshots/aws/05d-home-end.png)
+![3.1 Home — 05d-home-end](../screenshots/aws/05d-home-end.png)
 
 
 1. The five latest dead letters, each with Details → — the same message view as on the Dead letters tab.
@@ -268,7 +268,7 @@ Home answers: *what needs me* and *how is each cloud doing*. For AWS it shows wh
 These are the same on every page.
 
 
-![3.2 The bar and the sidebar — 05b-navigation](screenshots/aws/05b-navigation.png)
+![3.2 The bar and the sidebar — 05b-navigation](../screenshots/aws/05b-navigation.png)
 
 
 1. Back — returns to the previous place in the app.
@@ -300,7 +300,7 @@ These are the same on every page.
 A **dead letter** is a message your consumer failed to process several times, so SQS moved it to the dead-letter queue. The list starts **empty on AWS** even when the queue holds thousands, because reading a dead letter counts as a delivery attempt. Press **Look at AWS's dead letters now**: ServiceHub receives up to 100 per queue, records them, and hands them straight back. It never deletes or moves anything. Press it again to record more; AWS hands back a sample, so a dead letter not seen on a later look stays in the list.
 
 
-![4.1 The Dead letters tab — 06-dead-letters](screenshots/aws/06-dead-letters.png)
+![4.1 The Dead letters tab — 06-dead-letters](../screenshots/aws/06-dead-letters.png)
 
 
 1. Namespace picker — all of AWS, or one account and region.
@@ -312,7 +312,7 @@ A **dead letter** is a message your consumer failed to process several times, so
 7. Filters and Refresh — Showing, Time window, queue or topic and search narrow the list; Refresh re-reads what ServiceHub has recorded. On AWS Refresh does not look at AWS: only Look now does.
 
 
-![4.1 The Dead letters tab — 06b-after-look](screenshots/aws/06b-after-look.png)
+![4.1 The Dead letters tab — 06b-after-look](../screenshots/aws/06b-after-look.png)
 
 
 1. What the look found — when it ran, how many queues had dead letters, and how many new ones were recorded.
@@ -333,7 +333,7 @@ A **dead letter** is a message your consumer failed to process several times, so
 Narrow the list, tick the messages you want, and use **Details** or **Replay** on a row. Choosing a reason chip filters to that reason (with *show all reasons* at the foot to clear it, and *Select all* for that reason in the selection bar); the list pages at the bottom. Refresh re-reads what ServiceHub has recorded; only Look now asks AWS.
 
 
-![4.2 Filters, selection and the table — 07-filters-and-table](screenshots/aws/07-filters-and-table.png)
+![4.2 Filters, selection and the table — 07-filters-and-table](../screenshots/aws/07-filters-and-table.png)
 
 
 1. Showing — Stuck now, or messages that have since left the queue.
@@ -352,7 +352,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 14. Look at AWS’s dead letters now — records any dead letters not seen before. Each look adds one delivery attempt to the messages it reads.
 
 
-![4.2 Filters, selection and the table — 07a-reason-filter](screenshots/aws/07a-reason-filter.png)
+![4.2 Filters, selection and the table — 07a-reason-filter](../screenshots/aws/07a-reason-filter.png)
 
 
 1. Filtering by a reason — the chosen reason is highlighted and “show all reasons” clears the filter. The list below shows only that reason.
@@ -362,7 +362,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 5. The selection bar (which now offers “Select all” for this reason), the table headings and the rows, as on the earlier screenshots.
 
 
-![4.2 Filters, selection and the table — 07a-reason-filter-end](screenshots/aws/07a-reason-filter-end.png)
+![4.2 Filters, selection and the table — 07a-reason-filter-end](../screenshots/aws/07a-reason-filter-end.png)
 
 
 1. Show all reasons — at the foot of a filtered list too: clears the reason filter and brings every recorded dead letter back.
@@ -370,14 +370,14 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 3. Paging — rows per page, previous, the page numbers and next.
 
 
-![4.2 Filters, selection and the table — 07c-table-end](screenshots/aws/07c-table-end.png)
+![4.2 Filters, selection and the table — 07c-table-end](../screenshots/aws/07c-table-end.png)
 
 
 1. The foot of the table — the same ticks, Details and Replay on every row, and the selection bar repeated underneath.
 2. Paging — rows per page, previous, the page numbers and next. The list holds up to 100 dead letters per queue from each look.
 
 
-![4.2 Filters, selection and the table — 07b-selection](screenshots/aws/07b-selection.png)
+![4.2 Filters, selection and the table — 07b-selection](../screenshots/aws/07b-selection.png)
 
 
 1. Row tick — choose which messages to act on. The header tick chooses every row on the page.
@@ -394,7 +394,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 **Details** opens the message: the reason, a plain-words reading of why it failed (marked *Suggestion* because it is a reading, not something AWS reported), and the body. The tabs show the body, the attributes your sender attached, what SQS recorded, and the delivery count — which includes ServiceHub's own looks. At the bottom are **Replay this message** and **Purge instead…**, which only opens a form.
 
 
-![4.3 Open a message — 08-message-details](screenshots/aws/08-message-details.png)
+![4.3 Open a message — 08-message-details](../screenshots/aws/08-message-details.png)
 
 
 1. Expand — widens the panel for long messages.
@@ -408,7 +408,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 9. Copy message ID — copies the ID so you can search for it elsewhere.
 
 
-![4.3 Open a message — 08b-message-details-end](screenshots/aws/08b-message-details-end.png)
+![4.3 Open a message — 08b-message-details-end](../screenshots/aws/08b-message-details-end.png)
 
 
 1. Replay this message — opens the proposal. Nothing is sent from here.
@@ -416,7 +416,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 3. Expand, the body view and the copy buttons — as on the previous screenshots.
 
 
-![4.3 Open a message — 08-message-details-body](screenshots/aws/08-message-details-body.png)
+![4.3 Open a message — 08-message-details-body](../screenshots/aws/08-message-details-body.png)
 
 
 1. The message body exactly as it was sent.
@@ -424,21 +424,21 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 3. Formatted / Raw switch the view; Copy body copies it to your clipboard.
 
 
-![4.3 Open a message — 08-message-details-properties](screenshots/aws/08-message-details-properties.png)
+![4.3 Open a message — 08-message-details-properties](../screenshots/aws/08-message-details-properties.png)
 
 
 1. The message attributes the sender attached (for example shs-error-type) and the SQS system attributes.
 2. Expand widens the panel; the other tabs (Overview, Body, Properties, Headers, Delivery) switch what is shown.
 
 
-![4.3 Open a message — 08-message-details-headers](screenshots/aws/08-message-details-headers.png)
+![4.3 Open a message — 08-message-details-headers](../screenshots/aws/08-message-details-headers.png)
 
 
 1. What SQS recorded: the sent time, the first receive time, how many times it was received, and which queue it was dead-lettered from.
 2. Expand widens the panel; the other tabs (Overview, Body, Properties, Headers, Delivery) switch what is shown.
 
 
-![4.3 Open a message — 08-message-details-delivery](screenshots/aws/08-message-details-delivery.png)
+![4.3 Open a message — 08-message-details-delivery](../screenshots/aws/08-message-details-delivery.png)
 
 
 1. How many times AWS delivered it before setting it aside. ServiceHub’s own looks are counted in this number.
@@ -450,7 +450,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 **Replay** never sends straight away. It shows what will happen (the message goes back to the queue it came from and the dead-letter copy is removed once AWS accepts the new one), every safety check, and what happens afterwards. Only the blue button sends.
 
 
-![4.4 Replay one message — you see the proposal first — 09-replay-proposal](screenshots/aws/09-replay-proposal.png)
+![4.4 Replay one message — you see the proposal first — 09-replay-proposal](../screenshots/aws/09-replay-proposal.png)
 
 
 1. The message — what is about to be replayed: ID, where it is stuck, when and why it was set aside, and its body.
@@ -459,14 +459,14 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 4. Cancel — closes without sending.
 
 
-![4.4 Replay one message — you see the proposal first — 09-replay-proposal-middle](screenshots/aws/09-replay-proposal-middle.png)
+![4.4 Replay one message — you see the proposal first — 09-replay-proposal-middle](../screenshots/aws/09-replay-proposal-middle.png)
 
 
 1. The four sections of the proposal — The message, What will happen, Safety checks and After it runs. Each folds open or closed; nothing here sends anything.
 2. Replay 1 message sends it; Cancel closes without sending. Both are repeated at the foot of the window so they are always in reach.
 
 
-![4.4 Replay one message — you see the proposal first — 09-replay-proposal-checks](screenshots/aws/09-replay-proposal-checks.png)
+![4.4 Replay one message — you see the proposal first — 09-replay-proposal-checks](../screenshots/aws/09-replay-proposal-checks.png)
 
 
 1. What will happen — where it goes and what happens to the dead-letter copy (it is removed once AWS accepts the new copy).
@@ -481,7 +481,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 Tick messages (or use **Replay All Messages**) to get a preview: how many will be replayed, which are held back by a safety check, grouped by how they failed and where each goes. When the failures look like bad data, it suggests replaying one first. They are sent one at a time, each re-checked, and the run stops by itself after five sends in a row that are not accepted. Further down is **Purge instead…** — a separate, deliberate step to delete messages that are not worth replaying.
 
 
-![4.5 Replay several at once — 13-bulk-replay](screenshots/aws/13-bulk-replay.png)
+![4.5 Replay several at once — 13-bulk-replay](../screenshots/aws/13-bulk-replay.png)
 
 
 1. Preview — nothing has run yet. Step 1 of Preview → Run → Watch.
@@ -494,7 +494,7 @@ Tick messages (or use **Replay All Messages**) to get a preview: how many will b
 8. Page controls — move through the list when more messages are chosen than fit on one page.
 
 
-![4.5 Replay several at once — 13b-bulk-replay-end](screenshots/aws/13b-bulk-replay-end.png)
+![4.5 Replay several at once — 13b-bulk-replay-end](../screenshots/aws/13b-bulk-replay-end.png)
 
 
 1. How it will run — the pace (a few messages a second, gentle on your consumer) and the automatic stop: five sends in a row that are not accepted.
@@ -507,14 +507,14 @@ Tick messages (or use **Replay All Messages**) to get a preview: how many will b
 
 ### 4.6 The result
 
-ServiceHub says plainly what happened and records it in the ledger. On AWS the result will read **Verification required**: the message was sent back, but AWS cannot prove the dead-letter queue stayed empty, so ServiceHub never says it held. If a consumer is running on the queue it may pick the message up straight away.
+ServiceHub says plainly what happened and records it under Replayed. On AWS the result will read **Verification required**: the message was sent back, but AWS cannot prove the dead-letter queue stayed empty, so ServiceHub never says it held. If a consumer is running on the queue it may pick the message up straight away.
 
 
-![4.6 The result — 10-replay-result](screenshots/aws/10-replay-result.png)
+![4.6 The result — 10-replay-result](../screenshots/aws/10-replay-result.png)
 
 
 1. The result, in plain words: it was sent back, and ServiceHub will watch for it coming back.
-2. It is recorded in the ledger (Advanced → Recovery Ledger), with who did it. On AWS the result will read “Verification required”: this cloud cannot prove the queue stayed empty, so ServiceHub never says it held.
+2. It is recorded, with who did it, and shows under Replayed (and in Advanced → Recovery Ledger). On AWS the result will read “Verification required”: this cloud cannot prove the queue stayed empty, so ServiceHub never says it held.
 3. Done — closes the window.
 4. Active messages / Replayed — jump to where you can watch this message.
 
@@ -529,7 +529,7 @@ ServiceHub says plainly what happened and records it in the ledger. On AWS the r
 Every replay, who did it, and how it ended. On AWS a replay stays *Watching* for its window and is then recorded as *verification required* — never as success — until a person judges it.
 
 
-![5.1 Replayed — 11-replayed](screenshots/aws/11-replayed.png)
+![5.1 Replayed — 11-replayed](../screenshots/aws/11-replayed.png)
 
 
 1. Messages replayed — how many were put back in the window.
@@ -544,7 +544,7 @@ Every replay, who did it, and how it ended. On AWS a replay stays *Watching* for
 10. The three tabs — Dead letters, Active and Replayed. They switch the list below without leaving the page.
 
 
-![5.1 Replayed — 11b-replayed-end](screenshots/aws/11b-replayed-end.png)
+![5.1 Replayed — 11b-replayed-end](../screenshots/aws/11b-replayed-end.png)
 
 
 1. The replays, newest first — each with a tick and Details.
@@ -558,7 +558,7 @@ Every replay, who did it, and how it ended. On AWS a replay stays *Watching* for
 What is waiting right now, **counted per queue**. ServiceHub does not open active messages on AWS, because there is no way to look at one without it counting as a delivery — watching could push a message into the dead-letter queue by itself. For the same reason **Follow live** is not offered here. **Send a message** is the one control here that changes a queue.
 
 
-![5.2 Active messages — 12-active](screenshots/aws/12-active.png)
+![5.2 Active messages — 12-active](../screenshots/aws/12-active.png)
 
 
 1. Send a message — puts a test message on a queue. This does change the queue, so use a dev queue.
@@ -581,7 +581,7 @@ What is waiting right now, **counted per queue**. ServiceHub does not open activ
 A rule names a failure ServiceHub has already seen and how carefully to retry it. It never runs in Production, goes through the same safety checks as you, and **stops itself** if fewer than half of its replays stay fixed. On AWS a rule always waits for a person, because AWS cannot prove a fix held.
 
 
-![6.1 Rules — 14-auto-replay](screenshots/aws/14-auto-replay.png)
+![6.1 Rules — 14-auto-replay](../screenshots/aws/14-auto-replay.png)
 
 
 1. Auto Generate Rules — proposes rules from failures already seen. It only proposes; you decide what to turn on.
@@ -593,7 +593,7 @@ A rule names a failure ServiceHub has already seen and how carefully to retry it
 7. Create your first rule — the same as Create rule, shown while there are none.
 
 
-![6.1 Rules — 14-auto-replay-create](screenshots/aws/14-auto-replay-create.png)
+![6.1 Rules — 14-auto-replay-create](../screenshots/aws/14-auto-replay-create.png)
 
 
 1. Based on — pick a failure ServiceHub has already seen. A rule can only be made from a seen failure.
@@ -613,7 +613,7 @@ A rule names a failure ServiceHub has already seen and how carefully to retry it
 Connections, Notifications (Slack, Teams, any webhook — sent only when the Agent stops and needs a person), Preferences, Access & security (roles and the emergency stop) and Backup.
 
 
-![7.1 Settings — 15-settings-connections](screenshots/aws/15-settings-connections.png)
+![7.1 Settings — 15-settings-connections](../screenshots/aws/15-settings-connections.png)
 
 
 1. Sections — Connections, Notifications, Preferences, Access & security and Backup. Each jumps to that part of this window.
@@ -622,7 +622,7 @@ Connections, Notifications (Slack, Teams, any webhook — sent only when the Age
 4. Remove — forgets this connection and its stored credential. It does not delete anything in AWS.
 
 
-![7.1 Settings — 15-settings-notifications](screenshots/aws/15-settings-notifications.png)
+![7.1 Settings — 15-settings-notifications](../screenshots/aws/15-settings-notifications.png)
 
 
 1. In-app bell and pop-up — always on. It cannot be switched off, so it can never be switched off by mistake.
@@ -631,7 +631,7 @@ Connections, Notifications (Slack, Teams, any webhook — sent only when the Age
 4. Add webhook (any other system) — JSON to a URL you choose. Private and internal addresses are refused.
 
 
-![7.1 Settings — 15-settings-preferences](screenshots/aws/15-settings-preferences.png)
+![7.1 Settings — 15-settings-preferences](../screenshots/aws/15-settings-preferences.png)
 
 
 1. Theme — Light today; Dark is marked soon.
@@ -639,7 +639,7 @@ Connections, Notifications (Slack, Teams, any webhook — sent only when the Age
 3. Open on — start in Simple every time (Simple), or where you last were (Last used). Kept in this browser only.
 
 
-![7.1 Settings — 15-settings-access](screenshots/aws/15-settings-access.png)
+![7.1 Settings — 15-settings-access](../screenshots/aws/15-settings-access.png)
 
 
 1. Who you are — shown from this browser session until roles are switched on. The credential key fingerprint shows what encrypts stored credentials.
@@ -649,7 +649,7 @@ Connections, Notifications (Slack, Teams, any webhook — sent only when the Age
 5. Emergency stop — type STOP, say why, and switch it on to halt every automatic action at once. Nothing already done is undone; switch it off to resume.
 
 
-![7.1 Settings — 15-settings-backup](screenshots/aws/15-settings-backup.png)
+![7.1 Settings — 15-settings-backup](../screenshots/aws/15-settings-backup.png)
 
 
 1. Take a backup now — saves a consistent copy of ServiceHub’s own database (not of your clouds).
@@ -660,7 +660,7 @@ Connections, Notifications (Slack, Teams, any webhook — sent only when the Age
 Help is a panel over whatever you are doing. Search (⌘K) jumps anywhere. The bell is the only place the Agent asks you something.
 
 
-![7.2 Help, search and the bell — 16-help](screenshots/aws/16-help.png)
+![7.2 Help, search and the bell — 16-help](../screenshots/aws/16-help.png)
 
 
 1. Search — type what you are trying to do.
@@ -670,13 +670,13 @@ Help is a panel over whatever you are doing. Search (⌘K) jumps anywhere. The b
 5. Step by step — one guide per cloud, each with every screen as a real screenshot and a numbered key for every button and link. Yours (AWS) is listed first. The same guides are the articles in docs/clouds.
 
 
-![7.2 Help, search and the bell — 18-search](screenshots/aws/18-search.png)
+![7.2 Help, search and the bell — 18-search](../screenshots/aws/18-search.png)
 
 
 1. Search box — type part of a cloud, queue or page name. Enter opens the first result. Esc closes. Searching never changes anything.
 
 
-![7.2 Help, search and the bell — 18-bell](screenshots/aws/18-bell.png)
+![7.2 Help, search and the bell — 18-bell](../screenshots/aws/18-bell.png)
 
 
 1. The bell — the only place the Agent asks you something. It lists what is waiting for you and clears when it is resolved, not when you look.
@@ -688,7 +688,7 @@ Help is a panel over whatever you are doing. Search (⌘K) jumps anywhere. The b
 Advanced never changes anything. **Overview** summarises recovery, authority and agents, and says why AWS cannot verify; the **Recovery Ledger** is the tamper-evident record of every action; **Failure Signatures** groups failures and shows what each has earned; **Agents** lists what is acting and what is only watching.
 
 
-![7.3 The Advanced pages (read-only) — 17-advanced-overview](screenshots/aws/17-advanced-overview.png)
+![7.3 The Advanced pages (read-only) — 17-advanced-overview](../screenshots/aws/17-advanced-overview.png)
 
 
 1. Scope — all clouds, or one.
@@ -702,7 +702,7 @@ Advanced never changes anything. **Overview** summarises recovery, authority and
 9. Why → — explains why this cloud cannot yet prove a replayed message stayed fixed, and what would unlock it. It opens Help; nothing changes.
 
 
-![7.3 The Advanced pages (read-only) — 17-advanced-ledger](screenshots/aws/17-advanced-ledger.png)
+![7.3 The Advanced pages (read-only) — 17-advanced-ledger](../screenshots/aws/17-advanced-ledger.png)
 
 
 1. Export evidence — downloads the ledger so it can be verified offline. It changes nothing.
@@ -716,7 +716,7 @@ Advanced never changes anything. **Overview** summarises recovery, authority and
 9. The table headings — each has an ⓘ that explains that column in a sentence.
 
 
-![7.3 The Advanced pages (read-only) — 17-advanced-signatures](screenshots/aws/17-advanced-signatures.png)
+![7.3 The Advanced pages (read-only) — 17-advanced-signatures](../screenshots/aws/17-advanced-signatures.png)
 
 
 1. Trace a message — follow one message across clouds by its ID.
@@ -732,14 +732,14 @@ Advanced never changes anything. **Overview** summarises recovery, authority and
 11. The table headings — Signature, Messages, Days and Replays, each with an ⓘ that explains it.
 
 
-![7.3 The Advanced pages (read-only) — 17c-advanced-signatures-end](screenshots/aws/17c-advanced-signatures-end.png)
+![7.3 The Advanced pages (read-only) — 17c-advanced-signatures-end](../screenshots/aws/17c-advanced-signatures-end.png)
 
 
 1. Each signature row — opens to show the failures grouped under it and what each replay did.
 2. Paging — rows per page, previous, the page numbers and next.
 
 
-![7.3 The Advanced pages (read-only) — 17-advanced-agents](screenshots/aws/17-advanced-agents.png)
+![7.3 The Advanced pages (read-only) — 17-advanced-agents](../screenshots/aws/17-advanced-agents.png)
 
 
 1. Acting agents — the only ones that can change anything, and only after the same safety checks you get.
@@ -750,7 +750,7 @@ Advanced never changes anything. **Overview** summarises recovery, authority and
 6. What am I looking at? — a short reading guide for this page.
 
 
-![7.3 The Advanced pages (read-only) — 17b-advanced-agents-more](screenshots/aws/17b-advanced-agents-more.png)
+![7.3 The Advanced pages (read-only) — 17b-advanced-agents-more](../screenshots/aws/17b-advanced-agents-more.png)
 
 
 1. Watching agents — they only look and record; they cannot change anything.

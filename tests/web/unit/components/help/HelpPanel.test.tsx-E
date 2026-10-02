@@ -72,11 +72,11 @@ describe('HelpPanel', () => {
 
   it.each(Object.keys(guides))('every control on every %s screenshot has a numbered callout (7.6, from scripts/docs-shots)', (cloud) => {
     const dir = `../../docs/screenshots/${cloud}`
-    const gaps = JSON.parse(readFileSync(`${dir}/uncovered.json`, 'utf8')) as Record<string, string[]>
-    const keys = JSON.parse(readFileSync(`${dir}/keys.json`, 'utf8')) as Record<string, unknown[]>
+    const gaps = JSON.parse(readFileSync(resolve(dir, 'uncovered.json'), 'utf8')) as Record<string, string[]>
+    const keys = JSON.parse(readFileSync(resolve(dir, 'keys.json'), 'utf8')) as Record<string, unknown[]>
     for (const [shot, list] of Object.entries(gaps)) expect(list, `${shot} has controls with no callout`).toEqual([])
     // Below the fold: a control out of view in one shot must be covered by a callout in another (scripts/docs-shots finishRun).
-    const unreached = `${dir}/unreached.json`
+    const unreached = resolve(dir, 'unreached.json')
     if (existsSync(unreached)) expect(JSON.parse(readFileSync(unreached, 'utf8')) as string[], 'controls never in a callout (below the fold)').toEqual([])
     for (const shot of guides[cloud].sections.flatMap((sec) => sec.steps.flatMap((st) => st.shots))) {
       const name = shot.image.split('/').pop() as string

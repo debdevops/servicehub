@@ -83,7 +83,7 @@ SECTIONS = [
    "Tick messages (or use **Replay All Messages**) to get a preview: how many will be replayed, which are held back by a safety check, grouped by how they failed and where each goes. They are sent one at a time and each is re-checked.",
    [("app", "13-bulk-replay")]),
   ("4.6 The result",
-   "ServiceHub says plainly what happened, records it in the ledger, and starts a 24-hour watch for it coming back.",
+   "ServiceHub says plainly what happened, records it under Replayed, and starts a 24-hour watch for it coming back.",
    [("app", "10-replay-result")]),
  ]),
  ("Part 5 — Afterwards", "Did it hold?", [

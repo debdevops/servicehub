@@ -12,6 +12,11 @@ by default. This branch is ServiceHub 4.1.0 (unreleased); the previous release i
 ## Docs
 
 - [README](https://github.com/debdevops/servicehub/blob/main/README.md): What it is, quick start, safety model, deploying it
+- [Azure Service Bus guide](https://github.com/debdevops/servicehub/blob/main/docs/clouds/azure.md): Step-by-step setup and use on Azure Service Bus, with annotated screenshots
+- [AWS SQS/SNS guide](https://github.com/debdevops/servicehub/blob/main/docs/clouds/aws.md): Step-by-step setup and use on AWS SQS/SNS, with annotated screenshots
+- [Google Pub/Sub guide](https://github.com/debdevops/servicehub/blob/main/docs/clouds/gcp.md): Step-by-step setup and use on Google Pub/Sub, with annotated screenshots
+- [Adding a messaging provider](https://github.com/debdevops/servicehub/blob/main/docs/extending/adding-a-provider.md): Implement ICloudMessagingProvider and declare capabilities honestly
+- [Adding an agent](https://github.com/debdevops/servicehub/blob/main/docs/extending/adding-an-agent.md): One class and one registration line
 - [Recovery Evidence Ledger](https://github.com/debdevops/servicehub/blob/main/docs/RECOVERY-EVIDENCE.md): The hash-chained evidence model and offline verification
 - [Backup and restore](https://github.com/debdevops/servicehub/blob/main/docs/BACKUP-RESTORE.md): Atomic SQLite backup, restore, verification
 - [Encryption key rotation](https://github.com/debdevops/servicehub/blob/main/docs/ENCRYPTION-KEY-ROTATION.md): Multi-key registry, rotation, compromise response

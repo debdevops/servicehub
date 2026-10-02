@@ -32,7 +32,7 @@ for part, blurb, steps in G.SECTIONS:
             if not os.path.exists(f): raise SystemExit(f"missing screenshot {f}")
             optimise(f); shutil.copy(f, f"{pub}/{name}.png"); used.append(name)
             k = keys[kind].get(f"{name}.png", [])
-            md.append(f"\n![{title} — {name}](screenshots/{d}/{name}.png)\n")
+            md.append(f"\n![{title} — {name}](../screenshots/{d}/{name}.png)\n")
             if k:
                 md.append("\n" + "\n".join(f"{c['n']}. {c['t']}" for c in k) + "\n")
             ts_shots.append({"image": f"/help/{cloud}/{name}.png", "alt": f"{title} ({name})", "keys": [{"n": c["n"], "text": c["t"]} for c in k]})

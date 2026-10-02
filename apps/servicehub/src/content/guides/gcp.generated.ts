@@ -1045,7 +1045,7 @@ export const gcpGuide: Guide = {
     },
     {
      "title": "4.6 The result",
-     "text": "ServiceHub says plainly what happened and records it in the ledger. On Google Cloud the result will read **Verification required**: the message was sent back, but Google Cloud cannot prove the dead-letter queue stayed empty, so ServiceHub never says it held. If a consumer is running on the subscription it may pick the message up straight away.",
+     "text": "ServiceHub says plainly what happened and records it under Replayed. On Google Cloud the result will read **Verification required**: the message was sent back, but Google Cloud cannot prove the dead-letter queue stayed empty, so ServiceHub never says it held. If a consumer is running on the subscription it may pick the message up straight away.",
      "shots": [
       {
        "image": "/help/gcp/10-replay-result.png",
@@ -1057,7 +1057,7 @@ export const gcpGuide: Guide = {
         },
         {
          "n": 2,
-         "text": "It is recorded in the ledger (Advanced → Recovery Ledger), with who did it. On Google Cloud the result will read “Verification required”: this cloud cannot prove the queue stayed empty, so ServiceHub never says it held."
+         "text": "It is recorded, with who did it, and shows under Replayed (and in Advanced → Recovery Ledger). On Google Cloud the result will read “Verification required”: this cloud cannot prove the queue stayed empty, so ServiceHub never says it held."
         },
         {
          "n": 3,

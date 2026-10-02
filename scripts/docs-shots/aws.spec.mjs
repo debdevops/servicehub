@@ -303,7 +303,7 @@ await scene('10', async () => {
   await dlg().getByRole('button', { name: 'Replay 1 message' }).last().click(); await settle(4000)
   await shot(page, S('10-replay-result'), [
     { n: 1, loc: page.getByText('Sent back', { exact: true }), t: 'The result, in plain words: it was sent back, and ServiceHub will watch for it coming back.' },
-    { n: 2, loc: page.getByText('Recorded in the ledger.').first(), t: 'It is recorded in the ledger (Advanced → Recovery Ledger), with who did it. On AWS the result will read “Verification required”: this cloud cannot prove the queue stayed empty, so ServiceHub never says it held.' },
+    { n: 2, loc: page.getByText('Recorded in the ledger.').first(), t: 'It is recorded, with who did it, and shows under Replayed (and in Advanced → Recovery Ledger). On AWS the result will read “Verification required”: this cloud cannot prove the queue stayed empty, so ServiceHub never says it held.' },
     { n: 3, loc: btn('Done'), t: 'Done — closes the window.' },
     { n: 4, loc: [dlg().getByRole('link', { name: 'Active messages' }), dlg().getByRole('link', { name: 'Replayed' })], t: 'Active messages / Replayed — jump to where you can watch this message.' },
   ])
@@ -335,12 +335,9 @@ await scene('12', async () => {
   await shot(page, S('12-active'), [
     { n: 1, loc: page.getByRole('link', { name: /Send a message|Send/ }).or(btn('Send a message')).first(), t: 'Send a message — puts a test message on a queue. This does change the queue, so use a dev queue.' },
     { n: 2, loc: page.getByText(/counts active messages but doesn’t open them/).locator('..'), t: 'Why there is no message list — on AWS there is no way to look at a message without it counting as a delivery, and watching could push it into the dead-letter queue by itself. So ServiceHub shows counts per queue, and “Follow live” is not offered.' },
-    { n: 3, loc: page.locator('th').filter({ hasText: /Queue or topic/i }), t: 'Queue or topic — every queue ServiceHub found in this region, including the dead-letter queue itself.' },
-    { n: 4, loc: page.locator('th').filter({ hasText: /Waiting now/i }), t: 'Waiting now — messages ready to be received. Counted by AWS; ServiceHub never opens them.' },
-    { n: 5, loc: page.locator('th').filter({ hasText: /Dead-lettered/i }), t: 'Dead-lettered — messages that failed too often and were moved to the dead-letter queue.' },
-    { n: 6, loc: page.getByRole('button', { name: /AWS · Namespace/ }), t: 'Namespace — all of AWS, or one account and region.' },
-    { n: 7, loc: [page.locator('main').getByRole('link', { name: /^(Dead letters|Active|Replayed)/ }), page.locator('main').getByRole('button', { name: /^About (Dead letters|Active|Replayed)$/ }), btn('What am I looking at?')], all: true, t: 'The three tabs — Dead letters, Active and Replayed — and the (?) that re-shows the short explanation.' },
-    { n: 8, loc: [page.locator('table thead'), page.locator('table tbody tr')], all: true, t: 'The table — one row per queue. The ⓘ on each heading says what that count means.' },
+    { n: 3, loc: page.getByRole('button', { name: /AWS · Namespace/ }), t: 'Namespace — all of AWS, or one account and region.' },
+    { n: 4, loc: [page.locator('main').getByRole('link', { name: /^(Dead letters|Active|Replayed)/ }), page.locator('main').getByRole('button', { name: /^About (Dead letters|Active|Replayed)$/ }), btn('What am I looking at?')], all: true, t: 'The three tabs — Dead letters, Active and Replayed — and the (?) that re-shows the short explanation.' },
+    { n: 5, loc: [page.locator('table thead'), page.locator('table tbody tr')], all: true, t: 'The table — one row per queue found in this region, including the dead-letter queue itself: Queue or topic, Waiting now (ready to be received) and Dead-lettered (moved here after failing too often). AWS counts them; ServiceHub never opens them. The ⓘ on each heading says what that count means.' },
   ])
 })
 await scene('14', async () => {

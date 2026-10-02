@@ -22,7 +22,11 @@ async function words(page: Page) {
   // Everything visible, including text only screen readers get (aria-labels, sr-only).
   return page.evaluate(() => {
     const seen = new Set<string>()
+    // The Help guides document the Advanced pages by name (Failure Signatures, Recovery Ledger), so their body is not scanned; the vitest guard
+    // in HelpPanel.test.tsx keeps those words to the Advanced step and Part 1. The Help panel's own headings, buttons and labels still are.
+    const inGuide = (el: Element | null) => !!el?.closest('[data-guide-body]')
     for (const el of document.querySelectorAll('body *')) {
+      if (inGuide(el)) continue
       const label = el.getAttribute('aria-label')
       if (label) seen.add(label)
     }
@@ -32,8 +36,14 @@ async function words(page: Page) {
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
       const parent = n.parentElement
       if (parent && ['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(parent.tagName)) continue
+      if (inGuide(parent)) continue
       // A sentence split by <b> or <a> is joined back up, so a banned word cannot hide across an element boundary.
-      lines.push(parent?.closest('p, li, h1, h2, h3, h4, dd, dt, label, button, a, span, div')?.textContent ?? n.textContent ?? '')
+      const block = parent?.closest('p, li, h1, h2, h3, h4, dd, dt, label, button, a, span, div')
+      if (!block) { lines.push(n.textContent ?? ''); continue }
+      // The block may sit around a guide body (the Help panel's per-cloud summary does): read it without the guide.
+      const copy = block.cloneNode(true) as Element
+      copy.querySelectorAll('[data-guide-body]').forEach((g) => g.remove())
+      lines.push(copy.textContent ?? '')
     }
     const body = [...new Set(lines)].join('\n')
     return `${body}\n${[...seen].join('\n')}`

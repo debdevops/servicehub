@@ -95,7 +95,7 @@ SECTIONS = [
    "Tick messages (or use **Replay All Messages**) to get a preview: how many will be replayed, which are held back by a safety check, grouped by how they failed and where each goes. They are sent one at a time, each re-checked, and the run stops by itself after five sends in a row that are not accepted. Further down is **Purge instead…** — a separate, deliberate step to delete messages that are not worth replaying.",
    [("app", "13-bulk-replay"), ("app", "13b-bulk-replay-end")]),
   ("4.6 The result",
-   "ServiceHub says plainly what happened and records it in the ledger. On Google Cloud the result will read **Verification required**: the message was sent back, but Google Cloud cannot prove the dead-letter queue stayed empty, so ServiceHub never says it held. If a consumer is running on the subscription it may pick the message up straight away.",
+   "ServiceHub says plainly what happened and records it under Replayed. On Google Cloud the result will read **Verification required**: the message was sent back, but Google Cloud cannot prove the dead-letter queue stayed empty, so ServiceHub never says it held. If a consumer is running on the subscription it may pick the message up straight away.",
    [("app", "10-replay-result")]),
  ]),
  ("Part 5 — Afterwards", "Did it hold?", [

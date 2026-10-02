@@ -163,6 +163,8 @@ or issue if a comment's reasoning is not clear from the code.
 
 ## Contributing a Provider
 
+Step-by-step: [Adding a messaging provider](docs/extending/adding-a-provider.md) and [Adding an agent](docs/extending/adding-an-agent.md).
+
 `ICloudMessagingProvider` (`ServiceHub.Core.Interfaces`) is the extension point for a new messaging backend. Look at the Azure, AWS and
 GCP adapters under `services/api/src/ServiceHub.Providers.*` — registration is one `Add<Cloud>Provider` extension and one line in
 `Program.cs` — and at `CapabilityHonestyTests`, which fails the build if any code outside an adapter branches on a provider's name.

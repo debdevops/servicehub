@@ -37,7 +37,7 @@ does **and what it will not do**.
 Sign in to the Azure portal, search for **Service Bus** and open your namespace. Note the **Host name** (it ends in `.servicebus.windows.net`) and that **Local Authentication** is *Enabled*. In the left menu, **Settings → Shared access policies** is where the next step happens.
 
 
-![1.1 Open your Service Bus namespace — portal-01-namespace-overview](screenshots/azure-portal/portal-01-namespace-overview.png)
+![1.1 Open your Service Bus namespace — portal-01-namespace-overview](../screenshots/azure-portal/portal-01-namespace-overview.png)
 
 
 1. Host name — the address of your namespace. Your connection string begins Endpoint=sb:// followed by this name.
@@ -51,7 +51,7 @@ Sign in to the Azure portal, search for **Service Bus** and open your namespace.
 Every namespace has `RootManageSharedAccessKey`, a default key shared by everything that touches the namespace. Give ServiceHub its **own** policy instead, so you can revoke it later without disturbing anything else.
 
 
-![1.2 Shared access policies — and why not to reuse the default — portal-02-shared-access-policies](screenshots/azure-portal/portal-02-shared-access-policies.png)
+![1.2 Shared access policies — and why not to reuse the default — portal-02-shared-access-policies](../screenshots/azure-portal/portal-02-shared-access-policies.png)
 
 
 1. Add — creates a new policy. Make one just for ServiceHub, so you can revoke it without touching anything else.
@@ -64,7 +64,7 @@ Every namespace has `RootManageSharedAccessKey`, a default key shared by everyth
 Choose **Add**, name it (we use `servicehub-app`), tick **Manage** — Azure then ticks **Send** and **Listen** for you — and **Create**. Why Manage? Azure only lets a *Manage* policy **list** your queues and **count** their messages; with Listen and Send alone ServiceHub cannot even see which queues exist (Azure answers *401: Manage, EntityRead claims required*). ServiceHub uses *Send* only when you press Replay.
 
 
-![1.3 Create a ServiceHub-only policy — portal-03-add-policy](screenshots/azure-portal/portal-03-add-policy.png)
+![1.3 Create a ServiceHub-only policy — portal-03-add-policy](../screenshots/azure-portal/portal-03-add-policy.png)
 
 
 1. Policy name — for example servicehub-app, so you can recognise (and later revoke) it.
@@ -73,7 +73,7 @@ Choose **Add**, name it (we use `servicehub-app`), tick **Manage** — Azure the
 4. Listen — used to read queues and dead-letter queues.
 
 
-![1.3 Create a ServiceHub-only policy — portal-03b-add-policy-filled](screenshots/azure-portal/portal-03b-add-policy-filled.png)
+![1.3 Create a ServiceHub-only policy — portal-03b-add-policy-filled](../screenshots/azure-portal/portal-03b-add-policy-filled.png)
 
 
 1. The name you chose.
@@ -81,7 +81,7 @@ Choose **Add**, name it (we use `servicehub-app`), tick **Manage** — Azure the
 3. Create — saves the policy and generates its keys.
 
 
-![1.3 Create a ServiceHub-only policy — portal-04-policy-created](screenshots/azure-portal/portal-04-policy-created.png)
+![1.3 Create a ServiceHub-only policy — portal-04-policy-created](../screenshots/azure-portal/portal-04-policy-created.png)
 
 
 1. Your new policy appears in the list.
@@ -93,7 +93,7 @@ Choose **Add**, name it (we use `servicehub-app`), tick **Manage** — Azure the
 Open the new policy. The keys are hidden; click the copy icon beside **Primary connection string**. It begins `Endpoint=sb://…`. Treat it like a password: ServiceHub encrypts it on arrival and never shows it again, but anyone who has it can use it. The **Delete** button on this panel is how you revoke access later.
 
 
-![1.4 Copy the primary connection string — portal-05-connection-string](screenshots/azure-portal/portal-05-connection-string.png)
+![1.4 Copy the primary connection string — portal-05-connection-string](../screenshots/azure-portal/portal-05-connection-string.png)
 
 
 1. Claims — what this policy may do.
@@ -107,7 +107,7 @@ Open the new policy. The keys are hidden; click the copy icon beside **Primary c
 Under **Entities → Queues** you can see each queue's *Active* and *Dead-letter* counts. Open a queue to see its **Max delivery count** (after that many failed tries Azure dead-letters the message) — ServiceHub's numbers should match these.
 
 
-![1.5 Check what is in your queues — portal-06-queues](screenshots/azure-portal/portal-06-queues.png)
+![1.5 Check what is in your queues — portal-06-queues](../screenshots/azure-portal/portal-06-queues.png)
 
 
 1. Queue name — ServiceHub finds every queue in the namespace; you do not list them.
@@ -115,7 +115,7 @@ Under **Entities → Queues** you can see each queue's *Active* and *Dead-letter
 3. Dead-letter messages — failed too often and were set aside. These are what ServiceHub shows on its Dead letters tab.
 
 
-![1.5 Check what is in your queues — portal-07-queue-overview](screenshots/azure-portal/portal-07-queue-overview.png)
+![1.5 Check what is in your queues — portal-07-queue-overview](../screenshots/azure-portal/portal-07-queue-overview.png)
 
 
 1. Max delivery count — how many tries before Azure dead-letters a message. Here 3.
@@ -133,7 +133,7 @@ Under **Entities → Queues** you can see each queue's *Active* and *Dead-letter
 With no cloud connected, ServiceHub opens on a welcome page. Choose **Connect Azure**.
 
 
-![2.1 The welcome page — 01-welcome](screenshots/azure/01-welcome.png)
+![2.1 The welcome page — 01-welcome](../screenshots/azure/01-welcome.png)
 
 
 1. Connect Azure — opens the Add a cloud window on the Azure tab. It only asks for a connection string; nothing is read until you press Connect there.
@@ -148,7 +148,7 @@ With no cloud connected, ServiceHub opens on a welcome page. Choose **Connect Az
 The window opens on the Azure tab. Open **Where do I get the Service Bus connection string?** for the same portal steps you just did.
 
 
-![2.2 Add a cloud — 02-add-cloud](screenshots/azure/02-add-cloud.png)
+![2.2 Add a cloud — 02-add-cloud](../screenshots/azure/02-add-cloud.png)
 
 
 1. Cloud tabs — Azure Service Bus is selected. The AWS and Google tabs ask for different credentials.
@@ -163,7 +163,7 @@ The window opens on the Azure tab. Open **Where do I get the Service Bus connect
 10. ✕ — closes the window without saving (Esc does the same).
 
 
-![2.2 Add a cloud — 02-add-cloud-help](screenshots/azure/02-add-cloud-help.png)
+![2.2 Add a cloud — 02-add-cloud-help](../screenshots/azure/02-add-cloud-help.png)
 
 
 1. Settings → Shared access policies — in the Azure portal, on your Service Bus namespace.
@@ -177,7 +177,7 @@ The window opens on the Azure tab. Open **Where do I get the Service Bus connect
 Give it a name, keep the environment as **Development** for your first connection, paste the connection string, and press **Connect**. ServiceHub tests the string, then saves it encrypted (AES-256-GCM).
 
 
-![2.3 Fill it in and connect — 03-add-cloud-filled](screenshots/azure/03-add-cloud-filled.png)
+![2.3 Fill it in and connect — 03-add-cloud-filled](../screenshots/azure/03-add-cloud-filled.png)
 
 
 1. A name you will recognise.
@@ -191,7 +191,7 @@ Give it a name, keep the environment as **Development** for your first connectio
 You see exactly what ServiceHub can see: how many queues, topics and subscriptions, how many messages are dead-lettered right now, and whether this cloud can prove a replayed message stayed fixed (Azure can).
 
 
-![2.4 The result — 04-connected](screenshots/azure/04-connected.png)
+![2.4 The result — 04-connected](../screenshots/azure/04-connected.png)
 
 
 1. The result: how many queues, topics and subscriptions ServiceHub found, how many messages are dead-lettered, and whether this cloud can prove a replay held.
@@ -208,7 +208,7 @@ You see exactly what ServiceHub can see: how many queues, topics and subscriptio
 Home answers three questions: *what needs me*, *how is each cloud doing*, and *what is the Agent up to*. The Agent only acts on what it has earned (see Auto Replay below); until then it watches.
 
 
-![3.1 Home — 05-home](screenshots/azure/05-home.png)
+![3.1 Home — 05-home](../screenshots/azure/05-home.png)
 
 
 1. Window — the period Home counts over (24 hours, 7 or 30 days). It changes what you see, never what happens.
@@ -229,7 +229,7 @@ Home answers three questions: *what needs me*, *how is each cloud doing*, and *w
 These are the same on every page.
 
 
-![3.2 The bar and the sidebar — 05b-navigation](screenshots/azure/05b-navigation.png)
+![3.2 The bar and the sidebar — 05b-navigation](../screenshots/azure/05b-navigation.png)
 
 
 1. Back — returns to the previous place in the app.
@@ -261,7 +261,7 @@ These are the same on every page.
 A **dead letter** is a message your consumer failed to process several times, so Azure set it aside in the queue's dead-letter queue. ServiceHub groups them by the reason your sender recorded.
 
 
-![4.1 The Dead letters tab — 06-dead-letters](screenshots/azure/06-dead-letters.png)
+![4.1 The Dead letters tab — 06-dead-letters](../screenshots/azure/06-dead-letters.png)
 
 
 1. Namespace picker — all of Azure, or one namespace.
@@ -278,7 +278,7 @@ A **dead letter** is a message your consumer failed to process several times, so
 Narrow the list, tick the messages you want, and use **Details** or **Replay** on a row.
 
 
-![4.2 Filters, selection and the table — 07-filters-and-table](screenshots/azure/07-filters-and-table.png)
+![4.2 Filters, selection and the table — 07-filters-and-table](../screenshots/azure/07-filters-and-table.png)
 
 
 1. Showing — Stuck now, or messages that have since left the queue.
@@ -296,7 +296,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 13. The selection bar — the tick selects every row on this page; View details chooses which columns show; Replay selected stays dimmed until something is ticked.
 
 
-![4.2 Filters, selection and the table — 07b-selection](screenshots/azure/07b-selection.png)
+![4.2 Filters, selection and the table — 07b-selection](../screenshots/azure/07b-selection.png)
 
 
 1. Row tick — choose which messages to act on. The header tick chooses every row on the page.
@@ -313,7 +313,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 **Details** opens the message: the reason, a plain-words reading of why it failed (marked *Suggestion* because it is a reading, not something Azure reported), and the body with the bad field marked. The tabs show the body, properties, headers and delivery history.
 
 
-![4.3 Open a message — 08-message-details](screenshots/azure/08-message-details.png)
+![4.3 Open a message — 08-message-details](../screenshots/azure/08-message-details.png)
 
 
 1. Expand — widens the panel for long messages.
@@ -327,7 +327,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 9. Copy message ID — copies the ID so you can search for it elsewhere.
 
 
-![4.3 Open a message — 08-message-details-body](screenshots/azure/08-message-details-body.png)
+![4.3 Open a message — 08-message-details-body](../screenshots/azure/08-message-details-body.png)
 
 
 1. The message body exactly as it was sent.
@@ -335,21 +335,21 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 3. Formatted / Raw switch the view; Copy body copies it to your clipboard.
 
 
-![4.3 Open a message — 08-message-details-properties](screenshots/azure/08-message-details-properties.png)
+![4.3 Open a message — 08-message-details-properties](../screenshots/azure/08-message-details-properties.png)
 
 
 1. Application properties and system properties (message ID, content type, subject).
 2. Expand widens the panel; the other tabs (Overview, Body, Properties, Headers, Delivery) switch what is shown.
 
 
-![4.3 Open a message — 08-message-details-headers](screenshots/azure/08-message-details-headers.png)
+![4.3 Open a message — 08-message-details-headers](../screenshots/azure/08-message-details-headers.png)
 
 
 1. Broker headers: enqueued time, lock and sequence information.
 2. Expand widens the panel; the other tabs (Overview, Body, Properties, Headers, Delivery) switch what is shown.
 
 
-![4.3 Open a message — 08-message-details-delivery](screenshots/azure/08-message-details-delivery.png)
+![4.3 Open a message — 08-message-details-delivery](../screenshots/azure/08-message-details-delivery.png)
 
 
 1. How many times Azure tried, and when it set the message aside.
@@ -361,7 +361,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 **Replay** never sends straight away. It shows what will happen, every safety check, and what happens afterwards. Only the blue button sends.
 
 
-![4.4 Replay one message — you see the proposal first — 09-replay-proposal](screenshots/azure/09-replay-proposal.png)
+![4.4 Replay one message — you see the proposal first — 09-replay-proposal](../screenshots/azure/09-replay-proposal.png)
 
 
 1. The message — what is about to be replayed: ID, where it is stuck, when and why it was set aside, and its body.
@@ -370,7 +370,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 4. Cancel — closes without sending.
 
 
-![4.4 Replay one message — you see the proposal first — 09-replay-proposal-checks](screenshots/azure/09-replay-proposal-checks.png)
+![4.4 Replay one message — you see the proposal first — 09-replay-proposal-checks](../screenshots/azure/09-replay-proposal-checks.png)
 
 
 1. What will happen — where it goes and what happens to the dead-letter copy (it is removed once Azure accepts the new one).
@@ -385,7 +385,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 Tick messages (or use **Replay All Messages**) to get a preview: how many will be replayed, which are held back by a safety check, grouped by how they failed and where each goes. They are sent one at a time and each is re-checked.
 
 
-![4.5 Replay several at once — 13-bulk-replay](screenshots/azure/13-bulk-replay.png)
+![4.5 Replay several at once — 13-bulk-replay](../screenshots/azure/13-bulk-replay.png)
 
 
 1. Preview — nothing has run yet. Step 1 of Preview → Run → Watch.
@@ -400,14 +400,14 @@ Tick messages (or use **Replay All Messages**) to get a preview: how many will b
 
 ### 4.6 The result
 
-ServiceHub says plainly what happened, records it in the ledger, and starts a 24-hour watch for it coming back.
+ServiceHub says plainly what happened, records it under Replayed, and starts a 24-hour watch for it coming back.
 
 
-![4.6 The result — 10-replay-result](screenshots/azure/10-replay-result.png)
+![4.6 The result — 10-replay-result](../screenshots/azure/10-replay-result.png)
 
 
 1. The result, in plain words: it was sent back, and ServiceHub will watch for it coming back.
-2. It is recorded in the ledger (Advanced → Recovery Ledger), with who did it.
+2. It is recorded, with who did it, and shows under Replayed (and in Advanced → Recovery Ledger).
 3. Done — closes the window.
 4. Active messages / Replayed — jump to where you can watch this message.
 
@@ -422,7 +422,7 @@ ServiceHub says plainly what happened, records it in the ledger, and starts a 24
 Every replay, who did it, and how it ended. On Azure ServiceHub can **prove** whether a replayed message stayed out of the dead-letter queue, so the result moves from *Watching* to *Stayed fixed* or *Came back*.
 
 
-![5.1 Replayed — 11-replayed](screenshots/azure/11-replayed.png)
+![5.1 Replayed — 11-replayed](../screenshots/azure/11-replayed.png)
 
 
 1. Messages replayed — how many were put back in the window.
@@ -442,7 +442,7 @@ Every replay, who did it, and how it ended. On Azure ServiceHub can **prove** wh
 What is waiting right now. Looking does not touch anything on Azure — a peek is not a delivery. **Send a message** is the one control here that changes a queue.
 
 
-![5.2 Active messages — 12-active](screenshots/azure/12-active.png)
+![5.2 Active messages — 12-active](../screenshots/azure/12-active.png)
 
 
 1. Send a message — puts a test message on the queue. This does change the queue, so use a dev queue.
@@ -469,7 +469,7 @@ What is waiting right now. Looking does not touch anything on Azure — a peek i
 A rule names a failure ServiceHub has already seen and how carefully to retry it. It never runs in Production namespaces, goes through the same safety checks as you, and **stops itself** if fewer than half of its replays stay fixed. A rule only acts once that failure has 10 verified fixes at 95% or better.
 
 
-![6.1 Rules — 14-auto-replay](screenshots/azure/14-auto-replay.png)
+![6.1 Rules — 14-auto-replay](../screenshots/azure/14-auto-replay.png)
 
 
 1. Auto Generate Rules — proposes rules from failures already seen. It only proposes; you decide what to turn on.
@@ -481,7 +481,7 @@ A rule names a failure ServiceHub has already seen and how carefully to retry it
 7. Create your first rule — the same as Create rule, shown while there are none.
 
 
-![6.1 Rules — 14-auto-replay-create](screenshots/azure/14-auto-replay-create.png)
+![6.1 Rules — 14-auto-replay-create](../screenshots/azure/14-auto-replay-create.png)
 
 
 1. Based on — pick a failure ServiceHub has already seen. A rule can only be made from a seen failure.
@@ -501,7 +501,7 @@ A rule names a failure ServiceHub has already seen and how carefully to retry it
 Connections, Notifications (Slack, Teams, any webhook — sent only when the Agent stops and needs a person), Preferences, Access & security (roles and the emergency stop) and Backup.
 
 
-![7.1 Settings — 15-settings-connections](screenshots/azure/15-settings-connections.png)
+![7.1 Settings — 15-settings-connections](../screenshots/azure/15-settings-connections.png)
 
 
 1. Sections — Connections, Notifications, Preferences, Access & security and Backup. Each jumps to that part of this window.
@@ -510,7 +510,7 @@ Connections, Notifications (Slack, Teams, any webhook — sent only when the Age
 4. Remove — forgets this connection and its stored credential. It does not delete anything in Azure.
 
 
-![7.1 Settings — 15-settings-notifications](screenshots/azure/15-settings-notifications.png)
+![7.1 Settings — 15-settings-notifications](../screenshots/azure/15-settings-notifications.png)
 
 
 1. In-app bell and pop-up — always on. It cannot be switched off, so it can never be switched off by mistake.
@@ -519,7 +519,7 @@ Connections, Notifications (Slack, Teams, any webhook — sent only when the Age
 4. Add webhook (any other system) — JSON to a URL you choose. Private and internal addresses are refused.
 
 
-![7.1 Settings — 15-settings-preferences](screenshots/azure/15-settings-preferences.png)
+![7.1 Settings — 15-settings-preferences](../screenshots/azure/15-settings-preferences.png)
 
 
 1. Theme — Light today; Dark is marked soon.
@@ -527,7 +527,7 @@ Connections, Notifications (Slack, Teams, any webhook — sent only when the Age
 3. Open on — start in Simple every time (Simple), or where you last were (Last used). Kept in this browser only.
 
 
-![7.1 Settings — 15-settings-access](screenshots/azure/15-settings-access.png)
+![7.1 Settings — 15-settings-access](../screenshots/azure/15-settings-access.png)
 
 
 1. Who you are — shown from this browser session until roles are switched on. The credential key fingerprint shows what encrypts stored credentials.
@@ -537,7 +537,7 @@ Connections, Notifications (Slack, Teams, any webhook — sent only when the Age
 5. Emergency stop — type STOP, say why, and switch it on to halt every automatic action at once. Nothing already done is undone; switch it off to resume.
 
 
-![7.1 Settings — 15-settings-backup](screenshots/azure/15-settings-backup.png)
+![7.1 Settings — 15-settings-backup](../screenshots/azure/15-settings-backup.png)
 
 
 1. Take a backup now — saves a consistent copy of ServiceHub’s own database (not of your clouds).
@@ -548,7 +548,7 @@ Connections, Notifications (Slack, Teams, any webhook — sent only when the Age
 Help is a panel over whatever you are doing. Search (⌘K) jumps anywhere. The bell is the only place the Agent asks you something.
 
 
-![7.2 Help, search and the bell — 16-help](screenshots/azure/16-help.png)
+![7.2 Help, search and the bell — 16-help](../screenshots/azure/16-help.png)
 
 
 1. Search — type what you are trying to do.
@@ -558,13 +558,13 @@ Help is a panel over whatever you are doing. Search (⌘K) jumps anywhere. The b
 5. Step by step — every screen with real screenshots and a numbered key for each button and link. This is the same guide as the article in docs/clouds/azure.md.
 
 
-![7.2 Help, search and the bell — 18-search](screenshots/azure/18-search.png)
+![7.2 Help, search and the bell — 18-search](../screenshots/azure/18-search.png)
 
 
 1. Search box — type part of a cloud, queue or page name. Enter opens the first result. Esc closes. Searching never changes anything.
 
 
-![7.2 Help, search and the bell — 18-bell](screenshots/azure/18-bell.png)
+![7.2 Help, search and the bell — 18-bell](../screenshots/azure/18-bell.png)
 
 
 1. The bell — the only place the Agent asks you something. It lists what is waiting for you and clears when it is resolved, not when you look.
@@ -576,7 +576,7 @@ Help is a panel over whatever you are doing. Search (⌘K) jumps anywhere. The b
 Advanced never changes anything. **Overview** summarises recovery, authority and agents; the **Recovery Ledger** is the tamper-evident record of every action; **Failure Signatures** groups failures and shows what each has earned; **Agents** lists what is acting and what is only watching.
 
 
-![7.3 The Advanced pages (read-only) — 17-advanced-overview](screenshots/azure/17-advanced-overview.png)
+![7.3 The Advanced pages (read-only) — 17-advanced-overview](../screenshots/azure/17-advanced-overview.png)
 
 
 1. Scope — all clouds, or one.
@@ -589,7 +589,7 @@ Advanced never changes anything. **Overview** summarises recovery, authority and
 8. Overview — the page you are on; the other three Advanced pages are in the bar at the top.
 
 
-![7.3 The Advanced pages (read-only) — 17-advanced-ledger](screenshots/azure/17-advanced-ledger.png)
+![7.3 The Advanced pages (read-only) — 17-advanced-ledger](../screenshots/azure/17-advanced-ledger.png)
 
 
 1. Export evidence — downloads the ledger so it can be verified offline. It changes nothing.
@@ -602,7 +602,7 @@ Advanced never changes anything. **Overview** summarises recovery, authority and
 8. Paging — how many rows per page, previous, the page number and next.
 
 
-![7.3 The Advanced pages (read-only) — 17-advanced-signatures](screenshots/azure/17-advanced-signatures.png)
+![7.3 The Advanced pages (read-only) — 17-advanced-signatures](../screenshots/azure/17-advanced-signatures.png)
 
 
 1. Trace a message — follow one message across clouds by its ID.
@@ -617,7 +617,7 @@ Advanced never changes anything. **Overview** summarises recovery, authority and
 10. Paging — rows per page, previous, the page number and next.
 
 
-![7.3 The Advanced pages (read-only) — 17-advanced-agents](screenshots/azure/17-advanced-agents.png)
+![7.3 The Advanced pages (read-only) — 17-advanced-agents](../screenshots/azure/17-advanced-agents.png)
 
 
 1. Acting agents — the only ones that can change anything, and only after the same safety checks you get.

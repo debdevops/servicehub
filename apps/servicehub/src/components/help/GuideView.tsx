@@ -3,7 +3,7 @@ import type { Guide } from '../../content/guides/types'
 /** The step-by-step guide for one cloud: real screenshots, each with a numbered key. Plain markdown-ish text, no tour. */
 export default function GuideView({ guide, openStep }: { guide: Guide; openStep?: string | null }) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-guide-body>
       {guide.sections.map((section) => (
         <section key={section.part} aria-label={section.part}>
           <h4 className="mb-1 text-[10.5px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">{section.part}</h4>

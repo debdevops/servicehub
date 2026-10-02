@@ -25,6 +25,21 @@ failure reasons, never message bodies.
 
 ![Dead letters](docs/screenshots/02-dead-letters.png)
 
+## Step-by-step guides — one per cloud
+
+Each guide goes from nothing to a working ServiceHub, one screen at a time. Every picture is the real app (or the real cloud console, with account
+names and keys blanked out) with numbered markers; the list under each picture says what each control does **and what it will not do**.
+
+| | Azure Service Bus | AWS SQS / SNS | Google Pub/Sub |
+|---|---|---|---|
+| **Guide** | [Azure guide](docs/clouds/azure.md) | [AWS guide](docs/clouds/aws.md) | [Google Cloud guide](docs/clouds/gcp.md) |
+| **1. Connect** | ![Azure: connect](docs/screenshots/azure/03-add-cloud-filled.png) | ![AWS: connect](docs/screenshots/aws/03-add-cloud-filled.png) | ![Google Cloud: connect](docs/screenshots/gcp/03-add-cloud-filled.png) |
+| **2. Home** | ![Azure: Home](docs/screenshots/azure/05-home.png) | ![AWS: Home](docs/screenshots/aws/05-home.png) | ![Google Cloud: Home](docs/screenshots/gcp/05-home.png) |
+| **3. Dead letters** | ![Azure: dead letters](docs/screenshots/azure/06-dead-letters.png) | ![AWS: dead letters](docs/screenshots/aws/06-dead-letters.png) | ![Google Cloud: dead letters](docs/screenshots/gcp/06-dead-letters.png) |
+| **4. Replay result** | ![Azure: replay result](docs/screenshots/azure/10-replay-result.png) | ![AWS: replay result](docs/screenshots/aws/10-replay-result.png) | ![Google Cloud: replay result](docs/screenshots/gcp/10-replay-result.png) |
+
+The same guides are in the app: open **Help** in the sidebar, or the book icon next to any page title.
+
 ## How it stays safe
 
 - **A person decides by default.** The Agent replays on its own only for a failure it has earned trust on; otherwise it stops and asks. Every
@@ -73,9 +88,11 @@ key makes them unreadable, so back it up in a secret manager.
 
 | | |
 |---|---|
+| [Azure](docs/clouds/azure.md) · [AWS](docs/clouds/aws.md) · [Google Cloud](docs/clouds/gcp.md) | Step-by-step setup and use, with annotated screenshots |
 | [Backup & restore](docs/BACKUP-RESTORE.md) | Take, verify and restore a backup |
 | [Encryption key rotation](docs/ENCRYPTION-KEY-ROTATION.md) | Rotate the key that protects stored cloud credentials, and what to do if it leaks |
 | [Recovery Evidence](docs/RECOVERY-EVIDENCE.md) | The hash-chained ledger and how an auditor verifies an export offline |
+| [Adding a messaging provider](docs/extending/adding-a-provider.md) · [Adding an agent](docs/extending/adding-an-agent.md) | For engineers extending ServiceHub |
 | [Tests](tests/README.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Changelog](CHANGELOG.md) | |
 
 ## Contributing

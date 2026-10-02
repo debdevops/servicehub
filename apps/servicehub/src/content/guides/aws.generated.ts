@@ -1063,7 +1063,7 @@ export const awsGuide: Guide = {
     },
     {
      "title": "4.6 The result",
-     "text": "ServiceHub says plainly what happened and records it in the ledger. On AWS the result will read **Verification required**: the message was sent back, but AWS cannot prove the dead-letter queue stayed empty, so ServiceHub never says it held. If a consumer is running on the queue it may pick the message up straight away.",
+     "text": "ServiceHub says plainly what happened and records it under Replayed. On AWS the result will read **Verification required**: the message was sent back, but AWS cannot prove the dead-letter queue stayed empty, so ServiceHub never says it held. If a consumer is running on the queue it may pick the message up straight away.",
      "shots": [
       {
        "image": "/help/aws/10-replay-result.png",
@@ -1075,7 +1075,7 @@ export const awsGuide: Guide = {
         },
         {
          "n": 2,
-         "text": "It is recorded in the ledger (Advanced → Recovery Ledger), with who did it. On AWS the result will read “Verification required”: this cloud cannot prove the queue stayed empty, so ServiceHub never says it held."
+         "text": "It is recorded, with who did it, and shows under Replayed (and in Advanced → Recovery Ledger). On AWS the result will read “Verification required”: this cloud cannot prove the queue stayed empty, so ServiceHub never says it held."
         },
         {
          "n": 3,
