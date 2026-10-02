@@ -145,7 +145,7 @@ export default function ReplayModal({ close }: OverlayBodyProps) {
 
       <footer className="sticky bottom-0 z-10 -mx-5 -mb-4 flex items-center justify-between gap-3 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-3">
         <p className="text-xs text-[var(--color-text-muted)]">
-          {me.data ? (me.data.actor.isSession ? 'Recorded as from this browser session' : <>Recorded with your name — <b>{me.data.actor.label}</b></>) : 'Recorded in the ledger'}
+          {me.data ? (me.data.actor.isSession ? 'Recorded as from this browser session' : <>Recorded with your name — <b>{me.data.actor.label}</b></>) : 'Recorded with your replay'}
         </p>
         <div className="flex gap-2">
           <button type="button" onClick={close} className="rounded-xl border border-[var(--color-border)] px-4 py-2 text-sm font-semibold">Cancel</button>
@@ -205,7 +205,7 @@ function Result({ outcome, proposal, close }: { outcome: ReplayOutcome; proposal
         )}
         {outcome.result === 'accepted' && (
           <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-            Recorded in the ledger. {proposal.canConfirm ? 'ServiceHub will say whether it stayed fixed when the watch window ends.' : 'The result will read “Verification required” — this cloud cannot prove the queue stayed empty.'}
+            Recorded — you can find it under Replayed. {proposal.canConfirm ? 'ServiceHub will say whether it stayed fixed when the watch window ends.' : 'The result will read “Verification required” — this cloud cannot prove the queue stayed empty.'}
           </p>
         )}
         {outcome.result === 'unknown' && (

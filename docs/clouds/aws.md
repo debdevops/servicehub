@@ -563,12 +563,9 @@ What is waiting right now, **counted per queue**. ServiceHub does not open activ
 
 1. Send a message — puts a test message on a queue. This does change the queue, so use a dev queue.
 2. Why there is no message list — on AWS there is no way to look at a message without it counting as a delivery, and watching could push it into the dead-letter queue by itself. So ServiceHub shows counts per queue, and “Follow live” is not offered.
-3. Queue or topic — every queue ServiceHub found in this region, including the dead-letter queue itself.
-4. Waiting now — messages ready to be received. Counted by AWS; ServiceHub never opens them.
-5. Dead-lettered — messages that failed too often and were moved to the dead-letter queue.
-6. Namespace — all of AWS, or one account and region.
-7. The three tabs — Dead letters, Active and Replayed — and the (?) that re-shows the short explanation.
-8. The table — one row per queue. The ⓘ on each heading says what that count means.
+3. Namespace — all of AWS, or one account and region.
+4. The three tabs — Dead letters, Active and Replayed — each with an ⓘ that explains it.
+5. The table — one row per queue found in this region, including the dead-letter queue itself: Queue or topic, Waiting now (ready to be received) and Dead-lettered (moved here after failing too often). AWS counts them; ServiceHub never opens them. The ⓘ on each heading says what that count means.
 
 
 ## Part 6 — Auto Replay
@@ -670,6 +667,12 @@ Help is a panel over whatever you are doing. Search (⌘K) jumps anywhere. The b
 5. Step by step — one guide per cloud, each with every screen as a real screenshot and a numbered key for every button and link. Yours (AWS) is listed first. The same guides are the articles in docs/clouds.
 
 
+![7.2 Help, search and the bell — 16b-help-end](../screenshots/aws/16b-help-end.png)
+
+
+1. Answers and guides — click one to open it in place; the “Every screen” entries are one guide per cloud, each a real screenshot with a numbered key for every button and link.
+
+
 ![7.2 Help, search and the bell — 18-search](../screenshots/aws/18-search.png)
 
 
@@ -737,6 +740,7 @@ Advanced never changes anything. **Overview** summarises recovery, authority and
 
 1. Each signature row — opens to show the failures grouped under it and what each replay did.
 2. Paging — rows per page, previous, the page numbers and next.
+3. The controls above the list — Signatures, Trace a message, the filters, search, sort, and the ⓘ About buttons on the headings — as on the previous screenshot.
 
 
 ![7.3 The Advanced pages (read-only) — 17-advanced-agents](../screenshots/aws/17-advanced-agents.png)

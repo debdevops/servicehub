@@ -224,6 +224,26 @@ Home answers three questions: *what needs me*, *how is each cloud doing*, and *w
 11. Help for this page (the book beside the title) — opens Help on this very page, over it. Every page has one.
 
 
+![3.1 Home — 05c-home-middle](../screenshots/azure/05c-home-middle.png)
+
+
+1. Why messages failed — the reasons among the dead letters, biggest first, with how many each has. The window buttons (24 hours, 7 days, 30 days) set the period; Show as table swaps the chart for a table.
+2. How replays ended — what happened to the replays in this window.
+3. 7, 14, 30 days and Show as table — change the period Home counts over, or show the numbers as a table. They never change what happens.
+4. Latest dead letters and Recent activity — shown in full on the next screenshot.
+5. Window buttons (7, 14, 30 days) and Open → — change the period, or open that item’s page. They never change what happens.
+
+
+![3.1 Home — 05d-home-end](../screenshots/azure/05d-home-end.png)
+
+
+1. The latest dead letters, each with Details → — the same message view as on the Dead letters tab. “See all →” opens the full list.
+2. Recent activity — what ServiceHub and people did, newest first. Each line opens to show its detail; nothing here changes anything.
+3. Open → — opens that item’s page. It only navigates.
+4. Connected — a note that a namespace was connected, with when and by whom. Opens to show the detail.
+5. Window buttons, Show as table, and the reasons — each reason opens the dead letters with that reason. They only change what is shown.
+
+
 ### 3.2 The bar and the sidebar
 
 These are the same on every page.
@@ -294,6 +314,13 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 11. Reason chips — each shows a reason and how many messages have it. Click one to show only those; click it again to show all.
 12. All queues & topics — limit the list to one queue or topic.
 13. The selection bar — the tick selects every row on this page; View details chooses which columns show; Replay selected stays dimmed until something is ticked.
+
+
+![4.2 Filters, selection and the table — 07c-table-end](../screenshots/azure/07c-table-end.png)
+
+
+1. The foot of the table — the same ticks, Details and Replay on every row.
+2. Paging — rows per page, previous, the page numbers and next.
 
 
 ![4.2 Filters, selection and the table — 07b-selection](../screenshots/azure/07b-selection.png)
@@ -398,6 +425,17 @@ Tick messages (or use **Replay All Messages**) to get a preview: how many will b
 8. How it will run — folds open to show the pace and the automatic stop (five failures in a row).
 
 
+![4.5 Replay several at once — 13b-bulk-replay-end](../screenshots/azure/13b-bulk-replay-end.png)
+
+
+1. How it will run — the pace (a few messages a second, gentle on your consumer) and the automatic stop: five failures in a row.
+2. After they are sent back — what ServiceHub does next: it records each replay and watches for 24 hours.
+3. No purge on Azure — this cloud cannot delete one message on its own, so ServiceHub does not offer “Purge instead…” here (AWS and Google Cloud do).
+4. Replay N messages — sends them one at a time, re-checking each. You can stop partway.
+5. Cancel — nothing is sent.
+6. Page controls — move through the list when more messages are chosen than fit on one page.
+
+
 ### 4.6 The result
 
 ServiceHub says plainly what happened, records it under Replayed, and starts a 24-hour watch for it coming back.
@@ -437,6 +475,15 @@ Every replay, who did it, and how it ended. On Azure ServiceHub can **prove** wh
 10. The three tabs — Dead letters, Active and Replayed. They switch the list below without leaving the page.
 
 
+![5.1 Replayed — 11b-replayed-end](../screenshots/azure/11b-replayed-end.png)
+
+
+1. The replays, newest first — each with a tick and Details.
+2. Paging — rows per page, previous, the page numbers and next.
+3. The three tabs, the Auto Replay rules button, and the table headings with their ⓘ About buttons — as on the previous screenshot.
+4. Filters — result, queue or topic, time window and search; Refresh re-reads the list and Download as CSV saves it as a file. They change what is listed, never what happened.
+
+
 ### 5.2 Active messages
 
 What is waiting right now. Looking does not touch anything on Azure — a peek is not a delivery. **Send a message** is the one control here that changes a queue.
@@ -457,6 +504,14 @@ What is waiting right now. Looking does not touch anything on Azure — a peek i
 10. The table — a tick per message (the heading tick ticks the page) and Details on each row.
 11. What am I looking at? — a short reading guide. The queue and time-window pickers narrow what is listed.
 12. The three tabs — Dead letters, Active and Replayed. They switch the list below without leaving the page.
+
+
+![5.2 Active messages — 12b-active-end](../screenshots/azure/12b-active-end.png)
+
+
+1. A message row — a tick to choose it, and Details to open it (body, properties, delivery). Looking at an Azure message is not a delivery.
+2. Paging — rows per page, previous, the page numbers and next.
+3. The controls above the table — the same filters, search, auto-refresh, Refresh, Scheduled, and the ⓘ About buttons on the column headings, as on the previous screenshot.
 
 
 ## Part 6 — Auto Replay
@@ -555,7 +610,14 @@ Help is a panel over whatever you are doing. Search (⌘K) jumps anywhere. The b
 2. An answer — click to open it in place; each links to the screen it is about.
 3. Setting up answers — connecting, alerts and who may replay.
 4. Keyboard shortcuts — only ones that work are listed.
-5. Step by step — every screen with real screenshots and a numbered key for each button and link. This is the same guide as the article in docs/clouds/azure.md.
+5. Step by step — one guide per cloud, each with every screen as a real screenshot and a numbered key for every button and link. Yours (Azure) is listed first. The same guides are the articles in docs/clouds.
+
+
+![7.2 Help, search and the bell — 16b-help-end](../screenshots/azure/16b-help-end.png)
+
+
+1. Step by step — one guide per cloud, each with every screen as a real screenshot and a numbered key for every button and link.
+2. Answers — click one to open it in place; each links to the screen it is about.
 
 
 ![7.2 Help, search and the bell — 18-search](../screenshots/azure/18-search.png)
@@ -600,6 +662,7 @@ Advanced never changes anything. **Overview** summarises recovery, authority and
 6. What am I looking at? — a short reading guide for this page. Window — the period it counts over.
 7. Outcome chips with counts — click one to list only those entries; All shows everything again.
 8. Paging — how many rows per page, previous, the page number and next.
+9. About buttons (ⓘ) on the column headings — each explains that column in a sentence. They change nothing.
 
 
 ![7.3 The Advanced pages (read-only) — 17-advanced-signatures](../screenshots/azure/17-advanced-signatures.png)
@@ -615,6 +678,7 @@ Advanced never changes anything. **Overview** summarises recovery, authority and
 8. What am I looking at? — a short reading guide. Window — the period counted.
 9. Chips — Signatures, All, Replay helps, Replay doesn’t help. Click one to list only those.
 10. Paging — rows per page, previous, the page number and next.
+11. About buttons (ⓘ) on the column headings — each explains that column in a sentence. They change nothing.
 
 
 ![7.3 The Advanced pages (read-only) — 17-advanced-agents](../screenshots/azure/17-advanced-agents.png)
@@ -626,6 +690,26 @@ Advanced never changes anything. **Overview** summarises recovery, authority and
 4. Learn more — a short explanation of how agents work.
 5. Health summary, agent rows and Open — the summary says whether every agent is running normally; a row opens that agent’s details; Open goes to the screen the agent works through.
 6. What am I looking at? — a short reading guide for this page.
+
+
+![7.3 The Advanced pages (read-only) — 17a-advanced-agents-middle](../screenshots/azure/17a-advanced-agents-middle.png)
+
+
+1. Agent rows — click a row to see what that agent may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting.
+2. More agent rows — the acting agents (Bulk Replay, Auto Replay) and the rest; each opens to show what it may do.
+
+
+![7.3 The Advanced pages (read-only) — 17c-advanced-agents-rows](../screenshots/azure/17c-advanced-agents-rows.png)
+
+
+1. Agent rows — click a row to see what that agent may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting.
+
+
+![7.3 The Advanced pages (read-only) — 17b-advanced-agents-more](../screenshots/azure/17b-advanced-agents-more.png)
+
+
+1. Watching agents — they only look and record; they cannot change anything.
+2. Each agent row opens to show what it may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting.
 
 
 ---

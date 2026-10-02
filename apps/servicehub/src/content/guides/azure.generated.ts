@@ -407,6 +407,58 @@ export const azureGuide: Guide = {
          "text": "Help for this page (the book beside the title) — opens Help on this very page, over it. Every page has one."
         }
        ]
+      },
+      {
+       "image": "/help/azure/05c-home-middle.png",
+       "alt": "3.1 Home (05c-home-middle)",
+       "keys": [
+        {
+         "n": 1,
+         "text": "Why messages failed — the reasons among the dead letters, biggest first, with how many each has. The window buttons (24 hours, 7 days, 30 days) set the period; Show as table swaps the chart for a table."
+        },
+        {
+         "n": 2,
+         "text": "How replays ended — what happened to the replays in this window."
+        },
+        {
+         "n": 3,
+         "text": "7, 14, 30 days and Show as table — change the period Home counts over, or show the numbers as a table. They never change what happens."
+        },
+        {
+         "n": 4,
+         "text": "Latest dead letters and Recent activity — shown in full on the next screenshot."
+        },
+        {
+         "n": 5,
+         "text": "Window buttons (7, 14, 30 days) and Open → — change the period, or open that item’s page. They never change what happens."
+        }
+       ]
+      },
+      {
+       "image": "/help/azure/05d-home-end.png",
+       "alt": "3.1 Home (05d-home-end)",
+       "keys": [
+        {
+         "n": 1,
+         "text": "The latest dead letters, each with Details → — the same message view as on the Dead letters tab. “See all →” opens the full list."
+        },
+        {
+         "n": 2,
+         "text": "Recent activity — what ServiceHub and people did, newest first. Each line opens to show its detail; nothing here changes anything."
+        },
+        {
+         "n": 3,
+         "text": "Open → — opens that item’s page. It only navigates."
+        },
+        {
+         "n": 4,
+         "text": "Connected — a note that a namespace was connected, with when and by whom. Opens to show the detail."
+        },
+        {
+         "n": 5,
+         "text": "Window buttons, Show as table, and the reasons — each reason opens the dead letters with that reason. They only change what is shown."
+        }
+       ]
       }
      ]
     },
@@ -594,6 +646,20 @@ export const azureGuide: Guide = {
         {
          "n": 13,
          "text": "The selection bar — the tick selects every row on this page; View details chooses which columns show; Replay selected stays dimmed until something is ticked."
+        }
+       ]
+      },
+      {
+       "image": "/help/azure/07c-table-end.png",
+       "alt": "4.2 Filters, selection and the table (07c-table-end)",
+       "keys": [
+        {
+         "n": 1,
+         "text": "The foot of the table — the same ticks, Details and Replay on every row."
+        },
+        {
+         "n": 2,
+         "text": "Paging — rows per page, previous, the page numbers and next."
         }
        ]
       },
@@ -836,6 +902,36 @@ export const azureGuide: Guide = {
          "text": "How it will run — folds open to show the pace and the automatic stop (five failures in a row)."
         }
        ]
+      },
+      {
+       "image": "/help/azure/13b-bulk-replay-end.png",
+       "alt": "4.5 Replay several at once (13b-bulk-replay-end)",
+       "keys": [
+        {
+         "n": 1,
+         "text": "How it will run — the pace (a few messages a second, gentle on your consumer) and the automatic stop: five failures in a row."
+        },
+        {
+         "n": 2,
+         "text": "After they are sent back — what ServiceHub does next: it records each replay and watches for 24 hours."
+        },
+        {
+         "n": 3,
+         "text": "No purge on Azure — this cloud cannot delete one message on its own, so ServiceHub does not offer “Purge instead…” here (AWS and Google Cloud do)."
+        },
+        {
+         "n": 4,
+         "text": "Replay N messages — sends them one at a time, re-checking each. You can stop partway."
+        },
+        {
+         "n": 5,
+         "text": "Cancel — nothing is sent."
+        },
+        {
+         "n": 6,
+         "text": "Page controls — move through the list when more messages are chosen than fit on one page."
+        }
+       ]
       }
      ]
     },
@@ -921,6 +1017,28 @@ export const azureGuide: Guide = {
          "text": "The three tabs — Dead letters, Active and Replayed. They switch the list below without leaving the page."
         }
        ]
+      },
+      {
+       "image": "/help/azure/11b-replayed-end.png",
+       "alt": "5.1 Replayed (11b-replayed-end)",
+       "keys": [
+        {
+         "n": 1,
+         "text": "The replays, newest first — each with a tick and Details."
+        },
+        {
+         "n": 2,
+         "text": "Paging — rows per page, previous, the page numbers and next."
+        },
+        {
+         "n": 3,
+         "text": "The three tabs, the Auto Replay rules button, and the table headings with their ⓘ About buttons — as on the previous screenshot."
+        },
+        {
+         "n": 4,
+         "text": "Filters — result, queue or topic, time window and search; Refresh re-reads the list and Download as CSV saves it as a file. They change what is listed, never what happened."
+        }
+       ]
       }
      ]
     },
@@ -979,6 +1097,24 @@ export const azureGuide: Guide = {
         {
          "n": 12,
          "text": "The three tabs — Dead letters, Active and Replayed. They switch the list below without leaving the page."
+        }
+       ]
+      },
+      {
+       "image": "/help/azure/12b-active-end.png",
+       "alt": "5.2 Active messages (12b-active-end)",
+       "keys": [
+        {
+         "n": 1,
+         "text": "A message row — a tick to choose it, and Details to open it (body, properties, delivery). Looking at an Azure message is not a delivery."
+        },
+        {
+         "n": 2,
+         "text": "Paging — rows per page, previous, the page numbers and next."
+        },
+        {
+         "n": 3,
+         "text": "The controls above the table — the same filters, search, auto-refresh, Refresh, Scheduled, and the ⓘ About buttons on the column headings, as on the previous screenshot."
         }
        ]
       }
@@ -1190,7 +1326,21 @@ export const azureGuide: Guide = {
         },
         {
          "n": 5,
-         "text": "Step by step — every screen with real screenshots and a numbered key for each button and link. This is the same guide as the article in docs/clouds/azure.md."
+         "text": "Step by step — one guide per cloud, each with every screen as a real screenshot and a numbered key for every button and link. Yours (Azure) is listed first. The same guides are the articles in docs/clouds."
+        }
+       ]
+      },
+      {
+       "image": "/help/azure/16b-help-end.png",
+       "alt": "7.2 Help, search and the bell (16b-help-end)",
+       "keys": [
+        {
+         "n": 1,
+         "text": "Step by step — one guide per cloud, each with every screen as a real screenshot and a numbered key for every button and link."
+        },
+        {
+         "n": 2,
+         "text": "Answers — click one to open it in place; each links to the screen it is about."
         }
        ]
       },
@@ -1297,6 +1447,10 @@ export const azureGuide: Guide = {
         {
          "n": 8,
          "text": "Paging — how many rows per page, previous, the page number and next."
+        },
+        {
+         "n": 9,
+         "text": "About buttons (ⓘ) on the column headings — each explains that column in a sentence. They change nothing."
         }
        ]
       },
@@ -1343,6 +1497,10 @@ export const azureGuide: Guide = {
         {
          "n": 10,
          "text": "Paging — rows per page, previous, the page number and next."
+        },
+        {
+         "n": 11,
+         "text": "About buttons (ⓘ) on the column headings — each explains that column in a sentence. They change nothing."
         }
        ]
       },
@@ -1373,6 +1531,44 @@ export const azureGuide: Guide = {
         {
          "n": 6,
          "text": "What am I looking at? — a short reading guide for this page."
+        }
+       ]
+      },
+      {
+       "image": "/help/azure/17a-advanced-agents-middle.png",
+       "alt": "7.3 The Advanced pages (read-only) (17a-advanced-agents-middle)",
+       "keys": [
+        {
+         "n": 1,
+         "text": "Agent rows — click a row to see what that agent may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting."
+        },
+        {
+         "n": 2,
+         "text": "More agent rows — the acting agents (Bulk Replay, Auto Replay) and the rest; each opens to show what it may do."
+        }
+       ]
+      },
+      {
+       "image": "/help/azure/17c-advanced-agents-rows.png",
+       "alt": "7.3 The Advanced pages (read-only) (17c-advanced-agents-rows)",
+       "keys": [
+        {
+         "n": 1,
+         "text": "Agent rows — click a row to see what that agent may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting."
+        }
+       ]
+      },
+      {
+       "image": "/help/azure/17b-advanced-agents-more.png",
+       "alt": "7.3 The Advanced pages (read-only) (17b-advanced-agents-more)",
+       "keys": [
+        {
+         "n": 1,
+         "text": "Watching agents — they only look and record; they cannot change anything."
+        },
+        {
+         "n": 2,
+         "text": "Each agent row opens to show what it may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting."
         }
        ]
       }

@@ -804,27 +804,15 @@
   },
   {
    "n": 3,
-   "t": "Queue or topic — every queue ServiceHub found in this region, including the dead-letter queue itself."
-  },
-  {
-   "n": 4,
-   "t": "Waiting now — messages ready to be received. Counted by AWS; ServiceHub never opens them."
-  },
-  {
-   "n": 5,
-   "t": "Dead-lettered — messages that failed too often and were moved to the dead-letter queue."
-  },
-  {
-   "n": 6,
    "t": "Namespace — all of AWS, or one account and region."
   },
   {
-   "n": 7,
-   "t": "The three tabs — Dead letters, Active and Replayed — and the (?) that re-shows the short explanation."
+   "n": 4,
+   "t": "The three tabs — Dead letters, Active and Replayed — each with an ⓘ that explains it."
   },
   {
-   "n": 8,
-   "t": "The table — one row per queue. The ⓘ on each heading says what that count means."
+   "n": 5,
+   "t": "The table — one row per queue found in this region, including the dead-letter queue itself: Queue or topic, Waiting now (ready to be received) and Dead-lettered (moved here after failing too often). AWS counts them; ServiceHub never opens them. The ⓘ on each heading says what that count means."
   }
  ],
  "14-auto-replay.png": [
@@ -1109,6 +1097,10 @@
   {
    "n": 2,
    "t": "Paging — rows per page, previous, the page numbers and next."
+  },
+  {
+   "n": 3,
+   "t": "The controls above the list — Signatures, Trace a message, the filters, search, sort, and the ⓘ About buttons on the headings — as on the previous screenshot."
   }
  ],
  "17-advanced-agents.png": [
@@ -1179,6 +1171,12 @@
   {
    "n": 3,
    "t": "You — who ServiceHub records your actions as, and whether this server has sign-in turned on."
+  }
+ ],
+ "16b-help-end.png": [
+  {
+   "n": 1,
+   "t": "Answers and guides — click one to open it in place; the “Every screen” entries are one guide per cloud, each a real screenshot with a numbered key for every button and link."
   }
  ]
 }

@@ -18,9 +18,13 @@ with ServiceBusClient.from_connection_string(cs) as c:
             s.send_messages(ServiceBusMessage(json.dumps({"orderId": oid, "customerId": f"C-{i+5}", "total": 20+i}), content_type="application/json", message_id=oid, subject="order.created"))
     with c.get_queue_receiver(Q, max_wait_time=5) as r:
         want = {b["orderId"]: (reason, desc) for b, reason, desc in dead}
-        for m in r.receive_messages(max_message_count=20, max_wait_time=5):
-            if m.message_id in want:
-                r.dead_letter_message(m, reason=want[m.message_id][0], error_description=want[m.message_id][1])
-            else:
-                r.abandon_message(m)
+        pending = set(want)
+        for _ in range(10):
+            if not pending: break
+            for m in r.receive_messages(max_message_count=20, max_wait_time=5):
+                if m.message_id in pending:
+                    r.dead_letter_message(m, reason=want[m.message_id][0], error_description=want[m.message_id][1]); pending.discard(m.message_id)
+                else:
+                    r.abandon_message(m)
+        assert not pending, f"not dead-lettered: {pending}"
 print("seeded")

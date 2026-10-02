@@ -303,7 +303,7 @@ await scene('10', async () => {
   await dlg().getByRole('button', { name: 'Replay 1 message' }).last().click(); await settle(4000)
   await shot(page, S('10-replay-result'), [
     { n: 1, loc: page.getByText('Sent back', { exact: true }), t: 'The result, in plain words: it was sent back, and ServiceHub will watch for it coming back.' },
-    { n: 2, loc: page.getByText('Recorded in the ledger.').first(), t: 'It is recorded, with who did it, and shows under Replayed (and in Advanced → Recovery Ledger). On AWS the result will read “Verification required”: this cloud cannot prove the queue stayed empty, so ServiceHub never says it held.' },
+    { n: 2, loc: page.getByText('Recorded — you can find it under Replayed.').first(), t: 'It is recorded, with who did it, and shows under Replayed (and in Advanced → Recovery Ledger). On AWS the result will read “Verification required”: this cloud cannot prove the queue stayed empty, so ServiceHub never says it held.' },
     { n: 3, loc: btn('Done'), t: 'Done — closes the window.' },
     { n: 4, loc: [dlg().getByRole('link', { name: 'Active messages' }), dlg().getByRole('link', { name: 'Replayed' })], t: 'Active messages / Replayed — jump to where you can watch this message.' },
   ])
@@ -336,8 +336,8 @@ await scene('12', async () => {
     { n: 1, loc: page.getByRole('link', { name: /Send a message|Send/ }).or(btn('Send a message')).first(), t: 'Send a message — puts a test message on a queue. This does change the queue, so use a dev queue.' },
     { n: 2, loc: page.getByText(/counts active messages but doesn’t open them/).locator('..'), t: 'Why there is no message list — on AWS there is no way to look at a message without it counting as a delivery, and watching could push it into the dead-letter queue by itself. So ServiceHub shows counts per queue, and “Follow live” is not offered.' },
     { n: 3, loc: page.getByRole('button', { name: /AWS · Namespace/ }), t: 'Namespace — all of AWS, or one account and region.' },
-    { n: 4, loc: [page.locator('main').getByRole('link', { name: /^(Dead letters|Active|Replayed)/ }), page.locator('main').getByRole('button', { name: /^About (Dead letters|Active|Replayed)$/ }), btn('What am I looking at?')], all: true, t: 'The three tabs — Dead letters, Active and Replayed — and the (?) that re-shows the short explanation.' },
-    { n: 5, loc: [page.locator('table thead'), page.locator('table tbody tr')], all: true, t: 'The table — one row per queue found in this region, including the dead-letter queue itself: Queue or topic, Waiting now (ready to be received) and Dead-lettered (moved here after failing too often). AWS counts them; ServiceHub never opens them. The ⓘ on each heading says what that count means.' },
+    { n: 4, loc: page.getByRole('tablist').or(page.locator('main nav')).first(), t: 'The three tabs — Dead letters, Active and Replayed — each with an ⓘ that explains it.' },
+    { n: 5, loc: page.locator('table').first(), t: 'The table — one row per queue found in this region, including the dead-letter queue itself: Queue or topic, Waiting now (ready to be received) and Dead-lettered (moved here after failing too often). AWS counts them; ServiceHub never opens them. The ⓘ on each heading says what that count means.' },
   ])
 })
 await scene('14', async () => {
@@ -400,6 +400,10 @@ await scene('16', async () => {
     { n: 4, loc: page.getByText('Keyboard', { exact: true }), t: 'Keyboard shortcuts — only ones that work are listed.' },
     { n: 5, loc: page.locator('summary').filter({ hasText: 'Every screen, with real screenshots' }), all: true, t: 'Step by step — one guide per cloud, each with every screen as a real screenshot and a numbered key for every button and link. Yours (AWS) is listed first. The same guides are the articles in docs/clouds.' },
   ])
+  await page.getByRole('dialog').or(page.locator('aside')).last().evaluate((d) => { const sc = [...d.querySelectorAll('*')].find((e) => e.scrollHeight > e.clientHeight + 50 && /(auto|scroll)/.test(getComputedStyle(e).overflowY)); if (sc) sc.scrollTop = 99999 }).catch(() => {}); await settle(600)
+  await shot(page, S('16b-help-end'), [
+    { n: 1, loc: page.locator('summary'), all: true, t: 'Answers and guides — click one to open it in place; the “Every screen” entries are one guide per cloud, each a real screenshot with a numbered key for every button and link.' },
+  ])
 })
 await scene('17', async () => {
   await go('/advanced', 3500); await dismiss()
@@ -444,6 +448,7 @@ await scene('17', async () => {
   await shot(page, S('17c-advanced-signatures-end'), [
     { n: 1, loc: page.locator('main button').filter({ hasText: /recorded/ }), all: true, t: 'Each signature row — opens to show the failures grouped under it and what each replay did.' },
     { n: 2, loc: page.getByRole('button', { name: /^(Rows per page|Previous page|Go to page \d+|Next page)$/ }), all: true, t: 'Paging — rows per page, previous, the page numbers and next.' },
+    { n: 3, loc: page.locator('main').locator('input, button').filter({ hasNot: page.locator('tbody') }), all: true, t: 'The controls above the list — Signatures, Trace a message, the filters, search, sort, and the ⓘ About buttons on the headings — as on the previous screenshot.' },
   ])
   await go('/advanced/agents', 3500); await dismiss()
   await shot(page, S('17-advanced-agents'), [

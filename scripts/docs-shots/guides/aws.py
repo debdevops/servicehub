@@ -125,7 +125,7 @@ SECTIONS = [
    [("app", "15-settings-connections"), ("app", "15-settings-notifications"), ("app", "15-settings-preferences"), ("app", "15-settings-access"), ("app", "15-settings-backup")]),
   ("7.2 Help, search and the bell",
    "Help is a panel over whatever you are doing. Search (⌘K) jumps anywhere. The bell is the only place the Agent asks you something.",
-   [("app", "16-help"), ("app", "18-search"), ("app", "18-bell")]),
+   [("app", "16-help"), ("app", "16b-help-end"), ("app", "18-search"), ("app", "18-bell")]),
   ("7.3 The Advanced pages (read-only)",
    "Advanced never changes anything. **Overview** summarises recovery, authority and agents, and says why AWS cannot verify; the **Recovery Ledger** is the tamper-evident record of every action; **Failure Signatures** groups failures and shows what each has earned; **Agents** lists what is acting and what is only watching.",
    [("app", "17-advanced-overview"), ("app", "17-advanced-ledger"), ("app", "17-advanced-signatures"), ("app", "17c-advanced-signatures-end"), ("app", "17-advanced-agents"), ("app", "17b-advanced-agents-more")]),

@@ -61,7 +61,7 @@ SECTIONS = [
  ("Part 3 — Learn the screens", "Home, and the controls that are on every page.", [
   ("3.1 Home",
    "Home answers three questions: *what needs me*, *how is each cloud doing*, and *what is the Agent up to*. The Agent only acts on what it has earned (see Auto Replay below); until then it watches.",
-   [("app", "05-home")]),
+   [("app", "05-home"), ("app", "05c-home-middle"), ("app", "05d-home-end")]),
   ("3.2 The bar and the sidebar",
    "These are the same on every page.",
    [("app", "05b-navigation")]),
@@ -72,7 +72,7 @@ SECTIONS = [
    [("app", "06-dead-letters")]),
   ("4.2 Filters, selection and the table",
    "Narrow the list, tick the messages you want, and use **Details** or **Replay** on a row.",
-   [("app", "07-filters-and-table"), ("app", "07b-selection")]),
+   [("app", "07-filters-and-table"), ("app", "07c-table-end"), ("app", "07b-selection")]),
   ("4.3 Open a message",
    "**Details** opens the message: the reason, a plain-words reading of why it failed (marked *Suggestion* because it is a reading, not something Azure reported), and the body with the bad field marked. The tabs show the body, properties, headers and delivery history.",
    [("app", "08-message-details"), ("app", "08-message-details-body"), ("app", "08-message-details-properties"), ("app", "08-message-details-headers"), ("app", "08-message-details-delivery")]),
@@ -81,7 +81,7 @@ SECTIONS = [
    [("app", "09-replay-proposal"), ("app", "09-replay-proposal-checks")]),
   ("4.5 Replay several at once",
    "Tick messages (or use **Replay All Messages**) to get a preview: how many will be replayed, which are held back by a safety check, grouped by how they failed and where each goes. They are sent one at a time and each is re-checked.",
-   [("app", "13-bulk-replay")]),
+   [("app", "13-bulk-replay"), ("app", "13b-bulk-replay-end")]),
   ("4.6 The result",
    "ServiceHub says plainly what happened, records it under Replayed, and starts a 24-hour watch for it coming back.",
    [("app", "10-replay-result")]),
@@ -89,10 +89,10 @@ SECTIONS = [
  ("Part 5 — Afterwards", "Did it hold?", [
   ("5.1 Replayed",
    "Every replay, who did it, and how it ended. On Azure ServiceHub can **prove** whether a replayed message stayed out of the dead-letter queue, so the result moves from *Watching* to *Stayed fixed* or *Came back*.",
-   [("app", "11-replayed")]),
+   [("app", "11-replayed"), ("app", "11b-replayed-end")]),
   ("5.2 Active messages",
    "What is waiting right now. Looking does not touch anything on Azure — a peek is not a delivery. **Send a message** is the one control here that changes a queue.",
-   [("app", "12-active")]),
+   [("app", "12-active"), ("app", "12b-active-end")]),
  ]),
  ("Part 6 — Auto Replay", "Let ServiceHub retry a kind of failure on its own — only once it has earned it.", [
   ("6.1 Rules",
@@ -105,10 +105,10 @@ SECTIONS = [
    [("app", "15-settings-connections"), ("app", "15-settings-notifications"), ("app", "15-settings-preferences"), ("app", "15-settings-access"), ("app", "15-settings-backup")]),
   ("7.2 Help, search and the bell",
    "Help is a panel over whatever you are doing. Search (⌘K) jumps anywhere. The bell is the only place the Agent asks you something.",
-   [("app", "16-help"), ("app", "18-search"), ("app", "18-bell")]),
+   [("app", "16-help"), ("app", "16b-help-end"), ("app", "18-search"), ("app", "18-bell")]),
   ("7.3 The Advanced pages (read-only)",
    "Advanced never changes anything. **Overview** summarises recovery, authority and agents; the **Recovery Ledger** is the tamper-evident record of every action; **Failure Signatures** groups failures and shows what each has earned; **Agents** lists what is acting and what is only watching.",
-   [("app", "17-advanced-overview"), ("app", "17-advanced-ledger"), ("app", "17-advanced-signatures"), ("app", "17-advanced-agents")]),
+   [("app", "17-advanced-overview"), ("app", "17-advanced-ledger"), ("app", "17-advanced-signatures"), ("app", "17-advanced-agents"), ("app", "17a-advanced-agents-middle"), ("app", "17c-advanced-agents-rows"), ("app", "17b-advanced-agents-more")]),
  ]),
 ]
 TROUBLESHOOTING = [

@@ -1,6 +1,6 @@
 // Azure walkthrough: real screenshots of the shipped build against a real Service Bus namespace, numbered callouts, and a
 // keys.json that the markdown + Help article are generated from. Run via run-azure.sh (fresh DB + reseeded queue).
-import { open, shot, BASE, ROOT } from './lib.mjs'
+import { open, shot, BASE, ROOT, finishRun } from './lib.mjs'
 const OUT = process.env.DOCS_OUT || `${ROOT}/docs/screenshots/azure`
 const { browser, page } = await open()
 const settle = (ms = 1500) => page.waitForTimeout(ms)
@@ -8,6 +8,8 @@ const go = async (path, ms) => { await page.goto(BASE + path); await settle(ms |
 const link = (n) => page.getByRole('link', { name: n, exact: true })
 const btn = (n) => page.getByRole('button', { name: n, exact: true })
 const dlg = () => page.getByRole('dialog')
+const region = (name) => page.getByRole('region', { name })
+const scrollMain = (y) => page.evaluate((y) => { const els = [document.scrollingElement, ...document.querySelectorAll('main, main *')]; const sc = els.find((e) => e && e.scrollHeight > e.clientHeight + 50 && (e === document.scrollingElement || /(auto|scroll)/.test(getComputedStyle(e).overflowY))); (sc || document.scrollingElement).scrollTop = y }, y)
 const dismiss = async () => { await btn('Got it').click({ timeout: 1500 }).catch(() => {}); await settle(400) }
 const ONLY = process.env.ONLY ? process.env.ONLY.split(',') : null
 const scene = async (name, fn) => { if (ONLY && !ONLY.some((o) => name.startsWith(o))) return; try { await fn(); console.log('ok  ', name) } catch (e) { console.log('FAIL', name, String(e).split('\n')[0]) } }
@@ -103,6 +105,25 @@ await scene('05b', async () => {
     { n: 17, loc: link('Home'), t: 'Home — the overview: what needs attention, what the Agent is doing, and how replays ended.' },
   ])
 })
+await scene('05c', async () => {
+  await go('/'); await dismiss()
+  await scrollMain(520); await settle(600)
+  await shot(page, S('05c-home-middle'), [
+    { n: 1, loc: region('Why messages failed'), t: 'Why messages failed — the reasons among the dead letters, biggest first, with how many each has. The window buttons (24 hours, 7 days, 30 days) set the period; Show as table swaps the chart for a table.' },
+    { n: 2, loc: region('How replays ended'), t: 'How replays ended — what happened to the replays in this window.' },
+    { n: 3, loc: [page.getByRole('radio', { name: /^(7|14|30) days$/ }), btn('Show as table')], all: true, t: '7, 14, 30 days and Show as table — change the period Home counts over, or show the numbers as a table. They never change what happens.' },
+    { n: 4, loc: [region('Latest dead letters'), region('Recent activity')], all: true, t: 'Latest dead letters and Recent activity — shown in full on the next screenshot.' },
+    { n: 5, loc: [page.getByRole('radio', { name: /^(7|14|30) days$/ }), page.getByRole('link', { name: /^Open\s*→/ })], all: true, t: 'Window buttons (7, 14, 30 days) and Open → — change the period, or open that item’s page. They never change what happens.' },
+  ])
+  await scrollMain(99999); await settle(600)
+  await shot(page, S('05d-home-end'), [
+    { n: 1, loc: region('Latest dead letters'), t: 'The latest dead letters, each with Details → — the same message view as on the Dead letters tab. “See all →” opens the full list.' },
+    { n: 2, loc: region('Recent activity'), t: 'Recent activity — what ServiceHub and people did, newest first. Each line opens to show its detail; nothing here changes anything.' },
+    { n: 3, loc: page.getByRole('link', { name: /^Open\s*→/ }), all: true, t: 'Open → — opens that item’s page. It only navigates.' },
+    { n: 4, loc: page.getByRole('button', { name: /^Connected a namespace/ }), t: 'Connected — a note that a namespace was connected, with when and by whom. Opens to show the detail.' },
+    { n: 5, loc: [page.getByRole('radio', { name: /^(7|14|30) days$/ }), btn('Show as table'), page.getByRole('link', { name: /^(PaymentDeclined|InventoryUnavailable|ValidationFailed)/ })], all: true, t: 'Window buttons, Show as table, and the reasons — each reason opens the dead letters with that reason. They only change what is shown.' },
+  ])
+})
 await scene('06', async () => {
   await go('/?tab=dlq'); await dismiss(); await page.getByText('Total messages').first().waitFor(); await settle(800)
   await shot(page, S('06-dead-letters'), [
@@ -131,6 +152,13 @@ await scene('07', async () => {
     { n: 11, loc: page.getByRole('button', { name: /^\d+ [A-Z]/ }), all: true, t: 'Reason chips — each shows a reason and how many messages have it. Click one to show only those; click it again to show all.' },
     { n: 12, loc: btn('All queues & topics'), t: 'All queues & topics — limit the list to one queue or topic.' },
     { n: 13, loc: page.getByRole('region', { name: 'Selected messages' }).first(), t: 'The selection bar — the tick selects every row on this page; View details chooses which columns show; Replay selected stays dimmed until something is ticked.' },
+  ])
+})
+await scene('07c', async () => {
+  await go('/?tab=dlq'); await dismiss(); await scrollMain(99999); await settle(600)
+  await shot(page, S('07c-table-end'), [
+    { n: 1, loc: [page.locator('table tbody tr'), page.getByRole('region', { name: /bottom of the table/ })], all: true, t: 'The foot of the table — the same ticks, Details and Replay on every row.' },
+    { n: 2, loc: page.getByRole('button', { name: /^(Rows per page|Previous page|Go to page \d+|Next page)$/ }), all: true, t: 'Paging — rows per page, previous, the page numbers and next.' },
   ])
 })
 await scene('08', async () => {
@@ -196,6 +224,15 @@ await scene('13', async () => {
     { n: 7, loc: dlg().getByRole('button', { name: /(page|Previous|Next)/i }), all: true, t: 'Page controls — move through the list when more messages are chosen than fit on one page.' },
     { n: 8, loc: dlg().getByRole('button', { name: 'How it will run' }), t: 'How it will run — folds open to show the pace and the automatic stop (five failures in a row).' },
   ])
+  await scrollDialog(99999); await settle(500)
+  await shot(page, S('13b-bulk-replay-end'), [
+    { n: 1, loc: dlg().getByRole('button', { name: 'How it will run' }), t: 'How it will run — the pace (a few messages a second, gentle on your consumer) and the automatic stop: five failures in a row.' },
+    { n: 2, loc: dlg().getByRole('button', { name: /After they are sent back/ }), t: 'After they are sent back — what ServiceHub does next: it records each replay and watches for 24 hours.' },
+    { n: 3, loc: dlg().getByText(/Purge isn’t offered here/), t: 'No purge on Azure — this cloud cannot delete one message on its own, so ServiceHub does not offer “Purge instead…” here (AWS and Google Cloud do).' },
+    { n: 4, loc: dlg().getByRole('button', { name: /Replay \d+ messages/ }), all: true, t: 'Replay N messages — sends them one at a time, re-checking each. You can stop partway.' },
+    { n: 5, loc: dlg().getByRole('button', { name: 'Cancel' }), all: true, t: 'Cancel — nothing is sent.' },
+    { n: 6, loc: dlg().getByRole('button', { name: /^(Previous page|Go to page \d+|Next page)$/ }), all: true, t: 'Page controls — move through the list when more messages are chosen than fit on one page.' },
+  ])
   await page.keyboard.press('Escape'); await settle(500)
 })
 await scene('10', async () => {
@@ -203,7 +240,7 @@ await scene('10', async () => {
   await dlg().getByRole('button', { name: 'Replay 1 message' }).last().click(); await settle(4000)
   await shot(page, S('10-replay-result'), [
     { n: 1, loc: page.getByText('Sent back', { exact: true }), t: 'The result, in plain words: it was sent back, and ServiceHub will watch for it coming back.' },
-    { n: 2, loc: page.getByText('Recorded in the ledger.').first(), t: 'It is recorded, with who did it, and shows under Replayed (and in Advanced → Recovery Ledger).' },
+    { n: 2, loc: page.getByText('Recorded — you can find it under Replayed.').first(), t: 'It is recorded, with who did it, and shows under Replayed (and in Advanced → Recovery Ledger).' },
     { n: 3, loc: btn('Done'), t: 'Done — closes the window.' },
     { n: 4, loc: [dlg().getByRole('link', { name: 'Active messages' }), dlg().getByRole('link', { name: 'Replayed' })], t: 'Active messages / Replayed — jump to where you can watch this message.' },
   ])
@@ -222,6 +259,13 @@ await scene('11', async () => {
     { n: 10, loc: [page.locator('main').getByRole('link', { name: /^(Dead letters|Active|Replayed)/ }), page.locator('main').getByRole('button', { name: /^About (Dead letters|Active|Replayed)$/ })], all: true, t: 'The three tabs — Dead letters, Active and Replayed. They switch the list below without leaving the page.' },
     { n: 8, loc: [page.locator('table thead'), page.locator('table tbody tr')], all: true, t: 'The table — a tick per replay (the heading tick ticks the page) and Details on each row.' },
   ])
+  await scrollMain(99999); await settle(600)
+  await shot(page, S('11b-replayed-end'), [
+    { n: 1, loc: page.locator('table tbody tr'), all: true, t: 'The replays, newest first — each with a tick and Details.' },
+    { n: 2, loc: page.getByRole('button', { name: /^(Rows per page|Previous page|Go to page \d+|Next page)$/ }), all: true, t: 'Paging — rows per page, previous, the page numbers and next.' },
+    { n: 3, loc: [page.locator('main').getByRole('link', { name: /^(Dead letters|Active|Replayed)/ }), btn('Auto Replay rules'), page.locator('table thead'), page.getByRole('button', { name: /^About (Replayed|From|Message|By|Result|Details)$/ })], all: true, t: 'The three tabs, the Auto Replay rules button, and the table headings with their ⓘ About buttons — as on the previous screenshot.' },
+    { n: 4, loc: [page.locator('main button').filter({ hasText: /^(Any result|All queues & topics|All|Last 24 hours)$/ }), page.getByPlaceholder(/Message ID, queue, who/), btn('Refresh'), btn('Download as CSV')], all: true, t: 'Filters — result, queue or topic, time window and search; Refresh re-reads the list and Download as CSV saves it as a file. They change what is listed, never what happened.' },
+  ])
 })
 await scene('12', async () => {
   await go('/?tab=active'); await dismiss()
@@ -238,6 +282,12 @@ await scene('12', async () => {
     { n: 11, loc: page.locator('main button').filter({ hasText: /^(docs-orders · \d+ waiting|All time)$/ }).or(page.getByRole('button', { name: 'What am I looking at?' })), all: true, t: 'What am I looking at? — a short reading guide. The queue and time-window pickers narrow what is listed.' },
     { n: 12, loc: [page.locator('main').getByRole('link', { name: /^(Dead letters|Active|Replayed)/ }), page.locator('main').getByRole('button', { name: /^About (Dead letters|Active|Replayed)$/ })], all: true, t: 'The three tabs — Dead letters, Active and Replayed. They switch the list below without leaving the page.' },
     { n: 10, loc: [page.locator('table thead'), page.locator('table tbody tr')], all: true, t: 'The table — a tick per message (the heading tick ticks the page) and Details on each row.' },
+  ])
+  await scrollMain(99999); await settle(600)
+  await shot(page, S('12b-active-end'), [
+    { n: 1, loc: [page.locator('table tbody tr input[type=checkbox]'), page.getByRole('button', { name: /Details of message/ }), page.getByRole('link', { name: /Details of message/ })], all: true, t: 'A message row — a tick to choose it, and Details to open it (body, properties, delivery). Looking at an Azure message is not a delivery.' },
+    { n: 2, loc: page.getByRole('button', { name: /^(Rows per page|Previous page|Go to page \d+|Next page)$/ }), all: true, t: 'Paging — rows per page, previous, the page numbers and next.' },
+    { n: 3, loc: page.locator('main').locator('input, button, summary, a').filter({ hasNot: page.locator('tbody') }), all: true, t: 'The controls above the table — the same filters, search, auto-refresh, Refresh, Scheduled, and the ⓘ About buttons on the column headings, as on the previous screenshot.' },
   ])
 })
 await scene('14', async () => {
@@ -298,7 +348,12 @@ await scene('16', async () => {
     { n: 2, loc: page.locator('section[aria-label=Everyday] summary'), all: true, t: 'An answer — click to open it in place; each links to the screen it is about.' },
     { n: 3, loc: page.locator('section[aria-label="Setting up"] summary'), all: true, t: 'Setting up answers — connecting, alerts and who may replay.' },
     { n: 4, loc: page.getByText('Keyboard', { exact: true }), t: 'Keyboard shortcuts — only ones that work are listed.' },
-    { n: 5, loc: page.getByText('Every screen, with real screenshots'), t: 'Step by step — every screen with real screenshots and a numbered key for each button and link. This is the same guide as the article in docs/clouds/azure.md.' },
+    { n: 5, loc: page.locator('summary').filter({ hasText: 'Every screen, with real screenshots' }), all: true, t: 'Step by step — one guide per cloud, each with every screen as a real screenshot and a numbered key for every button and link. Yours (Azure) is listed first. The same guides are the articles in docs/clouds.' },
+  ])
+  await page.getByRole('dialog').or(page.locator('aside')).last().evaluate((d) => { const sc = [...d.querySelectorAll('*')].find((e) => e.scrollHeight > e.clientHeight + 50 && /(auto|scroll)/.test(getComputedStyle(e).overflowY)); if (sc) sc.scrollTop = 99999 }).catch(() => {}); await settle(600)
+  await shot(page, S('16b-help-end'), [
+    { n: 1, loc: page.locator('summary').filter({ hasText: 'Every screen, with real screenshots' }), all: true, t: 'Step by step — one guide per cloud, each with every screen as a real screenshot and a numbered key for every button and link.' },
+    { n: 2, loc: page.locator('summary'), all: true, t: 'Answers — click one to open it in place; each links to the screen it is about.' },
   ])
 })
 await scene('17', async () => {
@@ -323,6 +378,7 @@ await scene('17', async () => {
     { n: 6, loc: [btn('What am I looking at?'), btn('Window')], t: 'What am I looking at? — a short reading guide for this page. Window — the period it counts over.' },
     { n: 7, loc: page.getByRole('button', { name: /^(Waiting|Watching|Recovered|Unverified|Returned|Failed|Unknown|Declined)\s*\d/ }), all: true, t: 'Outcome chips with counts — click one to list only those entries; All shows everything again.' },
     { n: 8, loc: [btn('Rows per page'), btn('Previous page'), btn('Go to page 1'), btn('Next page')], t: 'Paging — how many rows per page, previous, the page number and next.' },
+    { n: 9, loc: page.getByRole('button', { name: /^About (Time|Cloud|Namespace|Entity|Message ID|By|What|Outcome|Level)$/ }), all: true, t: 'About buttons (ⓘ) on the column headings — each explains that column in a sentence. They change nothing.' },
   ])
   await go('/advanced/signatures', 3500); await dismiss()
   await shot(page, S('17-advanced-signatures'), [
@@ -336,6 +392,7 @@ await scene('17', async () => {
     { n: 8, loc: [btn('What am I looking at?'), btn('Window')], t: 'What am I looking at? — a short reading guide. Window — the period counted.' },
     { n: 9, loc: page.locator('button').filter({ hasText: /^(Signatures|All\s*\d|Replay helps|Replay doesn’t help)/ }), all: true, t: 'Chips — Signatures, All, Replay helps, Replay doesn’t help. Click one to list only those.' },
     { n: 10, loc: [btn('Rows per page'), btn('Previous page'), btn('Go to page 1'), btn('Next page')], t: 'Paging — rows per page, previous, the page number and next.' },
+    { n: 11, loc: page.getByRole('button', { name: /^About (Signature|Messages|Days|Replays)$/ }), all: true, t: 'About buttons (ⓘ) on the column headings — each explains that column in a sentence. They change nothing.' },
   ])
   await go('/advanced/agents', 3500); await dismiss()
   await shot(page, S('17-advanced-agents'), [
@@ -345,6 +402,20 @@ await scene('17', async () => {
     { n: 4, loc: page.getByText(/Learn more/).first(), t: 'Learn more — a short explanation of how agents work.' },
     { n: 6, loc: btn('What am I looking at?'), t: 'What am I looking at? — a short reading guide for this page.' },
     { n: 5, loc: [page.getByRole('button', { name: /^\d+\s*Healthy/ }), page.getByRole('button', { name: /^Open / }), page.getByRole('button', { name: /^(Bulk Replay|Auto Replay)/ }), page.getByRole('button', { name: /^Pause / })], all: true, t: 'Health summary, agent rows and Open — the summary says whether every agent is running normally; a row opens that agent’s details; Open goes to the screen the agent works through.' },
+  ])
+  await scrollMain(380); await settle(600)
+  await shot(page, S('17a-advanced-agents-middle'), [
+    { n: 1, loc: page.getByRole('button', { name: /^(Dead-letter Monitor|Replay Verifier|Trust Evaluator|Spike Watcher|Open |Pause )/ }), all: true, t: 'Agent rows — click a row to see what that agent may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting.' },
+    { n: 2, loc: page.getByRole('button', { name: /^(Bulk Replay|Auto Replay|Trust Evaluator|Open Trust|Pause Trust)/ }), all: true, t: 'More agent rows — the acting agents (Bulk Replay, Auto Replay) and the rest; each opens to show what it may do.' },
+  ])
+  await page.getByRole('button', { name: 'Pause Trust Evaluator' }).scrollIntoViewIfNeeded().catch(() => {}); await settle(600)
+  await shot(page, S('17c-advanced-agents-rows'), [
+    { n: 1, loc: page.getByRole('button', { name: /^(Dead-letter Monitor|Replay Verifier|Trust Evaluator|Spike Watcher|Backlog Forecaster|Bulk Replay|Auto Replay|Open |Pause )/ }), all: true, t: 'Agent rows — click a row to see what that agent may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting.' },
+  ])
+  await scrollMain(99999); await settle(600)
+  await shot(page, S('17b-advanced-agents-more'), [
+    { n: 1, loc: page.getByText('Watching Agents').first().locator('..').locator('..'), t: 'Watching agents — they only look and record; they cannot change anything.' },
+    { n: 2, loc: page.getByRole('button', { name: /^(Dead-letter Monitor|Replay Verifier|Trust Evaluator|Spike Watcher|Backlog Forecaster|Pattern Linker|Narrator|Open |Pause )/ }), all: true, t: 'Each agent row opens to show what it may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting.' },
   ])
 })
 await scene('18', async () => {
@@ -369,5 +440,7 @@ await scene('18', async () => {
 import fs from 'node:fs'
 const gaps = JSON.parse(fs.readFileSync(`${OUT}/uncovered.json`, 'utf8'))
 const total = Object.values(gaps).reduce((n, v) => n + v.length, 0)
+const unTotal = finishRun(OUT)
+console.log(unTotal === 0 ? 'BELOW THE FOLD complete — nothing left unreached' : `BELOW THE FOLD: ${unTotal} controls never in a callout (see unreached.json)`)
 console.log(total === 0 ? 'COVERAGE complete — every control has a callout' : `COVERAGE gaps: ${total} controls in ${Object.values(gaps).filter((v) => v.length).length} screenshots (see uncovered.json)`)
 await browser.close()

@@ -1168,27 +1168,15 @@ export const gcpGuide: Guide = {
         },
         {
          "n": 3,
-         "text": "Queue or topic — every queue ServiceHub found in this region, including the dead-letter queue itself."
-        },
-        {
-         "n": 4,
-         "text": "Waiting now — Pub/Sub reports no counts, so this says “can’t count here” rather than guess; ServiceHub never opens active messages."
-        },
-        {
-         "n": 5,
-         "text": "Dead-lettered — messages that failed too often and were moved to the dead-letter queue."
-        },
-        {
-         "n": 6,
          "text": "Namespace — all of AWS, or one account and region."
         },
         {
-         "n": 7,
+         "n": 4,
          "text": "The three tabs — Dead letters, Active and Replayed — and the (?) that re-shows the short explanation."
         },
         {
-         "n": 8,
-         "text": "The table — one row per queue. The ⓘ on each heading says what that count means."
+         "n": 5,
+         "text": "The table — one row per topic and subscription: Queue or topic, Waiting now and Dead-lettered. Pub/Sub reports no counts, so the counts say “can’t count here” rather than guess; the ⓘ on each heading says what the column means."
         }
        ]
       }
@@ -1401,6 +1389,16 @@ export const gcpGuide: Guide = {
         {
          "n": 5,
          "text": "Step by step — one guide per cloud, each with every screen as a real screenshot and a numbered key for every button and link. Yours (Google Cloud) is listed first. The same guides are the articles in docs/clouds."
+        }
+       ]
+      },
+      {
+       "image": "/help/gcp/16b-help-end.png",
+       "alt": "7.2 Help, search and the bell (16b-help-end)",
+       "keys": [
+        {
+         "n": 1,
+         "text": "Answers and guides — click one to open it in place; the “Every screen” entries are one guide per cloud, each a real screenshot with a numbered key for every button and link."
         }
        ]
       },

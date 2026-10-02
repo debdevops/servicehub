@@ -90,9 +90,9 @@ describe('HelpPanel', () => {
     for (const step of guides[cloud].sections.filter((sec) => !sec.part.startsWith('Part 1')).flatMap((sec) => sec.steps)) {
       if (step.title.startsWith('7.3')) continue
       const texts = [step.text, ...step.shots.flatMap((shot) => shot.keys.map((k) => k.text))]
-      // Proper names the build itself shows are not ours to reword: Advanced's page names, and the Replay modal's "Recorded in the ledger".
+      // Proper names the build itself shows are not ours to reword: Advanced's page names,.
       for (const raw of texts) {
-        const t = raw.replace(/Recovery Ledger|Recorded in the ledger|Advanced is read-only pages \([^)]*\)/g, '')
+        const t = raw.replace(/Recovery Ledger|Advanced is read-only pages \([^)]*\)/g, '')
         expect(t.match(banned)?.[0] ?? null, `${cloud} ${step.title}: "${raw}"`).toBeNull()
       }
     }

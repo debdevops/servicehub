@@ -110,7 +110,7 @@ function ConnectionRow({ ns, admin }: { ns: Namespace; admin: { allowed: boolean
       <button type="button" className={btn} disabled={test.isPending} onClick={() => test.mutate(ns.id)}>{test.isPending ? 'Testing…' : 'Test'}</button>
       {confirming ? (
         <span className="flex items-center gap-2 text-sm">
-          Remove {ns.displayName ?? ns.name}? Its recorded history stays in the ledger.
+          Remove {ns.displayName ?? ns.name}? Its recorded history is kept.
           <button type="button" className="rounded-lg bg-[#dc2626] px-3 py-1.5 font-semibold text-white" disabled={remove.isPending} onClick={() => remove.mutate(ns.id)}>Remove</button>
           <button type="button" className={btn} onClick={() => setConfirming(false)}>Keep</button>
         </span>

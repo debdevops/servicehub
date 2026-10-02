@@ -1186,27 +1186,15 @@ export const awsGuide: Guide = {
         },
         {
          "n": 3,
-         "text": "Queue or topic — every queue ServiceHub found in this region, including the dead-letter queue itself."
-        },
-        {
-         "n": 4,
-         "text": "Waiting now — messages ready to be received. Counted by AWS; ServiceHub never opens them."
-        },
-        {
-         "n": 5,
-         "text": "Dead-lettered — messages that failed too often and were moved to the dead-letter queue."
-        },
-        {
-         "n": 6,
          "text": "Namespace — all of AWS, or one account and region."
         },
         {
-         "n": 7,
-         "text": "The three tabs — Dead letters, Active and Replayed — and the (?) that re-shows the short explanation."
+         "n": 4,
+         "text": "The three tabs — Dead letters, Active and Replayed — each with an ⓘ that explains it."
         },
         {
-         "n": 8,
-         "text": "The table — one row per queue. The ⓘ on each heading says what that count means."
+         "n": 5,
+         "text": "The table — one row per queue found in this region, including the dead-letter queue itself: Queue or topic, Waiting now (ready to be received) and Dead-lettered (moved here after failing too often). AWS counts them; ServiceHub never opens them. The ⓘ on each heading says what that count means."
         }
        ]
       }
@@ -1423,6 +1411,16 @@ export const awsGuide: Guide = {
        ]
       },
       {
+       "image": "/help/aws/16b-help-end.png",
+       "alt": "7.2 Help, search and the bell (16b-help-end)",
+       "keys": [
+        {
+         "n": 1,
+         "text": "Answers and guides — click one to open it in place; the “Every screen” entries are one guide per cloud, each a real screenshot with a numbered key for every button and link."
+        }
+       ]
+      },
+      {
        "image": "/help/aws/18-search.png",
        "alt": "7.2 Help, search and the bell (18-search)",
        "keys": [
@@ -1597,6 +1595,10 @@ export const awsGuide: Guide = {
         {
          "n": 2,
          "text": "Paging — rows per page, previous, the page numbers and next."
+        },
+        {
+         "n": 3,
+         "text": "The controls above the list — Signatures, Trace a message, the filters, search, sort, and the ⓘ About buttons on the headings — as on the previous screenshot."
         }
        ]
       },

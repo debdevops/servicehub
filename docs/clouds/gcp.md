@@ -547,12 +547,9 @@ Your topics and subscriptions. Pub/Sub reports **no message counts**, so each sa
 
 1. Send a message — puts a test message on a queue. This does change the queue, so use a dev queue.
 2. Why there is no message list — on Google Cloud there is no way to look at a message without it counting as a delivery, and watching could push it into the dead-letter queue by itself. So ServiceHub shows counts per queue, and “Follow live” is not offered.
-3. Queue or topic — every queue ServiceHub found in this region, including the dead-letter queue itself.
-4. Waiting now — Pub/Sub reports no counts, so this says “can’t count here” rather than guess; ServiceHub never opens active messages.
-5. Dead-lettered — messages that failed too often and were moved to the dead-letter queue.
-6. Namespace — all of AWS, or one account and region.
-7. The three tabs — Dead letters, Active and Replayed — and the (?) that re-shows the short explanation.
-8. The table — one row per queue. The ⓘ on each heading says what that count means.
+3. Namespace — all of AWS, or one account and region.
+4. The three tabs — Dead letters, Active and Replayed — and the (?) that re-shows the short explanation.
+5. The table — one row per topic and subscription: Queue or topic, Waiting now and Dead-lettered. Pub/Sub reports no counts, so the counts say “can’t count here” rather than guess; the ⓘ on each heading says what the column means.
 
 
 ## Part 6 — Auto Replay
@@ -652,6 +649,12 @@ Help is a panel over whatever you are doing. Search (⌘K) jumps anywhere. The b
 3. Setting up answers — connecting, alerts and who may replay.
 4. Keyboard shortcuts — only ones that work are listed.
 5. Step by step — one guide per cloud, each with every screen as a real screenshot and a numbered key for every button and link. Yours (Google Cloud) is listed first. The same guides are the articles in docs/clouds.
+
+
+![7.2 Help, search and the bell — 16b-help-end](../screenshots/gcp/16b-help-end.png)
+
+
+1. Answers and guides — click one to open it in place; the “Every screen” entries are one guide per cloud, each a real screenshot with a numbered key for every button and link.
 
 
 ![7.2 Help, search and the bell — 18-search](../screenshots/gcp/18-search.png)
