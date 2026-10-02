@@ -211,5 +211,5 @@ public sealed class AgentsController : ApiControllerBase
 /// <summary>An agent that is registered but off, and what it is waiting for.</summary>
 /// <param name="Id">Its stable id.</param>
 /// <param name="Name">What a person calls it.</param>
-/// <param name="Needs">What a connected cloud would have to offer: <c>WatchedCloud</c> or <c>VerifiableCloud</c>.</param>
+/// <param name="Needs">What a connected cloud would have to offer: <c>WatchedCloud</c>, <c>VerifiableCloud</c> or <c>ObserverCloud</c>.</param>
 public sealed record DormantAgentResponse(string Id, string Name, string Needs);

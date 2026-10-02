@@ -272,6 +272,74 @@ public sealed class NamespacesApiTests
         aws.GetProperty("deadLetterMessages").GetInt64().Should().Be(4);
     }
 
+    private static async Task<Guid> ConnectAws(WebApplicationFactoryHandle host, string name)
+    {
+        var response = await host.Client.SendAsync(Post("/api/v1/namespaces", new
+        {
+            name,
+            connectionString = "AKIAIOSFODNN7EXAMPLE:wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            authType = "awsAccessKey",
+            provider = "aws",
+            awsRegion = "us-east-1",
+        }));
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        return (await Json(response)).GetProperty("id").GetGuid();
+    }
+
+    private static HttpRequestMessage PutObserver(Guid id, object body, string? intent = "configure-dlq-observer")
+    {
+        var request = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/namespaces/{id}/dlq-observer") { Content = JsonContent.Create(body) };
+        if (intent is not null)
+        {
+            request.Headers.Add("X-ServiceHub-Intent", intent);
+        }
+
+        return request;
+    }
+
+    [Fact]
+    public async Task A_cloud_that_can_confirm_on_its_own_needs_no_observer_and_refuses_to_set_one_up()
+    {
+        using var host = Host();
+        var id = await Connect(host, "acme-bus");
+
+        var state = await Json(await host.Client.GetAsync($"/api/v1/namespaces/{id}/dlq-observer"));
+        var put = await host.Client.SendAsync(PutObserver(id, new { enabled = true, observerReference = "t", dlqEntityName = "q" }));
+
+        state.GetProperty("needed").GetBoolean().Should().BeFalse();
+        state.GetProperty("live").GetBoolean().Should().BeFalse();
+        put.StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task An_observer_is_set_up_with_the_intent_header_and_is_never_live_just_because_it_was_turned_on()
+    {
+        using var host = Host();
+        var id = await ConnectAws(host, "orders-queue");
+
+        var before = await Json(await host.Client.GetAsync($"/api/v1/namespaces/{id}/dlq-observer"));
+        before.GetProperty("needed").GetBoolean().Should().BeTrue();
+        before.GetProperty("enabled").GetBoolean().Should().BeFalse();
+
+        (await host.Client.SendAsync(PutObserver(id, new { enabled = true, observerReference = "t", dlqEntityName = "q" }, intent: null)))
+            .StatusCode.Should().Be(HttpStatusCode.PreconditionRequired);
+        (await host.Client.SendAsync(PutObserver(id, new { enabled = true, dlqEntityName = "q" })))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await host.Client.SendAsync(PutObserver(id, new { enabled = true, observerReference = "t", dlqEntityName = "q", stalenessBoundMinutes = 1 })))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var saved = await host.Client.SendAsync(PutObserver(id, new { enabled = true, observerReference = "obs-table", dlqEntityName = "orders-dlq" }));
+        saved.StatusCode.Should().Be(HttpStatusCode.OK);
+        var after = await Json(await host.Client.GetAsync($"/api/v1/namespaces/{id}/dlq-observer"));
+
+        after.GetProperty("enabled").GetBoolean().Should().BeTrue();
+        after.GetProperty("observerReference").GetString().Should().Be("obs-table");
+        after.GetProperty("dlqEntityName").GetString().Should().Be("orders-dlq");
+        after.GetProperty("live").GetBoolean().Should().BeFalse("only the observer's own log, seen by the canary, can make it live");
+        after.GetProperty("lastConfirmedAt").ValueKind.Should().Be(JsonValueKind.Null);
+        after.GetProperty("status").GetString().Should().Contain("not confirming anything");
+    }
+
     [Fact]
     public async Task Removing_a_namespace_needs_the_intent_header_and_then_it_is_gone()
     {

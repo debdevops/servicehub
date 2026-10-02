@@ -49,16 +49,25 @@ public sealed class GcpMessageSender : IMessageSender
         SendMessageRequest request,
         CancellationToken cancellationToken = default)
     {
+        var sent = await SendReturningProviderIdAsync(request, cancellationToken).ConfigureAwait(false);
+        return sent.IsSuccess ? Result.Success() : Result.Failure(sent.Error);
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<string?>> SendReturningProviderIdAsync(
+        SendMessageRequest request,
+        CancellationToken cancellationToken = default)
+    {
         ArgumentNullException.ThrowIfNull(request);
 
         if (request.NamespaceId is null || request.EntityName is null)
-            return Result.Failure(Error.Validation("GCP.PubSub.InvalidRequest",
+            return Result.Failure<string?>(Error.Validation("GCP.PubSub.InvalidRequest",
                 "NamespaceId and EntityName are required."));
 
         var nsResult = await _namespaceRepository.GetByIdAsync(request.NamespaceId.Value, cancellationToken)
             .ConfigureAwait(false);
         if (nsResult.IsFailure)
-            return Result.Failure(nsResult.Error);
+            return Result.Failure<string?>(nsResult.Error);
 
         try
         {
@@ -71,12 +80,12 @@ public sealed class GcpMessageSender : IMessageSender
                 cancellationToken).ConfigureAwait(false);
 
             _logger.LogInformation("Published Pub/Sub message {MessageId} to topic {TopicId}", messageId, LogRedactor.SanitiseForLog(request.EntityName));
-            return Result.Success();
+            return Result.Success<string?>(messageId);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Error publishing Pub/Sub message to topic {TopicId}", LogRedactor.SanitiseForLog(request.EntityName));
-            return Result.Failure(Error.ExternalService("GCP.PubSub.SendFailed", ex.Message));
+            return Result.Failure<string?>(Error.ExternalService("GCP.PubSub.SendFailed", ex.Message));
         }
     }
 

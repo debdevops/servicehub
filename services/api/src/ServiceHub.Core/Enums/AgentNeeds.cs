@@ -15,4 +15,7 @@ public enum AgentNeeds
 
     /// <summary>A connected cloud that can prove a fix held (<c>CanProveDlqAbsence</c>) — Azure today.</summary>
     VerifiableCloud = 2,
+
+    /// <summary>A connected cloud that cannot prove a fix held on its own (<c>!CanProveDlqAbsence</c>) — AWS and Google Cloud today — and so may have a DLQ observer to check.</summary>
+    ObserverCloud = 3,
 }

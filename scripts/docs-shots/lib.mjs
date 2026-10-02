@@ -100,7 +100,7 @@ async function recordCoverage(page, file, boxes, scope) {
   const exempt = (c) =>
     (c.shell !== base.startsWith('05b')) || // 05b documents the shell and only the shell; every other screenshot skips it
     (/^About /.test(c.name) && !c.th) || // a tab's or card's ⓘ is explained once in the text; a column heading's ⓘ is part of the table callout
-    
+
     (/^(Help for (?!this page)|Close$)/.test(c.name) && base !== '02-add-cloud.png') ||
     (c.name === 'Help for this page' && !/^(05-home|06-)/.test(base)) || // documented on Home and Dead letters, exempt on every other page
     (c.name === 'What am I looking at?' && !/^06/.test(base)) // the (?) that re-shows the short explanation: documented on Dead letters, the same control on every page

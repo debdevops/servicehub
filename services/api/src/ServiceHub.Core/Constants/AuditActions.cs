@@ -33,6 +33,9 @@ public static class AuditActions
     /// <summary>One new message was sent (unit 6.14).</summary>
     public const string MessageSend = "Message.Send";
 
+    /// <summary>A person set up, changed or turned off a cloud's DLQ observer (unit 4.2).</summary>
+    public const string DlqObserverConfigure = "DlqObserver.Configure";
+
     /// <summary>A backup was taken.</summary>
     public const string BackupCreate = "Backup.Create";
 

@@ -120,6 +120,33 @@ export async function testConnection(id: string): Promise<ConnectionTest> {
   return (await api.post<ConnectionTest>(`/namespaces/${id}/test-connection`)).data
 }
 
+/** Where one cloud's DLQ observer stands (unit 4.2). `live` is true only while the observer's own log has shown a recent test message. */
+export interface DlqObserver {
+  readonly needed: boolean
+  readonly enabled: boolean
+  readonly live: boolean
+  readonly observerReference: string | null
+  readonly dlqEntityName: string | null
+  readonly stalenessBoundMinutes: number
+  readonly lastCanarySentAt: string | null
+  readonly lastConfirmedAt: string | null
+  readonly status: string
+}
+
+export interface DlqObserverInput {
+  readonly enabled: boolean
+  readonly observerReference?: string
+  readonly dlqEntityName?: string
+}
+
+export async function fetchDlqObserver(id: string): Promise<DlqObserver> {
+  return (await api.get<DlqObserver>(`/namespaces/${id}/dlq-observer`)).data
+}
+
+export async function configureDlqObserver(id: string, input: DlqObserverInput): Promise<DlqObserver> {
+  return (await api.put<DlqObserver>(`/namespaces/${id}/dlq-observer`, input, { headers: withIntent(Intent.ConfigureDlqObserver) })).data
+}
+
 export async function removeNamespace(id: string): Promise<void> {
   await api.delete(`/namespaces/${id}`, { headers: withIntent(Intent.DeleteNamespace) })
 }

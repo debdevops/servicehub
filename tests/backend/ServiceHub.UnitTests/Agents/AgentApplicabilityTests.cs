@@ -75,6 +75,23 @@ public sealed class AgentApplicabilityTests
     }
 
     [Fact]
+    public async Task The_observer_check_runs_only_while_a_cloud_that_cannot_prove_a_fix_is_connected()
+    {
+        var canary = new StubAgent("dlq-observer-canary", AgentNeeds.ObserverCloud);
+        var (host, registry, clouds) = Build(new Clouds(CloudProviderType.Azure), canary);
+
+        await host.ReconcileAsync(CancellationToken.None);
+        registry.All().Should().BeEmpty("Azure confirms on its own, so there is no observer to check");
+        registry.Dormant().Select(d => d.Id).Should().Equal("dlq-observer-canary");
+
+        clouds.Connected = [CloudProviderType.Azure, CloudProviderType.Gcp];
+        await host.ReconcileAsync(CancellationToken.None);
+        await WaitUntilAsync(() => canary.Cycles > 0);
+        registry.All().Select(a => a.Descriptor.Id).Should().Equal("dlq-observer-canary");
+        await host.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
     public async Task Connecting_Azure_starts_them_and_removing_it_stops_them_again()
     {
         var monitor = new StubAgent("dlq-monitor", AgentNeeds.WatchedCloud);

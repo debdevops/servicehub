@@ -2,6 +2,7 @@ import { Check, CircleHelp, RotateCcw, TriangleAlert } from 'lucide-react'
 import type { ReplayListItem } from '../lib/api/replay'
 import { formatAgo } from '../lib/format'
 import { providerLabel } from '../lib/providers'
+import { SetupObserverLink } from './agent/SetupObserverLink'
 
 /**
  * The outcome of a replay — the same shape on every cloud (C5), so clouds are compared, not re-learned. Only the
@@ -35,7 +36,7 @@ export function OutcomeCard({ replay, now = new Date() }: { replay: ReplayListIt
           <>
             <p>{cloud} cannot prove the queue stayed empty. The replay may well have worked — what is unproven is the confirmation.</p>
             {v.remedy === 'SETUP_DLQ_OBSERVER' && (
-              <p className="text-[var(--color-text-muted)]">To get a verified result here, set up the dead-letter observer for this namespace.</p>
+              <p className="text-[var(--color-text-muted)]">To get a verified result here, set up the dead-letter observer for this namespace.<SetupObserverLink /></p>
             )}
           </>
         )}

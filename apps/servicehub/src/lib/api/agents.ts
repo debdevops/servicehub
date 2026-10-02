@@ -52,7 +52,7 @@ export async function fetchAgents(): Promise<Agent[]> {
 export interface DormantAgent {
   readonly id: string
   readonly name: string
-  readonly needs: 'WatchedCloud' | 'VerifiableCloud'
+  readonly needs: 'WatchedCloud' | 'VerifiableCloud' | 'ObserverCloud'
 }
 
 export async function fetchDormantAgents(): Promise<DormantAgent[]> {

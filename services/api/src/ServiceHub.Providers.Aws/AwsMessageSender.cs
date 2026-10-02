@@ -59,16 +59,25 @@ public sealed class AwsMessageSender : IMessageSender
         SendMessageRequest request,
         CancellationToken cancellationToken = default)
     {
+        var sent = await SendReturningProviderIdAsync(request, cancellationToken).ConfigureAwait(false);
+        return sent.IsSuccess ? Result.Success() : Result.Failure(sent.Error);
+    }
+
+    /// <inheritdoc/>
+    public async Task<Result<string?>> SendReturningProviderIdAsync(
+        SendMessageRequest request,
+        CancellationToken cancellationToken = default)
+    {
         ArgumentNullException.ThrowIfNull(request);
 
         if (request.NamespaceId is null || request.EntityName is null)
-            return Result.Failure(Error.Validation("AWS.SQS.InvalidRequest",
+            return Result.Failure<string?>(Error.Validation("AWS.SQS.InvalidRequest",
                 "NamespaceId and EntityName are required."));
 
         var nsResult = await _namespaceRepository.GetByIdAsync(request.NamespaceId.Value, cancellationToken)
             .ConfigureAwait(false);
         if (nsResult.IsFailure)
-            return Result.Failure(nsResult.Error);
+            return Result.Failure<string?>(nsResult.Error);
 
         try
         {
@@ -89,7 +98,7 @@ public sealed class AwsMessageSender : IMessageSender
                     var match = topicsResponse.Topics.FirstOrDefault(t =>
                         t.TopicArn.EndsWith(":" + request.EntityName, StringComparison.OrdinalIgnoreCase));
                     if (match is null)
-                        return Result.Failure(Error.NotFound("AWS.SNS.TopicNotFound",
+                        return Result.Failure<string?>(Error.NotFound("AWS.SNS.TopicNotFound",
                             $"SNS topic '{request.EntityName}' was not found."));
 
                     topicArn = match.TopicArn;
@@ -101,34 +110,34 @@ public sealed class AwsMessageSender : IMessageSender
                     Message = request.Body,
                     MessageAttributes = BuildSnsMessageAttributes(request)
                 };
-                await _resiliencePipeline.ExecuteAsync(async ct =>
+                var published = await _resiliencePipeline.ExecuteAsync(async ct =>
                     await sns.PublishAsync(snsRequest, ct).ConfigureAwait(false),
                     cancellationToken).ConfigureAwait(false);
 
                 _logger.LogInformation("Published message to SNS topic {TopicArn}", LogRedactor.SanitiseForLog(request.EntityName));
-                return Result.Success();
+                return Result.Success<string?>(published.MessageId);
             }
 
             // SQS send
             var sqs = _clientFactory.GetSqsClient(nsResult.Value);
             var queueUrl = await ResolveQueueUrlAsync(sqs, request.EntityName, cancellationToken).ConfigureAwait(false);
             var sqsRequest = BuildSqsRequest(queueUrl, request);
-            await _resiliencePipeline.ExecuteAsync(async ct =>
+            var sentToQueue = await _resiliencePipeline.ExecuteAsync(async ct =>
                 await sqs.SendMessageAsync(sqsRequest, ct).ConfigureAwait(false),
                 cancellationToken).ConfigureAwait(false);
 
             _logger.LogInformation("Sent message to SQS queue {QueueName}", LogRedactor.SanitiseForLog(request.EntityName));
-            return Result.Success();
+            return Result.Success<string?>(sentToQueue.MessageId);
         }
         catch (AmazonSQSException ex)
         {
             _logger.LogError(ex, "SQS error sending message to {QueueName}", LogRedactor.SanitiseForLog(request.EntityName));
-            return Result.Failure(Error.ExternalService("AWS.SQS.SendFailed", ex.Message));
+            return Result.Failure<string?>(Error.ExternalService("AWS.SQS.SendFailed", ex.Message));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unexpected error sending message to {QueueName}", LogRedactor.SanitiseForLog(request.EntityName));
-            return Result.Failure(Error.Internal("AWS.SQS.UnexpectedError", ex.Message));
+            return Result.Failure<string?>(Error.Internal("AWS.SQS.UnexpectedError", ex.Message));
         }
     }
 

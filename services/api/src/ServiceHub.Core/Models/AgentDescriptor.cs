@@ -63,6 +63,7 @@ public sealed record AgentDescriptor(
     {
         AgentNeeds.WatchedCloud => connected.Any(p => ProviderCapabilities.For(p).SupportsRepeatablePeek),
         AgentNeeds.VerifiableCloud => connected.Any(p => ProviderCapabilities.For(p).CanProveDlqAbsence),
+        AgentNeeds.ObserverCloud => connected.Any(p => !ProviderCapabilities.For(p).CanProveDlqAbsence),
         _ => true,
     };
 

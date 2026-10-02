@@ -43,8 +43,8 @@ Left out on purpose; each was a written decision and can return as a tab or pane
 - The release workflow (`publish.yml`) selects the codebase from the tag (`v4.1.x` → repo root, `v4.0.x` → archive) and was proven by running every tag
   shape locally; it has **not yet run in real GitHub Actions**.
 - Real Slack/Teams delivery has not been exercised against a live workspace (the send path and its test endpoint are covered by tests).
-- The DLQ observer's canary agent, config endpoint and Outcome Card path are not built; the observer's AWS Terraform fix is unapplied and unobserved live.
-  Until it is, AWS/GCP replays stay *"verification required"*.
+- The DLQ observer's ServiceHub side is built (a Connections setup, a test-message check, the Outcome Card link), but the observer's AWS Terraform module is unapplied
+  and nothing has been observed live. Until an observer is set up and shown working, AWS/GCP replays stay *"verification required"*.
 
 ### Changes since the last entry below (kept as the build log)
 

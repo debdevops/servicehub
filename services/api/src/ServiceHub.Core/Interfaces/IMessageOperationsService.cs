@@ -20,6 +20,15 @@ public interface IMessageOperationsService
     Task<Result> SendAsync(SendMessageRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// <see cref="SendAsync"/>, also returning the id the cloud assigned the message (null when the cloud's sender cannot say).
+    /// </summary>
+    async Task<Result<string?>> SendReturningProviderIdAsync(SendMessageRequest request, CancellationToken cancellationToken = default)
+    {
+        var sent = await SendAsync(request, cancellationToken).ConfigureAwait(false);
+        return sent.IsSuccess ? Result.Success<string?>(null) : Result.Failure<string?>(sent.Error);
+    }
+
+    /// <summary>
     /// Sends multiple messages to a queue or topic in a batch.
     /// </summary>
     /// <param name="requests">The collection of send message requests.</param>

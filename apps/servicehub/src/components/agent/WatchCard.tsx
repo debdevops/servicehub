@@ -2,6 +2,7 @@ import { Eye } from 'lucide-react'
 import type { ReplayListItem } from '../../lib/api/replay'
 import { formatWhen } from '../../lib/format'
 import { providerLabel } from '../../lib/providers'
+import { SetupObserverLink } from './SetupObserverLink'
 
 const clock = (iso: string) => formatWhen(iso, new Date())
 
@@ -26,7 +27,7 @@ export function WatchCard({ replay }: { replay: ReplayListItem }) {
             “Verification required”, not “Verified”.
           </p>
           {v.remedy === 'SETUP_DLQ_OBSERVER' && (
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">Setting up the dead-letter observer for this namespace is what makes a verified result possible.</p>
+            <p className="mt-1 text-sm text-[var(--color-text-muted)]">Setting up the dead-letter observer for this namespace is what makes a verified result possible.<SetupObserverLink /></p>
           )}
         </>
       )}

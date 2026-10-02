@@ -30,6 +30,7 @@ export const Intent = {
   RestoreBackup: 'restore-backup',
   GrantRole: 'grant-role',
   RevokeRole: 'revoke-role',
+  ConfigureDlqObserver: 'configure-dlq-observer',
 } as const
 
 export type IntentValue = (typeof Intent)[keyof typeof Intent]

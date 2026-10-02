@@ -229,6 +229,127 @@ public sealed class NamespacesController : ApiControllerBase
     }
 
     /// <summary>
+    /// Where this cloud's DLQ observer stands (unit 4.2): whether it is needed, whether a person turned it on, and whether its own
+    /// log has shown a test message recently. "Live" is never assumed.
+    /// </summary>
+    [HttpGet("{id:guid}/dlq-observer")]
+    [ProducesResponseType(typeof(DlqObserverResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetDlqObserver(Guid id, [FromServices] IDlqObserverAttestationService attestations, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(attestations);
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        var ns = found.Value;
+        var needed = _router.IsRegistered(ns.Provider) && !_router.Resolve(ns.Provider).Capabilities.CanProveDlqAbsence;
+        return Ok(ToObserverResponse(needed, await attestations.GetAsync(OwnerId, id, cancellationToken)));
+    }
+
+    /// <summary>
+    /// Turns this cloud's DLQ observer on, off or elsewhere. Turning it on is the approval for the DLQ Observer Check agent to send
+    /// a small test message into the dead-letter queue named here. Requires the <c>configure-dlq-observer</c> intent header and the
+    /// Admin role for this namespace. A cloud that can confirm a fix on its own (Azure) refuses: there is nothing to set up.
+    /// </summary>
+    [HttpPut("{id:guid}/dlq-observer")]
+    [ProducesResponseType(typeof(DlqObserverResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
+    public async Task<IActionResult> ConfigureDlqObserver(
+        Guid id, [FromBody] ConfigureDlqObserverRequest request, [FromServices] IDlqObserverAttestationService attestations, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(attestations);
+        if (!IntentHeaders.Declares(Request, IntentHeaders.ConfigureDlqObserver))
+        {
+            return Problem(
+                StatusCodes.Status428PreconditionRequired,
+                ErrorCodes.IntentRequired,
+                IntentHeaders.MissingDetail("change this cloud's DLQ observer", IntentHeaders.ConfigureDlqObserver));
+        }
+
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        var ns = found.Value;
+        if (await DeniedUnlessAsync(GovernanceRole.Admin, id, null, "change this cloud's DLQ observer", cancellationToken) is { } denied) return denied;
+
+        if (!_router.IsRegistered(ns.Provider))
+        {
+            return NoAdapter(ns);
+        }
+
+        if (_router.Resolve(ns.Provider).Capabilities.CanProveDlqAbsence)
+        {
+            return Problem(
+                StatusCodes.Status409Conflict,
+                ErrorCodes.CapabilityUnavailable,
+                $"{ns.Provider} can confirm a replay stayed fixed on its own, so there is no DLQ observer to set up for it.");
+        }
+
+        var staleness = request.StalenessBoundMinutes ?? 30;
+        if (staleness is < 3 or > 1440)
+        {
+            return Problem(
+                StatusCodes.Status400BadRequest,
+                ErrorCodes.ValidationFailed,
+                "The longest an observer may go without a confirmed test message must be between 3 minutes and 24 hours.");
+        }
+
+        var observerReference = request.ObserverReference?.Trim();
+        var entityName = request.DlqEntityName?.Trim();
+        if (request.Enabled && (string.IsNullOrEmpty(observerReference) || string.IsNullOrEmpty(entityName)))
+        {
+            return Problem(
+                StatusCodes.Status400BadRequest,
+                ErrorCodes.ValidationFailed,
+                "To turn the observer on, say where it writes (its table or collection) and which dead-letter queue the test message goes to.");
+        }
+
+        var saved = await attestations.ConfigureAsync(OwnerId, id, request.Enabled, observerReference, entityName, staleness, cancellationToken);
+        if (saved.IsFailure)
+        {
+            await RecordAsync(AuditActions.DlqObserverConfigure, AuditActions.Failure, ns, saved.Error.Message, cancellationToken);
+            return Problem(saved.Error);
+        }
+
+        await RecordAsync(AuditActions.DlqObserverConfigure, AuditActions.Success, ns, null, cancellationToken);
+        return Ok(ToObserverResponse(true, saved.Value));
+    }
+
+    private static DlqObserverResponse ToObserverResponse(bool needed, DlqObserverAttestation? a)
+    {
+        if (!needed)
+        {
+            return new DlqObserverResponse(false, false, false, null, null, 30, null, null,
+                "This cloud can confirm a replay stayed fixed on its own — no observer needed.");
+        }
+
+        if (a is not { Enabled: true })
+        {
+            return new DlqObserverResponse(true, false, false, a?.ObserverReference, a?.DlqEntityName, a?.StalenessBoundMinutes ?? 30,
+                a?.LastCanarySentAt, a?.LastConfirmedAt,
+                "No observer is set up, so a replay here can be sent back but not confirmed as fixed.");
+        }
+
+        var live = a.IsLiveAt(DateTimeOffset.UtcNow);
+        var status = live
+            ? "The observer is working: its log showed a test message recently."
+            : a.LastConfirmedAt is null
+                ? "Turned on, but the observer's log has not shown a test message yet — not confirming anything."
+                : "Turned on, but the observer's log has not shown a test message recently — not confirming anything until it does.";
+        return new DlqObserverResponse(true, true, live, a.ObserverReference, a.DlqEntityName, a.StalenessBoundMinutes, a.LastCanarySentAt, a.LastConfirmedAt, status);
+    }
+
+    /// <summary>
     /// Looks at the namespace's dead letters now and records what it finds, so each one can be opened, read and
     /// replayed. This is how AWS and Google Cloud dead letters reach the list: ServiceHub never looks there on a
     /// timer, because a look is a receive that counts as a delivery attempt — a person asking is the consent.

@@ -61,6 +61,9 @@ public static class IntentHeaders
     /// <summary>Intent for sending one new message.</summary>
     public const string SendMessage = "send-message";
 
+    /// <summary>Intent for turning a cloud's DLQ observer on or off, or changing where its log lives.</summary>
+    public const string ConfigureDlqObserver = "configure-dlq-observer";
+
     /// <summary>Intent for taking a backup.</summary>
     public const string CreateBackup = "create-backup";
 

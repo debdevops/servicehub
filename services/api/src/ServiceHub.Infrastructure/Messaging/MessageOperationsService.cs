@@ -55,9 +55,23 @@ public sealed class MessageOperationsService : IMessageOperationsService
     /// <param name="request">The send request containing namespace, entity and payload.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A <see cref="Result"/> indicating success or failure.</returns>
-    public Task<Result> SendAsync(SendMessageRequest request, CancellationToken cancellationToken = default)
+    public async Task<Result> SendAsync(SendMessageRequest request, CancellationToken cancellationToken = default)
     {
-        return SendInternalAsync(request, cancellationToken);
+        var sent = await SendInternalAsync(
+            request,
+            async (sender, ct) =>
+            {
+                var result = await sender.SendAsync(request, ct).ConfigureAwait(false);
+                return result.IsSuccess ? Result.Success<string?>(null) : Result.Failure<string?>(result.Error);
+            },
+            cancellationToken).ConfigureAwait(false);
+        return sent.IsSuccess ? Result.Success() : Result.Failure(sent.Error);
+    }
+
+    /// <inheritdoc />
+    public Task<Result<string?>> SendReturningProviderIdAsync(SendMessageRequest request, CancellationToken cancellationToken = default)
+    {
+        return SendInternalAsync(request, (sender, ct) => sender.SendReturningProviderIdAsync(request, ct), cancellationToken);
     }
 
     /// <summary>
@@ -412,29 +426,30 @@ public sealed class MessageOperationsService : IMessageOperationsService
             $"Supported providers: Azure. Current provider: {providerType}. " +
             $"See provider capabilities: {capabilities.Notes}");
 
-    private async Task<Result> SendInternalAsync(SendMessageRequest request, CancellationToken cancellationToken)
+    private async Task<Result<string?>> SendInternalAsync(
+        SendMessageRequest request, Func<IMessageSender, CancellationToken, Task<Result<string?>>> send, CancellationToken cancellationToken)
     {
         try
         {
             if (request.NamespaceId is null || request.NamespaceId == Guid.Empty)
             {
-                return Result.Failure(Error.Validation(ErrorCodes.Namespace.NotFound, "Namespace ID is required."));
+                return Result.Failure<string?>(Error.Validation(ErrorCodes.Namespace.NotFound, "Namespace ID is required."));
             }
 
             var (ns, provider) = await ResolveProviderAsync(request.NamespaceId.Value, cancellationToken).ConfigureAwait(false);
 
             if (request.ScheduledEnqueueTimeUtc.HasValue && !provider.Capabilities.SupportsScheduledMessages)
             {
-                return Result.Failure(BuildScheduledUnsupportedError(ns.Provider, provider.Capabilities));
+                return Result.Failure<string?>(BuildScheduledUnsupportedError(ns.Provider, provider.Capabilities));
             }
 
             _logger.LogDebug("NamespaceId: {NamespaceId}, Provider: {Provider}, Operation: Send", ns.Id, ns.Provider);
             var sender = GetSender(provider);
-            return await sender.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            return await send(sender, cancellationToken).ConfigureAwait(false);
         }
             catch (Exception ex)
             {
-                return ConvertExceptionToResult(ex, ErrorCodes.Message.SendFailed);
+                return ConvertExceptionToResult<string?>(ex, ErrorCodes.Message.SendFailed);
             }
     }
 
