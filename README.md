@@ -64,6 +64,9 @@ npm ci
 
 Open `/demo/azure` first to look around with made-up data, then **Add a cloud** (sidebar) to connect your own.
 
+New to this, or something did not start? The **[Local setup guide](docs/LOCAL-SETUP.md)** covers prerequisites for macOS, Linux and Windows (WSL), what
+`./run.sh` checks and does, where your data lives, and a troubleshooting table. `./run.sh --check` verifies your machine without starting anything.
+
 **Docker:**
 
 ```bash
@@ -75,6 +78,8 @@ ServiceHub **refuses to start in Production without an encryption key** — it p
 key makes them unreadable, so back it up in a secret manager.
 
 ## Deploying it for real
+
+Step by step: **[Host ServiceHub on Azure](docs/HOSTING-AZURE.md)** — a small VM running the Docker image, data on its managed disk, reached through an SSH tunnel.
 
 | | |
 |---|---|
@@ -88,6 +93,8 @@ key makes them unreadable, so back it up in a secret manager.
 
 | | |
 |---|---|
+| [Local setup](docs/LOCAL-SETUP.md) | Install, run, check and troubleshoot ServiceHub on your own machine |
+| [Hosting on Azure](docs/HOSTING-AZURE.md) | Run it always-on on an Azure VM, safely |
 | [Azure](docs/clouds/azure.md) · [AWS](docs/clouds/aws.md) · [Google Cloud](docs/clouds/gcp.md) | Step-by-step setup and use, with annotated screenshots |
 | [Backup & restore](docs/BACKUP-RESTORE.md) | Take, verify and restore a backup |
 | [Encryption key rotation](docs/ENCRYPTION-KEY-ROTATION.md) | Rotate the key that protects stored cloud credentials, and what to do if it leaks |
