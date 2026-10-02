@@ -325,7 +325,7 @@ public sealed class RulesService : IRulesService
 
         rule.Enabled = false;
         rule.DisabledReason = "CircuitBreaker";
-        rule.DisabledDetail = $"Only {fixedCount} of its last {outcomes.Count} replays stayed fixed ({rate:P0}) — below the {Floor:P0} floor. Nothing it replayed is lost.";
+        rule.DisabledDetail = $"Only {fixedCount} of its last {outcomes.Count} replays stayed fixed ({Math.Round(rate * 100):0}%) — below the {Math.Round(Floor * 100):0}% floor. Nothing it replayed is lost.";
         rule.UpdatedAt = _time.GetUtcNow();
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
         return true;

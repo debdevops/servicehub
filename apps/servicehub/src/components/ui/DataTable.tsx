@@ -18,7 +18,7 @@ export interface Column<Row> {
   readonly secondary?: boolean
 }
 
-const hideNarrow = 'max-xl:hidden'
+const hideNarrow = 'max-[1440px]:hidden'
 
 export interface Selection {
   readonly selected: ReadonlySet<string>

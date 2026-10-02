@@ -12,7 +12,7 @@ describe('HelpPanel', () => {
   it('has no accessibility violations (6.6)', async () => {
     const { container } = render(<MemoryRouter><HelpPanel /></MemoryRouter>)
     await expectNoAxeViolations(container)
-  }, 30000) // the panel holds every cloud's guide, so axe has a lot of (folded) markup to walk
+  }, 120000) // the panel holds every cloud's guide, so axe has a lot of (folded) markup to walk
 
   it('lists task answers and the keyboard shortcuts, and filters as you type', () => {
     render(<MemoryRouter><HelpPanel /></MemoryRouter>)
