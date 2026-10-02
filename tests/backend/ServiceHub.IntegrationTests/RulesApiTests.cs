@@ -62,6 +62,23 @@ public sealed class RulesApiTests : IDisposable
     }
 
     [Fact]
+    public async Task Making_switching_and_deleting_a_rule_are_each_on_the_audit_trail_with_who_did_it()
+    {
+        using var host = DeadLettersApiTests.Host();
+        var made = await Send(host.Client, "/api/v1/rules", new { provider = "azure", name = "Audit me", reason = "Timeout" }, HttpStatusCode.Created);
+        var id = made.GetProperty("id").GetInt64();
+        await Send(host.Client, $"/api/v1/rules/{id}/enabled", new { enabled = false });
+        (await host.Client.DeleteAsync($"/api/v1/rules/{id}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var audit = JsonDocument.Parse(await host.Client.GetStringAsync("/api/v1/audit?pageSize=50")).RootElement.GetProperty("items")
+            .EnumerateArray().Where(e => e.GetProperty("action").GetString()!.StartsWith("Rule.", StringComparison.Ordinal)).ToList();
+
+        audit.Select(e => e.GetProperty("action").GetString()).Should().BeEquivalentTo(["Rule.Create", "Rule.Toggle", "Rule.Delete"]);
+        audit.Should().OnlyContain(e => e.GetProperty("outcome").GetString() == "Success");
+        audit.Single(e => e.GetProperty("action").GetString() == "Rule.Toggle").GetProperty("resourceName").GetString().Should().Be($"{id} · off");
+    }
+
+    [Fact]
     public async Task A_rule_needs_a_condition_and_a_sane_pace()
     {
         using var host = DeadLettersApiTests.Host();

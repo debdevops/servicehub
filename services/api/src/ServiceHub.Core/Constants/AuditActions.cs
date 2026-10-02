@@ -39,6 +39,21 @@ public static class AuditActions
     /// <summary>A backup was staged to be restored at the next start, or unstaged.</summary>
     public const string BackupRestore = "Backup.Restore";
 
+    /// <summary>An Auto Replay rule was made. <c>ResourceName</c> is the rule's id and name.</summary>
+    public const string RuleCreate = "Rule.Create";
+
+    /// <summary>An Auto Replay rule's name or pace was changed.</summary>
+    public const string RuleUpdate = "Rule.Update";
+
+    /// <summary>An Auto Replay rule was switched on or off by a person.</summary>
+    public const string RuleToggle = "Rule.Toggle";
+
+    /// <summary>An Auto Replay rule was deleted.</summary>
+    public const string RuleDelete = "Rule.Delete";
+
+    /// <summary>Auto Replay rules were generated for the commonest failures.</summary>
+    public const string RuleGenerate = "Rule.Generate";
+
     /// <summary>The action was attempted and failed.</summary>
     public const string Failure = "Failure";
 }

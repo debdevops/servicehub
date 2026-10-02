@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Core.Constants;
+using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
@@ -14,9 +15,23 @@ namespace ServiceHub.Api.Controllers.V1;
 public sealed class RulesController : ApiControllerBase
 {
     private readonly IRulesService _rules;
+    private readonly IAuditTrail _audit;
 
     /// <summary>Creates the controller.</summary>
-    public RulesController(IRulesService rules) => _rules = rules ?? throw new ArgumentNullException(nameof(rules));
+    public RulesController(IRulesService rules, IAuditTrail audit)
+    {
+        _rules = rules ?? throw new ArgumentNullException(nameof(rules));
+        _audit = audit ?? throw new ArgumentNullException(nameof(audit));
+    }
+
+    // A rule is a standing instruction that lets a machine replay on its own, so every change to one is on the audit trail with who made it.
+    private Task AuditAsync(string action, string resource, bool succeeded, CancellationToken cancellationToken) =>
+        _audit.RecordAsync(new AuditLog
+        {
+            Id = Guid.NewGuid(), Timestamp = DateTimeOffset.UtcNow, OwnerId = OwnerId, UserIdentity = Actor.Identity,
+            Action = action, Outcome = succeeded ? AuditActions.Success : AuditActions.Failure, ResourceName = resource,
+            CorrelationId = HttpContext.TraceIdentifier, HttpMethod = Request.Method, HttpPath = Request.Path.Value,
+        }, cancellationToken);
 
     /// <summary>One cloud's rules, with what actually happened under each.</summary>
     [HttpGet]
@@ -58,6 +73,7 @@ public sealed class RulesController : ApiControllerBase
         var result = await _rules.CreateAsync(
             OwnerId, cloud, request.Name, request.Reason, request.EntityName, request.SignatureHash,
             request.MaxPerHour ?? 10, request.WaitSeconds ?? 120, request.BackOff ?? true, cancellationToken);
+        await AuditAsync(AuditActions.RuleCreate, result.IsSuccess ? $"{result.Value.Id} · {result.Value.Name}" : request.Name, result.IsSuccess, cancellationToken);
         return result.IsFailure ? Problem(result.Error) : Created($"/api/v1/rules/{result.Value.Id}", result.Value);
     }
 
@@ -71,6 +87,7 @@ public sealed class RulesController : ApiControllerBase
         if (await DeniedUnlessAsync(request.Enabled ? GovernanceRole.Approver : GovernanceRole.Operator, null, PillarKind.Recover,
                 request.Enabled ? "switch an auto-replay rule on" : "switch an auto-replay rule off", cancellationToken) is { } denied) return denied;
         var result = await _rules.SetEnabledAsync(OwnerId, id, request.Enabled, cancellationToken);
+        await AuditAsync(AuditActions.RuleToggle, $"{id} · {(request.Enabled ? "on" : "off")}", result.IsSuccess, cancellationToken);
         return result.IsFailure ? Problem(result.Error) : Ok(result.Value);
     }
 
@@ -82,6 +99,7 @@ public sealed class RulesController : ApiControllerBase
     {
         if (await DeniedUnlessAsync(GovernanceRole.Approver, null, PillarKind.Recover, "change an auto-replay rule", cancellationToken) is { } denied) return denied;
         var result = await _rules.UpdateAsync(OwnerId, id, request.Name, request.MaxPerHour ?? 10, request.WaitSeconds ?? 120, request.BackOff ?? true, cancellationToken);
+        await AuditAsync(AuditActions.RuleUpdate, $"{id} · {request.Name}", result.IsSuccess, cancellationToken);
         return result.IsFailure ? Problem(result.Error) : Ok(result.Value);
     }
 
@@ -93,6 +111,7 @@ public sealed class RulesController : ApiControllerBase
     {
         if (await DeniedUnlessAsync(GovernanceRole.Operator, null, PillarKind.Recover, "delete an auto-replay rule", cancellationToken) is { } denied) return denied;
         var result = await _rules.DeleteAsync(OwnerId, id, cancellationToken);
+        await AuditAsync(AuditActions.RuleDelete, id.ToString(System.Globalization.CultureInfo.InvariantCulture), result.IsSuccess, cancellationToken);
         return result.IsFailure ? Problem(result.Error) : NoContent();
     }
 
@@ -118,7 +137,9 @@ public sealed class RulesController : ApiControllerBase
         }
 
         if (await DeniedUnlessAsync(GovernanceRole.Approver, null, PillarKind.Recover, "create auto-replay rules", cancellationToken) is { } denied) return denied;
-        return Ok(await _rules.GenerateAsync(OwnerId, AllowedNamespaceIds, cloud, request.Max ?? 5, cancellationToken));
+        var made = await _rules.GenerateAsync(OwnerId, AllowedNamespaceIds, cloud, request.Max ?? 5, cancellationToken);
+        await AuditAsync(AuditActions.RuleGenerate, $"{cloud} · {made.Count} rule(s)", true, cancellationToken);
+        return Ok(made);
     }
 
     /// <summary>What a rule would have done over the last days, by today's checks. Sends nothing.</summary>
