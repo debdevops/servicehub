@@ -22,6 +22,7 @@ export function permission(me: Me | undefined, needed: Role, what: string, opts:
       : me.recoverRole
     : me.effectiveRole
   if (role && rank[role] >= rank[needed]) return { allowed: true, reason: null }
-  const who = me.grantors && me.grantors.length > 0 ? me.grantors.join(', ') : 'the server’s administrator'
+  const named = me.grantors && me.grantors.length > 0 ? me.grantors.join(', ') : 'the server’s administrator'
+  const who = named.charAt(0).toUpperCase() + named.slice(1) // it opens a sentence: "The server’s owner can grant it."
   return { allowed: false, reason: `To ${what} you need the ${needed} role. You have ${role ? `the ${role} role` : 'no role here'}. ${who} can grant it.` }
 }

@@ -26,10 +26,14 @@ export function ReplayedNumbers({ provider, choice, window = '24h' }: { provider
   const watching = count(data.states, 'Observing')
   const rate = data.stayedFixedRate
   const words = windowWords[window]
+  // The tile counts replays the cloud ACCEPTED; the table below lists every attempt, so it can be longer. Say so rather than show two numbers.
+  // Only attempts that were refused or lost count: a Declined entry was never tried, and the list leaves it out.
+  const notAccepted = count(data.states, 'ExecutionFailed') + count(data.states, 'ExecutionUnknown')
+  const replayedNote = notAccepted > 0 ? `${words} · ${notAccepted.toLocaleString()} more tried, not accepted` : words
 
   return (
     <section className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label={`Replays, ${words}`}>
-      <Tile Icon={RotateCcw} tone="bg-[#dbeafe] text-[#1d4ed8]" value={data.replaysAccepted.toLocaleString()} label="messages replayed" note={words} />
+      <Tile Icon={RotateCcw} tone="bg-[#dbeafe] text-[#1d4ed8]" value={data.replaysAccepted.toLocaleString()} label="messages replayed" note={replayedNote} />
       <Tile Icon={ShieldCheck} tone="bg-[#d1fae5] text-[#047857]" box="bg-[#f0fdf4]" value={rate === null ? '—' : `${Math.round(rate * 100)}%`} label="stayed fixed" note={rate === null ? 'nothing has been checked yet' : `${recovered} of ${checkable} that could be checked`} />
       <Tile Icon={Eye} tone="bg-[#f3e8ff] text-[#7e22ce]" box="bg-[#faf5ff]" value={watching.toLocaleString()} label="being watched now" note="inside their watch window" />
       <Tile Icon={CircleAlert} tone="bg-[#fee2e2] text-[#dc2626]" box={returned > 0 ? 'bg-[#fef2f2]' : undefined} value={returned.toLocaleString()} label={returned > 0 ? 'came back — needs a look' : 'came back'} note="failed the same way again" />

@@ -89,6 +89,7 @@ public abstract class ApiControllerBase : ControllerBase
         var yours = await evaluator.GetEffectiveRoleAsync(OwnerId, identity, namespaceId, pillar, cancellationToken);
         var grantors = await GrantorsAsync(namespaceId, cancellationToken);
         var who = grantors.Count == 0 ? "the server's administrator" : string.Join(", ", grantors);
+        who = char.ToUpperInvariant(who[0]) + who[1..]; // it opens a sentence: "The server's owner can grant it."
         var denied = Problem(StatusCodes.Status403Forbidden, ErrorCodes.PermissionDenied,
             $"To {whatFor} you need the {required} role{(namespaceId is null ? "" : " for this namespace")}. You have {(yours is { } r ? $"the {r} role" : "no role here")}. {who} can grant it.");
         var problem = (ProblemDetails)denied.Value!;

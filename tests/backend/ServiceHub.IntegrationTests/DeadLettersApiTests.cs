@@ -325,7 +325,16 @@ public sealed class DeadLettersApiTests
 
         var response = await host.Client.GetAsync($"/api/v1/dead-letters?namespaceId={ns}");
 
-        (await response.Content.ReadAsStringAsync()).Should().NotContain("SECRET-BODY-TEXT").And.NotContain("bodyPreview");
+        // The list never carries the stored body field. A row's one-line gist (unit 9acead34) is the only place body text appears,
+        // and it is bounded to MessageGist's preview length, so the full body still only opens with one message.
+        var json = await response.Content.ReadAsStringAsync();
+        json.Should().NotContain("bodyPreview");
+        var row = JsonDocument.Parse(json).RootElement.GetProperty("items")[0];
+        row.TryGetProperty("body", out _).Should().BeFalse("a list row never carries a body field");
+        if (row.TryGetProperty("gist", out var gist) && gist.TryGetProperty("preview", out var preview) && preview.ValueKind == JsonValueKind.String)
+        {
+            preview.GetString()!.Length.Should().BeLessThanOrEqualTo(141, "the gist is a one-line snippet, not the body");
+        }
     }
 
     [Fact]

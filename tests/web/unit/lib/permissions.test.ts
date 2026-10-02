@@ -11,6 +11,10 @@ describe('permission', () => {
     expect(p.allowed).toBe(false)
     expect(p.reason).toBe('To replay this message you need the Operator role. You have no role here. ApiKey:lead can grant it.')
   })
+  it('starts the sentence with a capital when it names the server rather than a person', () => {
+    expect(permission(me({ grantors: [] }), 'Admin', 'grant roles').reason).toBe('To grant roles you need the Admin role. You have the Viewer role. The server’s administrator can grant it.')
+    expect(permission(me({ grantors: ['the server\'s owner'] }), 'Admin', 'x').reason).toMatch(/\. The server's owner can grant it\.$/)
+  })
   it('lets a namespace grant add rights the fleet role lacks', () => {
     const m = me({ recoverRole: 'Viewer', namespaceRecoverRoles: { n1: 'Operator' } })
     expect(permission(m, 'Operator', 'replay', { recover: true, namespaceId: 'n1' }).allowed).toBe(true)

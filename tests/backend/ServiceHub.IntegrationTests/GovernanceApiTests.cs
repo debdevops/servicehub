@@ -65,6 +65,24 @@ public sealed class GovernanceApiTests
     }
 
     [Fact]
+    public async Task A_refusal_that_names_the_server_owner_starts_that_sentence_with_a_capital()
+    {
+        var (host, log, id) = await Seeded();
+        using var _ = host;
+        // Only a Viewer grant is made, so the one Admin is the owner-level grant the first grant records: "the server's owner".
+        (await host.Client.SendAsync(Req(HttpMethod.Post, "/api/v1/governance/grants", null, "grant-role", new { granteeIdentity = "reader", granteeKind = "ApiKey", role = "Viewer" })))
+            .StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var refused = await host.Client.SendAsync(Req(HttpMethod.Post, $"/api/v1/dead-letters/{id}/replay", "reader-key-value", "replay-message"));
+
+        refused.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var detail = (await Json(refused)).GetProperty("detail").GetString()!;
+        detail.Should().EndWith("The server's owner can grant it.", "it opens a sentence");
+        detail.Should().NotMatchRegex(@"\.\s+[a-z]", "no sentence in the message starts in lower case");
+        log.Replays.Should().Be(0);
+    }
+
+    [Fact]
     public async Task A_viewer_is_refused_with_the_reason_and_the_grantor_named_and_a_revoke_never_restores_admin()
     {
         var (host, log, id) = await Seeded();
