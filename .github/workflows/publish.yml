@@ -1,8 +1,7 @@
-# Publishes the ARCHIVED ServiceHub 4.0.0 Docker image (see archive/servicehub-4.0.0/Dockerfile) to GitHub
-# Container Registry on every version tag push — but only when the tag equals the archive's own version
-# (verify-release-tag.sh, ADR-0013 D6), so it can never publish 4.0.0 code as another release. This does not change how the image is built —
-# it only adds the registry-publish step that was missing (main CI only builds and
-# smoke-tests the image, it never pushes it anywhere).
+# Publishes a ServiceHub Docker image to GitHub Container Registry on every version tag push.
+# v4.0.x builds the ARCHIVED 4.0.0 codebase (archive/servicehub-4.0.0/); v4.1.x builds the repo root. The
+# tag must equal the selected codebase's own .version (verify-release-tag.sh, ADR-0013 D6), so one
+# generation can never be published as the other's release. Main CI only builds and smoke-tests the image.
 #
 # Image: ghcr.io/<owner>/servicehub
 # Tags pushed per release: the full semver (X.Y.Z), the X.Y minor-version alias, and
@@ -32,10 +31,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Refuse to publish the archived 4.0.0 codebase under any other version
-        # ADR-0013 D6. This workflow builds archive/servicehub-4.0.0/. Without this check, tagging
-        # v4.1.0 for the new ServiceHub would publish the frozen 4.0.0 code as ":4.1.0" and ":latest".
-        run: .github/scripts/verify-release-tag.sh "${{ github.ref_type }}" "${{ github.ref_name }}" archive/servicehub-4.0.0/.version
+      - name: Select the codebase for this tag (refuses a tag that does not match it)
+        # ADR-0013 D6. v4.0.x → archive/servicehub-4.0.0, v4.1.x → repo root; the tag must equal that .version.
+        id: codebase
+        run: .github/scripts/verify-release-tag.sh "${{ github.ref_type }}" "${{ github.ref_name }}"
 
       - name: Set up QEMU (multi-arch emulation)
         uses: docker/setup-qemu-action@v3
@@ -63,8 +62,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: archive/servicehub-4.0.0
-          file: archive/servicehub-4.0.0/Dockerfile
+          context: ${{ steps.codebase.outputs.context }}
+          file: ${{ steps.codebase.outputs.dockerfile }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}

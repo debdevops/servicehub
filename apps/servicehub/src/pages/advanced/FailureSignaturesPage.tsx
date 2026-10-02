@@ -25,6 +25,7 @@ import { IncidentTimeline, TraceView } from '../../components/advanced/Signature
 import { RetryLink } from '../../components/ui/RetryLink'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { Select as UiSelect } from '../../components/ui/Select'
+import PageHelpLink from '../../components/help/PageHelpLink'
 
 const asTab = (v: string | null): SignatureTab => (v === 'growing' || v === 'helps' || v === 'doesnt' ? v : 'all')
 const asProvider = (v: string | null): CloudProvider | undefined => (v === 'azure' || v === 'aws' || v === 'gcp' ? v : undefined)
@@ -114,7 +115,7 @@ export default function FailureSignaturesPage() {
       <header className="mb-4 flex flex-wrap items-start gap-3 sm:gap-5">
         <div className="min-w-0">
           <h1 className="flex items-center gap-2.5 text-2xl font-extrabold tracking-tight">
-            <Fingerprint className="h-6 w-6 text-[var(--color-primary-600)]" aria-hidden="true" /> Failure Signatures <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} />
+            <Fingerprint className="h-6 w-6 text-[var(--color-primary-600)]" aria-hidden="true" /> Failure Signatures <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} /> <PageHelpLink page="advanced" />
           </h1>
           <p className="mt-[3px] text-[13px] text-[var(--color-text-muted)]">Failures grouped by how they fail. The Agent and the rules reason about these groups, not single messages.</p>
         </div>

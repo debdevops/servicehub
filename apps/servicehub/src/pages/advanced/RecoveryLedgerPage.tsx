@@ -28,6 +28,7 @@ import { providerLabel } from '../../lib/providers'
 import type { CloudProvider, Namespace } from '../../lib/api/namespaces'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { Select } from '../../components/ui/Select'
+import PageHelpLink from '../../components/help/PageHelpLink'
 
 
 const windows: readonly { id: RecoveryWindow; label: string }[] = [
@@ -117,7 +118,7 @@ export default function RecoveryLedgerPage() {
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold text-[var(--color-text)]">
             <ScrollText className="h-6 w-6 text-[var(--color-primary-600)]" aria-hidden="true" /> Recovery Ledger{' '}
-            <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} />
+            <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} /> <PageHelpLink page="advanced" />
           </h1>
           <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">Every recovery action, who took it, the evidence, and how it ended. Append-only and tamper-evident.</p>
         </div>

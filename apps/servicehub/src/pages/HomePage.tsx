@@ -21,6 +21,7 @@ import { useNamespaces } from '../hooks/useNamespaces'
 import { useHomeScope } from '../lib/home/scope'
 import { connectedProviders, providerLabel } from '../lib/providers'
 import { Select } from '../components/ui/Select'
+import PageHelpLink from '../components/help/PageHelpLink'
 
 /**
  * Home — the one Simple page (D48, 2026-09-27): everything that used to be split across Home and Fleet
@@ -118,7 +119,7 @@ function HomeBody({ connected, allNamespaces, homeScope }: {
       <header className="mb-[18px] flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-extrabold tracking-tight text-[var(--color-text)]">
-            Home <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} />
+            Home <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} /> <PageHelpLink page="home" />
           </h1>
           <p className="mt-[3px] text-[13px] text-[var(--color-text-muted)]">
             What needs you, how every cloud you’ve connected is doing, and the detail for the one you pick.

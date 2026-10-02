@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react'
-import { X } from 'lucide-react'
+import { CircleHelp, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 const focusable = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
@@ -16,6 +17,7 @@ export function OverlayFrame({
   size = 'default',
   actions,
   docked = false,
+  helpHref,
   children,
 }: {
   kind: 'modal' | 'panel'
@@ -31,6 +33,8 @@ export function OverlayFrame({
    * message drawer is read next to its table. It still traps Tab and takes Esc, and restores focus on close.
    */
   docked?: boolean
+  /** Where this screen's (?) goes: its step in the Help guide. */
+  helpHref?: string
   children: ReactNode
 }) {
   const frame = useRef<HTMLDivElement>(null)
@@ -106,6 +110,11 @@ export function OverlayFrame({
             {description && <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">{description}</p>}
           </div>
           {actions}
+          {helpHref && (
+            <Link to={helpHref} aria-label={`Help for ${title}`} title="Help for this screen" className="rounded-lg p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)]">
+              <CircleHelp className="h-4 w-4" aria-hidden="true" />
+            </Link>
+          )}
           <button
             type="button"
             aria-label="Close"

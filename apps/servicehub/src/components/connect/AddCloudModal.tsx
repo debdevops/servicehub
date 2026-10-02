@@ -247,7 +247,7 @@ export default function AddCloudModal({ close }: OverlayBodyProps) {
               </div>
             )}
           </Field>
-          <Hint>Least privilege: a <b>Listen</b> policy is enough to watch. Replaying also needs <b>Send</b>.</Hint>
+          <Hint>Use a policy made just for ServiceHub with <b>Manage</b>, <b>Send</b> and <b>Listen</b>. Azure only lets <b>Manage</b> list queues and count messages; <b>Send</b> is used only when you replay.</Hint>
         </>
       )}
 
@@ -339,7 +339,7 @@ const steps: Record<CloudProvider, { title: string; items: readonly ReactNode[] 
     items: [
       <>In the Azure portal open your <b>Service Bus namespace</b>.</>,
       <>Choose <b>Settings → Shared access policies</b>. Prefer a policy made just for ServiceHub over <code>RootManageSharedAccessKey</code>.</>,
-      <>Give it <b>Listen</b> to watch, and <b>Send</b> as well if you want to replay. It needs no <b>Manage</b>.</>,
+      <>Tick <b>Manage</b>, <b>Send</b> and <b>Listen</b>. Azure only lets <b>Manage</b> list your queues and count their messages — without it ServiceHub cannot see them. <b>Send</b> is used only when you replay.</>,
       <>Open the policy and copy the <b>Primary connection string</b> — it starts <code>Endpoint=sb://</code>.</>,
     ],
   },

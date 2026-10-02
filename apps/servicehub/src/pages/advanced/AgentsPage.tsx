@@ -13,6 +13,7 @@ import { formatWhen } from '../../lib/format'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { sectionHelp } from '../../content/sections'
 import { InfoTip } from '../../components/ui/InfoTip'
+import PageHelpLink from '../../components/help/PageHelpLink'
 
 const kindWord = { watch: 'Watch', decide: 'Decide', act: 'Act', maintain: 'Maintain' } as const
 
@@ -60,7 +61,7 @@ export default function AgentsPage() {
       <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold text-[var(--color-text)]">
-            <Bot className="h-6 w-6 text-[var(--color-primary-600)]" aria-hidden="true" /> Agents <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} />
+            <Bot className="h-6 w-6 text-[var(--color-primary-600)]" aria-hidden="true" /> Agents <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} /> <PageHelpLink page="advanced" />
           </h1>
           <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">The machinery that runs in the background — what each one does, what it may do on its own, and how it’s doing.</p>
         </div>

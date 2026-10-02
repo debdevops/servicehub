@@ -2,6 +2,7 @@ import { Suspense } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { visibleEntries, type OverlayEntry } from '../../nav/navigation'
 import { OverlayFrame } from './OverlayFrame'
+import { screenHelpStep } from '../../content/help'
 import { overlayBodies, overlayCompanionParams, overlayWide, overlayWider } from './registry'
 
 type OverlayKind = 'modal' | 'panel'
@@ -42,6 +43,16 @@ export function OverlayHost({ connectedCloudCount }: { connectedCloudCount: numb
     )
   }
 
+  // The (?) swaps whatever is open for the Help panel, on this screen's step.
+  const helpHref = (id: string) => {
+    const step = screenHelpStep[id]
+    if (!step || id === 'help') return undefined
+    const next = new URLSearchParams(params)
+    next.delete('modal'); next.delete('panel')
+    next.set('panel', 'help'); next.set('topic', 'guide-azure'); next.set('step', step)
+    return `${pathname}?${next}`
+  }
+
   // A panel can sit under a modal (Replay opened from the rules panel), so both may be open.
   const open = (['panel', 'modal'] as const).flatMap((kind) => {
     const entry = find(kind)
@@ -54,7 +65,7 @@ export function OverlayHost({ connectedCloudCount }: { connectedCloudCount: numb
         const Body = overlayBodies[entry.id]
         const onClose = close(kind, entry.id)
         return (
-          <OverlayFrame key={`${kind}:${entry.id}`} kind={kind} title={entry.label} description={entry.description} onClose={onClose} size={overlayWider.has(entry.id) ? 'wider' : overlayWide.has(entry.id) ? 'wide' : 'default'}>
+          <OverlayFrame key={`${kind}:${entry.id}`} kind={kind} title={entry.label} description={entry.description} onClose={onClose} helpHref={helpHref(entry.id)} size={overlayWider.has(entry.id) ? 'wider' : overlayWide.has(entry.id) ? 'wide' : 'default'}>
             {Body ? (
               <Suspense fallback={<p className="text-sm text-[var(--color-text-muted)]">Loading…</p>}>
                 <Body entry={entry} close={onClose} />

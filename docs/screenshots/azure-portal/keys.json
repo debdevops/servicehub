@@ -1,0 +1,122 @@
+{
+ "portal-01-namespace-overview.png": [
+  {
+   "n": 1,
+   "t": "Host name \u2014 the address of your namespace. Your connection string begins Endpoint=sb:// followed by this name."
+  },
+  {
+   "n": 2,
+   "t": "Pricing tier \u2014 Standard or Premium. Basic has no topics; queues work on every tier."
+  },
+  {
+   "n": 3,
+   "t": "Settings \u2192 Shared access policies \u2014 where you create and copy the connection string ServiceHub uses."
+  },
+  {
+   "n": 4,
+   "t": "Entities \u2014 your Queues and Topics live here."
+  }
+ ],
+ "portal-02-shared-access-policies.png": [
+  {
+   "n": 1,
+   "t": "Add \u2014 creates a new policy. Make one just for ServiceHub, so you can revoke it without touching anything else."
+  },
+  {
+   "n": 2,
+   "t": "RootManageSharedAccessKey \u2014 the namespace's default key, shared by everything. Do not hand this one to ServiceHub."
+  },
+  {
+   "n": 3,
+   "t": "Any policy you already have for another tool \u2014 better not to share it. Give ServiceHub its own."
+  }
+ ],
+ "portal-03-add-policy.png": [
+  {
+   "n": 1,
+   "t": "Policy name \u2014 for example servicehub-app, so you can recognise (and later revoke) it."
+  },
+  {
+   "n": 2,
+   "t": "Manage \u2014 required. Azure lets only Manage list your queues and count their messages; without it ServiceHub cannot see them."
+  },
+  {
+   "n": 3,
+   "t": "Send \u2014 used only when you press Replay, to put a copy of a dead letter back."
+  },
+  {
+   "n": 4,
+   "t": "Listen \u2014 used to read queues and dead-letter queues."
+  }
+ ],
+ "portal-03b-add-policy-filled.png": [
+  {
+   "n": 1,
+   "t": "The name you chose."
+  },
+  {
+   "n": 2,
+   "t": "Manage, Send and Listen. Azure ticks Send and Listen for you when you tick Manage \u2014 Manage includes them."
+  },
+  {
+   "n": 3,
+   "t": "Create \u2014 saves the policy and generates its keys."
+  }
+ ],
+ "portal-04-policy-created.png": [
+  {
+   "n": 1,
+   "t": "Your new policy appears in the list."
+  },
+  {
+   "n": 2,
+   "t": "Claims \u2014 Manage, Send, Listen."
+  }
+ ],
+ "portal-05-connection-string.png": [
+  {
+   "n": 1,
+   "t": "Claims \u2014 what this policy may do."
+  },
+  {
+   "n": 2,
+   "t": "Primary connection string \u2014 click the eye to reveal, then the copy icon. Paste this into ServiceHub. Treat it like a password."
+  },
+  {
+   "n": 3,
+   "t": "Copy to clipboard \u2014 copies the whole connection string."
+  },
+  {
+   "n": 4,
+   "t": "Delete \u2014 the way to revoke ServiceHub's access later."
+  }
+ ],
+ "portal-06-queues.png": [
+  {
+   "n": 1,
+   "t": "Queue name \u2014 ServiceHub finds every queue in the namespace; you do not list them."
+  },
+  {
+   "n": 2,
+   "t": "Active messages \u2014 waiting to be processed."
+  },
+  {
+   "n": 3,
+   "t": "Dead-letter messages \u2014 failed too often and were set aside. These are what ServiceHub shows on its Dead letters tab."
+  }
+ ],
+ "portal-07-queue-overview.png": [
+  {
+   "n": 1,
+   "t": "Max delivery count \u2014 how many tries before Azure dead-letters a message. Here 3."
+  },
+  {
+   "n": 2,
+   "t": "Message counts \u2014 Active and Dead-letter must match what ServiceHub shows."
+  },
+  {
+   "n": 3,
+   "t": "Dead lettering on expiry is off \u2014 messages here are dead-lettered by delivery count or by your app, which is all ServiceHub needs."
+  }
+ ]
+}

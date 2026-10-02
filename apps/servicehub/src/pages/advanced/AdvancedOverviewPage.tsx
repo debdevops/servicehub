@@ -20,6 +20,7 @@ import { Skeleton } from '../../components/ui/Skeleton'
 import { sectionHelp } from '../../content/sections'
 import { TabBar } from '../../components/ui/TabBar'
 import { Select } from '../../components/ui/Select'
+import PageHelpLink from '../../components/help/PageHelpLink'
 
 const windows: readonly { id: RecoveryWindow; label: string; days: number }[] = [
   { id: '24h', label: 'Last 24 hours', days: 1 },
@@ -66,7 +67,7 @@ export default function AdvancedOverviewPage() {
     <section className="px-6 py-6">
       <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="flex items-center gap-2 text-2xl font-semibold"><LayoutGrid className="h-6 w-6 text-[var(--color-primary-600)]" aria-hidden="true" /> Advanced Overview</h1>
+          <h1 className="flex items-center gap-2 text-2xl font-semibold"><LayoutGrid className="h-6 w-6 text-[var(--color-primary-600)]" aria-hidden="true" /> Advanced Overview <PageHelpLink page="advanced" /></h1>
           <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">The control plane. What Simple states as an outcome, Advanced states as a breakdown.</p>
         </div>
         <div className="flex flex-wrap gap-2 text-sm">

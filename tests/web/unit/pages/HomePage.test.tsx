@@ -89,7 +89,7 @@ describe('Home', () => {
       mocked.fetchNamespaceStats.mockResolvedValue(stats('orders-dev'))
       renderHome()
 
-      expect(await screen.findByRole('heading', { name: 'Home' })).toBeInTheDocument()
+      expect(await screen.findByRole('heading', { name: /^Home/ })).toBeInTheDocument()
       expect(await screen.findByRole('heading', { name: 'Azure' })).toBeInTheDocument()
       expect(screen.getByText('Dead letters', { selector: 'div' })).toBeInTheDocument()
       expect(screen.getByText('Active messages', { selector: 'div' })).toBeInTheDocument()

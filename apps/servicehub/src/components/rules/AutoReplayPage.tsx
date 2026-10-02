@@ -20,6 +20,7 @@ import { waitingHref } from '../../lib/urlState'
 import { Select } from '../ui/Select'
 
 import { ruleTitle } from '../../lib/ruleName'
+import PageHelpLink from '../help/PageHelpLink'
 
 const rulesKey = (p: CloudProvider) => ['rules', p] as const
 
@@ -64,9 +65,9 @@ export function AutoReplayPage({ provider, onClose }: { provider: CloudProvider;
     return (
       <div className="space-y-5">
         <div className="flex items-start justify-between gap-4">
-          <h1 className="text-2xl font-semibold text-[var(--color-text)]">{cloud} — Auto Replay</h1>
-          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)]">
-            <X className="h-5 w-5" aria-label="Close" />
+          <h1 className="flex items-center gap-2 text-2xl font-semibold text-[var(--color-text)]">{cloud} — Auto Replay <PageHelpLink page="auto-replay" /></h1>
+          <button type="button" aria-label="Close" onClick={onClose} className="rounded-lg p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)]">
+            <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
         {rules.isPending
@@ -87,7 +88,7 @@ export function AutoReplayPage({ provider, onClose }: { provider: CloudProvider;
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold text-[var(--color-text)]">{cloud} — Auto Replay</h1>
+          <h1 className="flex items-center gap-2 text-2xl font-semibold text-[var(--color-text)]">{cloud} — Auto Replay <PageHelpLink page="auto-replay" /></h1>
           <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
             What ServiceHub may retry on its own — {list.length} {list.length === 1 ? 'rule' : 'rules'}, {on} on
             {stopped > 0 ? `, ${stopped} stopped itself` : ''}
@@ -117,8 +118,8 @@ export function AutoReplayPage({ provider, onClose }: { provider: CloudProvider;
               <Plus className="h-4 w-4" aria-hidden="true" /> Create rule
             </button>
           )}
-          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)]">
-            <X className="h-5 w-5" aria-label="Close" />
+          <button type="button" aria-label="Close" onClick={onClose} className="rounded-lg p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)]">
+            <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
       </div>

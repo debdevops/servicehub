@@ -2,6 +2,8 @@ import { Search } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { helpAnswers, shortcuts } from '../../content/help'
+import { azureGuide } from '../../content/guides/azure.generated'
+import GuideView from './GuideView'
 
 /**
  * Help (unit 6.4, `?panel=help`): "How do I…" with a search box, the everyday and setting-up questions, and the keyboard
@@ -13,6 +15,7 @@ import { helpAnswers, shortcuts } from '../../content/help'
 export default function HelpPanel() {
   const [params] = useSearchParams()
   const topic = params.get('topic')
+  const step = params.get('step')
   const [q, setQ] = useState('')
   const { pathname, search } = useLocation()
   const resolve = (href: string) => {
@@ -27,7 +30,7 @@ export default function HelpPanel() {
 
   useEffect(() => {
     if (!topic) return
-    document.getElementById(`help-${topic}`)?.scrollIntoView({ block: 'start' })
+    document.getElementById(step ? `guide-step-${step}` : `help-${topic}`)?.scrollIntoView({ block: 'start' })
     // Only on open — a later search should not keep yanking the panel back to this topic.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -63,6 +66,14 @@ export default function HelpPanel() {
         )
       })}
       {matching.length === 0 && <p className="text-[var(--color-text-muted)]">Nothing matches “{q}”. Try fewer words.</p>}
+
+      <section aria-label="Step by step" id="help-guide-azure">
+        <h3 className="mb-1 text-[10.5px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">Step by step — {azureGuide.title}</h3>
+        <details open={topic === 'guide-azure'} className="rounded-xl border border-[var(--color-border)]">
+          <summary className="cursor-pointer px-4 py-2.5 font-semibold">Every screen, with real screenshots</summary>
+          <div className="px-3 pb-3"><GuideView guide={azureGuide} openStep={step} /></div>
+        </details>
+      </section>
 
       <section aria-label="Keyboard">
         <h3 className="mb-1 text-[10.5px] font-bold uppercase tracking-[0.6px] text-[var(--color-text-muted)]">Keyboard</h3>

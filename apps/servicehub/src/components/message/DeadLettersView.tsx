@@ -27,6 +27,7 @@ import type { CloudProvider, Namespace } from '../../lib/api/namespaces'
 import { providerLabel } from '../../lib/providers'
 import { Skeleton } from '../ui/Skeleton'
 import { Select } from '../ui/Select'
+import PageHelpLink from '../help/PageHelpLink'
 
 
 const ranges: readonly { id: DeadLetterRange; label: string }[] = [
@@ -169,7 +170,7 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
       <header className="mb-4 min-h-[76px] flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
         <div>
         <h1 className="flex items-center gap-2 text-2xl font-extrabold tracking-tight text-[var(--color-text)]">
-          {cloud} — Dead letters <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} />
+          {cloud} — Dead letters <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} /> <PageHelpLink page="dead-letters" />
         </h1>
         <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
           Messages that failed too many times and were set aside. Pick one to see why, and put it back.

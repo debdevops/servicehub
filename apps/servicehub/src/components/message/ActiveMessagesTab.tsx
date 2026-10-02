@@ -25,6 +25,7 @@ import { namespaceKeys } from '../../hooks/useNamespaces'
 import { RetryLink } from '../ui/RetryLink'
 import { Skeleton } from '../ui/Skeleton'
 import { Select } from '../ui/Select'
+import PageHelpLink from '../help/PageHelpLink'
 
 /** A peek is one request for up to this many of the oldest messages (the API's ceiling); the grid pages through them locally. */
 const PEEK_MAX = 100
@@ -60,7 +61,7 @@ export function ActiveMessagesTab({ provider, namespaces }: { provider: CloudPro
     <section className="px-[22px] pb-6 pt-5">
       <header className="mb-4 min-h-[76px]">
         <h1 className="flex flex-wrap items-center gap-2 text-2xl font-extrabold tracking-tight text-[var(--color-text)]">
-          {cloud} — Active messages <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} />
+          {cloud} — Active messages <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} /> <PageHelpLink page="active" />
           <SendLink />
         </h1>
         <p className="mt-[3px] text-[13px] text-[var(--color-text-muted)]">

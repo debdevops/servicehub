@@ -98,7 +98,7 @@ describe('OverlayHost — the URL is the only switch', () => {
   it('keeps Tab inside the dialog', async () => {
     renderHost('/?modal=settings')
     await userEvent.tab()
-    expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus()
+    expect(screen.getByRole('link', { name: 'Help for Settings' })).toHaveFocus() // the screen's (?), 7.6
     await userEvent.tab()
     expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus()
   })

@@ -47,7 +47,7 @@ export const helpAnswers: readonly HelpAnswer[] = [
   },
   {
     id: 'connect', group: 'Setting up', question: 'Connect a cloud with the least access',
-    answer: 'Choose Add a cloud. Azure needs a connection string with Listen (and Send, to replay). AWS needs a key that can read, receive and send on the queues you care about. Google needs a service account with Pub/Sub subscriber and publisher roles. Credentials are encrypted at rest on this server.',
+    answer: 'Choose Add a cloud. Azure needs the connection string of a policy made for ServiceHub with Manage, Send and Listen (Manage so it can list queues and count messages; Send only to replay). AWS needs a key that can read, receive and send on the queues you care about. Google needs a service account with Pub/Sub subscriber and publisher roles. Credentials are encrypted at rest on this server.',
     link: { label: 'Add a cloud', href: '?modal=add-cloud' },
   },
   {
@@ -71,3 +71,26 @@ export const shortcuts: readonly { readonly keys: string; readonly does: string 
   { keys: 'A', does: 'Switch Simple / Advanced' },
   { keys: 'Esc', does: 'Close a panel or window' },
 ]
+
+/**
+ * Each screen's (?) opens the guide on its step (`?panel=help&topic=guide-azure&step=2.2`). Keyed by overlay id; a screen
+ * with no entry shows no (?). A test checks every step number exists in the guide.
+ */
+export const screenHelpStep: Readonly<Record<string, string>> = {
+  'add-cloud': '2.2',
+  connections: '7.1',
+  settings: '7.1',
+  replay: '4.4',
+  'bulk-replay': '4.5',
+  'auto-replay': '6.1',
+}
+
+/** Each page's book icon opens the guide on its step. A test checks every step exists in the guide. */
+export const pageHelpStep = {
+  home: '3.1',
+  'dead-letters': '4.1',
+  replayed: '5.1',
+  active: '5.2',
+  'auto-replay': '6.1',
+  advanced: '7.3',
+} as const

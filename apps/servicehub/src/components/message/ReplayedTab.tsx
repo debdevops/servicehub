@@ -22,6 +22,7 @@ import { Skeleton } from '../ui/Skeleton'
 import { ExplainerCard, ExplainerToggle } from '../explainer/Explainer'
 import { useExplainer } from '../explainer/useExplainer'
 import { Select } from '../ui/Select'
+import PageHelpLink from '../help/PageHelpLink'
 
 
 const endings = [
@@ -165,7 +166,7 @@ export function ReplayedTab({ provider, choice }: { provider: CloudProvider; cho
     <section className="px-[22px] pb-6 pt-5">
       <header className="mb-4 min-h-[76px] flex items-start justify-between">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-extrabold tracking-tight text-[var(--color-text)]">{cloud} — Replayed <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} /></h1>
+          <h1 className="flex items-center gap-2 text-2xl font-extrabold tracking-tight text-[var(--color-text)]">{cloud} — Replayed <ExplainerToggle visible={!explainer.shown} onShow={explainer.show} /> <PageHelpLink page="replayed" /></h1>
           <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">Everything that was put back, by whom, and how it went.</p>
         </div>
         <button
