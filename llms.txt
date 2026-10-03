@@ -12,6 +12,7 @@ by default. This is ServiceHub 4.1.0, a from-scratch rewrite with no upgrade pat
 ## Docs
 
 - [README](https://github.com/debdevops/servicehub/blob/main/README.md): What it is, quick start, safety model, deploying it
+- [Run with Docker](https://github.com/debdevops/servicehub/blob/main/docs/DOCKER.md): Pull the public image ghcr.io/debdevops/servicehub:4.1.0 (amd64, arm64), run, update, back up, troubleshoot
 - [Local setup](https://github.com/debdevops/servicehub/blob/main/docs/LOCAL-SETUP.md): Install, run, check and troubleshoot ServiceHub on your own machine
 - [Hosting on Azure](https://github.com/debdevops/servicehub/blob/main/docs/HOSTING-AZURE.md): Run it always-on on a small Azure VM, safely
 - [Azure Service Bus guide](https://github.com/debdevops/servicehub/blob/main/docs/clouds/azure.md): Step-by-step setup and use on Azure Service Bus, with annotated screenshots

@@ -7,7 +7,16 @@ sent back — then keeps a local record you can export and verify offline. It ru
 leaves your network: ServiceHub talks only to your clouds and, if you add one, to a notification channel (Slack, Teams or a webhook), which gets
 queue names and failure reasons, never message bodies.
 
-**Try it first, with made-up data and no cloud account:** start it (see [Quick start](#quick-start)) and open `/demo/azure`.
+**Try it in two minutes — no cloud account, made-up data** (needs [Docker](https://docs.docker.com/get-docker/)):
+
+```bash
+export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"      # keep this key; it protects stored cloud credentials
+docker run -d --name servicehub -p 127.0.0.1:8080:8080 -v servicehub-data:/data \
+  -e SECURITY__ENCRYPTIONKEY="$SERVICEHUB_ENCRYPTION_KEY" ghcr.io/debdevops/servicehub:4.1.0
+```
+
+Open **<http://localhost:8080>** and choose **Try it with sample data**. Public image, `linux/amd64` and `linux/arm64`, no sign-in to pull.
+Full guide — update, back up, stop, remove, troubleshoot: **[Run ServiceHub with Docker](docs/DOCKER.md)**.
 
 **Know the limits:** replay is refused on any namespace you mark as Production, and 4.1.0 has no way to override that · AWS and GCP cannot confirm a replay stayed fixed, so they read "verification required" · anyone who can reach its port is the admin, so keep it on `localhost`.
 
@@ -156,15 +165,7 @@ Open `/demo/azure` first to look around with made-up data, then **Add a cloud** 
 New to this, or something did not start? The **[Local setup guide](docs/LOCAL-SETUP.md)** covers prerequisites for macOS, Linux and Windows (WSL), what
 `./run.sh` checks and does, where your data lives, and a troubleshooting table. `./run.sh --check` verifies your machine without starting anything.
 
-**Docker, no clone needed** (tag `4.1.0`; the image is multi-arch):
-
-```bash
-export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"   # once — and keep it somewhere safe
-docker run -d --name servicehub --restart unless-stopped \
-  -p 127.0.0.1:8080:8080 -v servicehub-data:/data \
-  -e SECURITY__ENCRYPTIONKEY="$SERVICEHUB_ENCRYPTION_KEY" \
-  ghcr.io/debdevops/servicehub:4.1.0                          # → http://localhost:8080/demo/azure (this machine only)
-```
+**Docker, no clone needed** — the command is at the top of this page; the full guide is **[Run ServiceHub with Docker](docs/DOCKER.md)** (prerequisites, update, back up, remove, troubleshooting). `docker run` downloads the image for you; to fetch it first, `docker pull ghcr.io/debdevops/servicehub:4.1.0`.
 
 **Docker, from a clone:**
 
@@ -194,6 +195,7 @@ Step by step: **[Host ServiceHub on Azure](docs/HOSTING-AZURE.md)** — a small 
 
 | | |
 |---|---|
+| [Run with Docker](docs/DOCKER.md) | Download the public image, run it, update it, back it up, fix problems |
 | [Local setup](docs/LOCAL-SETUP.md) | Install, run, check and troubleshoot ServiceHub on your own machine |
 | [Hosting on Azure](docs/HOSTING-AZURE.md) | Run it always-on on an Azure VM, safely |
 | [Azure](docs/clouds/azure.md) · [AWS](docs/clouds/aws.md) · [Google Cloud](docs/clouds/gcp.md) | Step-by-step setup and use, with annotated screenshots |
