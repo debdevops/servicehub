@@ -150,7 +150,8 @@ public sealed class BackupRestoreService : IBackupRestore
         var dir = BundlePath(backupId)!;
         var manifest = ReadManifest(dir)!;
         var temp = Path.Combine(DataDir, PendingFileName + ".tmp");
-        File.Copy(SnapshotPath(dir, manifest) ?? throw new InvalidOperationException("The manifest names a file outside the backup folder."), temp, overwrite: true);
+        var source = SnapshotPath(dir, manifest) ?? throw new InvalidOperationException("The manifest names a file outside the backup folder.");
+        CopyVerified(source, temp, manifest.Sqlite.Sha256);
         File.Move(temp, Path.Combine(DataDir, PendingFileName), overwrite: true);
         await File.WriteAllTextAsync(Path.Combine(DataDir, PendingMarkerName),
             JsonSerializer.Serialize(new PendingRestore(backupId, _time.GetUtcNow()), Json), cancellationToken).ConfigureAwait(false);
@@ -252,6 +253,43 @@ public sealed class BackupRestoreService : IBackupRestore
         catch (JsonException)
         {
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Copies the snapshot through ONE open handle, hashing the bytes as they are staged, and keeps the copy only if they are the bytes the
+    /// manifest checksummed. The link check and the earlier checksum read are path-based, so the file could be swapped for a link between
+    /// them and this copy; reading and hashing the same handle means whatever is staged is exactly what the manifest vouches for.
+    /// </summary>
+    internal static void CopyVerified(string source, string destination, string expectedSha256)
+    {
+        try
+        {
+            using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (var output = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None))
+            using (var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
+            {
+                // Re-check on the open handle's path: a link swapped in before the open is caught here, and the hash below catches the rest.
+                if (IsLink(source)) throw new InvalidOperationException("The backup's database file is a link, so it is not trusted.");
+
+                var buffer = new byte[81920];
+                int read;
+                while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    hash.AppendData(buffer, 0, read);
+                    output.Write(buffer, 0, read);
+                }
+
+                if (!string.Equals(Convert.ToHexStringLower(hash.GetHashAndReset()), expectedSha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException("The backup's database file changed while it was being staged, so nothing was restored.");
+                }
+            }
+        }
+        catch
+        {
+            File.Delete(destination);
+            throw;
         }
     }
 

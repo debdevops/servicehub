@@ -55,4 +55,21 @@ public sealed class SnapshotPathTests : IDisposable
 
         BackupRestoreService.SnapshotPath(bundle, Manifest("servicehub.db")).Should().BeNull();
     }
+
+    [Fact]
+    public void Staging_keeps_a_copy_only_when_its_bytes_are_the_ones_the_manifest_checksummed()
+    {
+        var source = Path.Combine(_root, "bundle", "servicehub.db");
+        File.WriteAllText(source, "snapshot");
+        var good = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(source)));
+
+        var staged = Path.Combine(_root, "pending.tmp");
+        BackupRestoreService.CopyVerified(source, staged, good);
+        File.ReadAllText(staged).Should().Be("snapshot");
+
+        var rejected = Path.Combine(_root, "rejected.tmp");
+        var act = () => BackupRestoreService.CopyVerified(source, rejected, "0000");
+        act.Should().Throw<InvalidOperationException>();
+        File.Exists(rejected).Should().BeFalse("a copy that does not match the manifest must not be left behind");
+    }
 }
