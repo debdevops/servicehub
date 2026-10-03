@@ -80,9 +80,9 @@ def intent_headers(intent):
     return {**HEADERS, INTENT_HEADER: intent}
 
 
-def sh(method, path, extra_headers=None, **kwargs):
+def sh(method, path, extra_headers=None, timeout=30, **kwargs):
     headers = {**HEADERS, **extra_headers} if extra_headers else HEADERS
-    r = requests.request(method, f"{SH_BASE}{path}", headers=headers, timeout=30, **kwargs)
+    r = requests.request(method, f"{SH_BASE}{path}", headers=headers, timeout=timeout, **kwargs)
     try:
         body = r.json()
     except ValueError:
@@ -262,6 +262,8 @@ def run_provider(report, provider, ns_id, sig_hash, caps):
             "POST", f"/api/v1/dead-letters/{dlq_id}/purge",
             extra_headers=intent_headers("purge-message"),
             json={"reason": "ConformanceSuite"},
+            # A Pub/Sub pull can take ~20 s and a purge may need several to find its message (a deep backlog on 2026-10-03 hit 30 s once).
+            timeout=120,
         )
         if caps["supportsPurge"]:
             # HTTP 200 alone proves nothing: the endpoint answers 200 with `result: rejected` when the
