@@ -28,7 +28,7 @@ export function AgentBar({ cloud, provider, namespaces, queues, namespaceId, env
   cloud?: string; provider?: CloudProvider; namespaces: readonly Namespace[]; queues: number | null; namespaceId?: string; environment?: EnvironmentKind
 }) {
   const agents = useAgents()
-  const summary = useRecoverySummary({ window: '24h', provider, namespaceId, environment })
+  const summary = useRecoverySummary({ window: '24h', provider, namespaceId, environment, connectedOnly: true })
   const setPaused = useSetAgentsPaused()
   const pending = usePendingWork({ provider, namespaceId, environment })
   const me = useMe().data

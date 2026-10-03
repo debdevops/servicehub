@@ -33,11 +33,13 @@ public interface IRecoveryQueries
 
 /// <summary>
 /// Who is asking and what they may see: their owner, the namespace allow-list of their credential (null =
-/// unrestricted), and the filters they chose. The same scoping as every other query.
+/// unrestricted), and the filters they chose. <c>ConnectedOnly</c> drops entries of a namespace that has since been removed — for
+/// the Simple tiles, which must agree with the list beside them; the evidence views leave it off so removed history stays visible. The same scoping as every other query.
 /// </summary>
 public sealed record RecoveryScope(
     string OwnerId,
     IReadOnlySet<Guid>? AllowedNamespaceIds,
     Guid? NamespaceId = null,
     CloudProviderType? Provider = null,
-    EnvironmentType? Environment = null);
+    EnvironmentType? Environment = null,
+    bool ConnectedOnly = false);

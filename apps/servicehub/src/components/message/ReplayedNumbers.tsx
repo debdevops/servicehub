@@ -15,7 +15,7 @@ const windowWords: Record<RecoveryWindow, string> = { '24h': 'last 24 hours', '7
  * side, and no checkable replay is a dash, never 0% (R4, R5). There is no "change since yesterday": no earlier period is kept.
  */
 export function ReplayedNumbers({ provider, choice, window = '24h' }: { provider: CloudProvider; choice: ScopeChoice; window?: RecoveryWindow }) {
-  const { data, isPending, isError, refetch } = useRecoverySummary({ window, provider, namespaceId: choice.ns?.id, environment: choice.env ?? undefined })
+  const { data, isPending, isError, refetch } = useRecoverySummary({ window, provider, namespaceId: choice.ns?.id, environment: choice.env ?? undefined, connectedOnly: true })
   // Loading draws the four tiles' shape (6.1), so the table below does not jump when the numbers arrive.
   if (isPending) return <div className="mb-4 grid gap-3 sm:grid-cols-4" aria-hidden="true">{[0, 1, 2, 3].map((i) => <div key={i} className="h-[92px] animate-pulse rounded-2xl bg-[var(--color-border)]" />)}</div>
   if (isError || !data) return <p role="alert" className="mb-4 text-sm text-[var(--color-text-muted)]">ServiceHub couldn’t read the replay numbers just now; the list below is unaffected. <RetryLink onRetry={() => void refetch()} /></p>

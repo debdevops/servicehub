@@ -135,6 +135,32 @@ public sealed class RecoveryQueriesTests : IDisposable
     }
 
     [Fact]
+    public async Task Connected_only_drops_a_removed_namespaces_history_but_the_default_keeps_it_as_evidence()
+    {
+        // A cloud removed and re-added: the old namespace's entries are still in the ledger, but the namespace row is gone.
+        var removed = Guid.NewGuid();
+        var live = Namespace.Create("live-ns", "Endpoint=sb://live-ns.servicebus.windows.net/;SharedAccessKeyName=k;SharedAccessKey=dGVzdA==", ownerId: Owner).Value;
+        await using (var db = NewDb())
+        {
+            db.Namespaces.Add(live);
+            await db.SaveChangesAsync();
+        }
+
+        await Add(RecoveryEntryState.Observing, ns: removed);
+        await Add(RecoveryEntryState.Observing, ns: removed);
+        await Add(RecoveryEntryState.Recovered, ns: live.Id);
+
+        await using var read = NewDb();
+        var queries = new RecoveryQueries(read);
+        var evidence = await queries.SummariseAsync(new RecoveryScope(Owner, null), "24h", CancellationToken.None);
+        var tiles = await queries.SummariseAsync(new RecoveryScope(Owner, null, ConnectedOnly: true), "24h", CancellationToken.None);
+
+        evidence.Total.Should().Be(3, "the evidence outlives the connection");
+        tiles.Total.Should().Be(1, "Simple's tiles must agree with the list of connected namespaces beside them");
+        tiles.States.Single(x => x.State == "Observing").Count.Should().Be(0);
+    }
+
+    [Fact]
     public async Task The_window_bounds_what_counts()
     {
         await Add(RecoveryEntryState.Recovered);

@@ -203,6 +203,12 @@ public sealed class RecoveryQueries : IRecoveryQueries
             query = query.Where(e => e.NamespaceId == ns);
         }
 
+        // Simple's tiles sit beside a list of connected namespaces only; counting a removed cloud's history there made "100 being watched" over "1 replayed".
+        if (scope.ConnectedOnly)
+        {
+            query = query.Where(e => _db.Namespaces.Any(n => n.Id == e.NamespaceId));
+        }
+
         if (scope.Provider is { } provider)
         {
             query = query.Where(e => e.ProviderSnapshot == provider);

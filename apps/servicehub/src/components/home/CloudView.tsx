@@ -49,7 +49,7 @@ export function CloudView({ provider, allInCloud, allNamespaces, choice, window 
   const fleet = useQuery({ queryKey: ['fleet', window], queryFn: () => fetchFleet(window) })
   const fleetCloud = fleet.data?.clouds.find((c) => c.provider === provider)
   const traits = traitsOf(namespaces, fleetCloud)
-  const recovery = useRecoverySummary({ window, provider, namespaceId: choice.ns?.id, environment: choice.env ?? undefined })
+  const recovery = useRecoverySummary({ window, provider, namespaceId: choice.ns?.id, environment: choice.env ?? undefined, connectedOnly: true })
   const rules = useQuery({ queryKey: ['rules', provider], queryFn: () => fetchRules(provider) })
   const rulesHeld = useQuery({ queryKey: ['rules', provider, 'held'], queryFn: () => fetchRulesHeld(provider) })
   const connection = connectionState(allInCloud)

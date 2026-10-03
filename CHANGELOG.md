@@ -43,8 +43,10 @@ Left out on purpose; each was a written decision and can return as a tab or pane
 - The release workflow (`publish.yml`) selects the codebase from the tag (`v4.1.x` → repo root, `v4.0.x` → archive) and was proven by running every tag
   shape locally; it has **not yet run in real GitHub Actions**.
 - Real Slack/Teams delivery has not been exercised against a live workspace (the send path and its test endpoint are covered by tests).
-- The DLQ observer's ServiceHub side is built (a Connections setup, a test-message check, the Outcome Card link), but the observer's AWS Terraform module is unapplied
-  and nothing has been observed live. Until an observer is set up and shown working, AWS/GCP replays stay *"verification required"*.
+- **AWS replays stay *"verification required"*.** The DLQ observer's ServiceHub side is built (a Connections setup, a test-message check, the Outcome Card link), and its
+  AWS module was applied and logged a real test message end to end. But an SQS event-source mapping is itself a consumer: to avoid deleting messages it must hide each one it
+  observes, and a hidden message cannot be read by ServiceHub's *Look now* or replay. So the AWS observer is **not** recommended with 4.1.0 and no AWS replay is shown as *Verified*.
+  The GCP observer (a separate push subscription) does not have this limit and has not been exercised live.
 
 ### Changes since the last entry below (kept as the build log)
 

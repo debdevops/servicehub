@@ -42,10 +42,12 @@ export interface RecoveryScope {
   readonly namespaceId?: string
   /** Only entries made in this environment — the Environment level of the scope picker. */
   readonly environment?: EnvironmentKind
+  /** Leave out a removed cloud's history. Simple's tiles set it so they agree with the list beside them; evidence views don't. */
+  readonly connectedOnly?: boolean
 }
 
 const providerParam = (p: CloudProvider) => ({ azure: 'Azure', aws: 'Aws', gcp: 'Gcp' })[p]
-const scopeParams = (q: RecoveryScope) => ({ window: q.window, provider: q.provider ? providerParam(q.provider) : undefined, namespaceId: q.namespaceId, environment: q.environment })
+const scopeParams = (q: RecoveryScope) => ({ window: q.window, provider: q.provider ? providerParam(q.provider) : undefined, namespaceId: q.namespaceId, environment: q.environment, connectedOnly: q.connectedOnly || undefined })
 
 export async function fetchRecoverySummary(scope: RecoveryScope = {}): Promise<RecoverySummary> {
   return (await api.get<RecoverySummary>('/recovery/summary', { params: scopeParams(scope) })).data
