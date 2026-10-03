@@ -112,33 +112,56 @@ public sealed class BackupRestoreService : IBackupRestore
             return Done();
         }
 
-        var intact = File.Exists(snapshot) && string.Equals(Sha256(snapshot), manifest.Sqlite.Sha256, StringComparison.OrdinalIgnoreCase);
+        // Every check runs on a private copy that was verified against the manifest's checksum while it was being copied, never on the
+        // shared path: that path can be swapped (e.g. for a link) between any two reads, so checking it in place proves nothing about
+        // the file that is later staged.
+        var work = Path.Combine(DataDir, $"restore-check-{Guid.NewGuid():N}.tmp");
+        var intact = false;
+        try
+        {
+            CopyVerified(snapshot, work, manifest.Sqlite.Sha256);
+            intact = true;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException)
+        {
+            // fall through: reported below as not intact
+        }
+
         checks.Add(new("The file is the one that was backed up", intact,
             intact ? "Its checksum matches the manifest." : "Its checksum does not match the manifest — it was changed or damaged after the backup."));
         if (!intact) return Done();
 
-        var integrity = await ScalarAsync(snapshot, "PRAGMA integrity_check;", cancellationToken).ConfigureAwait(false);
-        var sound = string.Equals(integrity, "ok", StringComparison.OrdinalIgnoreCase);
-        checks.Add(new("The database inside is sound", sound, sound ? "SQLite's integrity check passed." : $"SQLite's integrity check found: {integrity}"));
-        if (!sound) return Done();
+        try
+        {
+            snapshot = work;
 
-        var sameKey = string.Equals(manifest.EncryptionKeyFingerprint, _protector.GetKeyFingerprint(), StringComparison.Ordinal);
-        checks.Add(new("It was made with this server's encryption key", sameKey, sameKey
-            ? "The key fingerprints match, so its saved connections will open."
-            : "It was made with a different encryption key, so its saved connections could not be opened here. Restore it on the server that holds that key, or bring that key here first."));
+            var integrity = await ScalarAsync(snapshot, "PRAGMA integrity_check;", cancellationToken).ConfigureAwait(false);
+            var sound = string.Equals(integrity, "ok", StringComparison.OrdinalIgnoreCase);
+            checks.Add(new("The database inside is sound", sound, sound ? "SQLite's integrity check passed." : $"SQLite's integrity check found: {integrity}"));
+            if (!sound) return Done();
 
-        var known = _db.Database.GetMigrations().ToHashSet(StringComparer.Ordinal);
-        var applied = await MigrationsAsync(snapshot, cancellationToken).ConfigureAwait(false);
-        var unknown = applied?.Where(m => !known.Contains(m)).ToList();
-        var schemaOk = applied is { Count: > 0 } && unknown is { Count: 0 };
-        checks.Add(new("Its schema is one this version knows", schemaOk,
-            applied is null or { Count: 0 } ? "It holds no ServiceHub 4.1.0 schema history — it is not a ServiceHub 4.1.0 database."
-            : schemaOk ? $"{applied.Count} of this build's {known.Count} schema steps; any missing ones are applied at start."
-            : $"It was made by a newer ServiceHub ({string.Join(", ", unknown!)}). Restore it with that version or later."));
-        if (!schemaOk) return Done();
+            var sameKey = string.Equals(manifest.EncryptionKeyFingerprint, _protector.GetKeyFingerprint(), StringComparison.Ordinal);
+            checks.Add(new("It was made with this server's encryption key", sameKey, sameKey
+                ? "The key fingerprints match, so its saved connections will open."
+                : "It was made with a different encryption key, so its saved connections could not be opened here. Restore it on the server that holds that key, or bring that key here first."));
 
-        checks.Add(await VerifyChainsAsync(snapshot, cancellationToken).ConfigureAwait(false));
-        return Done();
+            var known = _db.Database.GetMigrations().ToHashSet(StringComparer.Ordinal);
+            var applied = await MigrationsAsync(snapshot, cancellationToken).ConfigureAwait(false);
+            var unknown = applied?.Where(m => !known.Contains(m)).ToList();
+            var schemaOk = applied is { Count: > 0 } && unknown is { Count: 0 };
+            checks.Add(new("Its schema is one this version knows", schemaOk,
+                applied is null or { Count: 0 } ? "It holds no ServiceHub 4.1.0 schema history — it is not a ServiceHub 4.1.0 database."
+                : schemaOk ? $"{applied.Count} of this build's {known.Count} schema steps; any missing ones are applied at start."
+                : $"It was made by a newer ServiceHub ({string.Join(", ", unknown!)}). Restore it with that version or later."));
+            if (!schemaOk) return Done();
+
+            checks.Add(await VerifyChainsAsync(snapshot, cancellationToken).ConfigureAwait(false));
+            return Done();
+        }
+        finally
+        {
+            File.Delete(work);
+        }
     }
 
     /// <inheritdoc />

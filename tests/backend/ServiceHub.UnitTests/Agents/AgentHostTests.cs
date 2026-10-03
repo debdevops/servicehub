@@ -138,18 +138,24 @@ public sealed class AgentHostTests
     }
 
     [Fact]
-    public async Task A_pause_set_while_cycles_are_being_recorded_is_never_lost()
+    public void A_pause_set_while_cycles_are_being_recorded_is_never_lost()
     {
         var agent = new StubAgent(Descriptor("racy"), () => AgentCycleResult.Idle());
         var registry = new AgentRegistry([agent]);
         var run = DateTimeOffset.UtcNow;
 
-        for (var i = 0; i < 500; i++)
+        for (var i = 0; i < 2000; i++)
         {
             registry.SetPaused("racy", false);
-            var record = Task.Run(() => registry.RecordSuccess("racy", AgentCycleResult.Idle(), run));
-            var pause = Task.Run(() => registry.SetPaused("racy", true));
-            await Task.WhenAll(record, pause);
+
+            // A barrier releases both threads at the same instant, so the read-modify-write windows really overlap.
+            using var barrier = new Barrier(2);
+            var record = new Thread(() => { barrier.SignalAndWait(); registry.RecordSuccess("racy", AgentCycleResult.Idle(), run); });
+            var pause = new Thread(() => { barrier.SignalAndWait(); registry.SetPaused("racy", true); });
+            record.Start();
+            pause.Start();
+            record.Join();
+            pause.Join();
 
             registry.StateOf("racy")!.IsPaused.Should().BeTrue("a pause that finished must survive a cycle that was recording at the same moment");
         }
