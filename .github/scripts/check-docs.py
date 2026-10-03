@@ -4,6 +4,9 @@
 Why: the docs used to describe 4.0.0 paths, screens and tests that no longer existed, and nobody noticed. This fails the build when a
 tracked .md/llms.txt file points at something that is not in the repository.
 
+A cited path "exists" if a fresh checkout would have it (tracked, or new and not ignored) or git ignores it as a runtime/build path
+(except docs-private/, which tracked files must never cite). It never depends on what happens to be on the local disk.
+
 Checks, per tracked file (archive/ and CHANGELOG.md — a historical record — are skipped):
   * relative links and images  [text](path) · <img src="path"> · <a href="path">
   * absolute github.com/<repo>/blob/main/<path> links
@@ -32,8 +35,28 @@ files = [f for f in tracked if f and not f.startswith('archive/') and f not in S
 problems = []
 
 
+# What a fresh checkout will contain: tracked files plus new files that are not ignored. Judging by the local disk instead
+# (os.path.exists) let a doc pass here and fail in CI whenever it cited something that only exists on this machine
+# (a git-ignored runtime folder, a build output, docs-private/) — which is exactly how the build went red on 2026-10-03.
+_listed = subprocess.check_output(['git', 'ls-files', '-co', '--exclude-standard'], text=True).split('\n')
+TREE_FILES = {p for p in _listed if p}
+TREE_DIRS = {d for p in TREE_FILES for d in (os.path.dirname(p), *[os.path.dirname(p.rsplit('/', i)[0]) for i in range(1, p.count('/'))]) if d}
+
+
+def _ignored_runtime_path(path: str) -> bool:
+    """A path git ignores (the data folder `./run.sh` creates, build output) may be NAMED by a doc — it is where something lives at
+    run time. docs-private/ is ignored too, but a tracked file must never cite it, so it is excluded here."""
+    if path == 'docs-private' or path.startswith('docs-private/'):
+        return False
+    # A directory-only rule (`data/`) matches `path/` but not `path` when the folder does not exist yet, so ask both ways.
+    return any(subprocess.run(['git', 'check-ignore', '-q', p], capture_output=True).returncode == 0 for p in (path, path + '/'))
+
+
 def exists(path: str) -> bool:
-    return bool(glob.glob(path)) if any(c in path for c in '*{') else os.path.exists(path)
+    if any(c in path for c in '*{'):
+        pattern = re.compile('^' + re.escape(path).replace(r'\*', '[^/]*').replace(r'\{', '(?:').replace(r'\}', ')').replace(',', '|') + '$')
+        return any(pattern.match(f) for f in TREE_FILES | TREE_DIRS)
+    return path in TREE_FILES or path in TREE_DIRS or _ignored_runtime_path(path)
 
 
 for f in files:
