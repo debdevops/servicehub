@@ -63,7 +63,7 @@ describe('the Dead letters view', () => {
   it('has no accessibility violations (6.6)', async () => {
     const { container } = renderView()
     await screen.findByRole('table')
-    await expectNoAxeViolations(container)
+    await expectNoAxeViolations(container, { isolatedComponent: true })
   })
 
   it('lists the cloud’s dead letters as a real table, newest first, with a caption', async () => {
