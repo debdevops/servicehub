@@ -114,7 +114,15 @@ function Attention({ provider }: { provider?: CloudProvider }) {
   const pending = usePendingWork({ provider })
   const panel = useMinimizable('needs-your-attention-advanced')
   if (!pending.data) return pending.isError ? <p role="alert" className={card}>ServiceHub couldn’t read what needs you. <RetryLink onRetry={() => void pending.refetch()} /></p> : null
-  const groups = (['approval', 'rule', 'agent'] as const).map((kind) => ({ kind, items: pending.data.items.filter((i) => i.kind === kind) })).filter((g) => g.items.length > 0)
+  // The list is one capped page of what is waiting. Stopped agents and rules sort first and always fit it, so what is left of `total` is
+  // exactly the approvals — the card must say that, not the page size (it said "100 approvals" beside "494 things", 2026-10-03).
+  const others = pending.data.items.filter((i) => i.kind !== 'approval').length
+  const groups = (['approval', 'rule', 'agent'] as const)
+    .map((kind) => {
+      const items = pending.data.items.filter((i) => i.kind === kind)
+      return { kind, items, count: kind === 'approval' && items.length > 0 ? pending.data.total - others : items.length }
+    })
+    .filter((g) => g.items.length > 0)
   if (groups.length === 0) {
     return <p className={`${card} flex items-center gap-2 text-sm`}><ShieldCheck className="h-4 w-4 text-[var(--color-success)]" aria-hidden="true" /> Nothing needs a person right now.</p>
   }
@@ -138,12 +146,12 @@ function Attention({ provider }: { provider?: CloudProvider }) {
       </h2>
       {!panel.minimized && (
         <ul className="divide-y divide-[#fde68a]">
-          {groups.map(({ kind, items }) => {
+          {groups.map(({ kind, items, count }) => {
             const [one, many, link, to] = words[kind]
             return (
               <li key={kind} className="flex items-center gap-4 px-5 py-3 text-sm">
-                <span className="text-xl font-extrabold text-[#b45309]">{items.length}</span>
-                <span className="min-w-0 flex-1"><b>{items.length === 1 ? one : many}</b><span className="block truncate font-mono text-xs text-[var(--color-text-muted)]">{items.slice(0, 3).map((i) => i.entity ?? i.ruleName ?? i.agentId).filter(Boolean).join(' · ')} — {items[0].reason}</span></span>
+                <span className="text-xl font-extrabold text-[#b45309]">{count}</span>
+                <span className="min-w-0 flex-1"><b>{count === 1 ? one : many}</b><span className="block truncate font-mono text-xs text-[var(--color-text-muted)]">{items.slice(0, 3).map((i) => i.entity ?? i.ruleName ?? i.agentId).filter(Boolean).join(' · ')} — {items[0].reason}</span></span>
                 <Link to={to} className="whitespace-nowrap font-semibold text-[var(--color-primary-700)] hover:underline">{link}</Link>
               </li>
             )

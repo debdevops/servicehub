@@ -25,6 +25,92 @@ failure reasons, never message bodies.
 
 ![Dead letters](docs/screenshots/02-dead-letters.png)
 
+## Watch it work — all of Simple mode, start to finish
+
+One captioned video per cloud, about five minutes each. They cover everything you do day to day in **Simple** mode — Home, Dead letters, Look now, opening a message, **replaying one message, a few selected, or everything with Replay All** (always previewed first, always stoppable), Active messages, Replayed, Auto Replay, the approvals, Connections, Settings and Help — and then **how to switch to Advanced** (read-only: Overview, Recovery Ledger, Failure Signatures, Agents) and back. No sound needed. Click a preview to play the full video.
+
+| Azure Service Bus | AWS SQS / SNS | Google Pub/Sub |
+|:---:|:---:|:---:|
+| [![Azure Service Bus walkthrough — click to play](docs/media/azure-preview.gif)](docs/media/azure.mp4) | [![AWS SQS / SNS walkthrough — click to play](docs/media/aws-preview.gif)](docs/media/aws.mp4) | [![Google Pub/Sub walkthrough — click to play](docs/media/gcp-preview.gif)](docs/media/gcp.mp4) |
+| [▶ Azure Service Bus, 5:12](docs/media/azure.mp4) | [▶ AWS SQS / SNS, 5:07](docs/media/aws.mp4) | [▶ Google Pub/Sub, 6:03](docs/media/gcp.mp4) |
+
+<details><summary><b>Azure Service Bus</b> — chapters (5:12)</summary>
+
+- `0:07` Connect a cloud
+- `0:15` Home: every cloud
+- `0:26` Home: one cloud
+- `0:43` Dead letters (and Look now)
+- `0:57` Open a message
+- `1:05` Replay one message
+- `1:29` **Replay selected**: preview, run, watch
+- `2:09` **Replay All Messages**: preview, run, watch, stop
+- `2:43` Active messages and Send
+- `2:57` Replayed
+- `3:07` Auto Replay
+- `3:25` Needs you: approve or decline
+- `3:37` Connections
+- `3:45` Settings
+- `4:03` Help
+- `4:09` **Switch to Advanced**: Overview
+- `4:31` Advanced: Recovery Ledger
+- `4:44` Advanced: Failure Signatures
+- `4:53` Advanced: Agents
+- `5:02` **Back to Simple**
+
+</details>
+
+<details><summary><b>AWS SQS / SNS</b> — chapters (5:07)</summary>
+
+- `0:07` Connect a cloud
+- `0:14` Home: every cloud
+- `0:26` Home: one cloud
+- `0:42` Dead letters (and Look now)
+- `0:59` Open a message
+- `1:08` Replay one message
+- `1:32` **Replay selected**: preview, run, watch
+- `2:04` **Replay All Messages**: preview, run, watch, stop
+- `2:38` Active messages and Send
+- `2:52` Replayed
+- `3:02` Auto Replay
+- `3:20` Needs you: approve or decline
+- `3:32` Connections
+- `3:39` Settings
+- `3:58` Help
+- `4:04` **Switch to Advanced**: Overview
+- `4:26` Advanced: Recovery Ledger
+- `4:39` Advanced: Failure Signatures
+- `4:48` Advanced: Agents
+- `4:57` **Back to Simple**
+
+</details>
+
+<details><summary><b>Google Pub/Sub</b> — chapters (6:03)</summary>
+
+- `0:07` Connect a cloud
+- `0:14` Home: every cloud
+- `0:26` Home: one cloud
+- `0:43` Dead letters (and Look now)
+- `1:00` Open a message
+- `1:08` Replay one message
+- `1:32` **Replay selected**: preview, run, watch
+- `3:00` **Replay All Messages**: preview, run, watch, stop
+- `3:34` Active messages and Send
+- `3:47` Replayed
+- `3:58` Auto Replay
+- `4:16` Needs you: approve or decline
+- `4:28` Connections
+- `4:35` Settings
+- `4:54` Help
+- `5:00` **Switch to Advanced**: Overview
+- `5:22` Advanced: Recovery Ledger
+- `5:34` Advanced: Failure Signatures
+- `5:43` Advanced: Agents
+- `5:53` **Back to Simple**
+
+</details>
+
+*Recorded from the real app against real development clouds, with the sample app's made-up orders. Replay All is started and then stopped on camera: the preview says how many it would replay, the run is paced at about two a second, and **Stop now** leaves every message not yet sent exactly as it was. Azure says "ServiceHub watches that it stays out"; AWS and Google say "verification required" — they cannot prove a replayed message stayed out of the dead-letter queue, and the videos show that rather than hide it.*
+
 ## Step-by-step guides — one per cloud
 
 Each guide goes from nothing to a working ServiceHub, one screen at a time. Every picture is the real app (or the real cloud console, with account

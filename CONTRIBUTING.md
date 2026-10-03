@@ -1,7 +1,7 @@
 # Contributing to ServiceHub
 
-**ServiceHub** is a self-hosted, open-source forensic debugger for cloud message queues (Azure
-Service Bus, AWS SQS/SNS, GCP Pub/Sub). Thank you for your interest in contributing! This document
+**ServiceHub** is a self-hosted, open-source tool for recovering stuck messages in cloud queues (Azure
+Service Bus, AWS SQS/SNS, GCP Pub/Sub) and proving what was done. Thank you for your interest in contributing! This document
 explains how to get started, what to expect, and how to report issues.
 
 ---
@@ -132,7 +132,7 @@ not a goal: a change is finished when its behaviour is proven.
 - API calls live in `apps/servicehub/src/lib/api/` (one module per controller); screens use hooks over them.
 - A screen is added in one place, `apps/servicehub/src/nav/navigation.ts`; the router, sidebar and command palette all read it.
 - No new `any` — use generics or `unknown`. Colours come from the design tokens in `styles/index.css`, never a literal.
-- Simple screens use Simple's words: no *signature*, *ledger*, *autonomy level* or *grant* (a browser test reads the screen and fails on them).
+- Simple screens use Simple's words: no *signature*, *ledger*, *disposition*, *autonomy*, *attestation* or *pillar*, and no bare HTTP status (a browser test reads every Simple screen and fails on them).
 
 ### General
 

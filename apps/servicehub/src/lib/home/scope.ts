@@ -1,5 +1,7 @@
+import { useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { asCloud } from '../../components/provider/scopeChoice'
+import { useProviderScope } from '../../components/provider/providerScope'
 import type { CloudProvider } from '../api/namespaces'
 
 export type HomeWindow = '24h' | '7d'
@@ -27,6 +29,14 @@ export function useHomeScope(connected: readonly CloudProvider[]): HomeScope {
   const [params, setParams] = useSearchParams()
   const requested = asCloud(params.get('provider'))
   const provider = requested && connected.includes(requested) ? requested : connected.length === 1 ? connected[0] : null
+
+  // "Scope is one state": the sidebar's Dead letters / Active / Replayed links resolve to the sticky choice, so whatever cloud this URL
+  // shows must also be that choice — otherwise picking AWS on a scope tab (or opening a `?provider=aws` link) and then clicking
+  // "Dead letters" lands on whichever cloud was chosen last, Azure by default.
+  const { selected, select } = useProviderScope()
+  useEffect(() => {
+    if (requested && provider === requested && selected !== requested) select(requested)
+  }, [requested, provider, selected, select])
 
   return {
     provider,

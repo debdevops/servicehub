@@ -68,6 +68,16 @@ describe('Advanced Overview', () => {
     expect(screen.queryByRole('button', { name: /replay|approve/i })).not.toBeInTheDocument()
   })
 
+  it('says how many approvals are waiting, not how many fit on the page (494 things, a page of 100: found live 2026-10-03)', async () => {
+    const item = (i: number) => ({ kind: 'approval', id: String(i), entryId: `e${i}`, agentId: null, dlqMessageId: i, namespaceId: 'w', namespaceName: 'w', provider: 'aws', environment: 'dev', entity: 'orders-sqs', deadLetterReason: null, ruleId: null, ruleName: null, reasonCode: 'X', reason: 'held', since: '2026-09-26T09:00:00Z' })
+    vi.mocked(pending.fetchPendingWork).mockResolvedValue({ items: Array.from({ length: 100 }, (_, i) => item(i)), total: 494, byProvider: [], agents: 0 } as unknown as Awaited<ReturnType<typeof pending.fetchPendingWork>>)
+    wrap()
+    const attention = await screen.findByRole('region', { name: 'Needs your attention' })
+    expect(within(attention).getByText('494 things')).toBeInTheDocument()
+    expect(within(attention).getByText('494')).toBeInTheDocument()
+    expect(within(attention).getByText('approvals waiting')).toBeInTheDocument()
+    expect(within(attention).queryByText('100')).not.toBeInTheDocument()
+  })
   it('breaks recovery down — Recovered and Unverified never merged — each state linking to the Ledger, with Simple’s stayed-fixed figure', async () => {
     wrap()
     const rec = await screen.findByRole('region', { name: 'Recovery' })

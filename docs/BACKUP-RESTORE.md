@@ -24,7 +24,7 @@ Backup and restore are **admin-only** and instance-wide (Settings → Backup, or
 curl -X POST http://localhost:8080/api/v1/admin/backup -H "X-ServiceHub-Intent: create-backup"
 ```
 
-The `X-ServiceHub-Intent` header is required for anything that changes state; without it the API answers `428 intent_required` and says which header to send.
+(The examples use the Docker port, `8080`; with `./run.sh` the API is on `5153`.) The `X-ServiceHub-Intent` header is required for anything that changes state; without it the API answers `428 intent_required` and says which header to send.
 If authentication is on (README → *Deploying it for real*), add your `X-API-KEY` too. The response is the manifest — a real one:
 
 ```json

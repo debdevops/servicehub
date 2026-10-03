@@ -98,7 +98,7 @@ sudo apt-get install -y docker.io docker-compose-v2 git
 sudo systemctl enable --now docker          # Docker starts on every boot
 ```
 
-Get ServiceHub. There is no published 4.1 image yet, so build it on the VM (Docker does the .NET and Node work — you install neither):
+Get ServiceHub. The simplest route is to build it on the VM (Docker does the .NET and Node work — you install neither). A version tag also publishes an image to `ghcr.io/debdevops/servicehub` (the package must be made public in GitHub → Packages after its first publish), but `docker-compose.yml` builds from source, and that is what this guide uses:
 
 ```bash
 git clone https://github.com/debdevops/servicehub.git
@@ -216,7 +216,7 @@ SQLite file and its single-instance lock would live there. That is the one thing
 
 ### 9.2 Build the image into a registry
 
-There is no published 4.1 image yet, so build it in Azure Container Registry straight from the source (no Docker needed on your machine):
+Build the image in Azure Container Registry straight from the source (no Docker needed on your machine; a published `ghcr.io/debdevops/servicehub` image also exists for version tags, but this builds the exact tag or branch you check out):
 
 ```bash
 RG=rg-servicehub

@@ -1,8 +1,9 @@
 # Security Policy
 
-**ServiceHub** is a self-hosted, open-source forensic debugger for cloud message queues (Azure
-Service Bus, AWS SQS/SNS, GCP Pub/Sub). This policy covers how to report a vulnerability, what
-automated scanning runs on this repository, and ServiceHub's threat model.
+**ServiceHub** is a self-hosted, open-source tool for recovering stuck messages in cloud queues (Azure
+Service Bus, AWS SQS/SNS, GCP Pub/Sub) and proving what was done. This policy covers how to report a
+vulnerability, which versions are supported, what automated scanning runs on this repository, and
+ServiceHub's threat model.
 
 ## Reporting a Vulnerability
 
@@ -15,6 +16,14 @@ Report security issues privately via GitHub Security Advisories:
 
 We aim to respond within 48 hours.
 
+## Supported versions
+
+| Version | Status |
+|---|---|
+| **4.1.x** | Current. Security reports are handled against this line. |
+| 4.0.x | Frozen in `archive/servicehub-4.0.0/` and still published from `v4.0.x` tags. It receives no new work, and **there is no upgrade path from 4.0.0 to 4.1.0** (see the [changelog](CHANGELOG.md)). |
+| 3.x and older | Not supported. |
+
 ## Security Scanning
 
 This repository uses the following automated security tools:
@@ -22,10 +31,10 @@ This repository uses the following automated security tools:
 | Tool | What it checks | When it runs |
 |------|---------------|--------------|
 | **CodeQL** | C# and TypeScript source code (SAST) | Every push, weekly full scan |
-| **Dependabot** | NuGet and npm dependency vulnerabilities | Daily |
+| **Dependabot security alerts** | Known-vulnerable NuGet and npm dependencies, from the repository's manifests (a repository setting). Automated version-update pull requests are switched off in `.github/dependabot.yml` | Continuously |
 | **Secret Scanning** | Accidentally committed credentials | Every push (real-time) |
-| **npm audit** | npm production packages (fails on High/Critical) | Every CI run |
-| **NuGet audit** | NuGet packages, including transitive (fails on High/Critical) | Every CI run |
+| **npm audit** | npm production packages (fails on High/Critical) | Every 4.1.0 CI run |
+| **NuGet audit** | NuGet packages, including transitive (fails on High/Critical) | Every 4.1.0 CI run |
 
 ## Enabling Secret Scanning (repository owners)
 
@@ -54,9 +63,12 @@ This project uses:
 - **Google.Cloud.PubSub.V1 / Google.Apis.Auth** — official Google Cloud SDKs
 - **Microsoft.EntityFrameworkCore.Sqlite** — SQLite for local persistence
 
-Dependency vulnerabilities are monitored daily via Dependabot.
+Known-vulnerable dependencies raise Dependabot security alerts and fail the CI audit steps above.
 
 ## Security Fixes History
+
+Fixes in releases before 4.1.0. 4.1.0 is a from-scratch rewrite: the files named below are in the frozen 4.0.0 tree or are gone, and the fixes
+they describe were designed into the new code rather than ported.
 
 | Version | Date | Description |
 |---------|------|-------------|
@@ -86,8 +98,8 @@ ServiceHub does NOT defend against:
   connection strings, modify routing rules, or export message bodies
 - **Network eavesdropping:** deploy ServiceHub behind HTTPS and keep the encryption key secure;
   an attacker on the wire can see plaintext request/response bodies
-- **Multi-tenant SaaS isolation:** ServiceHub is single-instance, single-team only; every
-  signed-in user of one instance is assumed to be on the same team
+- **Multi-tenant SaaS isolation:** ServiceHub is single-instance, single-team only; everyone
+  who can reach one instance is assumed to be on the same team
 - **Compromise of the host:** if the server is compromised, the encryption key is at risk; rotate
   the key immediately if the server is breached (see below)
 

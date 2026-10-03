@@ -32,6 +32,33 @@ public sealed class PendingWorkService : IPendingWorkService
         _time = time ?? TimeProvider.System;
     }
 
+    /// <summary>
+    /// Takes approvals oldest-first and deals them out one namespace at a time, so a page of N holds every namespace's oldest rather than
+    /// one namespace's oldest N. Found live 2026-10-03: with 189 older approvals on Google and 115 newer ones on AWS, a plain oldest-first
+    /// page of 100 left AWS with 4 — and with a few more on Google it would have left AWS out of "Needs your attention" and the bell entirely.
+    /// Within one namespace the order is unchanged, and a single namespace gets exactly what it got before.
+    /// </summary>
+    /// <param name="approvalsOldestFirst">The approvals, oldest first.</param>
+    /// <returns>The same approvals, interleaved across namespaces.</returns>
+    public static IReadOnlyList<PendingWorkItem> InterleaveByNamespace(IEnumerable<PendingWorkItem> approvalsOldestFirst)
+    {
+        ArgumentNullException.ThrowIfNull(approvalsOldestFirst);
+        var queues = approvalsOldestFirst.GroupBy(i => (i.Provider, i.NamespaceId))
+            .Select(g => new Queue<PendingWorkItem>(g)).OrderBy(q => q.Peek().Since).ToList();
+        var dealt = new List<PendingWorkItem>(queues.Sum(q => q.Count));
+        while (queues.Count > 0)
+        {
+            foreach (var q in queues)
+            {
+                dealt.Add(q.Dequeue());
+            }
+
+            queues.RemoveAll(q => q.Count == 0);
+        }
+
+        return dealt;
+    }
+
     /// <inheritdoc />
     public async Task<PendingWorkPage> ListAsync(PendingWorkScope scope, int limit, CancellationToken cancellationToken)
     {
@@ -116,7 +143,7 @@ public sealed class PendingWorkService : IPendingWorkService
         // Most urgent first: a stopped agent (it silently stops everything it does), then a stopped rule, then the oldest question.
         var all = agentItems.OrderBy(i => i.Since)
             .Concat(items.Where(i => i.Kind == "rule").OrderBy(i => i.Since))
-            .Concat(items.Where(i => i.Kind == "approval").OrderBy(i => i.Since)).ToList();
+            .Concat(InterleaveByNamespace(items.Where(i => i.Kind == "approval").OrderBy(i => i.Since))).ToList();
         var byProvider = items.Where(i => i.Provider is not null).GroupBy(i => i.Provider!)
             .Select(g => new PendingWorkProviderCount(g.Key, g.Count())).OrderByDescending(p => p.Count).ToList();
 

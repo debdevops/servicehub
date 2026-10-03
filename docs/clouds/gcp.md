@@ -1,5 +1,7 @@
 # ServiceHub on Google Pub/Sub — step by step, with real screenshots
 
+> **Prefer to watch?** A captioned walkthrough of all of Simple mode, about five minutes — including Replay selected, Replay All and the switch to Advanced: [Google Pub/Sub video](../media/gcp.mp4).
+
 This guide takes you from nothing to a working ServiceHub on **Google Cloud Pub/Sub**, one screen at a time. Every picture is the real
 application (or the real Google Cloud console) — not a mock-up — with numbered markers; the numbered list under each picture says what that control
 does **and what it will not do**. Account names and key ids are blanked out in the console pictures.

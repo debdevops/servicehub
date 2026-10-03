@@ -19,7 +19,9 @@ def optimise(path):
 pub = f"{ROOT}/apps/servicehub/public/help/{cloud}"
 shutil.rmtree(pub, ignore_errors=True); os.makedirs(pub)
 used = []
-md = [f"# ServiceHub on {G.TITLE} — step by step, with real screenshots\n", G.INTRO, "\n---\n"]
+# Markdown only: the in-app Help article has no `docs/media` to point at, so the video link is not part of INTRO.
+WATCH = f"> **Prefer to watch?** A captioned walkthrough of all of Simple mode, about five minutes — including Replay selected, Replay All and the switch to Advanced: [{G.TITLE} video](../media/{cloud}.mp4).\n"
+md = [f"# ServiceHub on {G.TITLE} — step by step, with real screenshots\n", WATCH, G.INTRO, "\n---\n"]
 ts_sections = []
 for part, blurb, steps in G.SECTIONS:
     md.append(f"\n## {part}\n\n*{blurb}*\n")

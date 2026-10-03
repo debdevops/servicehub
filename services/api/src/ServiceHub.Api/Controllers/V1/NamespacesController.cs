@@ -250,9 +250,10 @@ public sealed class NamespacesController : ApiControllerBase
     }
 
     /// <summary>
-    /// Turns this cloud's DLQ observer on, off or elsewhere. Turning it on is the approval for the DLQ Observer Check agent to send
-    /// a small test message into the dead-letter queue named here. Requires the <c>configure-dlq-observer</c> intent header and the
-    /// Admin role for this namespace. A cloud that can confirm a fix on its own (Azure) refuses: there is nothing to set up.
+    /// Records where this cloud's DLQ observer writes and which dead-letter queue it watches. API-only in 4.1.0: there is no setup screen
+    /// and nothing sends the liveness test message any more, so an observer recorded here is never confirmed live and does not make
+    /// any replay read "verified" — AWS and GCP stay "verification required". Requires the <c>configure-dlq-observer</c> intent header
+    /// and the Admin role for this namespace. A cloud that can confirm a fix on its own (Azure) refuses: there is nothing to set up.
     /// </summary>
     [HttpPut("{id:guid}/dlq-observer")]
     [ProducesResponseType(typeof(DlqObserverResponse), StatusCodes.Status200OK)]

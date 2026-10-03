@@ -59,7 +59,7 @@ text as the reason; a wrong `true` is a bug that can lose messages.
 | `SupportsRepeatablePeek` | peeking every few seconds, forever, has **no side effect that accumulates** | Live Tail, auto-refresh, the watching agent |
 | `SupportsRecoveryMarker` | the envelope can carry `x-servicehub-recovery-id` | marking a replay so it can be recognised later |
 | `CanProveDlqAbsence` | a scan can read the *whole* dead-letter queue, uncapped | whether a result may read **Verified**, and unattended (L4/L5) replay |
-| `SupportsTopics`, `SupportsSubscriptions` | the platform has those concepts | the topic and subscription listings (`TopicsController`, `SubscriptionsController`) |
+| `SupportsTopics`, `SupportsSubscriptions` | the platform has those concepts | the topic and subscription entries in `GET /api/v1/namespaces/{id}/entities` |
 
 Two of these protect messages:
 

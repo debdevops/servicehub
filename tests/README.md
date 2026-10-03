@@ -1,7 +1,7 @@
 # Tests
 
 Every ServiceHub 4.1.0 test lives here, separated by what it proves. CI (`.github/workflows/servicehub-4-1-0.yml`) runs all
-of it on every push and pull request; `./runtest.sh --all` runs the same things locally.
+of it on pushes and pull requests to `main`, `develop`, `release` and the `feat/`, `feature/`, `fix/`, `bugfix/` and `hotfix/` branches; `./runtest.sh --all` runs the same things locally.
 
 | Folder | What | Tooling | Gate |
 |---|---|---|---|

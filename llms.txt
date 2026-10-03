@@ -7,11 +7,13 @@
 
 ServiceHub is single-instance, self-hosted software for one team, not a multi-tenant SaaS: one process and one SQLite file.
 Connection strings are encrypted at rest. Every replay goes through one eligibility gate that fails closed, and a person decides
-by default. This branch is ServiceHub 4.1.0 (unreleased); the previous release is frozen in archive/servicehub-4.0.0/.
+by default. This is ServiceHub 4.1.0, a from-scratch rewrite with no upgrade path from 4.0.0; the previous release is frozen in archive/servicehub-4.0.0/.
 
 ## Docs
 
 - [README](https://github.com/debdevops/servicehub/blob/main/README.md): What it is, quick start, safety model, deploying it
+- [Local setup](https://github.com/debdevops/servicehub/blob/main/docs/LOCAL-SETUP.md): Install, run, check and troubleshoot ServiceHub on your own machine
+- [Hosting on Azure](https://github.com/debdevops/servicehub/blob/main/docs/HOSTING-AZURE.md): Run it always-on on a small Azure VM, safely
 - [Azure Service Bus guide](https://github.com/debdevops/servicehub/blob/main/docs/clouds/azure.md): Step-by-step setup and use on Azure Service Bus, with annotated screenshots
 - [AWS SQS/SNS guide](https://github.com/debdevops/servicehub/blob/main/docs/clouds/aws.md): Step-by-step setup and use on AWS SQS/SNS, with annotated screenshots
 - [Google Pub/Sub guide](https://github.com/debdevops/servicehub/blob/main/docs/clouds/gcp.md): Step-by-step setup and use on Google Pub/Sub, with annotated screenshots

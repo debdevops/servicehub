@@ -1,5 +1,7 @@
 # ServiceHub on AWS SQS — step by step, with real screenshots
 
+> **Prefer to watch?** A captioned walkthrough of all of Simple mode, about five minutes — including Replay selected, Replay All and the switch to Advanced: [AWS SQS video](../media/aws.mp4).
+
 This guide takes you from nothing to a working ServiceHub on **AWS SQS**, one screen at a time. Every picture is the real
 application (or the real AWS console) — not a mock-up — with numbered markers; the numbered list under each picture says what that control
 does **and what it will not do**. Account ids and the access key are blanked out in the console pictures.

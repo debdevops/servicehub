@@ -1,5 +1,9 @@
 # ServiceHub Changelog
 
+## [Unreleased]
+
+*(Nothing yet — changes after 4.1.0 go here.)*
+
 ## [4.1.0] — not yet released (the date is set when the tag is pushed)
 
 > ### ⚠ There is no upgrade path from 4.0.0
@@ -27,7 +31,7 @@ four read-only Advanced pages** instead of thirty-odd screens.
 - **Evidence:** a hash-chained recovery ledger with an offline verifier and *Export evidence*; backup and restore from Settings; credentials encrypted at
   rest with key rotation.
 - **Tell a person:** bell, toast, and Slack / Teams / generic webhook delivery to every enabled channel, behind an SSRF guard.
-- **Step-by-step guides** for Azure, AWS and Google Cloud, with annotated real screenshots of every control, in the app's Help and in `docs/clouds/`.
+- **Step-by-step guides** for Azure, AWS and Google Cloud, with annotated real screenshots of every control, in the app's Help and in `docs/clouds/`, and a captioned walkthrough video per cloud (about five minutes: all of Simple mode, replaying one, a few or everything, then the switch to Advanced) — [Azure](docs/media/azure.mp4) · [AWS](docs/media/aws.mp4) · [Google Cloud](docs/media/gcp.mp4).
 
 ### Not in 4.1.0
 
@@ -40,12 +44,34 @@ Left out on purpose; each was a written decision and can return as a tab or pane
 
 ### Known limits at this writing
 
+- **No sign-in.** ServiceHub does not log the browser in: whoever can reach its port is the server's owner, an Administrator. Keep it on `localhost`, on a private network, or behind an authenticating reverse proxy. API keys, OIDC and Azure Easy Auth identify who acted, and roles granted in Settings limit them; see `SECURITY.md`.
+- **One instance per data folder.** One process, one SQLite file on local disk; a second instance on the same folder exits on purpose.
+- **Replay All Messages replays everything in the chosen scope** (a cloud, an environment or one namespace), not just what the filters show. Its preview says how many, it runs about two a second on the server, and *Stop now* leaves every message not yet sent untouched.
 - The release workflow (`publish.yml`) selects the codebase from the tag (`v4.1.x` → repo root, `v4.0.x` → archive) and was proven by running every tag
   shape locally; it has **not yet run in real GitHub Actions**.
 - Real Slack/Teams delivery has not been exercised against a live workspace (the send path and its test endpoint are covered by tests).
 - **AWS and GCP replays read *"verification required"*, never *"verified"*.** Neither cloud can prove a replayed message stayed out of the dead-letter queue, so ServiceHub says so instead of guessing, and a person decides each time. 4.1.0 offers no observer setup (the same as 4.0.0); an AWS observer was tried live and it hides dead letters from *Look now* and replay, so it is not offered.
 
 ### Changes since the last entry below (kept as the build log)
+
+### Added / Fixed — 2026-10-03 final live pass against Azure, AWS and Google Cloud
+
+- **Walkthrough videos.** One captioned video per cloud, about five minutes each, covering all of Simple mode — Home, Dead letters, Look now, opening a message, replaying one message, **Replay selected** and **Replay All** (preview, run, watch, stop), Active messages, Replayed, Auto Replay, approvals, Connections, Settings, Help — then the switch to Advanced and back. Recorded from the real app: `docs/media/{azure,aws,gcp}.mp4`, with a preview GIF and poster each. The README and the three cloud guides link them (with a chapter list); `scripts/docs-shots/videos.mjs` records them and `build-videos.sh` makes the files.
+- **Picking a cloud on Home's scope tabs (or opening a `?provider=` link) did not move the sidebar's "Dead letters / Active messages / Replayed" links.** They still opened the cloud chosen last — Azure by default — so choosing AWS and then clicking *Dead letters* showed Azure's list. Found by watching a recording of the flow; Home's scope now carries the sticky cloud with it. Regression tests added (they fail without the fix).
+- **One busy cloud could push another cloud's approvals off "Needs your attention" and the bell.** The server sent the *oldest 100* waiting approvals, so with 189 old ones on Google and 115 newer ones on AWS the AWS queue showed as "4+", and with a few more on Google it would not have shown at all. The page is now dealt out one namespace at a time (`PendingWorkService.InterleaveByNamespace`); one namespace gets exactly the order it had before. Unit tests added.
+- **Advanced Overview said "100 approvals waiting" beside "494 things"** — the page size shown as a count. It now says 494. Regression test added (it fails without the fix).
+
+### Added / Changed / Fixed — 2026-10-01 to 2026-10-03 (committed work that had no entry until now)
+
+- **An agent with nothing to do goes quiet.** An agent that no connected cloud can serve (a verifier with only AWS connected, say) is no longer run or listed on the Agents page; connecting a suitable cloud starts it again, and a person's pause is kept. (`AgentNeeds`)
+- **Google Cloud: a deep dead-letter backlog no longer fails half a bulk replay.** The replay/purge scan walks up to 40 pulls of 100 (it was 5), and the acknowledgement-deadline lock is extended on every message held during the scan, in chunks of 500 to stay under Pub/Sub's request-size limit.
+- **An Auto Replay rule for "Unknown" now matches messages with no recorded reason** (AWS never records one).
+- **Rule changes are on the audit trail.** Creating, updating, switching, deleting or generating an Auto Replay rule left no audit entry although a rule is what lets the Agent replay without asking; each now records `Rule.Create` / `Update` / `Toggle` / `Delete` / `Generate` with the actor, rule id and name.
+- **Counts that disagreed now agree.** Home's *Replayed* tile counted replays the cloud accepted while the table counted every attempt (446 vs 439); the tile now says how many attempts were refused or lost. Simple's tiles also stop counting the history of a cloud you removed (`connectedOnly` on `GET /recovery/summary`; the Ledger and exports still show everything).
+- **Plain words for every action in *Recent activity*** (it showed `Message.Send`, `Backup.Create`, `Governance.Grant`), and the permission-denied message no longer starts a sentence in lower case.
+- **Add a cloud tells you the permissions that matter.** Azure needs *Manage, Send and Listen* (a Listen-only string connects but shows nothing); AWS needs `sqs:ChangeMessageVisibility` (without it a looked-at message stays hidden until SQS's visibility timeout ends). The AWS form also lists the regions, including `ap-south-1`.
+- **Guides and tooling.** [Local setup](docs/LOCAL-SETUP.md) and [Hosting on Azure](docs/HOSTING-AZURE.md) are new; `run.sh` now checks your tools and ports, waits until both servers answer, stops what it started on Ctrl-C, and has `--check`, `--api-only` and `--web-only`. A `v4.1.x` tag publishes the repo root and `v4.0.x` still publishes the archive. The runtime instance lock and two backup manifests are no longer tracked.
+- **The DLQ observer was built and then taken out of 4.1.0.** Its setup screen and test-message agent are gone; AWS and Google replays read *"verification required"*. The API-only `GET/PUT /namespaces/{id}/dlq-observer` and the attestation service remain, but with nothing sending the test message an observer recorded there is never confirmed live and never makes a replay read *verified*.
 
 ### Changed / Fixed — 2026-09-30 (uncommitted work verified live against AWS)
 
@@ -1119,9 +1145,3 @@ followed it.
 ## Known Issues
 
 None at this time. Report issues at: https://github.com/debdevops/servicehub/issues
-
----
-
-## Roadmap
-
-See [README.md](README.md#roadmap) for planned features.
