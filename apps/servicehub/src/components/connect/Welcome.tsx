@@ -22,7 +22,7 @@ export function Welcome() {
       <p className="mt-1 text-lg text-[var(--color-text)]">See what's stuck in your message queues — and put it back, safely.</p>
       <p className="mt-2 max-w-2xl text-[var(--color-text-muted)]">
         Connect a cloud and ServiceHub shows every dead-lettered message, why it failed, and a one-click replay that shows you
-        exactly what will happen first. Then it watches to confirm the fix held.
+        exactly what will happen first. Then it watches the replay — on Azure it can confirm the fix held; on AWS and Google it tells you verification is still required.
       </p>
 
       <div className="mt-6 flex flex-wrap items-center gap-4 rounded-xl border border-[#c4b5fd] bg-[#f5f3ff] p-5 text-[#4c1d95]">

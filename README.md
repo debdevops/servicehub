@@ -9,7 +9,7 @@ queue names and failure reasons, never message bodies.
 
 **Try it first, with made-up data and no cloud account:** start it (see [Quick start](#quick-start)) and open `/demo/azure`.
 
-**Know the limits:** replay on production namespaces is refused · AWS and GCP cannot confirm a replay stayed fixed, so they read "verification required" · anyone who can reach its port is the admin, so keep it on `localhost`.
+**Know the limits:** replay is refused on any namespace you mark as Production, and 4.1.0 has no way to override that · AWS and GCP cannot confirm a replay stayed fixed, so they read "verification required" · anyone who can reach its port is the admin, so keep it on `localhost`.
 
 > **Status:** this is **ServiceHub 4.1.0**, a from-scratch rewrite. **There is no upgrade path from 4.0.0** — it starts with a fresh database and cannot open a 4.0.0 file; run it beside 4.0.0 and connect your clouds again.
 > 4.0.0 lives, frozen, in [`archive/servicehub-4.0.0/`](archive/servicehub-4.0.0/). See the [changelog](CHANGELOG.md).
@@ -135,7 +135,7 @@ The same guides are in the app: open **Help** in the sidebar, or the book icon n
 - **A person decides by default.** The Agent replays on its own only for a failure it has earned trust on; otherwise it stops and asks. Every
   replay, human or automatic, goes through one gate that **fails closed** — a check that cannot run blocks the replay.
 - **Honest about each cloud.** Azure can confirm a replayed message stayed out of the dead-letter queue. AWS and GCP cannot, so their results read *"verification required"*, never *"verified"*.
-- **Production namespaces are refused.** 4.1.0 has no production elevation; recovery there is denied for everyone.
+- **Production namespaces are refused.** A namespace you mark as *Production* when you add the cloud can be read, but not replayed into: the recovery gate asks for a production elevation, and 4.1.0 has no screen to grant one, so recovery there is denied for everyone, people and the Agent alike.
 - **Emergency stop.** Stops everything ServiceHub does on its own — rules and the Agent; a person can still replay deliberately.
   Switching it on needs a reason and the typed word `STOP`; lifting it, a reason and `LIFT`. Both are recorded in the ledger.
 - **Evidence you can check offline.** Every recovery action is appended to a hash-chained ledger. Export it and verify it without ServiceHub:
