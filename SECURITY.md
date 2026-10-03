@@ -1,7 +1,7 @@
 # Security Policy
 
 **ServiceHub** is a self-hosted, open-source tool for recovering stuck messages in cloud queues (Azure
-Service Bus, AWS SQS/SNS, GCP Pub/Sub) and proving what was done. This policy covers how to report a
+Service Bus, AWS SQS/SNS, GCP Pub/Sub) and keeping a local record of what was done. This policy covers how to report a
 vulnerability, which versions are supported, what automated scanning runs on this repository, and
 ServiceHub's threat model.
 

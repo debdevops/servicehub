@@ -7,7 +7,36 @@ sent back — then keeps a local record you can export and verify offline. It ru
 leaves your network: ServiceHub talks only to your clouds and, if you add one, to a notification channel (Slack, Teams or a webhook), which gets
 queue names and failure reasons, never message bodies.
 
-**Try it in two minutes — no cloud account, made-up data.** Needs [Docker](https://docs.docker.com/get-docker/), a bash shell (macOS, Linux, or a WSL 2 terminal on Windows) and `openssl`:
+## Quick start
+
+No cloud account is needed to look around: both options open a built-in demo with made-up data. Pick one.
+
+### Option 1. Clone it and run it (no Docker)
+
+For macOS, Linux, or a WSL 2 terminal on Windows.
+
+| You need | Version | Check with |
+|---|---|---|
+| [.NET SDK](https://dotnet.microsoft.com/download/dotnet/10.0) | 10.0 or newer | `dotnet --version` |
+| [Node.js](https://nodejs.org) (npm comes with it) | 22 LTS recommended, 20.19 minimum | `node --version` |
+| [git](https://git-scm.com), `curl`, `lsof` | any | `git --version` |
+
+```bash
+git clone https://github.com/debdevops/servicehub.git
+cd servicehub
+./run.sh --check    # optional: checks your machine and the ports, starts nothing
+./run.sh            # installs the web dependencies the first time, then starts the API (:5153) and the web app (:3000)
+```
+
+The first start compiles the API and takes a minute or two. When you see **✔ ServiceHub is ready**, open **<http://localhost:3000>** and choose
+**Try it with sample data** (or go straight to <http://localhost:3000/demo/azure>). Press **Ctrl-C** to stop. Then use **Add a cloud** (sidebar) to connect your own.
+
+This mode runs in `Development` with a throw-away encryption key, so it is for trying and developing. Your data lives in `services/api/src/ServiceHub.Api/data/`.
+Something did not start? The **[Local setup guide](docs/LOCAL-SETUP.md)** covers prerequisites, what `./run.sh` does, and a troubleshooting table.
+
+### Option 2. Run the Docker image (no clone, no build)
+
+Needs [Docker](https://docs.docker.com/get-docker/), a bash shell (macOS, Linux, or a WSL 2 terminal on Windows) and `openssl`.
 
 ```bash
 export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"      # keep this key; it protects stored cloud credentials
@@ -15,8 +44,20 @@ docker run -d --name servicehub -p 127.0.0.1:8080:8080 -v servicehub-data:/data 
   -e SECURITY__ENCRYPTIONKEY="$SERVICEHUB_ENCRYPTION_KEY" ghcr.io/debdevops/servicehub:4.1.0
 ```
 
-Open **<http://localhost:8080>** and choose **Try it with sample data**. Public image, `linux/amd64` and `linux/arm64`, no sign-in to pull.
-Full guide — update, back up, stop, remove, troubleshoot: **[Run ServiceHub with Docker](docs/DOCKER.md)**.
+Open **<http://localhost:8080>** and choose **Try it with sample data**. The image is public (`linux/amd64` and `linux/arm64`, no sign-in to pull);
+`docker run` downloads it, or fetch it first with `docker pull ghcr.io/debdevops/servicehub:4.1.0`. This is the mode to run it for real: it uses `Production`
+settings and your own encryption key.
+
+Full guide, with update, back up, stop, remove and troubleshooting: **[Run ServiceHub with Docker](docs/DOCKER.md)**. To build the image from a clone instead:
+
+```bash
+export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"   # once, and keep it somewhere safe
+docker compose up --build                                       # → http://localhost:8080 (this machine only)
+```
+
+ServiceHub **refuses to start in Production without an encryption key**, because the key protects every cloud connection string it stores. Losing the
+key makes them unreadable, so back it up in a secret manager. If you reach it by any name other than `localhost`, it answers `400` until you list that name
+in `AllowedHosts`; the setting replaces the default, so keep `localhost` in it: `-e "AllowedHosts=localhost;your.host.name"`.
 
 **Know the limits:** replay is refused on any namespace you mark as Production, and 4.1.0 has no way to override that · AWS and GCP cannot confirm a replay stayed fixed, so they read "verification required" · anyone who can reach its port is the admin, so keep it on `localhost`.
 
@@ -150,34 +191,6 @@ The same guides are in the app: open **Help** in the sidebar, or the book icon n
 - **Evidence you can check offline.** Every recovery action is appended to a hash-chained ledger. Export it and verify it without ServiceHub:
   `python3 scripts/verify-recovery-chain.py <export.json>`. See [Recovery Evidence](docs/RECOVERY-EVIDENCE.md).
 - **Credentials are encrypted at rest** (AES-GCM) and the key can be rotated: [Encryption key rotation](docs/ENCRYPTION-KEY-ROTATION.md).
-
-## Quick start
-
-**From source** (.NET 10 SDK, Node 22):
-
-```bash
-npm ci
-./run.sh            # API on :5153, web on :3000 (proxied) — open http://localhost:3000
-```
-
-Open `/demo/azure` first to look around with made-up data, then **Add a cloud** (sidebar) to connect your own.
-
-New to this, or something did not start? The **[Local setup guide](docs/LOCAL-SETUP.md)** covers prerequisites for macOS, Linux and Windows (WSL), what
-`./run.sh` checks and does, where your data lives, and a troubleshooting table. `./run.sh --check` verifies your machine without starting anything.
-
-**Docker, no clone needed** — the command is at the top of this page; the full guide is **[Run ServiceHub with Docker](docs/DOCKER.md)** (prerequisites, update, back up, remove, troubleshooting). `docker run` downloads the image for you; to fetch it first, `docker pull ghcr.io/debdevops/servicehub:4.1.0`.
-
-**Docker, from a clone:**
-
-```bash
-export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"   # once — and keep it somewhere safe
-docker compose up --build                                       # → http://localhost:8080 (this machine only)
-```
-
-If you reach it by any name other than `localhost`, it answers `400` until you list that name in `AllowedHosts`. The setting replaces the default, so keep `localhost` in it: `-e "AllowedHosts=localhost;your.host.name"`.
-
-ServiceHub **refuses to start in Production without an encryption key** — it protects every cloud connection string it stores. Losing the
-key makes them unreadable, so back it up in a secret manager.
 
 ## Deploying it for real
 
