@@ -97,6 +97,13 @@ ServiceHub does NOT defend against:
   configured and a Viewer grant made, a request with no key could still take a backup.) Keep ServiceHub on localhost, on a
   private network, or behind an authenticating reverse proxy; the Docker Compose file binds `127.0.0.1` for this reason
 
+- **Message content in ServiceHub's own database file.** For every dead-lettered message it sees, ServiceHub stores the
+  first 500 characters of the body, the message properties and a SHA-256 hash of the body (the word `empty` when there
+  is no body) in its local SQLite file, in plain text. Cloud connection strings and notification webhook URLs are the
+  encrypted fields; message content is not. That is how you can read a message later without going back to the
+  cloud. It never leaves your network, but treat the data folder, its backups and exported evidence like the messages
+  themselves, and do not point ServiceHub at queues whose messages you may not keep a copy of
+
 - **Malicious administrators:** a person with access to the self-hosted instance can read
   connection strings, modify routing rules, or export message bodies
 - **Network eavesdropping:** deploy ServiceHub behind HTTPS and keep the encryption key secure;
