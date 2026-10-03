@@ -18,10 +18,10 @@ describe('the outcome card', () => {
     expect(screen.getByText('Verified')).toBeInTheDocument()
   })
 
-  it('says Verification required — with the remedy — and never implies the message was not replayed', () => {
-    render(<OutcomeCard replay={replay({ status: 'verification_required', canConfirm: false, remedy: 'SETUP_DLQ_OBSERVER' }, { provider: 'aws' })} now={now} />)
+  it('says Verification required — and offers no observer setup — and never implies the message was not replayed', () => {
+    render(<OutcomeCard replay={replay({ status: 'verification_required', canConfirm: false }, { provider: 'aws' })} now={now} />)
     expect(screen.getByText('Verification required')).toBeInTheDocument()
-    expect(screen.getByText(/set up the dead-letter observer/i)).toBeInTheDocument()
+    expect(screen.queryByText(/observer/i)).toBeNull()
     expect(screen.getByText(/may well have worked/)).toBeInTheDocument()
     expect(screen.queryByText(/not replayed|failed to replay/i)).toBeNull()
     expect(screen.queryByText('Verified')).toBeNull()
@@ -51,8 +51,9 @@ describe('the watch card', () => {
   })
 
   it('tells the truth in advance where the cloud cannot', () => {
-    render(<WatchCard replay={replay({ status: 'watching', canConfirm: false, remedy: 'SETUP_DLQ_OBSERVER' }, { provider: 'aws' })} />)
+    render(<WatchCard replay={replay({ status: 'watching', canConfirm: false }, { provider: 'aws' })} />)
     expect(screen.queryByText(/it’s confirmed fixed/)).toBeNull()
     expect(screen.getByText(/not “Verified”/)).toBeInTheDocument()
+    expect(screen.queryByText(/observer/i)).toBeNull()
   })
 })

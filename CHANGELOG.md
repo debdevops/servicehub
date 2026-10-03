@@ -22,7 +22,7 @@ four read-only Advanced pages** instead of thirty-odd screens.
 - **One gate for every replay**, human or automatic. It fails closed: a check that cannot run blocks the replay. A replay shows what it will do first.
 - **Autonomy that is earned and stops itself:** the Agent replays alone only for a failure signature it has earned trust on; a circuit breaker and an
   emergency stop (typed `STOP` / `LIFT`, with a reason, both recorded) halt it. Waiting approvals are approved or declined in one window.
-- **Honest about each cloud:** Azure can confirm a replayed message stayed out of the dead-letter queue. AWS and GCP cannot without the DLQ observer, so
+- **Honest about each cloud:** Azure can confirm a replayed message stayed out of the dead-letter queue. AWS and GCP cannot, so
   they read *"verification required"*, never *"verified"*.
 - **Evidence:** a hash-chained recovery ledger with an offline verifier and *Export evidence*; backup and restore from Settings; credentials encrypted at
   rest with key rotation.
@@ -43,10 +43,7 @@ Left out on purpose; each was a written decision and can return as a tab or pane
 - The release workflow (`publish.yml`) selects the codebase from the tag (`v4.1.x` → repo root, `v4.0.x` → archive) and was proven by running every tag
   shape locally; it has **not yet run in real GitHub Actions**.
 - Real Slack/Teams delivery has not been exercised against a live workspace (the send path and its test endpoint are covered by tests).
-- **AWS replays stay *"verification required"*.** The DLQ observer's ServiceHub side is built (a Connections setup, a test-message check, the Outcome Card link), and its
-  AWS module was applied and logged a real test message end to end. But an SQS event-source mapping is itself a consumer: to avoid deleting messages it must hide each one it
-  observes, and a hidden message cannot be read by ServiceHub's *Look now* or replay. So the AWS observer is **not** recommended with 4.1.0 and no AWS replay is shown as *Verified*.
-  The GCP observer (a separate push subscription) does not have this limit and has not been exercised live.
+- **AWS and GCP replays read *"verification required"*, never *"verified"*.** Neither cloud can prove a replayed message stayed out of the dead-letter queue, so ServiceHub says so instead of guessing, and a person decides each time. 4.1.0 offers no observer setup (the same as 4.0.0); an AWS observer was tried live and it hides dead letters from *Look now* and replay, so it is not offered.
 
 ### Changes since the last entry below (kept as the build log)
 

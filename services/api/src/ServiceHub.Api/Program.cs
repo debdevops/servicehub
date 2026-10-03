@@ -50,7 +50,6 @@ ServiceHub.Infrastructure.Webhooks.WebhookServiceCollectionExtensions.AddWebhook
 builder.Services.AddAgent<DlqMonitorAgent>();
 builder.Services.AddAgent<RecoveryVerificationAgent>();
 builder.Services.AddAgent<BulkOperationAgent>();
-builder.Services.AddAgent<DlqObserverCanaryAgent>();
 builder.Services.AddAgent<ServiceHub.Infrastructure.Rules.AutoReplayAgent>();
 builder.Services.AddAgent<AutonomyEvaluationAgent>();
 builder.Services.AddAgent<ServiceHub.Infrastructure.Insights.AnomalyInsightAgent>();

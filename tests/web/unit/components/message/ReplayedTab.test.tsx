@@ -49,7 +49,7 @@ describe('the Replayed tab', () => {
     const v = (over: object) => ({ status: 'verified', reasonCode: null, confidence: null, watchUntil: null, canConfirm: true, remedy: null, ...over }) as ReplayListItem['verification']
     listMock.mockResolvedValue(page([
       row({ id: 1, verification: v({}) }),
-      row({ id: 2, provider: 'aws', verification: v({ status: 'verification_required', canConfirm: false, remedy: 'SETUP_DLQ_OBSERVER', reasonCode: 'AWS_NO_ABSENCE_PROOF' }) }),
+      row({ id: 2, provider: 'aws', verification: v({ status: 'verification_required', canConfirm: false, reasonCode: 'AWS_NO_ABSENCE_PROOF' }) }),
       row({ id: 3, verification: v({ status: 'returned', confidence: 'Exact' }) }),
     ]))
     renderTab()

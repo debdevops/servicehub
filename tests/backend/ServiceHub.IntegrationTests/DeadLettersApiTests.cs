@@ -680,7 +680,7 @@ public sealed class DeadLettersApiTests
         var onAws = await Verification(host, awsId);
         onAws.GetProperty("status").GetString().Should().Be("verification_required");
         onAws.GetProperty("reasonCode").GetString().Should().Be("AWS_NO_ABSENCE_PROOF");
-        onAws.GetProperty("remedy").GetString().Should().Be("SETUP_DLQ_OBSERVER");
+        (onAws.TryGetProperty("remedy", out var remedy) ? remedy.ValueKind : JsonValueKind.Null).Should().Be(JsonValueKind.Null, "4.1.0 offers no observer setup; AWS just says verification is required");
         onAws.GetProperty("canConfirm").GetBoolean().Should().BeFalse();
 
         // 2.12: the summary matches a hand-count of what just happened — one proof, one hope, never merged.

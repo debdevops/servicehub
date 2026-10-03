@@ -2,7 +2,6 @@ import { Eye } from 'lucide-react'
 import type { ReplayListItem } from '../../lib/api/replay'
 import { formatWhen } from '../../lib/format'
 import { providerLabel } from '../../lib/providers'
-import { SetupObserverLink } from './SetupObserverLink'
 
 const clock = (iso: string) => formatWhen(iso, new Date())
 
@@ -26,9 +25,6 @@ export function WatchCard({ replay }: { replay: ReplayListItem }) {
             ServiceHub is watching until <b>{clock(v.watchUntil)}</b>, but {cloud} cannot prove the queue stays empty — so this will end as
             “Verification required”, not “Verified”.
           </p>
-          {v.remedy === 'SETUP_DLQ_OBSERVER' && (
-            <p className="mt-1 text-sm text-[var(--color-text-muted)]">Setting up the dead-letter observer for this namespace is what makes a verified result possible.<SetupObserverLink /></p>
-          )}
         </>
       )}
       <p className="mt-1 text-xs text-[var(--color-text-muted)]">If it comes back, nothing retries it. It returns to the list and tells you.</p>

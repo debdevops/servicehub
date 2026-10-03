@@ -107,8 +107,8 @@ Recovery verification depends on ServiceHub being able to *observe the dead-lett
 | Provider | Can prove absence (`Recovered` reachable) | Why |
 |---|---|---|
 | Azure Service Bus | Yes | A non-destructive peek gives continuous, uncapped visibility of the DLQ. |
-| AWS SQS | **No**, unless a DLQ observer is attested | There is no non-destructive peek; scanning the DLQ would disturb receive counts. Its entries close `Unverified`. |
-| GCP Pub/Sub | **No**, unless a DLQ observer is attested | Scanning is capped per cycle. Its entries close `Unverified`. |
+| AWS SQS | **No** | There is no non-destructive peek; scanning the DLQ would disturb receive counts. Its entries close `Unverified`. |
+| GCP Pub/Sub | **No** | Scanning is capped per cycle. Its entries close `Unverified`. |
 
 `CanProveDlqAbsence = false` **structurally** stops that provider's entries reaching `Recovered` — it is enforced where the outcome is decided, not a UI label. Regardless of cloud, the ledger never
 establishes whether any consumer processed the message, whether the business transaction completed, or anything about a message removed by another system.

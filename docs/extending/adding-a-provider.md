@@ -66,7 +66,7 @@ Two of these protect messages:
 - **`SupportsRepeatablePeek`.** If your "peek" is really a receive (as on AWS SQS and Google Pub/Sub), every poll counts toward the redelivery
   limit and can dead-letter a message just by watching it. Declare `false`; the product then only looks when a person presses **Look now**.
 - **`CanProveDlqAbsence`.** A capped sample cannot prove a message is gone. Declare `false` and the result reads *"verification required"* —
-  never *"verified"* — until a DLQ observer attests it (see [Recovery Evidence](../RECOVERY-EVIDENCE.md)).
+  never *"verified"* (see [Recovery Evidence](../RECOVERY-EVIDENCE.md)).
 
 If you cannot answer a capability truthfully, declare `false` and say why in `Notes`.
 

@@ -82,7 +82,7 @@ public sealed record ReplayOutcome(
 /// <param name="Confidence">For <c>returned</c>: <c>Exact</c> (matched by the recovery ID) or <c>Heuristic</c> (matched by contents).</param>
 /// <param name="WatchUntil">When the watch window ends.</param>
 /// <param name="CanConfirm">Whether this namespace's cloud can prove the queue stayed empty.</param>
-/// <param name="Remedy"><c>SETUP_DLQ_OBSERVER</c> when the way to a verified result is the DLQ observer, else null (C4).</param>
+/// <param name="Remedy">always null in 4.1.0 — a cloud that cannot prove a fix held says so and offers no setup (as in 4.0.0). Kept so the response shape does not change.</param>
 public sealed record ReplayVerification(
     string Status, string? ReasonCode, string? Confidence, DateTimeOffset? WatchUntil, bool CanConfirm, string? Remedy);
 

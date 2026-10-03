@@ -44,8 +44,7 @@ The same guides are in the app: open **Help** in the sidebar, or the book icon n
 
 - **A person decides by default.** The Agent replays on its own only for a failure it has earned trust on; otherwise it stops and asks. Every
   replay, human or automatic, goes through one gate that **fails closed** — a check that cannot run blocks the replay.
-- **Honest about each cloud.** Azure can confirm a replayed message stayed out of the dead-letter queue. AWS and GCP cannot without a small
-  DLQ observer, so their results read *"verification required"*, never *"verified"*.
+- **Honest about each cloud.** Azure can confirm a replayed message stayed out of the dead-letter queue. AWS and GCP cannot, so their results read *"verification required"*, never *"verified"*.
 - **Production namespaces are refused.** 4.1.0 has no production elevation; recovery there is denied for everyone.
 - **Emergency stop.** Stops everything ServiceHub does on its own — rules and the Agent; a person can still replay deliberately.
   Switching it on needs a reason and the typed word `STOP`; lifting it, a reason and `LIFT`. Both are recorded in the ledger.

@@ -66,7 +66,7 @@ export interface ReplayVerification {
   readonly confidence: 'Exact' | 'Heuristic' | null
   readonly watchUntil: string | null
   readonly canConfirm: boolean
-  /** `SETUP_DLQ_OBSERVER` when that is the way to a verified result. */
+  /** Always absent in 4.1.0 (no observer setup is offered); kept so the response shape does not change. */
   readonly remedy: string | null
 }
 

@@ -23,7 +23,7 @@ export const helpAnswers: readonly HelpAnswer[] = [
   },
   {
     id: 'verification-required', group: 'Everyday', question: 'Why does AWS or Google Cloud say "Verification required"?',
-    answer: 'The replay worked — the message was sent back. What those clouds cannot do is prove the dead-letter queue stayed empty afterwards, so ServiceHub will not say "Verified" there. Azure can prove it, so Azure replays can end "Verified". A small observer in your cloud lets AWS and Google prove it: create it there, then turn it on under Connections → Set up the observer. ServiceHub only says “Verified” while the observer’s own log keeps showing its test message.',
+    answer: 'The replay worked — the message was sent back. What those clouds cannot do is prove the dead-letter queue stayed empty afterwards, so ServiceHub will not say "Verified" there. Azure can prove it, so Azure replays can end "Verified". Until a cloud can prove that, ServiceHub says “Verification required” rather than guess; a person decides each time.',
     link: { label: 'See what was replayed', href: '/?tab=replayed' },
   },
   {

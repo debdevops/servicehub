@@ -1,8 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  configureDlqObserver,
   connectNamespace,
-  fetchDlqObserver,
   fetchEntities,
   fetchNamespace,
   fetchNamespaceStats,
@@ -10,7 +8,6 @@ import {
   removeNamespace,
   testConnection,
   type ConnectNamespaceInput,
-  type DlqObserverInput,
   type EntityKind,
 } from '../lib/api/namespaces'
 
@@ -20,7 +17,6 @@ export const namespaceKeys = {
   list: () => [...namespaceKeys.all, 'list'] as const,
   one: (id: string) => [...namespaceKeys.all, 'one', id] as const,
   stats: (id: string) => [...namespaceKeys.all, 'stats', id] as const,
-  observer: (id: string) => [...namespaceKeys.all, 'observer', id] as const,
   entities: (id: string, kind?: EntityKind) => [...namespaceKeys.all, 'entities', id, kind ?? 'all'] as const,
 }
 
@@ -77,20 +73,3 @@ export function useRemoveNamespace() {
   })
 }
 
-/** The DLQ observer's state for one cloud. While it is turned on but not yet proven live, it is re-read so the answer arrives by itself. */
-export function useDlqObserver(id: string, enabled = true) {
-  return useQuery({
-    queryKey: namespaceKeys.observer(id),
-    queryFn: () => fetchDlqObserver(id),
-    enabled,
-    refetchInterval: (query) => (query.state.data?.enabled && !query.state.data.live ? 30_000 : false),
-  })
-}
-
-export function useConfigureDlqObserver(id: string) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (input: DlqObserverInput) => configureDlqObserver(id, input),
-    onSuccess: (data) => queryClient.setQueryData(namespaceKeys.observer(id), data),
-  })
-}

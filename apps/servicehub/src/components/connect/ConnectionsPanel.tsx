@@ -6,7 +6,6 @@ import { useNamespaces, useRemoveNamespace, useTestConnection } from '../../hook
 import type { Namespace } from '../../lib/api/namespaces'
 import { providerLabel, providerService } from '../../lib/providers'
 import { environmentMeta, groupByCloudEnvironment } from '../provider/scopeChoice'
-import { ObserverSetup } from './ObserverSetup'
 import { RetryLink } from '../ui/RetryLink'
 import { Skeleton } from '../ui/Skeleton'
 import { withoutDrawers } from '../../lib/urlState'
@@ -80,7 +79,6 @@ export default function ConnectionsPanel({ close }: OverlayBodyProps) {
                     </p>
                     <p className="text-xs text-[var(--color-text-muted)]">Last checked: {when(ns.lastConnectionTestAt)}</p>
                     {results[ns.id] && <p role="status" className="mt-1 text-xs text-[var(--color-text)]">{results[ns.id]}</p>}
-                    <ObserverSetup ns={ns} />
                     {confirming === ns.id ? (
                       <div role="alertdialog" aria-label={`Remove ${ns.displayName ?? ns.name}`} className="mt-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-3">
                         <p className="text-sm text-[var(--color-text)]">

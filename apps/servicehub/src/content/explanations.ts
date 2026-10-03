@@ -29,7 +29,7 @@ export const explanations = {
       {
         term: 'Can confirm a fix held',
         meaning:
-          'whether that cloud lets ServiceHub prove a replayed message stayed out of the dead-letter queue. Azure can; AWS and Google need the small DLQ observer.',
+          'whether that cloud lets ServiceHub prove a replayed message stayed out of the dead-letter queue. Azure can; AWS and Google cannot, so their results say “verification required”.',
       },
     ],
     learnMore: 'Clouds and what they can prove',

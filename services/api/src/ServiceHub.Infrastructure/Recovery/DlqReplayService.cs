@@ -504,7 +504,6 @@ public sealed class DlqReplayService : IDlqReplayService
     /// </summary>
     private static ReplayVerification VerificationOf(ReplayHistory row, RecoveryLedgerEntry? entry, string? reason, bool canConfirm)
     {
-        const string setUpObserver = "SETUP_DLQ_OBSERVER";
         if (row.OutcomeStatus == "rejected")
         {
             return new ReplayVerification("not_sent", null, null, null, canConfirm, null);
@@ -520,11 +519,10 @@ public sealed class DlqReplayService : IDlqReplayService
             RecoveryEntryState.Recovered when canConfirm =>
                 new ReplayVerification("verified", null, null, entry.ObservationWindowEndsAt, true, null),
             RecoveryEntryState.Recovered or RecoveryEntryState.Unverified =>
-                new ReplayVerification("verification_required", reason, null, entry.ObservationWindowEndsAt, canConfirm,
-                    canConfirm || (reason is not null && !reason.EndsWith("_NO_ABSENCE_PROOF", StringComparison.Ordinal)) ? null : setUpObserver),
+                new ReplayVerification("verification_required", reason, null, entry.ObservationWindowEndsAt, canConfirm, null),
             RecoveryEntryState.Returned =>
                 new ReplayVerification("returned", null, entry.VerificationConfidence?.ToString(), entry.ObservationWindowEndsAt, canConfirm, null),
-            _ => new ReplayVerification("watching", null, null, entry?.ObservationWindowEndsAt, canConfirm, canConfirm ? null : setUpObserver),
+            _ => new ReplayVerification("watching", null, null, entry?.ObservationWindowEndsAt, canConfirm, null),
         };
     }
 
