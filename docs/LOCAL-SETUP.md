@@ -29,7 +29,7 @@ For track A install the tools *inside* WSL, not on the Windows side. For track B
 
 | Tool | Version | Check with | Get it |
 |---|---|---|---|
-| **.NET SDK** | 10.0 or newer (`services/api/global.json` pins 10.0.x) | `dotnet --version` | <https://dotnet.microsoft.com/download/dotnet/10.0> |
+| **.NET SDK** | 10.0.302 or a later 10.0.x (`services/api/global.json` pins 10.0; an 11.x-only machine will not work) | `dotnet --version` | <https://dotnet.microsoft.com/download/dotnet/10.0> |
 | **Node.js** | 22 LTS recommended (20 is the minimum) | `node --version` | <https://nodejs.org> |
 | **npm** | Comes with Node | `npm --version` | — |
 | **git** | Any | `git --version` | <https://git-scm.com> |

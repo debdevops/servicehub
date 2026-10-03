@@ -1,7 +1,7 @@
 # Contributing to ServiceHub
 
 **ServiceHub** is a self-hosted, open-source tool for recovering stuck messages in cloud queues (Azure
-Service Bus, AWS SQS/SNS, GCP Pub/Sub) and proving what was done. Thank you for your interest in contributing! This document
+Service Bus, AWS SQS/SNS, GCP Pub/Sub) and keeping a local record of what was done. Thank you for your interest in contributing! This document
 explains how to get started, what to expect, and how to report issues.
 
 ---
