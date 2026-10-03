@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ShieldCheck } from 'lucide-react'
+import { FlaskConical, ShieldCheck } from 'lucide-react'
 import type { CloudProvider } from '../../lib/api/namespaces'
 
 const cards: readonly { cloud: CloudProvider; name: string; detail: string; need: string; action: string }[] = [
@@ -9,9 +9,9 @@ const cards: readonly { cloud: CloudProvider; name: string; detail: string; need
 ]
 
 const steps = [
-  { title: 'Connect', body: 'Read-only is enough to start. Credentials are encrypted on this server.' },
+  { title: 'Connect', body: 'Each cloud tells you which permissions it needs. Credentials are encrypted on this server.' },
   { title: "See what's stuck, and why", body: 'Dead letters grouped by how they failed, with the failing field called out.' },
-  { title: 'Replay — and know it held', body: 'A preview before anything runs; a verdict after. Nothing is retried behind your back.' },
+  { title: 'Replay — and see if it held', body: 'A preview before anything runs, a watch after. Azure can prove the message stayed out of the dead-letter queue; AWS and Google say "verification required". Nothing is retried behind your back.' },
 ]
 
 /** Home before anything is connected (D45): the front door. Each card opens Add a cloud in place. */
@@ -24,6 +24,19 @@ export function Welcome() {
         Connect a cloud and ServiceHub shows every dead-lettered message, why it failed, and a one-click replay that shows you
         exactly what will happen first. Then it watches to confirm the fix held.
       </p>
+
+      <div className="mt-6 flex flex-wrap items-center gap-4 rounded-xl border border-[#c4b5fd] bg-[#f5f3ff] p-5 text-[#4c1d95]">
+        <FlaskConical className="h-5 w-5 shrink-0" aria-hidden="true" />
+        <p className="min-w-0 flex-1 text-sm">
+          <b>No cloud account yet?</b> Look around first with made-up data. Nothing is connected and nothing is sent anywhere.
+        </p>
+        <a
+          href="/demo/azure"
+          className="rounded-lg bg-[#5b21b6] px-4 py-2 text-sm font-medium text-white hover:bg-[#4c1d95]"
+        >
+          Try it with sample data
+        </a>
+      </div>
 
       <ul className="mt-8 grid gap-4 sm:grid-cols-3">
         {cards.map((c) => (

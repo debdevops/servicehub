@@ -1,11 +1,15 @@
 # ServiceHub
 
-**A self-hosted tool for recovering stuck messages in Azure Service Bus, AWS SQS/SNS and GCP Pub/Sub — and proving what it did.**
+**A self-hosted tool for recovering stuck messages in Azure Service Bus, AWS SQS/SNS and GCP Pub/Sub.**
 
-Point it at your clouds and it shows what is dead-lettered and why, lets you put messages back with a preview first, and keeps a
-tamper-evident record of every recovery. It runs as one process with one SQLite file. Message content never leaves your network: ServiceHub talks only
-to your clouds and, if you add one, to a notification channel (Slack, Teams or a webhook), which gets queue names and
-failure reasons, never message bodies.
+Your queue says "4,218 dead-lettered messages". ServiceHub shows which ones, why each failed, and what a replay would do *before* anything is
+sent back — then keeps a local record you can export and verify offline. It runs as one process with one SQLite file. Message content never
+leaves your network: ServiceHub talks only to your clouds and, if you add one, to a notification channel (Slack, Teams or a webhook), which gets
+queue names and failure reasons, never message bodies.
+
+**Try it first, with made-up data and no cloud account:** start it (see [Quick start](#quick-start)) and open `/demo/azure`.
+
+**Know the limits:** replay on production namespaces is refused · AWS and GCP cannot confirm a replay stayed fixed, so they read "verification required" · anyone who can reach its port is the admin, so keep it on `localhost`.
 
 > **Status:** this is **ServiceHub 4.1.0**, a from-scratch rewrite. **There is no upgrade path from 4.0.0** — it starts with a fresh database and cannot open a 4.0.0 file; run it beside 4.0.0 and connect your clouds again.
 > 4.0.0 lives, frozen, in [`archive/servicehub-4.0.0/`](archive/servicehub-4.0.0/). See the [changelog](CHANGELOG.md).
@@ -152,12 +156,24 @@ Open `/demo/azure` first to look around with made-up data, then **Add a cloud** 
 New to this, or something did not start? The **[Local setup guide](docs/LOCAL-SETUP.md)** covers prerequisites for macOS, Linux and Windows (WSL), what
 `./run.sh` checks and does, where your data lives, and a troubleshooting table. `./run.sh --check` verifies your machine without starting anything.
 
-**Docker:**
+**Docker, no clone needed** (tag `4.1.0`; the image is multi-arch):
+
+```bash
+export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"   # once — and keep it somewhere safe
+docker run -d --name servicehub --restart unless-stopped \
+  -p 127.0.0.1:8080:8080 -v servicehub-data:/data \
+  -e SECURITY__ENCRYPTIONKEY="$SERVICEHUB_ENCRYPTION_KEY" \
+  ghcr.io/debdevops/servicehub:4.1.0                          # → http://localhost:8080/demo/azure (this machine only)
+```
+
+**Docker, from a clone:**
 
 ```bash
 export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"   # once — and keep it somewhere safe
 docker compose up --build                                       # → http://localhost:8080 (this machine only)
 ```
+
+If you reach it by any name other than `localhost`, it answers `400` until you list that name in `AllowedHosts`. The setting replaces the default, so keep `localhost` in it: `-e "AllowedHosts=localhost;your.host.name"`.
 
 ServiceHub **refuses to start in Production without an encryption key** — it protects every cloud connection string it stores. Losing the
 key makes them unreadable, so back it up in a secret manager.

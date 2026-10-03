@@ -4,7 +4,7 @@
 
 *(Nothing yet — changes after 4.1.0 go here.)*
 
-## [4.1.0] — not yet released (the date is set when the tag is pushed)
+## [4.1.0] — 2026-10-04
 
 > ### ⚠ There is no upgrade path from 4.0.0
 >
