@@ -17,7 +17,7 @@ For macOS, Linux, or a WSL 2 terminal on Windows.
 
 | You need | Version | Check with |
 |---|---|---|
-| [.NET SDK](https://dotnet.microsoft.com/download/dotnet/10.0) | 10.0 or newer | `dotnet --version` |
+| [.NET SDK](https://dotnet.microsoft.com/download/dotnet/10.0) | 10.0.302 or a later 10.0.x (an 11.x-only machine will not work; `services/api/global.json` pins 10.0) | `dotnet --version` |
 | [Node.js](https://nodejs.org) (npm comes with it) | 22 LTS recommended, 20.19 minimum | `node --version` |
 | [git](https://git-scm.com), `curl`, `lsof` | any | `git --version` |
 
@@ -48,7 +48,7 @@ Open **<http://localhost:8080>** and choose **Try it with sample data**. The ima
 `docker run` downloads it, or fetch it first with `docker pull ghcr.io/debdevops/servicehub:4.1.0`. This is the mode to run it for real: it uses `Production`
 settings and your own encryption key.
 
-Full guide, with update, back up, stop, remove and troubleshooting: **[Run ServiceHub with Docker](docs/DOCKER.md)**. To build the image from a clone instead:
+Full guide, with update, back up, stop, remove and troubleshooting: **[Run ServiceHub with Docker](docs/DOCKER.md)**. To build the image from a clone instead (needs git, and Docker with the Compose v2 plugin: `docker compose version`):
 
 ```bash
 export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"   # once, and keep it somewhere safe
@@ -57,7 +57,7 @@ docker compose up --build                                       # → http://loc
 
 ServiceHub **refuses to start in Production without an encryption key**, because the key protects every cloud connection string it stores. Losing the
 key makes them unreadable, so back it up in a secret manager. If you reach it by any name other than `localhost`, it answers `400` until you list that name
-in `AllowedHosts`; the setting replaces the default, so keep `localhost` in it: `-e "AllowedHosts=localhost;your.host.name"`.
+in `AllowedHosts` (only `/health` answers on any name); the setting replaces the default, so keep `localhost` in it: `-e "AllowedHosts=localhost;your.host.name"`.
 
 **Know the limits:** replay is refused on any namespace you mark as Production, and 4.1.0 has no way to override that · AWS and GCP cannot confirm a replay stayed fixed, so they read "verification required" · anyone who can reach its port is the admin, so keep it on `localhost`.
 
