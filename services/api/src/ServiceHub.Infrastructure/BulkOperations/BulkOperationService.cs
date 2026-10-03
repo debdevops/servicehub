@@ -1,365 +1,263 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 using ServiceHub.Core.Constants;
-using ServiceHub.Core.DTOs.Requests;
-using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
+using ServiceHub.Core.Results;
 using ServiceHub.Infrastructure.Persistence;
-using ServiceHub.Infrastructure.RecoveryLedger;
-using ServiceHub.Infrastructure.Routing;
-using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Infrastructure.BulkOperations;
 
 /// <summary>
-/// <inheritdoc cref="IBulkOperationService"/>
+/// Bulk replay's front door (unit 3.2). The preview is computed here, stored, and is the only thing a run can start from —
+/// "the preview cannot be skipped" is a property of the data, not a convention of the UI.
 /// </summary>
+/// <remarks>
+/// Each message is judged by the eligibility gate on its own (never a summary of the batch), so a message the gate refuses
+/// is held back with its reason and a remedy. The run judges it again at the moment of sending, because a preview is a
+/// picture of a moment.
+/// </remarks>
 public sealed class BulkOperationService : IBulkOperationService
 {
-    private const int MaxSampleSize = 10;
+    /// <summary>Most messages one job may carry: a run a person can still be expected to have read.</summary>
+    public const int MaxMessages = 500;
 
-    private readonly DlqDbContext _dbContext;
-    private readonly INamespaceRepository _namespaceRepository;
-    private readonly CloudProviderRouter _router;
-    private readonly IBulkOperationQueue _queue;
-    private readonly ILogger<BulkOperationService> _logger;
+    /// <summary>How long a preview stays startable.</summary>
+    public static readonly TimeSpan PreviewLifetime = TimeSpan.FromMinutes(30);
 
-    /// <summary>Initialises a new instance of <see cref="BulkOperationService"/>.</summary>
+    private const double DefaultPerSecond = 2;
+    private const int DefaultStopAfter = 5;
+
+    private readonly ServiceHubDbContext _db;
+    private readonly INamespaceRepository _namespaces;
+    private readonly IDlqReplayService _replay;
+    private readonly ICloudProviderRouter _router;
+    private readonly IConfiguration _configuration;
+    private readonly TimeProvider _time;
+
+    /// <summary>Creates the service.</summary>
     public BulkOperationService(
-        DlqDbContext dbContext,
-        INamespaceRepository namespaceRepository,
-        CloudProviderRouter router,
-        IBulkOperationQueue queue,
-        ILogger<BulkOperationService> logger)
+        ServiceHubDbContext db, INamespaceRepository namespaces, IDlqReplayService replay, ICloudProviderRouter router, IConfiguration configuration,
+        TimeProvider? time = null)
     {
-        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
-        _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
+        _db = db ?? throw new ArgumentNullException(nameof(db));
+        _namespaces = namespaces ?? throw new ArgumentNullException(nameof(namespaces));
+        _replay = replay ?? throw new ArgumentNullException(nameof(replay));
         _router = router ?? throw new ArgumentNullException(nameof(router));
-        _queue = queue ?? throw new ArgumentNullException(nameof(queue));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        _time = time ?? TimeProvider.System;
     }
 
     /// <inheritdoc />
-    public async Task<Result<BulkOperationPreviewResponse>> PreviewAsync(
-        string ownerId, BulkOperationPreviewRequest request, IReadOnlySet<Guid>? allowedNamespaceIds = null,
-        CancellationToken cancellationToken = default)
+    public async Task<Result<BulkPreview>> PreviewAsync(
+        string ownerId, IReadOnlySet<Guid>? allowed, RecoveryActor actor, IReadOnlyList<long> dlqMessageIds, CancellationToken ct,
+        RecoveryOperationKind kind = RecoveryOperationKind.Replay, string? reason = null)
     {
-        var nsResult = await ResolveOwnedNamespaceAsync(ownerId, request.Filter.NamespaceId, allowedNamespaceIds, cancellationToken);
-        if (nsResult.IsFailure)
-            return Result.Failure<BulkOperationPreviewResponse>(nsResult.Error);
-
-        var ns = nsResult.Value;
-        var (warnings, canExecute) = await EvaluateGuardsAsync(ownerId, ns, request.OperationType, cancellationToken);
-
-        var query = BuildMatchQuery(ownerId, request.Filter);
-        var totalMatched = await query.CountAsync(cancellationToken);
-
-        if (totalMatched == 0)
+        if (kind == RecoveryOperationKind.Purge && string.IsNullOrWhiteSpace(reason))
         {
-            warnings.Add("No DLQ messages match this filter.");
-            canExecute = false;
+            return Result<BulkPreview>.Failure(Error.Validation("RecoveryLedger.ReasonRequired", "Say why these are being purged — the reason is kept with every one."));
         }
 
-        var sample = await query
-            .OrderBy(m => m.DetectedAtUtc)
-            .Take(MaxSampleSize)
-            .Select(m => new BulkOperationPreviewItem(m.Id, m.MessageId, m.EntityName, m.DeadLetterReason, m.ReplaySafety))
-            .ToListAsync(cancellationToken);
-
-        var unsafeReplayCount = 0;
-        if (request.OperationType == BulkOperationType.Replay)
+        var ids = dlqMessageIds.Distinct().ToList();
+        if (ids.Count == 0)
         {
-            unsafeReplayCount = await query.CountAsync(m => m.ReplaySafety == ReplaySafetyLevels.Unsafe, cancellationToken);
-            if (unsafeReplayCount > 0)
-            {
-                warnings.Add(
-                    $"{unsafeReplayCount} of the matched message(s) are flagged 'Unsafe' to replay — review the sample before proceeding.");
-            }
+            return Result<BulkPreview>.Failure(Error.Validation(ErrorCodes.ValidationFailed, "Choose at least one dead letter to replay."));
         }
 
-        return new BulkOperationPreviewResponse(totalMatched, sample, canExecute, warnings, unsafeReplayCount);
-    }
-
-    /// <inheritdoc />
-    public async Task<Result<BulkOperationJobResponse>> CreateJobAsync(
-        string ownerId, BulkOperationCreateRequest request, string? correlationId,
-        RecoveryActor requestedBy,
-        IReadOnlySet<Guid>? allowedNamespaceIds = null,
-        CancellationToken cancellationToken = default)
-    {
-        var nsResult = await ResolveOwnedNamespaceAsync(ownerId, request.Filter.NamespaceId, allowedNamespaceIds, cancellationToken);
-        if (nsResult.IsFailure)
-            return Result.Failure<BulkOperationJobResponse>(nsResult.Error);
-
-        var ns = nsResult.Value;
-        var (warnings, canExecute) = await EvaluateGuardsAsync(ownerId, ns, request.OperationType, cancellationToken);
-        if (!canExecute)
+        if (ids.Count > MaxMessages)
         {
-            return Result.Failure<BulkOperationJobResponse>(Error.Validation(
-                "BulkOperation.NotAllowed", string.Join(' ', warnings)));
+            return Result<BulkPreview>.Failure(Error.Validation(ErrorCodes.ValidationFailed, $"A bulk replay carries at most {MaxMessages} messages; choose fewer."));
         }
 
-        var query = BuildMatchQuery(ownerId, request.Filter);
-        var totalMatched = await query.CountAsync(cancellationToken);
-        if (totalMatched == 0)
-        {
-            return Result.Failure<BulkOperationJobResponse>(Error.Validation(
-                "BulkOperation.NoMatches", "No DLQ messages match this filter."));
-        }
+        var messages = await _db.DlqMessages.AsNoTracking().Where(m => m.OwnerId == ownerId && ids.Contains(m.Id)).ToListAsync(ct).ConfigureAwait(false);
+        var byId = messages.ToDictionary(m => m.Id);
+        var nsCache = new Dictionary<Guid, Namespace?>();
 
         var job = new BulkOperationJob
         {
-            OwnerId = ownerId,
-            OperationType = request.OperationType,
-            Status = BulkOperationStatus.Pending,
-            NamespaceId = ns.Id,
-            NamespaceDisplayName = ns.DisplayName ?? ns.Name,
-            EntityNameFilter = request.Filter.EntityName,
-            StatusFilter = request.Filter.Status,
-            CategoryFilter = request.Filter.Category,
-            FromFilter = request.Filter.From,
-            ToFilter = request.Filter.To,
-            TotalMatched = totalMatched,
-            CreatedAt = DateTimeOffset.UtcNow,
-            CorrelationId = correlationId,
-            RequestedByIdentity = requestedBy.Identity,
-            RequestedByActorKind = requestedBy.Kind,
-            RequestedByScopes = requestedBy.Scopes,
+            OwnerId = ownerId, ActorIdentity = actor.Identity, ActorKind = actor.Kind, PreviewedAt = _time.GetUtcNow(),
+            Kind = kind, Reason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim(),
+            PerSecond = Math.Clamp(_configuration.GetValue("BulkReplay:PerSecond", DefaultPerSecond), 0.1, 50),
+            StopAfterConsecutiveFailures = Math.Clamp(_configuration.GetValue("BulkReplay:StopAfterConsecutiveFailures", DefaultStopAfter), 1, 100),
         };
 
-        _dbContext.BulkOperationJobs.Add(job);
-        await _dbContext.SaveChangesAsync(cancellationToken);
-
-        _queue.Enqueue(job.Id);
-
-        _logger.LogInformation(
-            "Bulk {OperationType} job {JobId} created for namespace {NamespaceId}: {TotalMatched} message(s) matched",
-            job.OperationType, job.Id, job.NamespaceId, job.TotalMatched);
-
-        return await ToResponseAsync(job, cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async Task<Result<BulkOperationJobResponse>> GetJobAsync(
-        string ownerId, Guid jobId, CancellationToken cancellationToken = default)
-    {
-        var job = await _dbContext.BulkOperationJobs
-            .AsNoTracking()
-            .FirstOrDefaultAsync(j => j.Id == jobId && j.OwnerId == ownerId, cancellationToken);
-
-        return job is null
-            ? Result.Failure<BulkOperationJobResponse>(Error.NotFound(
-                "BulkOperation.NotFound", $"Bulk operation job {jobId} was not found"))
-            : await ToResponseAsync(job, cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async Task<Result<PaginatedResponse<BulkOperationJobResponse>>> ListJobsAsync(
-        string ownerId, Guid? namespaceId, int page, int pageSize, CancellationToken cancellationToken = default,
-        IReadOnlySet<Guid>? allowedNamespaceIds = null)
-    {
-        page = Math.Max(page, 1);
-        pageSize = Math.Clamp(pageSize, 1, 100);
-
-        var query = _dbContext.BulkOperationJobs.AsNoTracking().Where(j => j.OwnerId == ownerId);
-
-        // NAMESPACE ALLOW-LIST: further narrow to the caller's credential's namespace allow-list,
-        // when one is present — null means unrestricted (today's behaviour).
-        if (allowedNamespaceIds is not null)
-            query = query.Where(j => allowedNamespaceIds.Contains(j.NamespaceId));
-
-        if (namespaceId.HasValue)
-            query = query.Where(j => j.NamespaceId == namespaceId.Value);
-
-        var totalCount = await query.CountAsync(cancellationToken);
-        var items = await query
-            .OrderByDescending(j => j.CreatedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync(cancellationToken);
-
-        // Sequential, not Task.WhenAll: DbContext is not thread-safe for concurrent queries, and
-        // ToResponseAsync issues its own query for each still-Pending item's QueueAheadCount.
-        var responses = new List<BulkOperationJobResponse>(items.Count);
-        foreach (var item in items)
+        var position = 0;
+        foreach (var id in ids)
         {
-            responses.Add(await ToResponseAsync(item, cancellationToken));
-        }
-
-        return new PaginatedResponse<BulkOperationJobResponse>(
-            Items: responses,
-            TotalCount: totalCount,
-            Page: page,
-            PageSize: pageSize,
-            HasNextPage: page * pageSize < totalCount,
-            HasPreviousPage: page > 1);
-    }
-
-    /// <inheritdoc />
-    public async Task<Result<BulkOperationJobResponse>> CancelJobAsync(
-        string ownerId, Guid jobId, CancellationToken cancellationToken = default)
-    {
-        var job = await _dbContext.BulkOperationJobs
-            .FirstOrDefaultAsync(j => j.Id == jobId && j.OwnerId == ownerId, cancellationToken);
-
-        if (job is null)
-            return Result.Failure<BulkOperationJobResponse>(Error.NotFound(
-                "BulkOperation.NotFound", $"Bulk operation job {jobId} was not found"));
-
-        // Idempotent: cancelling a terminal job is a no-op success, not an error — the caller
-        // may race a "Cancel" click against the job finishing naturally.
-        if (job.Status is BulkOperationStatus.Pending or BulkOperationStatus.Running)
-        {
-            job.CancellationRequestedAt = DateTimeOffset.UtcNow;
-            await _dbContext.SaveChangesAsync(cancellationToken);
-
-            // Signals the worker immediately if the job is already running; harmless no-op if
-            // it's still Pending (the worker checks CancellationRequestedAt before starting).
-            _queue.RequestCancellation(jobId);
-
-            _logger.LogInformation("Cancellation requested for bulk operation job {JobId}", jobId);
-        }
-
-        return await ToResponseAsync(job, cancellationToken);
-    }
-
-    // ── Helpers ──────────────────────────────────────────────────────────────
-
-    private async Task<Result<Namespace>> ResolveOwnedNamespaceAsync(
-        string ownerId, Guid namespaceId, IReadOnlySet<Guid>? allowedNamespaceIds, CancellationToken cancellationToken)
-    {
-        var nsResult = await _namespaceRepository.GetByIdAsync(namespaceId, cancellationToken);
-        if (nsResult.IsFailure)
-            return Result.Failure<Namespace>(nsResult.Error);
-
-        var ns = nsResult.Value;
-
-        // TENANT ISOLATION: return NotFound (not Forbidden) on owner mismatch, matching the
-        // convention used by every other namespace-scoped controller in this codebase. Also
-        // rejects namespaces outside the caller's allow-list — without this, a key restricted to
-        // one namespace could still bulk replay/purge another namespace it truly owns.
-        if (!string.Equals(ns.OwnerId, ownerId, StringComparison.Ordinal)
-            || (allowedNamespaceIds is not null && !allowedNamespaceIds.Contains(namespaceId)))
-        {
-            return Result.Failure<Namespace>(Error.NotFound(
-                "Namespace.NotFound", $"Namespace {namespaceId} was not found"));
-        }
-
-        return ns;
-    }
-
-    /// <summary>
-    /// Same safety-by-default guards single-message replay/purge already enforce
-    /// (<c>MessagesController.ReplayMessage</c>/<c>PurgeMessage</c>), evaluated once for the
-    /// whole job rather than per message — production elevation, Send permission for replay, and
-    /// provider capability for purge.
-    /// </summary>
-    private async Task<(List<string> Warnings, bool CanExecute)> EvaluateGuardsAsync(
-        string ownerId, Namespace ns, BulkOperationType operationType, CancellationToken cancellationToken)
-    {
-        var warnings = new List<string>();
-        var canExecute = true;
-
-        if (ns.Environment == Core.Enums.EnvironmentType.Prod
-            && await ProductionElevationQueries.GetLiveAsync(_dbContext, ownerId, ns.Id, cancellationToken) is null)
-        {
-            warnings.Add("This namespace is Production and has no live elevation — bulk operations are blocked. " +
-                "Request a production elevation, or validate in DEV/UAT first.");
-            canExecute = false;
-        }
-
-        if (operationType == BulkOperationType.Replay && !ns.HasSendPermission)
-        {
-            warnings.Add(
-                "The configured connection string lacks Send permission, which replay requires to move messages back to the main queue.");
-            canExecute = false;
-        }
-
-        if (!_router.IsRegistered(ns.Provider))
-        {
-            warnings.Add($"No provider is registered for '{ns.Provider}' on this server.");
-            canExecute = false;
-        }
-        else if (operationType == BulkOperationType.Purge)
-        {
-            var capabilities = _router.Resolve(ns.Provider).Capabilities;
-            if (!capabilities.SupportsPurge)
+            if (!byId.TryGetValue(id, out var message))
             {
-                warnings.Add($"{ns.Provider} does not support purge — {capabilities.Notes}");
-                canExecute = false;
+                job.Items.Add(new BulkOperationItem
+                {
+                    DlqMessageId = id, NamespaceId = Guid.Empty, EntityName = "?", State = BulkItemState.HeldBack, Position = position++,
+                    ReasonCode = "NOT_FOUND", Remedy = Remedy("NOT_FOUND"),
+                });
+                continue;
             }
+
+            if (!nsCache.TryGetValue(message.NamespaceId, out var ns))
+            {
+                var found = await _namespaces.GetByIdAsync(message.NamespaceId, ct).ConfigureAwait(false);
+                ns = found.IsSuccess && found.Value.OwnerId == ownerId && (allowed is null || allowed.Contains(found.Value.Id)) ? found.Value : null;
+                nsCache[message.NamespaceId] = ns;
+            }
+
+            var (state, code) =
+                ns is null ? (BulkItemState.HeldBack, "NOT_FOUND")
+                : message.Status != DlqMessageStatus.Active ? (BulkItemState.HeldBack, "NOT_ACTIVE")
+                // Purge only where the cloud can delete one message — read from capability, never a name (R4).
+                : kind == RecoveryOperationKind.Purge && !_router.Resolve(ns.Provider).Capabilities.SupportsPurge ? (BulkItemState.HeldBack, "PURGE_UNSUPPORTED")
+                : (BulkItemState.Queued, (string?)null);
+
+            if (state == BulkItemState.Queued)
+            {
+                var decision = await _replay.CheckEligibilityAsync(message.Id, ns!, actor, kind, ct).ConfigureAwait(false);
+                if (decision is null)
+                {
+                    (state, code) = (BulkItemState.HeldBack, "NOT_FOUND");
+                }
+                else if (decision.Verdict != EligibilityVerdict.Allow)
+                {
+                    (state, code) = (BulkItemState.HeldBack, decision.ReasonCode ?? decision.Verdict.ToString().ToUpperInvariant());
+                }
+            }
+
+            job.Items.Add(new BulkOperationItem
+            {
+                DlqMessageId = message.Id, NamespaceId = message.NamespaceId, EntityName = message.EntityName,
+                DeadLetterReason = message.DeadLetterReason, State = state, ReasonCode = code, Remedy = code is null ? null : Remedy(code),
+                Position = position++,
+            });
         }
 
-        return (warnings, canExecute);
+        bool canProve;
+        // Can a fix be proven for everything in this run? Read from capability, never from a provider's name (R4).
+        canProve = nsCache.Values.OfType<Namespace>().All(n => _router.Resolve(n.Provider).Capabilities.CanProveDlqAbsence);
+
+        _db.BulkOperationJobs.Add(job);
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+        var groups = job.Items.GroupBy(i => i.DeadLetterReason ?? "Unknown")
+            .Select(g => new BulkGroup(g.Key, g.Count(), g.Count(i => i.State == BulkItemState.Queued), g.Count(i => i.State == BulkItemState.HeldBack)))
+            .OrderByDescending(g => g.Selected).ThenBy(g => g.Reason, StringComparer.Ordinal).ToList();
+        var held = job.Items.Where(i => i.State == BulkItemState.HeldBack)
+            .Select(i => new BulkHeldBack(i.DlqMessageId, i.EntityName, i.DeadLetterReason, i.ReasonCode!, i.Remedy!)).ToList();
+
+        return Result<BulkPreview>.Success(new BulkPreview(
+            job.Id, job.Items.Count, job.Items.Count(i => i.State == BulkItemState.Queued), held.Count, groups, held,
+            job.PerSecond, job.StopAfterConsecutiveFailures, (int)PreviewLifetime.TotalMinutes, canProve, job.Kind));
     }
 
-    private IQueryable<DlqMessage> BuildMatchQuery(string ownerId, BulkOperationFilterRequest filter) =>
-        BulkOperationMatching.BuildQuery(
-            _dbContext, ownerId, filter.NamespaceId, filter.EntityName,
-            filter.Status, filter.Category, filter.From, filter.To);
-
-    /// <summary>
-    /// Maps a job row to its response shape, including — for a still-Pending job — how many
-    /// other jobs are ahead of it on the shared single-concurrency
-    /// <c>BulkOperationWorker</c> (see <see cref="BulkOperationJobResponse.QueueAheadCount"/>). Mirrors
-    /// <c>SignatureReplayService.ToResponseAsync</c>'s identical shape: the queue is a plain FIFO
-    /// channel fed immediately after the row commits, so enqueue order and <c>CreatedAt</c> order
-    /// are equivalent — "ahead" can be computed straight from the table. One shared worker
-    /// processes both Replay and Purge jobs, so the count spans both operation types rather than
-    /// being scoped to the job's own <see cref="BulkOperationJob.OperationType"/>.
-    /// </summary>
-    private async Task<BulkOperationJobResponse> ToResponseAsync(BulkOperationJob job, CancellationToken cancellationToken)
+    /// <inheritdoc />
+    public async Task<Result<BulkProgress>> StartAsync(string ownerId, Guid previewId, bool sampleOnly, CancellationToken ct, RecoveryOperationKind kind = RecoveryOperationKind.Replay)
     {
-        int? queueAheadCount = null;
-        if (job.Status == BulkOperationStatus.Pending)
+        var job = await LoadAsync(ownerId, previewId, ct).ConfigureAwait(false);
+        if (job is null)
         {
-            var runningCount = await _dbContext.BulkOperationJobs.AsNoTracking()
-                .CountAsync(j => j.Status == BulkOperationStatus.Running, cancellationToken);
-            var pendingAheadCount = await _dbContext.BulkOperationJobs.AsNoTracking()
-                .CountAsync(j => j.Status == BulkOperationStatus.Pending && j.CreatedAt < job.CreatedAt, cancellationToken);
-            queueAheadCount = runningCount + pendingAheadCount;
+            return NotFound(previewId);
         }
 
-        return new(
-            Id: job.Id,
-            OperationType: job.OperationType.ToString(),
-            Status: job.Status.ToString(),
-            NamespaceId: job.NamespaceId,
-            NamespaceDisplayName: job.NamespaceDisplayName,
-            EntityNameFilter: job.EntityNameFilter,
-            StatusFilter: job.StatusFilter?.ToString(),
-            CategoryFilter: job.CategoryFilter?.ToString(),
-            From: job.FromFilter,
-            To: job.ToFilter,
-            TotalMatched: job.TotalMatched,
-            ProcessedCount: job.ProcessedCount,
-            SuccessCount: job.SuccessCount,
-            FailureCount: job.FailureCount,
-            SkippedCount: job.SkippedCount,
-            FailureSample: DeserializeFailureSample(job.FailureSampleJson),
-            ErrorSummary: job.ErrorSummary,
-            CreatedAt: job.CreatedAt,
-            StartedAt: job.StartedAt,
-            CompletedAt: job.CompletedAt,
-            IsCancellable: job.Status is BulkOperationStatus.Pending or BulkOperationStatus.Running,
-            QueueAheadCount: queueAheadCount);
+        // The start must say what it starts: a replay intent can never set off a purge preview, nor the other way round.
+        if (job.Kind != kind)
+        {
+            return Result<BulkProgress>.Failure(Error.Conflict("BULK_KIND_MISMATCH", $"This preview is a {job.Kind.ToString().ToLowerInvariant()}, not a {kind.ToString().ToLowerInvariant()}."));
+        }
+
+        if (job.Status != BulkOperationStatus.Previewed)
+        {
+            return Result<BulkProgress>.Failure(Error.Conflict("BULK_NOT_PREVIEWED", "This preview has already been used. Make a new preview to run it again."));
+        }
+
+        if (_time.GetUtcNow() - job.PreviewedAt > PreviewLifetime)
+        {
+            job.Status = BulkOperationStatus.Expired;
+            job.EndedAt = _time.GetUtcNow();
+            job.EndedReason = "The preview expired before it was started.";
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            return Result<BulkProgress>.Failure(Error.Conflict("BULK_PREVIEW_EXPIRED", "That preview is too old to run — what it described may have changed. Make a new one."));
+        }
+
+        if (job.Items.All(i => i.State != BulkItemState.Queued))
+        {
+            return Result<BulkProgress>.Failure(Error.Conflict("BULK_NOTHING_TO_REPLAY", "Nothing in this preview can be replayed."));
+        }
+
+        job.Status = BulkOperationStatus.Running;
+        job.StartedAt = _time.GetUtcNow();
+        job.SampleOnly = sampleOnly;
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        return Result<BulkProgress>.Success(Progress(job));
     }
 
-    private static IReadOnlyList<BulkOperationFailureSample>? DeserializeFailureSample(string? json)
+    /// <inheritdoc />
+    public async Task<Result<BulkProgress>> GetAsync(string ownerId, Guid id, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(json))
-            return null;
-
-        try
-        {
-            return System.Text.Json.JsonSerializer.Deserialize<List<BulkOperationFailureSample>>(json);
-        }
-        catch (System.Text.Json.JsonException)
-        {
-            return null;
-        }
+        var job = await LoadAsync(ownerId, id, ct, tracking: false).ConfigureAwait(false);
+        return job is null ? NotFound(id) : Result<BulkProgress>.Success(Progress(job));
     }
+
+    /// <inheritdoc />
+    public async Task<Result<BulkProgress>> CancelAsync(string ownerId, Guid id, CancellationToken ct)
+    {
+        var job = await LoadAsync(ownerId, id, ct).ConfigureAwait(false);
+        if (job is null)
+        {
+            return NotFound(id);
+        }
+
+        if (job.Status is BulkOperationStatus.Running)
+        {
+            job.CancelRequested = true;
+        }
+        else if (job.Status is BulkOperationStatus.Previewed)
+        {
+            job.Status = BulkOperationStatus.Cancelled;
+            job.EndedAt = _time.GetUtcNow();
+            job.EndedReason = "Cancelled before it started.";
+        }
+
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        return Result<BulkProgress>.Success(Progress(job));
+    }
+
+    /// <summary>The progress numbers of a job.</summary>
+    public static BulkProgress Progress(BulkOperationJob job)
+    {
+        int Count(BulkItemState s) => job.Items.Count(i => i.State == s);
+        var willReplay = job.Items.Count(i => i.State != BulkItemState.HeldBack);
+        return new BulkProgress(
+            job.Id, job.Status, job.Items.Count, willReplay, Count(BulkItemState.Sent), Count(BulkItemState.Failed), Count(BulkItemState.Unknown),
+            Count(BulkItemState.Queued) + Count(BulkItemState.Sending), Count(BulkItemState.HeldBack), job.SampleOnly, job.EndedReason,
+            job.PreviewedAt, job.StartedAt, job.EndedAt, job.Kind,
+            [.. job.Items.Where(i => i.State is BulkItemState.Failed or BulkItemState.Unknown).OrderBy(i => i.Position).Select(i =>
+                new BulkProblem(i.DlqMessageId, i.EntityName, i.State == BulkItemState.Failed ? "failed" : "unknown", i.ReasonCode,
+                    string.IsNullOrWhiteSpace(i.Remedy) ? "The cloud did not accept it, so nothing was sent back." : i.Remedy))]);
+    }
+
+    /// <summary>The words that say what to do about a held-back message.</summary>
+    public static string Remedy(string reasonCode) => reasonCode switch
+    {
+        "NOT_FOUND" => "ServiceHub could not find this message any more. Refresh the list.",
+        "NOT_ACTIVE" => "It is no longer in the dead-letter queue, so there is nothing to replay.",
+        "PRODUCTION_ELEVATION_REQUIRED" => "This is a production namespace. A person with production approval has to allow it.",
+        "RECURRENCE_CAP_EXCEEDED" or "RECURRENCE_CAP_EXCEEDED_HEURISTIC" or "RECURRENCE_CAP_AMBIGUOUS_COLLISION" =>
+            "It has already been replayed and came back too many times. Fix the cause first, then replay it.",
+        "RATE_LIMITED" or "FLEET_RATE_LIMITED" => "Too many replays have happened recently. Try again in a few minutes.",
+        "EMERGENCY_STOP_ACTIVE" => "Emergency stop is on. Nothing is sent until it is lifted.",
+        "PROVIDER_CANNOT_VERIFY_ABSENCE" => "This cloud can't prove a fix held, so ServiceHub asks a person first.",
+        "AUTONOMY_GRANT_INSUFFICIENT" => "ServiceHub hasn't earned the right to replay this kind of failure on its own yet.",
+        "PURGE_UNSUPPORTED" => "This cloud cannot delete one message on its own, so it is left where it is.",
+        "PURGE_AUTOMATION_PROHIBITED" => "Only a person can purge, never an automatic rule.",
+        _ => $"A safety check held it back ({reasonCode}). A person with approval rights has to decide.",
+    };
+
+    private async Task<BulkOperationJob?> LoadAsync(string ownerId, Guid id, CancellationToken ct, bool tracking = true)
+    {
+        var query = tracking ? _db.BulkOperationJobs : _db.BulkOperationJobs.AsNoTracking();
+        return await query.Include(j => j.Items).FirstOrDefaultAsync(j => j.Id == id && j.OwnerId == ownerId, ct).ConfigureAwait(false);
+    }
+
+    private static Result<BulkProgress> NotFound(Guid id) =>
+        Result<BulkProgress>.Failure(Error.NotFound("BULK_NOT_FOUND", $"Bulk replay '{id}' was not found."));
 }

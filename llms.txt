@@ -1,34 +1,30 @@
 # ServiceHub
 
-> Self-hosted, open-source forensic debugger for cloud messaging. Investigate dead-letter queues,
-> inspect and search message content, recover failed messages, and prove what happened with
-> tamper-evident recovery evidence. Azure Service Bus is GA; AWS SQS/SNS and GCP Pub/Sub are
-> Supported — conformance-tested against live infrastructure, with each provider's real
-> limitations published rather than papered over.
+> Self-hosted tool for recovering stuck messages in Azure Service Bus, AWS SQS/SNS and GCP Pub/Sub — and proving what it did.
+> Shows what is dead-lettered and why, replays messages after a preview, and records every recovery in a tamper-evident,
+> hash-chained ledger that can be verified offline. Each cloud's real limits are published rather than papered over: Azure can
+> confirm a replayed message stayed fixed; AWS and GCP cannot, so their results read "verification required".
 
-ServiceHub is single-instance, self-hosted software for one team — not a multi-tenant SaaS. It is
-read-only by default (peek, never consume), encrypts connection strings at rest, and runs its
-primary AI-assisted analysis entirely client-side in the browser with no message data sent to any
-third-party or cloud AI service. Recovery actions are gated by per-identity governance roles and a
-deterministic eligibility gate, and every recovery is recorded in a hash-chained evidence ledger
-that an auditor can verify offline with a standalone script.
+ServiceHub is single-instance, self-hosted software for one team, not a multi-tenant SaaS: one process and one SQLite file.
+Connection strings are encrypted at rest. Every replay goes through one eligibility gate that fails closed, and a person decides
+by default. This is ServiceHub 4.1.0, a from-scratch rewrite with no upgrade path from 4.0.0; the previous release is frozen in archive/servicehub-4.0.0/.
 
 ## Docs
 
-- [README](https://github.com/debdevops/servicehub/blob/main/README.md): What ServiceHub is, feature tour, quick start, security model, FAQ
-- [Complete Service Guide](https://github.com/debdevops/servicehub/blob/main/docs/SERVICEHUB-COMPLETE-GUIDE.md): Screen-by-screen reference for every page, concept, and workflow
-- [Recovery Evidence Ledger](https://github.com/debdevops/servicehub/blob/main/docs/RECOVERY-EVIDENCE.md): The hash-chained recovery evidence model introduced in v3.7.0
-- [Provider Conformance](https://github.com/debdevops/servicehub/blob/main/docs/PROVIDER-CONFORMANCE.md): What each provider can and cannot prove, and the live evidence behind the Supported labels
-- [Architecture](https://github.com/debdevops/servicehub/blob/main/docs/ARCHITECTURE.md): System design, provider abstraction, and the AI capability boundary
-- [Self-hosting](https://github.com/debdevops/servicehub/blob/main/self-hosting/README.md): Deployment, persistent storage, least-privilege cloud credentials, single-instance constraints
-- [Backup and restore](https://github.com/debdevops/servicehub/blob/main/docs/BACKUP-RESTORE.md): Atomic SQLite backup, restore, and verification procedure
-- [Architecture Decision Records](https://github.com/debdevops/servicehub/blob/main/docs/adr/README.md): Why the product is shaped the way it is, including the single-instance SQLite decision
-- [Adding a provider](https://github.com/debdevops/servicehub/blob/main/docs/extending/adding-a-provider.md): How the Azure/AWS/GCP provider abstraction extends to new backends
-- [Changelog](https://github.com/debdevops/servicehub/blob/main/CHANGELOG.md): Version history, including what shipped in v4.0.0
+- [README](https://github.com/debdevops/servicehub/blob/main/README.md): What it is, quick start, safety model, deploying it
+- [Local setup](https://github.com/debdevops/servicehub/blob/main/docs/LOCAL-SETUP.md): Install, run, check and troubleshoot ServiceHub on your own machine
+- [Hosting on Azure](https://github.com/debdevops/servicehub/blob/main/docs/HOSTING-AZURE.md): Run it always-on on a small Azure VM, safely
+- [Azure Service Bus guide](https://github.com/debdevops/servicehub/blob/main/docs/clouds/azure.md): Step-by-step setup and use on Azure Service Bus, with annotated screenshots
+- [AWS SQS/SNS guide](https://github.com/debdevops/servicehub/blob/main/docs/clouds/aws.md): Step-by-step setup and use on AWS SQS/SNS, with annotated screenshots
+- [Google Pub/Sub guide](https://github.com/debdevops/servicehub/blob/main/docs/clouds/gcp.md): Step-by-step setup and use on Google Pub/Sub, with annotated screenshots
+- [Adding a messaging provider](https://github.com/debdevops/servicehub/blob/main/docs/extending/adding-a-provider.md): Implement ICloudMessagingProvider and declare capabilities honestly
+- [Adding an agent](https://github.com/debdevops/servicehub/blob/main/docs/extending/adding-an-agent.md): One class and one registration line
+- [Recovery Evidence Ledger](https://github.com/debdevops/servicehub/blob/main/docs/RECOVERY-EVIDENCE.md): The hash-chained evidence model and offline verification
+- [Backup and restore](https://github.com/debdevops/servicehub/blob/main/docs/BACKUP-RESTORE.md): Atomic SQLite backup, restore, verification
+- [Encryption key rotation](https://github.com/debdevops/servicehub/blob/main/docs/ENCRYPTION-KEY-ROTATION.md): Multi-key registry, rotation, compromise response
+- [Tests](https://github.com/debdevops/servicehub/blob/main/tests/README.md): Where every test lives and how to run it
+- [Security policy](https://github.com/debdevops/servicehub/blob/main/SECURITY.md): Reporting a vulnerability
+- [Changelog](https://github.com/debdevops/servicehub/blob/main/CHANGELOG.md): What changed and when
 - [Releases](https://github.com/debdevops/servicehub/releases): Version history and release notes
 - [License](https://github.com/debdevops/servicehub/blob/main/LICENSE): MIT
-
-## Optional
-
 - [Contributing](https://github.com/debdevops/servicehub/blob/main/CONTRIBUTING.md): How to contribute, including adding a new messaging provider
-- [Security policy](https://github.com/debdevops/servicehub/blob/main/SECURITY.md): How to report a vulnerability

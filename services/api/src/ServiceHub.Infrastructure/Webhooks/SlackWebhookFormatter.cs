@@ -38,36 +38,6 @@ public sealed class SlackWebhookFormatter : IWebhookMessageFormatter
             Blocks: blocks);
     }
 
-    /// <inheritdoc />
-    public object BuildBulkOperationCompletedPayload(BulkOperationCompletedNotification n)
-    {
-        var (emoji, headline) = n.Status switch
-        {
-            BulkOperationStatus.Completed => ("✅", "Bulk operation completed"),
-            BulkOperationStatus.CompletedWithErrors => ("⚠️", "Bulk operation completed with errors"),
-            BulkOperationStatus.Failed => ("❌", "Bulk operation failed"),
-            BulkOperationStatus.Cancelled => ("⏹️", "Bulk operation cancelled"),
-            _ => ("ℹ️", "Bulk operation finished"),
-        };
-
-        var blocks = new List<object>
-        {
-            new SlackHeaderBlock($"{emoji} {headline}"),
-            new SlackSectionBlock(new[]
-            {
-                new SlackTextField($"*Operation:*\n{n.OperationType} — {n.NamespaceName}"),
-                new SlackTextField($"*Result:*\n{n.SuccessCount} succeeded, {n.FailureCount} failed, {n.SkippedCount} skipped (of {n.TotalMatched})"),
-            }),
-            new SlackContextBlock($"Completed {n.CompletedAtUtc:yyyy-MM-dd HH:mm} UTC"),
-        };
-
-        if (n.InvestigateUrl is not null)
-            blocks.Add(new SlackActionsBlock("View DLQ History", n.InvestigateUrl));
-
-        return new SlackMessage(
-            Text: $"{emoji} Bulk {n.OperationType.ToString().ToLowerInvariant()} on {n.NamespaceName}: {n.SuccessCount}/{n.TotalMatched} succeeded",
-            Blocks: blocks);
-    }
 
     /// <inheritdoc />
     public object BuildAutonomyTransitionPayload(AutonomyTransitionNotification n)
@@ -116,6 +86,26 @@ public sealed class SlackWebhookFormatter : IWebhookMessageFormatter
         return new SlackMessage(
             Text: $"🛑 Auto-replay rule '{n.RuleName}' disabled by circuit breaker",
             Blocks: blocks);
+    }
+
+    /// <inheritdoc />
+    public object BuildEscalationPayload(EscalationNotification n)
+    {
+        var blocks = new List<object>
+        {
+            new SlackHeaderBlock($"⏸️ {n.Headline}"),
+            new SlackSectionBlock(new[]
+            {
+                new SlackTextField($"*Where:*\n{(n.Where.Length > 0 ? n.Where : "ServiceHub")}"),
+                new SlackTextField($"*Why:*\n{n.Reason}"),
+            }),
+            new SlackContextBlock($"{n.WhatToDo} · {n.ReasonCode} · {n.RaisedAtUtc:yyyy-MM-dd HH:mm} UTC"),
+        };
+
+        if (n.ReviewUrl is not null)
+            blocks.Add(new SlackActionsBlock(n.Kind == "agent" ? "Open Agents" : "Review in ServiceHub", n.ReviewUrl));
+
+        return new SlackMessage(Text: $"⏸️ {n.Headline} — {n.Where}: {n.Reason}", Blocks: blocks);
     }
 
     /// <inheritdoc />

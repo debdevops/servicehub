@@ -50,7 +50,7 @@ public sealed record PlatformEvent
     /// <summary>
     /// Origin of the event within ServiceHub.
     /// Recommended format: <c>{assembly}.{class}</c>,
-    /// e.g. <c>ServiceHub.Infrastructure.DlqMonitorWorker</c>.
+    /// e.g. <c>ServiceHub.Infrastructure.Agents.AgentHost</c>.
     /// </summary>
     public required string Source { get; init; }
 

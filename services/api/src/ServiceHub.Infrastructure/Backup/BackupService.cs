@@ -10,8 +10,8 @@ using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Core.Models.Backup;
 using ServiceHub.Infrastructure.Persistence;
-using ServiceHub.Shared.Constants;
-using ServiceHub.Shared.Results;
+using ServiceHub.Core.Constants;
+using ServiceHub.Core.Results;
 
 namespace ServiceHub.Infrastructure.Backup;
 
@@ -25,6 +25,13 @@ namespace ServiceHub.Infrastructure.Backup;
 /// single cross-store transaction. <c>VACUUM INTO</c> gives the SQLite file a well-defined
 /// consistent point (the instant it completes); the namespace JSON file is copied as a single
 /// atomic file operation but at a different, nearby instant. See docs/BACKUP-RESTORE.md.
+/// <para>
+/// <b>Copied from 4.0.0 (unit 6.13, R11 "same as 2.6").</b> Adapted only where 4.1.0 differs: the context is
+/// <c>ServiceHubDbContext</c> and the backup root sits under
+/// <see cref="ServiceHubDataDirectory"/>. The snapshot keeps 4.0.0's file name inside the bundle; restore reads the name from
+/// the manifest, so it never matters. The namespace-store copy is kept as it was; 4.1.0 keeps namespaces in SQLite,
+/// so that file is absent and the manifest records it as null — exactly the path 4.0.0 took after its own migration.
+/// </para>
 /// </remarks>
 public sealed class BackupService : IBackupService
 {
@@ -38,7 +45,7 @@ public sealed class BackupService : IBackupService
     private const string NamespaceStoreFileName = "servicehub-namespaces.json";
     private const string ManifestFileName = "manifest.json";
 
-    private readonly DlqDbContext _dbContext;
+    private readonly ServiceHubDbContext _dbContext;
     private readonly IConnectionStringProtector _connectionStringProtector;
     private readonly IConfiguration _configuration;
     private readonly BackupOptions _options;
@@ -46,7 +53,7 @@ public sealed class BackupService : IBackupService
 
     /// <summary>Initializes a new instance of the <see cref="BackupService"/> class.</summary>
     public BackupService(
-        DlqDbContext dbContext,
+        ServiceHubDbContext dbContext,
         IConnectionStringProtector connectionStringProtector,
         IConfiguration configuration,
         IOptions<BackupOptions> options,
@@ -192,9 +199,7 @@ public sealed class BackupService : IBackupService
             return configured;
         }
 
-        var dataDir = _configuration["DlqDatabase:DataDirectory"]
-            ?? Path.Combine(AppContext.BaseDirectory, "data");
-        return Path.Combine(dataDir, "backups");
+        return Path.Combine(ServiceHubDataDirectory.Resolve(_configuration), "backups");
     }
 
     /// <summary>

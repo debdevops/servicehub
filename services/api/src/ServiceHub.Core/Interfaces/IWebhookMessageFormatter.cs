@@ -17,8 +17,6 @@ public interface IWebhookMessageFormatter
     /// <summary>Builds the payload object for a DLQ spike alert. Serialized as JSON by the caller.</summary>
     object BuildDlqSpikePayload(DlqSpikeNotification notification);
 
-    /// <summary>Builds the payload object for a bulk operation completion alert. Serialized as JSON by the caller.</summary>
-    object BuildBulkOperationCompletedPayload(BulkOperationCompletedNotification notification);
 
     /// <summary>Builds the payload object for an autonomy grant transition alert. Serialized as JSON by the caller.</summary>
     object BuildAutonomyTransitionPayload(AutonomyTransitionNotification notification);
@@ -29,4 +27,7 @@ public interface IWebhookMessageFormatter
     /// <summary>Builds the payload object for an insight-detected alert (anomaly, drift,
     /// correlation, or narration — roadmap §5, I5). Serialized as JSON by the caller.</summary>
     object BuildInsightDetectedPayload(InsightDetectedNotification notification);
+
+    /// <summary>Builds the message for an agent that stopped and needs a person (unit 5.5).</summary>
+    object BuildEscalationPayload(EscalationNotification notification);
 }

@@ -1,0 +1,131 @@
+import { useEffect, useRef, type ReactNode } from 'react'
+import { CircleHelp, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
+
+const focusable = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+/**
+ * The dialog chrome shared by every modal and side panel: a title, a ✕, Esc to close, focus moved
+ * in on open and handed back on close. A modal is centred over a scrim; a panel slides in on the
+ * right and leaves the page visible behind it.
+ */
+export function OverlayFrame({
+  kind,
+  title,
+  description,
+  onClose,
+  size = 'default',
+  actions,
+  docked = false,
+  helpHref,
+  children,
+}: {
+  kind: 'modal' | 'panel'
+  title: string
+  description?: string
+  onClose: () => void
+  /** `drawer` is the 462px side view of a message; `wide` a modal for careful reading. */
+  size?: 'default' | 'drawer' | 'wide' | 'wider'
+  /** Buttons that sit in the header beside the ✕ (a drawer's ⤢ Expand). */
+  actions?: ReactNode
+  /**
+   * A panel that sits BESIDE the page instead of over it: no scrim, and the page behind stays clickable — a
+   * message drawer is read next to its table. It still traps Tab and takes Esc, and restores focus on close.
+   */
+  docked?: boolean
+  /** Where this screen's (?) goes: its step in the Help guide. */
+  helpHref?: string
+  children: ReactNode
+}) {
+  const frame = useRef<HTMLDivElement>(null)
+  const onCloseRef = useRef(onClose)
+  useEffect(() => {
+    onCloseRef.current = onClose
+  })
+
+  useEffect(() => {
+    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    frame.current?.focus()
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        onCloseRef.current()
+        return
+      }
+      if (event.key !== 'Tab' || !frame.current) return
+      // Keep Tab inside the dialog while it is open.
+      const items = [...frame.current.querySelectorAll<HTMLElement>(focusable)]
+      if (items.length === 0) {
+        event.preventDefault()
+        return
+      }
+      const first = items[0]
+      const last = items[items.length - 1]
+      const active = document.activeElement
+      if (event.shiftKey && (active === first || active === frame.current)) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      before?.focus()
+    }
+  }, [])
+
+  const isModal = kind === 'modal'
+  return (
+    <div className={`fixed inset-0 z-40 flex ${isModal ? 'items-center justify-center p-6' : 'justify-end'} ${docked ? 'pointer-events-none' : ''}`}>
+      {!docked && (
+        <div
+          className="absolute inset-0 bg-black/30"
+          aria-hidden="true"
+          data-testid="overlay-scrim"
+          onClick={onClose}
+        />
+      )}
+      <div
+        ref={frame}
+        role="dialog"
+        aria-modal={docked ? 'false' : 'true'}
+        aria-label={title}
+        tabIndex={-1}
+        data-overlay={kind}
+        data-docked={docked || undefined}
+        className={
+          isModal
+            ? `relative flex max-h-full w-full flex-col ${size === 'wider' ? 'max-w-6xl' : size === 'wide' ? 'max-w-4xl' : 'max-w-xl'} overflow-hidden rounded-2xl bg-[var(--color-surface)] shadow-xl`
+            : `relative h-full w-full ${docked ? 'pointer-events-auto' : ''} ${size === 'drawer' ? 'max-w-[462px]' : 'max-w-md'} flex flex-col overflow-hidden border-l border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl`
+        }
+      >
+        <div className="flex shrink-0 items-start gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-4">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-semibold text-[var(--color-text)]">{title}</h2>
+            {description && <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">{description}</p>}
+          </div>
+          {actions}
+          {helpHref && (
+            <Link to={helpHref} aria-label={`Help for ${title}`} title="Help for this screen" className="rounded-lg p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)]">
+              <CircleHelp className="h-4 w-4" aria-hidden="true" />
+            </Link>
+          )}
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)]"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+      </div>
+    </div>
+  )
+}

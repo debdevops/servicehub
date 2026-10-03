@@ -3,19 +3,22 @@ using System.Text.Json.Serialization;
 using System.Threading.Channels;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
-using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Services;
 using ServiceHub.Core.Events;
-using ServiceHub.Shared.Constants;
 
 namespace ServiceHub.Api.Controllers.V1;
 
 /// <summary>
-/// Streams platform events (DLQ spikes, namespace changes, replays, rule matches)
-/// to the browser as Server-Sent Events. Events are scoped to the authenticated
-/// owner by <see cref="PlatformEventStreamBroker"/>.
+/// Streams platform events to the browser as Server-Sent Events (unit 2.11), scoped to the caller's owner and to
+/// the caller's namespace allow-list on every connection.
 /// </summary>
-[Route(ApiRoutes.Events.Base)]
+/// <remarks>
+/// <b>A hint, not a feed.</b> Delivery is best-effort: the in-process bus and each connection's buffer both drop
+/// the oldest event under pressure, and nothing is replayed to a client that reconnects. A client must treat an
+/// event as "something changed — look again" and read the durable tables for the truth. Events carry no payload:
+/// a stream is not a second way to read data, only a nudge to read it.
+/// </remarks>
+[Route("api/v1/events")]
 [Tags("Events")]
 public sealed class EventsController : ApiControllerBase
 {
@@ -27,33 +30,29 @@ public sealed class EventsController : ApiControllerBase
     };
 
     private readonly PlatformEventStreamBroker _broker;
-    private readonly ILogger<EventsController> _logger;
+    private readonly IHostApplicationLifetime _lifetime;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="EventsController"/> class.
-    /// </summary>
-    public EventsController(
-        PlatformEventStreamBroker broker,
-        ILogger<EventsController> logger)
+    /// <summary>Creates the controller.</summary>
+    public EventsController(PlatformEventStreamBroker broker, IHostApplicationLifetime lifetime)
     {
         _broker = broker ?? throw new ArgumentNullException(nameof(broker));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _lifetime = lifetime ?? throw new ArgumentNullException(nameof(lifetime));
     }
 
     /// <summary>
-    /// Opens a <c>text/event-stream</c> connection that pushes owner-scoped platform
-    /// events until the client disconnects. Emits a comment heartbeat every 15 seconds
-    /// so intermediaries keep the connection alive. Delivery is best-effort: the
-    /// in-process bus and the per-connection buffer both drop oldest under pressure,
-    /// so clients should treat events as invalidation hints, not a complete feed.
+    /// Opens a <c>text/event-stream</c> that pushes owner-scoped events until the client disconnects, with a
+    /// comment heartbeat every 15 seconds so intermediaries keep it open.
     /// </summary>
-    /// <param name="cancellationToken">Bound to the request abort token.</param>
+    /// <param name="requestAborted">Bound to the request abort token.</param>
     [HttpGet("stream")]
-    [RequireScope(ApiKeyScopes.DlqRead)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
-    public async Task Stream(CancellationToken cancellationToken)
+    public async Task Stream(CancellationToken requestAborted)
     {
+        // A stream never ends on its own, so it must also end when the host is stopping — otherwise one open browser tab
+        // holds the whole application up until the shutdown timeout (30 s).
+        using var stopOrLeave = CancellationTokenSource.CreateLinkedTokenSource(requestAborted, _lifetime.ApplicationStopping);
+        var cancellationToken = stopOrLeave.Token;
         using var subscription = _broker.Register(OwnerId, AllowedNamespaceIds);
         if (subscription is null)
         {
@@ -92,11 +91,11 @@ public sealed class EventsController : ApiControllerBase
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // Client disconnected — normal SSE lifecycle, not an error.
+            // The client left — the normal end of a stream, not an error.
         }
         catch (ChannelClosedException)
         {
-            // Broker completed the channel during shutdown.
+            // The broker closed the channel at shutdown.
         }
     }
 
@@ -106,29 +105,10 @@ public sealed class EventsController : ApiControllerBase
         await Response.Body.FlushAsync(cancellationToken);
     }
 
-    private static EventStreamItem ToStreamItem(PlatformEvent platformEvent) => new(
-        platformEvent.Id,
-        platformEvent.EventType,
-        platformEvent.Category,
-        platformEvent.Severity,
-        platformEvent.OccurredUtc,
-        platformEvent.CloudProvider,
-        platformEvent.NamespaceId,
-        platformEvent.NamespaceName,
-        platformEvent.CorrelationId);
+    private static EventStreamItem ToStreamItem(PlatformEvent e) =>
+        new(e.Id, e.EventType, e.Category, e.Severity, e.OccurredUtc, e.CloudProvider, e.NamespaceId);
 
-    /// <summary>
-    /// Trimmed, client-safe projection of <see cref="PlatformEvent"/> — deliberately
-    /// excludes <c>Payload</c>, <c>Metadata</c>, <c>Source</c>, and <c>Actor</c>.
-    /// </summary>
+    /// <summary>What a client is told: that something changed, where, and when. No payload, no actor.</summary>
     private sealed record EventStreamItem(
-        Guid Id,
-        string EventType,
-        string Category,
-        EventSeverity Severity,
-        DateTimeOffset OccurredUtc,
-        string? CloudProvider,
-        Guid? NamespaceId,
-        string? NamespaceName,
-        string? CorrelationId);
+        Guid Id, string EventType, string Category, EventSeverity Severity, DateTimeOffset OccurredUtc, string? CloudProvider, Guid? NamespaceId);
 }

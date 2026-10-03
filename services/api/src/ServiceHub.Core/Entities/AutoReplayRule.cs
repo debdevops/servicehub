@@ -1,71 +1,69 @@
+using ServiceHub.Core.Enums;
+
 namespace ServiceHub.Core.Entities;
 
 /// <summary>
-/// Defines an automated replay rule for dead-letter queue messages.
-/// When enabled, the DLQ monitor will automatically replay matching messages
-/// according to the configured conditions and actions.
+/// What ServiceHub may retry on its own, and what stops it (unit 3.6). A rule names a failure and a pace — there is no
+/// rule language. Every message a rule picks still goes through the eligibility gate as an <b>automation</b> actor, so a rule
+/// can never act where a signature has not earned unattended replay.
 /// </summary>
+/// <remarks>
+/// Shape adapted from 4.0.0, which stored free-form condition JSON. 4.1.0 keeps the three things the design draws — the
+/// failure (reason), the queue, and the signature it was made from — as plain columns: nothing here can grow into a DSL.
+/// </remarks>
 public sealed class AutoReplayRule
 {
     /// <summary>Primary key.</summary>
     public long Id { get; private set; }
 
-    /// <summary>Human-readable name of the rule.</summary>
+    /// <summary>Owner scope.</summary>
+    public required string OwnerId { get; init; }
+
+    /// <summary>A person's name for it.</summary>
     public required string Name { get; set; }
 
-    /// <summary>
-    /// Owner ID for multi-user isolation. Supported formats include <c>entra:{oid}</c> (Azure AD users),
-    /// <c>__spa__</c> (SPA/admin), and <c>key_{hash}</c> (scoped API keys).
-    /// </summary>
-    public required string OwnerId { get; set; }
+    /// <summary>The cloud it applies to. A rule never spans clouds.</summary>
+    public required CloudProviderType Provider { get; init; }
 
-    /// <summary>Description of what the rule does.</summary>
-    public string? Description { get; set; }
+    /// <summary>Match dead letters carrying this recorded reason. Null = any.</summary>
+    public string? Reason { get; init; }
 
-    /// <summary>
-    /// Namespace this rule is scoped to, or <c>null</c> for Global (fleet-wide, matches every
-    /// namespace) — the same meaning "no scope" has always had. Soft reference — no FK — resolved
-    /// through <c>INamespaceRepository</c> at the application layer.
-    /// </summary>
-    public Guid? NamespaceId { get; set; }
+    /// <summary>Match this queue. Null = any.</summary>
+    public string? EntityName { get; init; }
 
-    /// <summary>Whether the rule is currently active.</summary>
+    /// <summary>The failure signature the rule was made from. Null = not tied to one.</summary>
+    public string? SignatureHash { get; init; }
+
+    /// <summary>The most messages this rule replays in an hour.</summary>
+    public int MaxPerHour { get; set; } = 10;
+
+    /// <summary>How long a message waits after it was dead-lettered before the rule touches it.</summary>
+    public int WaitSeconds { get; set; } = 120;
+
+    /// <summary>When true, each further attempt at the same message waits twice as long as the last.</summary>
+    public bool BackOff { get; set; } = true;
+
+    /// <summary>Whether the rule is on.</summary>
     public bool Enabled { get; set; } = true;
 
-    /// <summary>
-    /// Why the rule is currently disabled — <c>"Manual"</c> (a human toggled it off) or
-    /// <c>"CircuitBreaker"</c> (the success-rate circuit breaker tripped it). Null when enabled.
-    /// </summary>
+    /// <summary><c>CircuitBreaker</c> when it stopped itself, <c>Person</c> when someone turned it off. A tripped breaker never resets itself.</summary>
     public string? DisabledReason { get; set; }
 
-    /// <summary>
-    /// Human-readable detail for <see cref="DisabledReason"/> — for a circuit-breaker trip, the
-    /// verified success rate and sample size that caused it. Null unless <see cref="DisabledReason"/>
-    /// is <c>"CircuitBreaker"</c>.
-    /// </summary>
-    public string? DisabledReasonDetail { get; set; }
+    /// <summary>In words, why it was turned off — for a breaker, the rate that tripped it.</summary>
+    public string? DisabledDetail { get; set; }
 
-    /// <summary>JSON-serialized conditions that must match for the rule to trigger.</summary>
-    public required string ConditionsJson { get; set; }
-
-    /// <summary>JSON-serialized actions to execute when the rule triggers.</summary>
-    public required string ActionsJson { get; set; }
-
-    /// <summary>When the rule was created.</summary>
+    /// <summary>When it was made.</summary>
     public required DateTimeOffset CreatedAt { get; init; }
 
-    /// <summary>When the rule was last modified.</summary>
+    /// <summary>When it last changed.</summary>
     public DateTimeOffset? UpdatedAt { get; set; }
 
-    /// <summary>Total number of messages matched by this rule.</summary>
-    public long MatchCount { get; set; }
+    /// <summary>The last time the gate held a matching message back and ServiceHub stopped to ask.</summary>
+    public DateTimeOffset? LastAskedAt { get; set; }
 
-    /// <summary>Number of successful replays triggered by this rule.</summary>
-    public long SuccessCount { get; set; }
+    /// <summary>The gate's reason for the last hold.</summary>
+    public string? LastAskedReason { get; set; }
 
-    /// <summary>Maximum number of replays per hour (rate limiting).</summary>
-    public int MaxReplaysPerHour { get; set; } = 100;
-
-    /// <summary>Navigation property: replay history entries triggered by this rule.</summary>
-    public ICollection<ReplayHistory> ReplayHistories { get; init; } = new List<ReplayHistory>();
+    /// <summary>How many matching messages the gate has held for a person's decision.</summary>
+    public int AskedCount { get; set; }
 }

@@ -1,13 +1,11 @@
 namespace ServiceHub.Core.Enums;
 
-/// <summary>
-/// Represents the type of Service Bus entity (queue or subscription).
-/// </summary>
+/// <summary>The kind of place a message is dead-lettered from. The name is 4.0.0's; it covers all three clouds.</summary>
 public enum ServiceBusEntityType
 {
-    /// <summary>Azure Service Bus Queue.</summary>
+    /// <summary>A queue.</summary>
     Queue = 0,
 
-    /// <summary>Azure Service Bus Topic Subscription.</summary>
-    Subscription = 1
+    /// <summary>A topic subscription (or the AWS/GCP equivalent).</summary>
+    Subscription = 1,
 }

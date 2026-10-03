@@ -1,55 +1,84 @@
 namespace ServiceHub.Api.Security;
 
 /// <summary>
-/// Centralized explicit-intent header validation for risky operations.
+/// The header that says a caller meant a dangerous request. A delete cannot be triggered by a stray
+/// prefetch, a link crawler or a URL pasted out of DevTools, because none of them send it.
 /// </summary>
+/// <remarks>Not authentication — it closes the common accident, not a determined attacker.</remarks>
 public static class IntentHeaders
 {
-    public const string IntentHeaderName = "X-ServiceHub-Intent";
-    public const string ConfirmHeaderName = "X-ServiceHub-Confirm";
+    /// <summary>The header's name; the SPA sends the same one (<c>lib/api/intentHeaders.ts</c>).</summary>
+    public const string HeaderName = "X-ServiceHub-Intent";
 
-    public const string IntentReplayMessage = "messages:replay";
-    public const string IntentPurgeMessage = "messages:purge";
-    public const string IntentSendMessage = "messages:send";
-    public const string IntentDeadLetter = "messages:deadletter";
-    public const string IntentCancelScheduled = "messages:cancel-scheduled";
-    public const string IntentDeleteNamespace = "namespaces:delete";
-    public const string IntentShareNamespace = "namespaces:share";
-    public const string IntentReplayAllRules = "rules:replay-all";
-    public const string IntentBulkReplay = "bulk:replay";
-    public const string IntentBulkPurge = "bulk:purge";
-    public const string IntentSignatureReplay = "signature:replay";
-    public const string IntentPurgeAuditLogs = "audit:purge";
-    public const string IntentWriteOffRecovery = "recovery:write-off";
-    public const string IntentApproveProductionElevation = "recovery:production-elevation-approve";
+    /// <summary>Connecting a namespace stores a credential.</summary>
+    public const string CreateNamespace = "create-namespace";
+
+    /// <summary>Removing a namespace forgets a credential and everything watched through it.</summary>
+    public const string DeleteNamespace = "delete-namespace";
+
+    /// <summary>Intent for replaying one dead letter.</summary>
+    public const string ReplayMessage = "replay-message";
+
+    /// <summary>Intent for starting a bulk replay from a preview.</summary>
+    public const string BulkReplay = "bulk-replay";
 
     /// <summary>
-    /// Validates that the caller supplied explicit intent headers for a risky operation.
+    /// Intent for looking at a namespace's dead letters now. Where a cloud has no repeatable peek the look is a
+    /// receive, which counts as a delivery attempt — so it is never triggered by a prefetch.
     /// </summary>
-    public static bool HasExplicitIntent(HttpContext context, string expectedIntent)
+    public const string LookAtDeadLetters = "look-at-dead-letters";
+
+    /// <summary>Intent for pausing an agent — it will not run its cycles until resumed.</summary>
+    public const string PauseAgent = "pause-agent";
+
+    /// <summary>Intent for resuming a paused agent — it gives back authority, so it too must be meant.</summary>
+    public const string ResumeAgent = "resume-agent";
+
+    /// <summary>Intent for approving what an agent asked — it replays, through the one gated route.</summary>
+    public const string ApproveEscalation = "approve-escalation";
+
+    /// <summary>Intent for declining what an agent asked — recorded with the person's name and reason.</summary>
+    public const string DeclineEscalation = "decline-escalation";
+
+    /// <summary>Intent for granting a governance role.</summary>
+    public const string GrantRole = "grant-role";
+
+    /// <summary>Intent for revoking a governance role.</summary>
+    public const string RevokeRole = "revoke-role";
+
+    /// <summary>Intent for adding a notification channel.</summary>
+    public const string AddChannel = "add-channel";
+
+    /// <summary>Intent for removing a notification channel.</summary>
+    public const string RemoveChannel = "remove-channel";
+
+    /// <summary>Intent for switching emergency stop on or off.</summary>
+    public const string EmergencyStop = "emergency-stop";
+
+    /// <summary>Intent for purging (deleting for good) one dead letter.</summary>
+    public const string PurgeMessage = "purge-message";
+
+    /// <summary>Intent for sending one new message.</summary>
+    public const string SendMessage = "send-message";
+
+    /// <summary>Intent for turning a cloud's DLQ observer on or off, or changing where its log lives.</summary>
+    public const string ConfigureDlqObserver = "configure-dlq-observer";
+
+    /// <summary>Intent for taking a backup.</summary>
+    public const string CreateBackup = "create-backup";
+
+    /// <summary>Intent for staging a backup to be restored at the next start.</summary>
+    public const string RestoreBackup = "restore-backup";
+
+    /// <summary>Whether the request declared exactly <paramref name="expected"/>.</summary>
+    public static bool Declares(HttpRequest request, string expected)
     {
-        if (!context.Request.Headers.TryGetValue(IntentHeaderName, out var intentValues))
-        {
-            return false;
-        }
-
-        if (!context.Request.Headers.TryGetValue(ConfirmHeaderName, out var confirmValues))
-        {
-            return false;
-        }
-
-        var providedIntent = intentValues.ToString().Trim();
-        var confirmed = bool.TryParse(confirmValues.ToString(), out var parsed) && parsed;
-
-        return confirmed && string.Equals(providedIntent, expectedIntent, StringComparison.Ordinal);
+        ArgumentNullException.ThrowIfNull(request);
+        return request.Headers.TryGetValue(HeaderName, out var values)
+            && string.Equals(values.ToString().Trim(), expected, StringComparison.Ordinal);
     }
 
-    /// <summary>
-    /// Standard problem-detail message for missing explicit-intent headers.
-    /// </summary>
-    public static string BuildIntentRequiredDetail(string operationDescription)
-    {
-        return $"Explicit user intent is required for {operationDescription}. " +
-               $"Include headers '{IntentHeaderName}' and '{ConfirmHeaderName}: true'.";
-    }
+    /// <summary>The sentence a caller reads when the header is missing: it names the fix.</summary>
+    public static string MissingDetail(string action, string expected) =>
+        $"Confirm you meant to {action} by sending the header '{HeaderName}: {expected}'.";
 }

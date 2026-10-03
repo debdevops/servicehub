@@ -1,214 +1,99 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.RegularExpressions;
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.Enums;
-using ServiceHub.Shared.Constants;
-using ServiceHub.Shared.Results;
+using ServiceHub.Core.Results;
 
 namespace ServiceHub.Core.Entities;
 
 /// <summary>
-/// Represents an Azure Service Bus namespace configuration.
-/// This entity encapsulates the connection details and metadata for a Service Bus namespace.
+/// A connected cloud messaging account: an Azure Service Bus namespace, an AWS region/account or a
+/// GCP project. The connection string is stored encrypted (ADR-0004); this entity never sees the
+/// plaintext once it has been through the secret protector.
 /// </summary>
 public sealed class Namespace
 {
-    /// <summary>
-    /// Maximum allowed length for the namespace name.
-    /// </summary>
+    /// <summary>Longest accepted namespace name.</summary>
     public const int MaxNameLength = 256;
 
-    /// <summary>
-    /// Maximum allowed length for the display name.
-    /// </summary>
+    /// <summary>Longest accepted display name.</summary>
     public const int MaxDisplayNameLength = 100;
 
-    /// <summary>
-    /// Maximum allowed length for the description.
-    /// </summary>
+    /// <summary>Longest accepted description.</summary>
     public const int MaxDescriptionLength = 500;
 
-    /// <summary>
-    /// Gets the unique identifier for this namespace configuration.
-    /// </summary>
-    public Guid Id { get; private set; }
-
-    /// <summary>
-    /// Gets the fully qualified namespace name (e.g., mynamespace.servicebus.windows.net).
-    /// </summary>
-    public string Name { get; private set; }
-
-    /// <summary>
-    /// Gets the optional display name for the namespace.
-    /// </summary>
-    public string? DisplayName { get; private set; }
-
-    /// <summary>
-    /// Gets the optional description for the namespace.
-    /// </summary>
-    public string? Description { get; private set; }
-
-    /// <summary>
-    /// Gets the connection string for the namespace. Null if using managed identity.
-    /// </summary>
-    public string? ConnectionString { get; private set; }
-
-    /// <summary>
-    /// Gets the authentication type used for this namespace.
-    /// </summary>
-    public ConnectionAuthType AuthType { get; private set; }
-
-    /// <summary>
-    /// Gets a value indicating whether this namespace configuration is active.
-    /// </summary>
-    public bool IsActive { get; private set; }
-
-    /// <summary>
-    /// Gets the date and time when this namespace was created.
-    /// </summary>
-    public DateTimeOffset CreatedAt { get; private set; }
-
-    /// <summary>
-    /// Gets the date and time when this namespace was last modified.
-    /// </summary>
-    public DateTimeOffset? ModifiedAt { get; private set; }
-
-    /// <summary>
-    /// Gets the date and time when the connection was last tested successfully.
-    /// </summary>
-    public DateTimeOffset? LastConnectionTestAt { get; private set; }
-
-    /// <summary>
-    /// Gets a value indicating whether the last connection test was successful.
-    /// </summary>
-    public bool? LastConnectionTestSucceeded { get; private set; }
-
-    /// <summary>
-    /// Gets a value indicating whether the connection has Listen permission.
-    /// </summary>
-    public bool HasListenPermission { get; private set; }
-
-    /// <summary>
-    /// Gets a value indicating whether the connection has Send permission.
-    /// </summary>
-    public bool HasSendPermission { get; private set; }
-
-    /// <summary>
-    /// Gets a value indicating whether the connection has Manage permission.
-    /// </summary>
-    public bool HasManagePermission { get; private set; }
-
-    /// <summary>
-    /// Gets the deployment environment for this namespace (Dev, Uat, Prod).
-    /// Controls safety guards and feature availability.
-    /// </summary>
-    public EnvironmentType Environment { get; private set; }
-
-    /// <summary>
-    /// Gets the cloud provider that hosts this messaging namespace.
-    /// Defaults to Azure for backward compatibility.
-    /// </summary>
-    public CloudProviderType Provider { get; private set; } = CloudProviderType.Azure;
-
-    /// <summary>
-    /// Gets the AWS region identifier for AWS-backed namespaces.
-    /// Null for non-AWS providers.
-    /// </summary>
-    public string? AwsRegion { get; private set; }
-
-    /// <summary>
-    /// Gets the GCP project identifier for GCP-backed namespaces.
-    /// Null for non-GCP providers.
-    /// </summary>
-    public string? GcpProjectId { get; private set; }
-
-    /// <summary>
-    /// Gets the owner identifier for this namespace.
-    /// Used to enforce tenant isolation — each caller identity maps to a stable owner ID.
-    /// SPA token sessions and admin keys share "__spa__"; scoped API keys get a key-derived ID.
-    /// Defaults to "__spa__" for backward compatibility with data created before isolation was added.
-    /// Immutable after creation — the repository explicitly rejects any attempt to change it.
-    /// </summary>
-    public string OwnerId { get; init; } = SpaOwnerId;
-
-    /// <summary>
-    /// Gets the additional owner IDs this namespace has been explicitly shared with, granting
-    /// live operational access (browse entities, peek/replay/purge messages, Live Tail) —
-    /// see <see cref="ShareWith"/>/<see cref="RevokeShare"/>/<see cref="IsAccessibleBy(string)"/>.
-    /// Empty by default; unlike <see cref="OwnerId"/>, this is mutable after creation.
-    /// <para>
-    /// <b>Known limitation (Preview):</b> DLQ Intelligence history, Bulk Operation job history,
-    /// audit trail entries, and AutoReplay rules are stamped with the original <see cref="OwnerId"/>
-    /// at write time and do not yet resolve through namespace sharing — a shared owner gets live
-    /// operational access to the namespace itself, not retroactive visibility into records another
-    /// owner already created. See <c>docs/FLOW.md</c> and the CHANGELOG for the full scope.
-    /// </para>
-    /// </summary>
-    public IReadOnlyList<string> SharedWithOwnerIds { get; private set; } = [];
-
-    /// <summary>Maximum number of owners a single namespace can be shared with.</summary>
-    public const int MaxSharedOwners = 20;
-
-    /// <summary>
-    /// Gets the SHA-256 hash of the plaintext connection string.
-    /// Stored alongside the encrypted value to enable fast duplicate detection
-    /// without decrypting all stored namespaces (O(1) hash lookup vs O(n) decryption).
-    /// </summary>
-    public string? ConnectionStringHash { get; private set; }
-
-    /// <summary>
-    /// The stable owner-ID used for SPA token sessions and admin API keys.
-    /// All traffic authenticated via the instance-level SPA secret shares this owner scope.
-    /// </summary>
+    /// <summary>Owner used until identity exists (R6): every namespace belongs to the single browser session.</summary>
     public const string SpaOwnerId = "__spa__";
 
-    /// <summary>
-    /// Compiled Regex for extracting SharedAccessKeyName from an Azure connection string.
-    /// Static to avoid recompiling on every validation call.
-    /// </summary>
-    private static readonly Regex SharedAccessKeyNameRegex = new(
-        @"SharedAccessKeyName=([^;]+)",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    /// <summary>Primary key.</summary>
+    public Guid Id { get; private set; }
 
-    /// <summary>
-    /// Private constructor to enforce factory method usage.
-    /// </summary>
+    /// <summary>Lower-cased namespace name, endpoint or project identifier.</summary>
+    public string Name { get; private set; }
+
+    /// <summary>Friendly name shown instead of <see cref="Name"/>.</summary>
+    public string? DisplayName { get; private set; }
+
+    /// <summary>Free-text description.</summary>
+    public string? Description { get; private set; }
+
+    /// <summary>The (encrypted) connection string. Null for credential-free identity types.</summary>
+    public string? ConnectionString { get; private set; }
+
+    /// <summary>How ServiceHub authenticates to the cloud.</summary>
+    public ConnectionAuthType AuthType { get; private set; }
+
+    /// <summary>Whether the namespace is being watched.</summary>
+    public bool IsActive { get; private set; }
+
+    /// <summary>When it was connected.</summary>
+    public DateTimeOffset CreatedAt { get; private set; }
+
+    /// <summary>When it was last changed.</summary>
+    public DateTimeOffset? ModifiedAt { get; private set; }
+
+    /// <summary>When the connection was last tested.</summary>
+    public DateTimeOffset? LastConnectionTestAt { get; private set; }
+
+    /// <summary>The outcome of the last test; null when never tested.</summary>
+    public bool? LastConnectionTestSucceeded { get; private set; }
+
+    /// <summary>Dev, Uat or Prod.</summary>
+    public EnvironmentType Environment { get; private set; }
+
+    /// <summary>Which cloud backs this namespace.</summary>
+    public CloudProviderType Provider { get; private set; } = CloudProviderType.Azure;
+
+    /// <summary>AWS region, when <see cref="Provider"/> is AWS.</summary>
+    public string? AwsRegion { get; private set; }
+
+    /// <summary>GCP project, when <see cref="Provider"/> is GCP.</summary>
+    public string? GcpProjectId { get; private set; }
+
+    /// <summary>Owner key; see <see cref="SpaOwnerId"/>.</summary>
+    public string OwnerId { get; init; } = SpaOwnerId;
+
+    /// <summary>SHA-256 of the plaintext connection string, for duplicate detection without decrypting.</summary>
+    public string? ConnectionStringHash { get; private set; }
+
     private Namespace()
     {
         Name = string.Empty;
     }
 
-    /// <summary>
-    /// Computes a SHA-256 hash of the given connection string for deduplication.
-    /// The hash is safe to store alongside an encrypted connection string — it reveals
-    /// nothing about the plaintext but allows exact-match comparison at O(1) cost.
-    /// </summary>
-    /// <param name="connectionString">The plaintext connection string.</param>
-    /// <returns>Lowercase hex-encoded SHA-256 hash, or null if the input is null/empty.</returns>
+    /// <summary>SHA-256 (lower-case hex) of the trimmed connection string; null when empty.</summary>
     public static string? ComputeConnectionStringHash(string? connectionString)
     {
         if (string.IsNullOrEmpty(connectionString))
+        {
             return null;
+        }
 
-        var normalised = connectionString.Trim();
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(normalised));
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(connectionString.Trim()));
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
-    /// <summary>
-    /// Creates a new namespace configuration using a connection string.
-    /// </summary>
-    /// <param name="name">The fully qualified namespace name.</param>
-    /// <param name="connectionString">The connection string with SAS credentials.</param>
-    /// <param name="displayName">Optional display name.</param>
-    /// <param name="description">Optional description.</param>
-    /// <param name="environment">The deployment environment (defaults to Dev).</param>
-    /// <param name="provider">The cloud provider hosting this namespace (defaults to Azure).</param>
-    /// <param name="ownerId">The caller-identity owner ID for tenant isolation. Defaults to the SPA owner.</param>
-    /// <param name="connectionStringHash">Pre-computed SHA-256 hash of the plaintext connection string for deduplication.</param>
-    /// <param name="awsRegion">AWS region identifier for AWS namespaces.</param>
-    /// <param name="gcpProjectId">GCP project identifier for GCP namespaces.</param>
-    /// <returns>A result containing the namespace or validation errors.</returns>
+    /// <summary>Creates a namespace that authenticates with a connection string or access key.</summary>
     public static Result<Namespace> Create(
         string name,
         string connectionString,
@@ -221,14 +106,27 @@ public sealed class Namespace
         string? awsRegion = null,
         string? gcpProjectId = null)
     {
-        var validationResult = ValidateConnectionStringAuth(name, connectionString, displayName, description, provider);
-        if (validationResult.IsFailure)
+        var errors = ValidateCommon(name, displayName, description);
+
+        if (string.IsNullOrWhiteSpace(connectionString))
         {
-            return Result<Namespace>.Failure(validationResult.Errors);
+            errors.Add(Error.Validation(
+                ErrorCodes.Namespace.ConnectionStringRequired,
+                "Connection string is required."));
+        }
+        else if (provider == CloudProviderType.Azure
+            && !IsValidAzureConnectionString(connectionString)
+            && !IsEncryptedConnectionString(connectionString))
+        {
+            errors.Add(Error.Validation(
+                ErrorCodes.Namespace.ConnectionStringInvalid,
+                "The connection string format is invalid."));
         }
 
-        // Detect permissions from connection string
-        var permissions = DetectConnectionStringPermissions(connectionString);
+        if (errors.Count > 0)
+        {
+            return Result<Namespace>.Failure(errors);
+        }
 
         var authType = provider switch
         {
@@ -237,43 +135,12 @@ public sealed class Namespace
             _ => ConnectionAuthType.ConnectionString,
         };
 
-        var ns = new Namespace
-        {
-            Id = Guid.NewGuid(),
-            Name = name.Trim().ToLowerInvariant(),
-            ConnectionString = connectionString.Trim(),
-            DisplayName = displayName?.Trim(),
-            Description = description?.Trim(),
-            AuthType = authType,
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
-            HasListenPermission = permissions.HasListen,
-            HasSendPermission = permissions.HasSend,
-            HasManagePermission = permissions.HasManage,
-            Environment = environment,
-            Provider = provider,
-            AwsRegion = awsRegion?.Trim(),
-            GcpProjectId = gcpProjectId?.Trim(),
-            OwnerId = ownerId ?? SpaOwnerId,
-            ConnectionStringHash = connectionStringHash,
-        };
-
-        return Result<Namespace>.Success(ns);
+        return Result<Namespace>.Success(Build(
+            name, connectionString.Trim(), authType, displayName, description, environment, provider,
+            ownerId, connectionStringHash, awsRegion, gcpProjectId));
     }
 
-    /// <summary>
-    /// Creates a new namespace configuration using managed identity authentication.
-    /// </summary>
-    /// <param name="name">The fully qualified namespace name.</param>
-    /// <param name="authType">The authentication type (must be identity-based).</param>
-    /// <param name="displayName">Optional display name.</param>
-    /// <param name="description">Optional description.</param>
-    /// <param name="environment">The deployment environment (defaults to Dev).</param>
-    /// <param name="provider">The cloud provider hosting this namespace (defaults to Azure).</param>
-    /// <param name="ownerId">The caller-identity owner ID for tenant isolation. Defaults to the SPA owner.</param>
-    /// <param name="awsRegion">AWS region identifier for AWS namespaces.</param>
-    /// <param name="gcpProjectId">GCP project identifier for GCP namespaces.</param>
-    /// <returns>A result containing the namespace or validation errors.</returns>
+    /// <summary>Creates a namespace that authenticates with an ambient, credential-free identity.</summary>
     public static Result<Namespace> CreateWithManagedIdentity(
         string name,
         ConnectionAuthType authType = ConnectionAuthType.ManagedIdentity,
@@ -285,9 +152,8 @@ public sealed class Namespace
         string? awsRegion = null,
         string? gcpProjectId = null)
     {
-        // Allowlist: only accept known credential-free identity types; reject ConnectionString
-        // and any future/unknown enum values to prevent user-controlled bypass. Includes AWS/GCP's
-        // identity-federation equivalents (ambient host credentials) alongside Azure AD's.
+        // Allowlist: only known credential-free identity types, so a caller cannot slip a
+        // connection-string type past the check by passing an unexpected enum value.
         if (authType is not (ConnectionAuthType.ManagedIdentity
             or ConnectionAuthType.ServicePrincipal
             or ConnectionAuthType.DefaultAzureCredential
@@ -299,113 +165,18 @@ public sealed class Namespace
                 "Authentication type must be ManagedIdentity, ServicePrincipal, DefaultAzureCredential, AwsOidc, or GcpWorkloadIdentity. Use Create() for connection string authentication."));
         }
 
-        var validationResult = ValidateManagedIdentityAuth(name, displayName, description);
-        if (validationResult.IsFailure)
+        var errors = ValidateCommon(name, displayName, description);
+        if (errors.Count > 0)
         {
-            return Result<Namespace>.Failure(validationResult.Errors);
+            return Result<Namespace>.Failure(errors);
         }
 
-        var ns = new Namespace
-        {
-            Id = Guid.NewGuid(),
-            Name = name.Trim().ToLowerInvariant(),
-            ConnectionString = null,
-            DisplayName = displayName?.Trim(),
-            Description = description?.Trim(),
-            AuthType = authType,
-            IsActive = true,
-            CreatedAt = DateTimeOffset.UtcNow,
-            // Managed identity typically has full permissions
-            HasListenPermission = true,
-            HasSendPermission = true,
-            HasManagePermission = true,
-            Environment = environment,
-            Provider = provider,
-            AwsRegion = awsRegion?.Trim(),
-            GcpProjectId = gcpProjectId?.Trim(),
-            OwnerId = ownerId ?? SpaOwnerId,
-        };
-
-        return Result<Namespace>.Success(ns);
+        return Result<Namespace>.Success(Build(
+            name, null, authType, displayName, description, environment, provider,
+            ownerId, null, awsRegion, gcpProjectId));
     }
 
-    /// <summary>
-    /// Updates the display name of the namespace.
-    /// </summary>
-    /// <param name="displayName">The new display name.</param>
-    /// <returns>A result indicating success or validation errors.</returns>
-    public Result UpdateDisplayName(string? displayName)
-    {
-        if (displayName is not null && displayName.Length > MaxDisplayNameLength)
-        {
-            return Result.Failure(Error.Validation(
-                ErrorCodes.Namespace.NameTooLong,
-                $"Display name cannot exceed {MaxDisplayNameLength} characters."));
-        }
-
-        DisplayName = displayName?.Trim();
-        ModifiedAt = DateTimeOffset.UtcNow;
-        return Result.Success();
-    }
-
-    /// <summary>
-    /// Updates the description of the namespace.
-    /// </summary>
-    /// <param name="description">The new description.</param>
-    /// <returns>A result indicating success or validation errors.</returns>
-    public Result UpdateDescription(string? description)
-    {
-        if (description is not null && description.Length > MaxDescriptionLength)
-        {
-            return Result.Failure(Error.Validation(
-                ErrorCodes.Namespace.NameTooLong,
-                $"Description cannot exceed {MaxDescriptionLength} characters."));
-        }
-
-        Description = description?.Trim();
-        ModifiedAt = DateTimeOffset.UtcNow;
-        return Result.Success();
-    }
-
-    /// <summary>
-    /// Updates the connection string for the namespace.
-    /// </summary>
-    /// <param name="connectionString">The new connection string.</param>
-    /// <returns>A result indicating success or validation errors.</returns>
-    public Result UpdateConnectionString(string connectionString)
-    {
-        if (AuthType != ConnectionAuthType.ConnectionString)
-        {
-            return Result.Failure(Error.BusinessRule(
-                ErrorCodes.Namespace.ConnectionStringInvalid,
-                "Cannot update connection string for a namespace using managed identity authentication."));
-        }
-
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            return Result.Failure(Error.Validation(
-                ErrorCodes.Namespace.ConnectionStringRequired,
-                "Connection string is required."));
-        }
-
-        if (!IsValidConnectionString(connectionString))
-        {
-            return Result.Failure(Error.Validation(
-                ErrorCodes.Namespace.ConnectionStringInvalid,
-                "The connection string format is invalid."));
-        }
-
-        ConnectionString = connectionString.Trim();
-        ModifiedAt = DateTimeOffset.UtcNow;
-        LastConnectionTestAt = null;
-        LastConnectionTestSucceeded = null;
-        return Result.Success();
-    }
-
-    /// <summary>
-    /// Records the result of a connection test.
-    /// </summary>
-    /// <param name="succeeded">Whether the connection test succeeded.</param>
+    /// <summary>Records the outcome of a connection test.</summary>
     public void RecordConnectionTest(bool succeeded)
     {
         LastConnectionTestAt = DateTimeOffset.UtcNow;
@@ -413,130 +184,35 @@ public sealed class Namespace
         ModifiedAt = DateTimeOffset.UtcNow;
     }
 
-    /// <summary>
-    /// Activates the namespace configuration.
-    /// </summary>
-    public void Activate()
-    {
-        if (!IsActive)
+    private static Namespace Build(
+        string name, string? connectionString, ConnectionAuthType authType, string? displayName,
+        string? description, EnvironmentType environment, CloudProviderType provider,
+        string? ownerId, string? connectionStringHash, string? awsRegion, string? gcpProjectId) =>
+        new()
         {
-            IsActive = true;
-            ModifiedAt = DateTimeOffset.UtcNow;
-        }
-    }
+            Id = Guid.NewGuid(),
+            Name = name.Trim().ToLowerInvariant(),
+            ConnectionString = connectionString,
+            DisplayName = displayName?.Trim(),
+            Description = description?.Trim(),
+            AuthType = authType,
+            IsActive = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            Environment = environment,
+            Provider = provider,
+            AwsRegion = awsRegion?.Trim(),
+            GcpProjectId = gcpProjectId?.Trim(),
+            OwnerId = ownerId ?? SpaOwnerId,
+            ConnectionStringHash = connectionStringHash,
+        };
 
-    /// <summary>
-    /// Deactivates the namespace configuration.
-    /// </summary>
-    public void Deactivate()
-    {
-        if (IsActive)
-        {
-            IsActive = false;
-            ModifiedAt = DateTimeOffset.UtcNow;
-        }
-    }
-
-    /// <summary>
-    /// Grants another owner identity live operational access to this namespace (browse, peek,
-    /// replay/purge, Live Tail) — see the "Known limitation" note on <see cref="SharedWithOwnerIds"/>
-    /// for what sharing does <b>not</b> yet cover. Idempotent: sharing with an owner who already
-    /// has access is a no-op success, not an error. Only the namespace's true owner should call
-    /// this — callers are responsible for that authorization check (see
-    /// <c>NamespacesController.ShareAsync</c>), not this method, which only enforces the
-    /// structural invariants (can't share with yourself, can't exceed the cap).
-    /// </summary>
-    /// <param name="ownerId">The owner identity to grant access to.</param>
-    /// <returns>A result indicating success or a validation error.</returns>
-    public Result ShareWith(string ownerId)
-    {
-        if (string.IsNullOrWhiteSpace(ownerId))
-        {
-            return Result.Failure(Error.Validation(
-                ErrorCodes.Namespace.NotFound,
-                "Owner ID is required."));
-        }
-
-        if (string.Equals(ownerId, OwnerId, StringComparison.Ordinal))
-        {
-            return Result.Failure(Error.Validation(
-                ErrorCodes.Namespace.NotFound,
-                "A namespace cannot be shared with its own owner."));
-        }
-
-        if (SharedWithOwnerIds.Contains(ownerId, StringComparer.Ordinal))
-        {
-            return Result.Success();
-        }
-
-        if (SharedWithOwnerIds.Count >= MaxSharedOwners)
-        {
-            return Result.Failure(Error.Validation(
-                ErrorCodes.Namespace.NotFound,
-                $"A namespace cannot be shared with more than {MaxSharedOwners} owners."));
-        }
-
-        SharedWithOwnerIds = [.. SharedWithOwnerIds, ownerId];
-        ModifiedAt = DateTimeOffset.UtcNow;
-        return Result.Success();
-    }
-
-    /// <summary>
-    /// Revokes a previously-granted owner's access to this namespace. Idempotent: revoking
-    /// access an owner never had is a no-op success, not an error.
-    /// </summary>
-    /// <param name="ownerId">The owner identity to revoke access from.</param>
-    public void RevokeShare(string ownerId)
-    {
-        if (!SharedWithOwnerIds.Contains(ownerId, StringComparer.Ordinal))
-        {
-            return;
-        }
-
-        SharedWithOwnerIds = SharedWithOwnerIds.Where(o => !string.Equals(o, ownerId, StringComparison.Ordinal)).ToArray();
-        ModifiedAt = DateTimeOffset.UtcNow;
-    }
-
-    /// <summary>
-    /// Returns true if <paramref name="callerOwnerId"/> is the namespace's owner or has been
-    /// explicitly granted shared access — the single check every "is this caller allowed to
-    /// operate on this namespace" call site should use, so owner-vs-shared logic lives in one
-    /// place rather than being re-derived at each call site.
-    /// </summary>
-    /// <param name="callerOwnerId">The caller's owner ID.</param>
-    public bool IsAccessibleBy(string callerOwnerId) =>
-        string.Equals(OwnerId, callerOwnerId, StringComparison.Ordinal)
-        || SharedWithOwnerIds.Contains(callerOwnerId, StringComparer.Ordinal);
-
-    /// <summary>
-    /// Same check as <see cref="IsAccessibleBy(string)"/>, additionally requiring this
-    /// namespace's <see cref="Id"/> to appear in <paramref name="allowedNamespaceIds"/> when the
-    /// caller's credential carries a namespace allow-list. A null allow-list means the caller is
-    /// unrestricted (today's behaviour); a non-null list can only narrow access, never widen it —
-    /// the owner/share check above must still pass regardless of list contents.
-    /// </summary>
-    public bool IsAccessibleBy(string callerOwnerId, IReadOnlySet<Guid>? allowedNamespaceIds) =>
-        IsAccessibleBy(callerOwnerId)
-        && (allowedNamespaceIds is null || allowedNamespaceIds.Contains(Id));
-
-    /// <summary>
-    /// Validates parameters for connection string authentication.
-    /// </summary>
-    private static Result ValidateConnectionStringAuth(
-        string name,
-        string connectionString,
-        string? displayName,
-        string? description,
-        CloudProviderType provider)
+    private static List<Error> ValidateCommon(string name, string? displayName, string? description)
     {
         var errors = new List<Error>();
 
-        // Validate name
         if (string.IsNullOrWhiteSpace(name))
         {
-            errors.Add(Error.Validation(
-                ErrorCodes.Namespace.NameRequired,
-                "Namespace name is required."));
+            errors.Add(Error.Validation(ErrorCodes.Namespace.NameRequired, "Namespace name is required."));
         }
         else if (name.Length > MaxNameLength)
         {
@@ -551,21 +227,6 @@ public sealed class Namespace
                 "Namespace name contains invalid characters or format."));
         }
 
-        // Validate connection string
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            errors.Add(Error.Validation(
-                ErrorCodes.Namespace.ConnectionStringRequired,
-                "Connection string is required."));
-        }
-        else if (provider == CloudProviderType.Azure && !IsValidConnectionString(connectionString) && !IsEncryptedConnectionString(connectionString))
-        {
-            errors.Add(Error.Validation(
-                ErrorCodes.Namespace.ConnectionStringInvalid,
-                "The connection string format is invalid."));
-        }
-
-        // Validate display name
         if (displayName is not null && displayName.Length > MaxDisplayNameLength)
         {
             errors.Add(Error.Validation(
@@ -573,7 +234,6 @@ public sealed class Namespace
                 $"Display name cannot exceed {MaxDisplayNameLength} characters."));
         }
 
-        // Validate description
         if (description is not null && description.Length > MaxDescriptionLength)
         {
             errors.Add(Error.Validation(
@@ -581,78 +241,15 @@ public sealed class Namespace
                 $"Description cannot exceed {MaxDescriptionLength} characters."));
         }
 
-        return errors.Count > 0 ? Result.Failure(errors) : Result.Success();
+        return errors;
     }
 
-    /// <summary>
-    /// Validates parameters for managed identity authentication.
-    /// </summary>
-    private static Result ValidateManagedIdentityAuth(
-        string name,
-        string? displayName,
-        string? description)
-    {
-        var errors = new List<Error>();
-
-        // Validate name
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            errors.Add(Error.Validation(
-                ErrorCodes.Namespace.NameRequired,
-                "Namespace name is required."));
-        }
-        else if (name.Length > MaxNameLength)
-        {
-            errors.Add(Error.Validation(
-                ErrorCodes.Namespace.NameTooLong,
-                $"Namespace name cannot exceed {MaxNameLength} characters."));
-        }
-        else if (!IsValidNamespaceName(name))
-        {
-            errors.Add(Error.Validation(
-                ErrorCodes.Namespace.NameInvalid,
-                "Namespace name contains invalid characters or format."));
-        }
-
-        // Validate display name
-        if (displayName is not null && displayName.Length > MaxDisplayNameLength)
-        {
-            errors.Add(Error.Validation(
-                ErrorCodes.Namespace.NameTooLong,
-                $"Display name cannot exceed {MaxDisplayNameLength} characters."));
-        }
-
-        // Validate description
-        if (description is not null && description.Length > MaxDescriptionLength)
-        {
-            errors.Add(Error.Validation(
-                ErrorCodes.Namespace.NameTooLong,
-                $"Description cannot exceed {MaxDescriptionLength} characters."));
-        }
-
-        return errors.Count > 0 ? Result.Failure(errors) : Result.Success();
-    }
-
-    /// <summary>
-    /// Validates the namespace name format.
-    /// Accepts:
-    /// - Azure Service Bus FQDN: *.servicebus.windows.net (and national cloud variants)
-    /// - AWS regional endpoint hostname: *.amazonaws.com (e.g. sqs.us-east-1.amazonaws.com,
-    ///   the name the UI derives for AWS namespaces)
-    /// - AWS SQS URL: https://sqs.{region}.amazonaws.com/{account}/{queue}
-    /// - Generic short name: 3–256 chars of letters, digits, hyphens, underscores or dots,
-    ///   not starting or ending with a hyphen (covers Azure short namespace names,
-    ///   AWS queue/topic names, and GCP Pub/Sub project IDs)
-    /// </summary>
     private static bool IsValidNamespaceName(string name)
     {
-        if (string.IsNullOrWhiteSpace(name))
-            return false;
-
         var trimmed = name.Trim();
 
-        // FQDN — must end with a known servicebus suffix (Azure) or amazonaws.com
-        // (AWS regional endpoint hostnames, e.g. sqs.us-east-1.amazonaws.com from the UI)
+        // FQDN — must end with a known servicebus suffix (Azure) or amazonaws.com (AWS regional
+        // endpoint hostnames, e.g. sqs.us-east-1.amazonaws.com).
         if (trimmed.Contains('.') && !trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
             return trimmed.EndsWith(".servicebus.windows.net", StringComparison.OrdinalIgnoreCase)
@@ -669,80 +266,22 @@ public sealed class Namespace
             return true;
         }
 
-        // Generic short name: alphanumeric, hyphens, underscores, dots (covers GCP project IDs,
-        // AWS simple names, and Azure short namespace names). Length 3–256.
-        if (trimmed.Length >= 3 && trimmed.Length <= MaxNameLength)
-        {
-            return trimmed.All(c => char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.')
-                && !trimmed.StartsWith('-')
-                && !trimmed.EndsWith('-');
-        }
-
-        return false;
+        // Generic short name (GCP project ids, AWS simple names, Azure short names), 3–256 chars.
+        return trimmed.Length >= 3
+            && trimmed.Length <= MaxNameLength
+            && trimmed.All(c => char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.')
+            && !trimmed.StartsWith('-')
+            && !trimmed.EndsWith('-');
     }
 
-    /// <summary>
-    /// Validates the connection string format.
-    /// </summary>
-    private static bool IsValidConnectionString(string connectionString)
-    {
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            return false;
-        }
+    private static bool IsValidAzureConnectionString(string connectionString) =>
+        connectionString.Contains("Endpoint=", StringComparison.OrdinalIgnoreCase)
+        && (connectionString.Contains("SharedAccessKey=", StringComparison.OrdinalIgnoreCase)
+            || connectionString.Contains("SharedAccessSignature=", StringComparison.OrdinalIgnoreCase));
 
-        // Basic validation: must contain Endpoint and SharedAccessKey or SharedAccessSignature
-        var hasEndpoint = connectionString.Contains("Endpoint=", StringComparison.OrdinalIgnoreCase);
-        var hasAuth = connectionString.Contains("SharedAccessKey=", StringComparison.OrdinalIgnoreCase) ||
-                      connectionString.Contains("SharedAccessSignature=", StringComparison.OrdinalIgnoreCase);
-
-        return hasEndpoint && hasAuth;
-    }
-
-    /// <summary>
-    /// Detects permissions from the connection string based on SharedAccessKeyName.
-    /// NOTE: This is a best-effort detection based on naming conventions. Azure does not enforce
-    /// any naming pattern for SAS policies, so a policy with full permissions might be named anything.
-    /// We only flag as limited permissions if the key name explicitly indicates restricted access.
-    /// </summary>
-    private static (bool HasListen, bool HasSend, bool HasManage) DetectConnectionStringPermissions(string connectionString)
-    {
-        // Extract SharedAccessKeyName to infer permissions (uses pre-compiled Regex)
-        var match = SharedAccessKeyNameRegex.Match(connectionString);
-
-        if (!match.Success)
-        {
-            // No key name found, assume all permissions (for backward compatibility)
-            return (true, true, true);
-        }
-
-        var keyName = match.Groups[1].Value.ToLowerInvariant();
-
-        // Detect LIMITED permissions based on common naming patterns
-        var explicitlyListenOnly = keyName.Contains("listen") && !keyName.Contains("send") && !keyName.Contains("manage");
-        var explicitlySendOnly = keyName.Contains("send") && !keyName.Contains("manage") && !keyName.Contains("listen");
-
-        var hasManage = keyName.Contains("manage") || keyName.Contains("root") || (!explicitlyListenOnly && !explicitlySendOnly);
-        var hasSend = hasManage || keyName.Contains("send");
-        var hasListen = true; // All policies have at least listen permission
-
-        return (hasListen, hasSend, hasManage);
-    }
-
-    /// <summary>
-    /// Checks if the connection string is encrypted.
-    /// </summary>
-    private static bool IsEncryptedConnectionString(string connectionString)
-    {
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            return false;
-        }
-
-        // Check for encrypted connection string formats
-        return connectionString.StartsWith("ENC[v1]:", StringComparison.Ordinal) ||
-               connectionString.StartsWith("ENC[v2:kid=", StringComparison.Ordinal) ||
-               connectionString.StartsWith("ENC:V2:", StringComparison.Ordinal) ||
-               connectionString.StartsWith("PROTECTED:", StringComparison.Ordinal);
-    }
+    private static bool IsEncryptedConnectionString(string connectionString) =>
+        connectionString.StartsWith("ENC[v1]:", StringComparison.Ordinal)
+        || connectionString.StartsWith("ENC[v2:kid=", StringComparison.Ordinal)
+        || connectionString.StartsWith("ENC:V2:", StringComparison.Ordinal)
+        || connectionString.StartsWith("PROTECTED:", StringComparison.Ordinal);
 }

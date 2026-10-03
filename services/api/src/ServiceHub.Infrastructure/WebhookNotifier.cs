@@ -5,8 +5,9 @@ using Microsoft.Extensions.Options;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
+using ServiceHub.Core.Security;
 using ServiceHub.Infrastructure.Security;
-using ServiceHub.Shared.Results;
+using ServiceHub.Core.Results;
 
 namespace ServiceHub.Infrastructure;
 
@@ -33,7 +34,7 @@ public sealed class WebhookNotifier : IWebhookNotifier
     private readonly Security.IDnsResolver _dnsResolver;
 
     // Tracks when the last DLQ-spike notification was sent for each namespace (cooldown).
-    // Bulk-operation-completed notifications are not cooled down — see NotifyBulkOperationCompletedAsync.
+    // Only DLQ-spike notifications are cooled down; an escalation is always delivered (each is one decision).
     private readonly ConcurrentDictionary<Guid, DateTimeOffset> _lastNotified = new();
 
     /// <summary>
@@ -115,55 +116,6 @@ public sealed class WebhookNotifier : IWebhookNotifier
         return sendResult;
     }
 
-    /// <inheritdoc />
-    public async Task<Result> NotifyBulkOperationCompletedAsync(
-        Guid jobId,
-        BulkOperationType operationType,
-        BulkOperationStatus status,
-        Guid namespaceId,
-        string namespaceName,
-        int totalMatched,
-        int successCount,
-        int failureCount,
-        int skippedCount,
-        CancellationToken cancellationToken = default)
-    {
-        if (!_options.Enabled)
-        {
-            _logger.LogDebug("Webhook notifications are disabled, skipping bulk operation alert");
-            return Result.Success();
-        }
-
-        var targetResult = await ResolveSafeWebhookTargetAsync(cancellationToken);
-        if (targetResult.IsFailure)
-        {
-            return Result.Failure(targetResult.Error);
-        }
-
-        var target = targetResult.Value;
-
-        // No threshold/cooldown gate: a bulk operation is a single, deliberate, human-triggered
-        // action, not a recurring scan result — every completion is worth reporting once.
-        var notification = new BulkOperationCompletedNotification(
-            JobId: jobId,
-            OperationType: operationType,
-            Status: status,
-            NamespaceId: namespaceId,
-            NamespaceName: namespaceName,
-            TotalMatched: totalMatched,
-            SuccessCount: successCount,
-            FailureCount: failureCount,
-            SkippedCount: skippedCount,
-            CompletedAtUtc: DateTimeOffset.UtcNow,
-            InvestigateUrl: BuildInvestigateUrl(namespaceId));
-
-        var formatter = ResolveFormatter();
-        var payload = formatter.BuildBulkOperationCompletedPayload(notification);
-
-        return await PostAsync(target, payload,
-            $"bulk operation webhook for job {jobId}",
-            cancellationToken);
-    }
 
     /// <inheritdoc />
     public async Task<Result> NotifyAutonomyTransitionAsync(
@@ -244,6 +196,46 @@ public sealed class WebhookNotifier : IWebhookNotifier
         return await PostAsync(target, payload,
             $"circuit breaker webhook for rule {ruleId}",
             cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result> NotifyEscalationAsync(
+        string kind, string reasonCode, string reason, string? namespaceName, string? provider, string? entity, Guid? entryId, string? agentId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_options.Enabled)
+        {
+            _logger.LogDebug("Webhook notifications are disabled, skipping escalation alert");
+            return Result.Success();
+        }
+
+        // The same SSRF guard as every other message — no second path to a URL.
+        var targetResult = await ResolveSafeWebhookTargetAsync(cancellationToken);
+        if (targetResult.IsFailure)
+        {
+            return Result.Failure(targetResult.Error);
+        }
+
+        var notification = new EscalationNotification(
+            Kind: kind, ReasonCode: reasonCode, Reason: reason, NamespaceName: namespaceName, Provider: provider, Entity: entity,
+            RaisedAtUtc: DateTimeOffset.UtcNow, ReviewUrl: BuildEscalationUrl(kind, entryId, agentId));
+
+        var payload = ResolveFormatter().BuildEscalationPayload(notification);
+        return await PostAsync(targetResult.Value, payload, $"escalation webhook ({LogRedactor.SanitiseForLog(reasonCode)})", cancellationToken);
+    }
+
+    // 4.1.0's addresses: an approval opens the Approve modal on Home; an agent opens its row on the Agents page.
+    private string? BuildEscalationUrl(string kind, Guid? entryId, string? agentId)
+    {
+        if (string.IsNullOrWhiteSpace(_options.PublicUrl))
+        {
+            return null;
+        }
+
+        var root = _options.PublicUrl.TrimEnd('/');
+        return kind == "agent"
+            ? $"{root}/advanced/agents{(agentId is null ? "" : $"?agent={Uri.EscapeDataString(agentId)}")}"
+            : $"{root}/?modal=approve{(entryId is null ? "" : $"&entry={entryId}")}";
     }
 
     /// <inheritdoc />

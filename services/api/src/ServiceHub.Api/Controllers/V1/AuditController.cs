@@ -1,290 +1,68 @@
-using System.Text;
-using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
-using ServiceHub.Api.Authorization;
-using ServiceHub.Api.Security;
-using ServiceHub.Core.DTOs.Requests;
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.DTOs.Responses;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
-using ServiceHub.Shared.Constants;
 
 namespace ServiceHub.Api.Controllers.V1;
 
-/// <summary>
-/// Controller for the Persistent Audit Trail.
-/// Exposes paginated queries, summary statistics, CSV/JSON exports, and on-demand retention
-/// purge. Read endpoints are tenant-scoped — users can only see their own audit logs. Purge is
-/// instance-wide (see <see cref="Purge"/>), not tenant-scoped — retention is an operator policy.
-/// </summary>
-[Route(ApiRoutes.Audit.Base)]
-[Tags("Audit Trail")]
+/// <summary>The durable history Home's Recent Activity reads.</summary>
+[Route("api/v1/audit")]
 public sealed class AuditController : ApiControllerBase
 {
-    private readonly IAuditService _auditService;
-    private readonly IAuditLogger _auditLogger;
-    private readonly ILogger<AuditController> _logger;
+    private readonly IAuditTrail _audit;
+    private readonly INamespaceRepository _namespaces;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="AuditController"/> class.
-    /// </summary>
-    public AuditController(
-        IAuditService auditService,
-        ILogger<AuditController> logger,
-        IAuditLogger? auditLogger = null)
+    /// <summary>Creates the controller.</summary>
+    public AuditController(IAuditTrail audit, INamespaceRepository namespaces)
     {
-        _auditService = auditService ?? throw new ArgumentNullException(nameof(auditService));
-        _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _namespaces = namespaces ?? throw new ArgumentNullException(nameof(namespaces));
+        _audit = audit ?? throw new ArgumentNullException(nameof(audit));
     }
 
-    // ─── GET /api/v1/audit ────────────────────────────────────────────────────
-
     /// <summary>
-    /// Gets a paginated list of audit log entries for the authenticated owner.
+    /// History for this caller, newest first. Optionally narrowed to one cloud and/or environment. Scoped by owner and by the caller's namespace
+    /// allow-list — a restricted caller cannot read, or count, entries about namespaces it cannot see.
     /// </summary>
-    /// <param name="namespaceId">Optional namespace filter.</param>
-    /// <param name="search">Full-text search across user identity, action, resource name, and details.</param>
-    /// <param name="actionType">Action category prefix filter (e.g. "Messages", "Rule", "Namespace").</param>
-    /// <param name="outcome">Outcome filter: "Success", "Failure", or "Partial".</param>
-    /// <param name="from">Start of time range (inclusive).</param>
-    /// <param name="to">End of time range (inclusive).</param>
-    /// <param name="page">Page number (default 1).</param>
-    /// <param name="pageSize">Items per page (default 50, max 200).</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Paginated list of audit log entries.</returns>
     [HttpGet]
-    [RequireScope(ApiKeyScopes.AuditRead)]
     [ProducesResponseType(typeof(AuditPageResponse), StatusCodes.Status200OK)]
-    public async Task<ActionResult<AuditPageResponse>> GetLogs(
-        [FromQuery] Guid? namespaceId = null,
-        [FromQuery] string? search = null,
-        [FromQuery] string? actionType = null,
-        [FromQuery] string? outcome = null,
-        [FromQuery] DateTimeOffset? from = null,
-        [FromQuery] DateTimeOffset? to = null,
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> List(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
+        [FromQuery] Guid? namespaceId = null,
+        [FromQuery] string? action = null,
+        [FromQuery] CloudProviderType? provider = null,
+        [FromQuery] EnvironmentType? environment = null,
         CancellationToken cancellationToken = default)
     {
-        pageSize = Math.Clamp(pageSize, 1, 200);
-        page = Math.Max(page, 1);
+        if (page < 1 || pageSize is < 1 or > 200)
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "'page' starts at 1 and 'pageSize' must be between 1 and 200.");
+        }
 
-        var result = await _auditService.GetLogsAsync(
-            OwnerId, namespaceId, search, actionType, outcome, from, to,
-            page, pageSize, cancellationToken, AllowedNamespaceIds);
+        // A cloud or an environment is a set of namespaces; the audit trail only knows namespaces.
+        HashSet<Guid>? scope = null;
+        if (provider is not null || environment is not null)
+        {
+            var visible = await _namespaces.GetByOwnerAsync(OwnerId, AllowedNamespaceIds, cancellationToken);
+            if (visible.IsFailure)
+            {
+                return Problem(visible.Error);
+            }
 
-        if (result.IsFailure)
-            return ToActionResult<AuditPageResponse>(result.Error);
+            scope = [.. visible.Value
+                .Where(n => (provider is null || n.Provider == provider) && (environment is null || n.Environment == environment))
+                .Select(n => n.Id)];
+        }
 
-        var data = result.Value;
-        var items = data.Items.Select(MapToResponse).ToList();
+        var result = await _audit.QueryAsync(
+            new AuditQuery(OwnerId, AllowedNamespaceIds, namespaceId, action, page, pageSize, scope), cancellationToken);
 
         return Ok(new AuditPageResponse(
-            Items: items,
-            TotalCount: data.TotalCount,
-            Page: data.Page,
-            PageSize: data.PageSize,
-            HasNextPage: data.HasNextPage,
-            HasPreviousPage: data.HasPreviousPage));
-    }
-
-    // ─── GET /api/v1/audit/summary ────────────────────────────────────────────
-
-    /// <summary>
-    /// Gets high-level audit trail statistics for the authenticated owner.
-    /// </summary>
-    /// <param name="namespaceId">Optional namespace filter.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Audit trail summary statistics.</returns>
-    [HttpGet("summary")]
-    [RequireScope(ApiKeyScopes.AuditRead)]
-    [ProducesResponseType(typeof(AuditSummaryResponse), StatusCodes.Status200OK)]
-    public async Task<ActionResult<AuditSummaryResponse>> GetSummary(
-        [FromQuery] Guid? namespaceId = null,
-        CancellationToken cancellationToken = default)
-    {
-        var result = await _auditService.GetSummaryAsync(OwnerId, namespaceId, cancellationToken, AllowedNamespaceIds);
-        if (result.IsFailure)
-            return ToActionResult<AuditSummaryResponse>(result.Error);
-
-        var s = result.Value;
-        return Ok(new AuditSummaryResponse(
-            TotalEvents: s.TotalEvents,
-            SuccessCount: s.SuccessCount,
-            FailureCount: s.FailureCount,
-            PartialCount: s.PartialCount,
-            ActiveUsers: s.ActiveUsers,
-            SuccessRate: s.SuccessRate));
-    }
-
-    // ─── GET /api/v1/audit/export ─────────────────────────────────────────────
-
-    /// <summary>
-    /// Exports audit log entries as a downloadable CSV or JSON file.
-    /// Applies the same filters as the list endpoint.
-    /// </summary>
-    /// <param name="format">Export format: "csv" (default) or "json".</param>
-    /// <param name="namespaceId">Optional namespace filter.</param>
-    /// <param name="actionType">Action category prefix filter.</param>
-    /// <param name="outcome">Outcome filter.</param>
-    /// <param name="from">Start of time range.</param>
-    /// <param name="to">End of time range.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Downloadable file stream.</returns>
-    [HttpGet("export")]
-    [RequireScope(ApiKeyScopes.AuditRead)]
-    [ProducesResponseType(typeof(FileResult), StatusCodes.Status200OK)]
-    public async Task<IActionResult> Export(
-        [FromQuery] string format = "csv",
-        [FromQuery] Guid? namespaceId = null,
-        [FromQuery] string? actionType = null,
-        [FromQuery] string? outcome = null,
-        [FromQuery] DateTimeOffset? from = null,
-        [FromQuery] DateTimeOffset? to = null,
-        CancellationToken cancellationToken = default)
-    {
-        var result = await _auditService.ExportAsync(
-            OwnerId, namespaceId, actionType, outcome, from, to, cancellationToken, AllowedNamespaceIds);
-
-        if (result.IsFailure)
-            return ToActionResult(ServiceHub.Shared.Results.Result.Failure(result.Error));
-
-        var entries = result.Value;
-        var dateStamp = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd");
-
-        if (string.Equals(format, "csv", StringComparison.OrdinalIgnoreCase))
-        {
-            var csv = GenerateCsv(entries);
-            return File(Encoding.UTF8.GetBytes(csv), "text/csv", $"audit-export-{dateStamp}.csv");
-        }
-
-        var responses = entries.Select(MapToResponse).ToList();
-        var json = JsonSerializer.Serialize(responses, new JsonSerializerOptions
-        {
-            WriteIndented = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        });
-        return File(Encoding.UTF8.GetBytes(json), "application/json", $"audit-export-{dateStamp}.json");
-    }
-
-    // ─── POST /api/v1/audit/purge ─────────────────────────────────────────────
-
-    /// <summary>
-    /// Permanently deletes audit log entries older than the given number of days —
-    /// instance-wide, across all owners, not just the caller's own logs. Complements the
-    /// automatic <c>Audit:Retention</c> sweep for operators who want to enforce a tightened
-    /// retention policy immediately rather than waiting for the next scheduled sweep.
-    /// </summary>
-    /// <param name="request">The retention cutoff, in days.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <response code="200">Purge completed; returns the number of entries deleted.</response>
-    /// <response code="428">Missing explicit-intent headers.</response>
-    [HttpPost("purge")]
-    [RequireScope(ApiKeyScopes.Admin)]
-    [ProducesResponseType(typeof(PurgeAuditLogsResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
-    public async Task<ActionResult<PurgeAuditLogsResponse>> Purge(
-        [FromBody] PurgeAuditLogsRequest request,
-        CancellationToken cancellationToken = default)
-    {
-        if (!IntentHeaders.HasExplicitIntent(HttpContext, IntentHeaders.IntentPurgeAuditLogs))
-        {
-            _auditLogger.LogCriticalAction(
-                HttpContext, OwnerId, action: IntentHeaders.IntentPurgeAuditLogs, outcome: "Denied",
-                detail: "Missing explicit intent headers");
-
-            return Problem(
-                statusCode: StatusCodes.Status428PreconditionRequired,
-                title: "Explicit Intent Required",
-                detail: IntentHeaders.BuildIntentRequiredDetail("purging audit logs"));
-        }
-
-        var cutoff = DateTimeOffset.UtcNow.AddDays(-request.OlderThanDays);
-        var result = await _auditService.PurgeExpiredAsync(cutoff, cancellationToken);
-
-        if (result.IsFailure)
-        {
-            _auditLogger.LogCriticalAction(
-                HttpContext, OwnerId, action: IntentHeaders.IntentPurgeAuditLogs, outcome: "Failed",
-                detail: result.Error.Message);
-            return ToActionResult<PurgeAuditLogsResponse>(result.Error);
-        }
-
-        _auditLogger.LogCriticalAction(
-            HttpContext, OwnerId, action: IntentHeaders.IntentPurgeAuditLogs, outcome: "Succeeded",
-            detail: $"Purged {result.Value} entries older than {request.OlderThanDays} days");
-
-        _logger.LogInformation(
-            "Manual audit retention purge: deleted {Count} entries older than {Days} days",
-            result.Value, request.OlderThanDays);
-
-        return Ok(new PurgeAuditLogsResponse(DeletedCount: result.Value, CutoffUtc: cutoff));
-    }
-
-    // ─── Private helpers ──────────────────────────────────────────────────────
-
-    private static AuditLogResponse MapToResponse(Core.Entities.AuditLog log) =>
-        new(
-            Id: log.Id,
-            Timestamp: log.Timestamp,
-            UserIdentity: log.UserIdentity,
-            Action: log.Action,
-            Outcome: log.Outcome,
-            NamespaceId: log.NamespaceId,
-            NamespaceName: log.NamespaceName,
-            EntityName: log.EntityName,
-            CloudProvider: log.CloudProvider,
-            Environment: log.Environment,
-            ResourceName: log.ResourceName,
-            SequenceNumber: log.SequenceNumber,
-            DetailsJson: log.DetailsJson,
-            ErrorDetails: log.ErrorDetails,
-            ClientIp: log.ClientIp,
-            UserAgent: log.UserAgent,
-            CorrelationId: log.CorrelationId,
-            HttpMethod: log.HttpMethod,
-            HttpPath: log.HttpPath);
-
-    private static string GenerateCsv(IReadOnlyList<Core.Entities.AuditLog> entries)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("Timestamp,UserIdentity,Action,Outcome,NamespaceName,EntityName,CloudProvider,Environment,ResourceName,SequenceNumber,CorrelationId,ClientIp,HttpMethod,HttpPath,Details");
-
-        foreach (var e in entries)
-        {
-            sb.AppendLine(string.Join(",",
-                e.Timestamp.ToString("o"),
-                EscapeCsv(e.UserIdentity),
-                EscapeCsv(e.Action),
-                EscapeCsv(e.Outcome),
-                EscapeCsv(e.NamespaceName ?? string.Empty),
-                EscapeCsv(e.EntityName ?? string.Empty),
-                EscapeCsv(e.CloudProvider ?? string.Empty),
-                EscapeCsv(e.Environment ?? string.Empty),
-                EscapeCsv(e.ResourceName ?? string.Empty),
-                e.SequenceNumber?.ToString() ?? string.Empty,
-                EscapeCsv(e.CorrelationId ?? string.Empty),
-                EscapeCsv(e.ClientIp ?? string.Empty),
-                EscapeCsv(e.HttpMethod ?? string.Empty),
-                EscapeCsv(e.HttpPath ?? string.Empty),
-                EscapeCsv(e.DetailsJson ?? string.Empty)));
-        }
-
-        return sb.ToString();
-    }
-
-    private static string EscapeCsv(string value)
-    {
-        if (string.IsNullOrEmpty(value))
-            return value;
-
-        // Neutralise spreadsheet formula injection: a leading =, +, -, @, tab or CR
-        // would otherwise be evaluated as a formula when the CSV is opened in Excel.
-        if (value[0] is '=' or '+' or '-' or '@' or '\t' or '\r')
-            value = "'" + value;
-
-        if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
-            return $"\"{value.Replace("\"", "\"\"")}\"";
-        return value;
+            result.Items.Select(AuditMapping.ToResponse).ToList(),
+            Math.Max(page, 1),
+            Math.Clamp(pageSize, 1, 200),
+            result.Total));
     }
 }

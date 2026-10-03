@@ -1,0 +1,96 @@
+{
+ "portal-01-topics.png": [
+  {
+   "n": 1,
+   "t": "Project picker \u2014 shows the project you are in. ServiceHub needs its Project ID, which is the part after projects/ in a topic's full name below (not the project's display name)."
+  },
+  {
+   "n": 2,
+   "t": "Topic IDs \u2014 where messages are published. ServiceHub finds every topic in the project; you do not list them."
+  },
+  {
+   "n": 3,
+   "t": "Topic name \u2014 the full path. The part after projects/ is your Project ID, the first thing you type into ServiceHub."
+  }
+ ],
+ "portal-02-subscriptions.png": [
+  {
+   "n": 1,
+   "t": "Subscription IDs \u2014 a queue in ServiceHub is a subscription together with its topic. The one ending -dlq-subscription holds your dead letters."
+  },
+  {
+   "n": 2,
+   "t": "Topic \u2014 the topic each subscription reads from."
+  },
+  {
+   "n": 3,
+   "t": "Ack deadline \u2014 how long a reader has to acknowledge a message before Pub/Sub delivers it again. ServiceHub hands a looked-at message straight back, so it never waits this out."
+  }
+ ],
+ "portal-03-subscription-dead-letter.png": [
+  {
+   "n": 1,
+   "t": "Dead lettering \u2014 the tab for the same policy, where you can change it."
+  },
+  {
+   "n": 2,
+   "t": "Dead letter topic \u2014 where Pub/Sub forwards a message after it fails too often. ServiceHub reads this topic\u2019s own subscription as your dead letters."
+  },
+  {
+   "n": 3,
+   "t": "Maximum delivery attempts \u2014 after this many failed tries Pub/Sub forwards the message. Reading a dead letter from ServiceHub counts as one more attempt, which is why ServiceHub only looks when you ask."
+  }
+ ],
+ "portal-04-service-accounts.png": [
+  {
+   "n": 1,
+   "t": "Create service account \u2014 start here to make an account just for ServiceHub, not your own."
+  },
+  {
+   "n": 2,
+   "t": "The ServiceHub account \u2014 separate from your own and from the accounts your applications use, so you can switch it off later without disturbing anything else."
+  },
+  {
+   "n": 3,
+   "t": "Status \u2014 Enabled. Disabling or deleting the account cuts ServiceHub off."
+  }
+ ],
+ "portal-05-iam-roles.png": [
+  {
+   "n": 1,
+   "t": "Grant access \u2014 where you give an account a role on the whole project."
+  },
+  {
+   "n": 2,
+   "t": "The ServiceHub account with Pub/Sub Viewer on the project \u2014 it lets ServiceHub list your topics and subscriptions. Pub/Sub Subscriber and Pub/Sub Publisher are granted on the individual subscriptions and topics (next screenshot)."
+  }
+ ],
+ "portal-06-topic-permissions.png": [
+  {
+   "n": 1,
+   "t": "Add principal \u2014 grants a role on just this topic. Do the same on each subscription for Pub/Sub Subscriber."
+  },
+  {
+   "n": 2,
+   "t": "Pub/Sub Publisher \u2014 granted to the ServiceHub account on this topic only. It is used to put a replayed message back."
+  },
+  {
+   "n": 3,
+   "t": "Pub/Sub Viewer \u2014 inherited from the project, so the account can see this topic."
+  }
+ ],
+ "portal-07-keys.png": [
+  {
+   "n": 1,
+   "t": "Google\u2019s reminder that keys are a risk if they leak. Treat the file like a password, and delete the key when you no longer need it."
+  },
+  {
+   "n": 2,
+   "t": "Add key \u2192 Create new key \u2192 JSON \u2014 downloads the key file ServiceHub needs. Google shows the private key only once."
+  },
+  {
+   "n": 3,
+   "t": "The key \u2014 Active. The bin deletes it, which is how you revoke ServiceHub\u2019s access later."
+  }
+ ]
+}

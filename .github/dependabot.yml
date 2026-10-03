@@ -27,7 +27,8 @@ updates:
           - "Azure.*"
 
   # npm packages (React frontend + monorepo workspaces)
-  # Watches root package.json and all workspace packages (apps/web, packages/*, etc.)
+  # Watches the 4.1 workspace root package.json and lockfile. The frozen archive/servicehub-4.0.0 tree is deliberately
+  # NOT watched: any update PR touching it would be rejected by the freeze guard.
   - package-ecosystem: "npm"
     directory: "/"
     schedule:

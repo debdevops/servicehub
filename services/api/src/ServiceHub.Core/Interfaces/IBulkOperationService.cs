@@ -1,78 +1,22 @@
-using ServiceHub.Core.DTOs.Requests;
-using ServiceHub.Core.DTOs.Responses;
-using ServiceHub.Core.Entities;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Models;
-using ServiceHub.Shared.Results;
+using ServiceHub.Core.Results;
 
 namespace ServiceHub.Core.Interfaces;
 
-/// <summary>
-/// Orchestrates bulk replay/purge operations against DLQ messages matching a filter —
-/// "replay these 3,000 messages matching this filter" as a durable, cancellable, resumable-
-/// status job rather than a single request/response cycle that can time out on large DLQs.
-/// </summary>
-/// <remarks>
-/// This service owns validation, matching, and job persistence; the actual per-message work is
-/// performed by <see cref="IBulkOperationExecutor"/> on a background worker, reusing
-/// <see cref="IMessageOperationsService"/> — the same provider-neutral facade single-message
-/// replay/purge already goes through. No provider-specific code exists at this layer.
-/// </remarks>
+/// <summary>Bulk replay (unit 3.2): preview → start → progress → cancel. Every message goes through the eligibility gate on its own.</summary>
 public interface IBulkOperationService
 {
-    /// <summary>
-    /// Dry-runs a bulk operation: matches messages against the filter, samples up to 10 of
-    /// them, and surfaces safety/capability warnings — without mutating anything.
-    /// </summary>
-    Task<Result<BulkOperationPreviewResponse>> PreviewAsync(
-        string ownerId,
-        BulkOperationPreviewRequest request,
-        IReadOnlySet<Guid>? allowedNamespaceIds = null,
-        CancellationToken cancellationToken = default);
+    /// <summary>Computes and stores a preview for the chosen dead letters. Nothing is sent.</summary>
+    Task<Result<BulkPreview>> PreviewAsync(string ownerId, IReadOnlySet<Guid>? allowed, RecoveryActor actor, IReadOnlyList<long> dlqMessageIds, CancellationToken ct,
+        RecoveryOperationKind kind = RecoveryOperationKind.Replay, string? reason = null);
 
-    /// <summary>
-    /// Validates the request (production guard, capability, non-empty match), persists a
-    /// <see cref="BulkOperationJob"/> in <see cref="Enums.BulkOperationStatus.Pending"/>, and
-    /// hands it to the background worker for processing. Returns the created job immediately —
-    /// the caller polls <see cref="GetJobAsync"/> for progress. <paramref name="requestedBy"/> is
-    /// the requester's actor, resolved by the caller (HTTP context) while it's still available —
-    /// persisted on the job so the background worker that executes it later can attribute ledger
-    /// writes correctly (roadmap §29.10).
-    /// </summary>
-    Task<Result<BulkOperationJobResponse>> CreateJobAsync(
-        string ownerId,
-        BulkOperationCreateRequest request,
-        string? correlationId,
-        RecoveryActor requestedBy,
-        IReadOnlySet<Guid>? allowedNamespaceIds = null,
-        CancellationToken cancellationToken = default);
+    /// <summary>Starts the run from a stored preview. The only way a job runs.</summary>
+    Task<Result<BulkProgress>> StartAsync(string ownerId, Guid previewId, bool sampleOnly, CancellationToken ct, RecoveryOperationKind kind = RecoveryOperationKind.Replay);
 
-    /// <summary>Gets a single job's current state, scoped to the owner.</summary>
-    Task<Result<BulkOperationJobResponse>> GetJobAsync(
-        string ownerId,
-        Guid jobId,
-        CancellationToken cancellationToken = default);
+    /// <summary>Where a job is.</summary>
+    Task<Result<BulkProgress>> GetAsync(string ownerId, Guid id, CancellationToken ct);
 
-    /// <summary>
-    /// Lists jobs for the owner, most recent first, optionally filtered by namespace. When
-    /// <paramref name="allowedNamespaceIds"/> is non-null (a namespace-restricted API key),
-    /// results are further restricted to jobs whose namespace ID appears in this set — null
-    /// means unrestricted (today's behaviour).
-    /// </summary>
-    Task<Result<DTOs.Responses.PaginatedResponse<BulkOperationJobResponse>>> ListJobsAsync(
-        string ownerId,
-        Guid? namespaceId,
-        int page,
-        int pageSize,
-        CancellationToken cancellationToken = default,
-        IReadOnlySet<Guid>? allowedNamespaceIds = null);
-
-    /// <summary>
-    /// Requests cancellation of a running or pending job. Idempotent — cancelling an already
-    /// terminal job is a no-op success, not an error. Takes effect between messages, not
-    /// mid-message.
-    /// </summary>
-    Task<Result<BulkOperationJobResponse>> CancelJobAsync(
-        string ownerId,
-        Guid jobId,
-        CancellationToken cancellationToken = default);
+    /// <summary>Asks a running job to stop before its next message.</summary>
+    Task<Result<BulkProgress>> CancelAsync(string ownerId, Guid id, CancellationToken ct);
 }

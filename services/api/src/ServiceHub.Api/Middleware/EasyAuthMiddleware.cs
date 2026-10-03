@@ -89,6 +89,13 @@ public sealed class EasyAuthMiddleware
                 context.Items["Authenticated"] = true;
                 context.Items["AuthMethod"] = "EasyAuth";
 
+                // Easy Auth also injects the signed-in user's name; it is what the audit trail shows.
+                var principalName = context.Request.Headers["X-MS-CLIENT-PRINCIPAL-NAME"].FirstOrDefault();
+                if (!string.IsNullOrWhiteSpace(principalName))
+                {
+                    context.Items["ClaimsName"] = principalName;
+                }
+
                 // Sanitize log inputs to prevent log injection
                 var safeMethod = (context.Request.Method ?? string.Empty)
                     .Replace("\r", string.Empty)

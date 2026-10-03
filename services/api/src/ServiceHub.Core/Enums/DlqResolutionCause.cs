@@ -1,30 +1,24 @@
 namespace ServiceHub.Core.Enums;
 
 /// <summary>
-/// Why a <see cref="DlqMessageStatus.Resolved"/> message left the DLQ. Distinguishes what
-/// ServiceHub actually observed from what it merely infers, so "Resolved" never silently
-/// implies "ServiceHub replayed this" the way the old <see cref="DlqMessageStatus.Replayed"/>
-/// fabrication did.
+/// Why a message is <see cref="DlqMessageStatus.Resolved"/>. Absence from a scan proves only that the
+/// message is gone — never who removed it — so a scan records <see cref="VanishedExternally"/>, and a
+/// more specific cause is set only by something that actually saw the action (rule R5).
 /// </summary>
 public enum DlqResolutionCause
 {
-    /// <summary>ServiceHub's own replay path sent this message. Not assignable until the
-    /// Recovery Evidence Ledger (a later phase) can prove it.</summary>
+    /// <summary>ServiceHub replayed it.</summary>
     ReplayedByServiceHub = 0,
 
-    /// <summary>ServiceHub's own purge path deleted this message. Not assignable until the
-    /// Recovery Evidence Ledger (a later phase) can prove it.</summary>
+    /// <summary>ServiceHub purged it.</summary>
     PurgedByServiceHub = 1,
 
-    /// <summary>The message left the DLQ by some means ServiceHub did not perform or cannot
-    /// attribute — external drain, TTL expiry, another tool, or a genuine ServiceHub action it
-    /// has no evidence for yet.</summary>
+    /// <summary>It left the queue and ServiceHub did not see how — drained elsewhere, expired, or consumed by another tool.</summary>
     VanishedExternally = 2,
 
-    /// <summary>An operator manually triaged the message to Resolved without a ServiceHub
-    /// provider call backing that assertion.</summary>
+    /// <summary>A person declared it handled.</summary>
     DeclaredByOperator = 3,
 
-    /// <summary>Recorded before this field existed; the cause was never determined.</summary>
-    Unknown = 4
+    /// <summary>Unknown.</summary>
+    Unknown = 4,
 }

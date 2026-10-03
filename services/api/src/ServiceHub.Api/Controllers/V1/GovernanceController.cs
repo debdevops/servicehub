@@ -1,154 +1,99 @@
 using Microsoft.AspNetCore.Mvc;
-using ServiceHub.Api.Authorization;
+using ServiceHub.Api.Security;
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
-using ServiceHub.Shared.Constants;
-using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Api.Controllers.V1;
 
 /// <summary>
-/// Governance/RBAC grant management (M3 of the persistence wave, roadmap item 10's enforcement
-/// layer) — the admin surface for granting/revoking the per-owner, per-namespace, per-pillar
-/// roles <see cref="ServiceHub.Api.Filters.GovernanceAuthorizationFilter"/> reads at request time.
-/// Every write goes through <see cref="IGovernanceGrantService"/>; this controller only translates
-/// HTTP concerns and resolves the acting identity server-side.
+/// Who may do what (unit 5.7): Viewer · Operator · Approver · Admin, fleet-wide or per namespace. Admin only. Adapted from
+/// 4.0.0's <c>GovernanceController</c> (grants only — its configuration export/import is not in 4.1.0).
 /// </summary>
-[Route(ApiRoutes.Governance.Base)]
-[Tags("Governance")]
-[RequireScope(ApiKeyScopes.Admin)]
-[RequireGovernanceRole(GovernanceRole.Admin)]
+/// <remarks>
+/// <b>Turning governance on keeps everyone who is not restricted.</b> Until the first grant exists, everyone is Admin. The
+/// first grant ever also records an owner-level Admin grant — 4.0.0's seeder did the same — so a person restricting one API
+/// key does not lock out every other caller. A grant is revoked, never deleted: history is what stops a revoked identity
+/// falling back to the owner-level grant (the 2026-09-19 privilege-escalation fix, kept with its tests).
+/// </remarks>
+[Route("api/v1/governance")]
 public sealed class GovernanceController : ApiControllerBase
 {
-    private readonly IGovernanceGrantService _governanceGrantService;
-    private readonly IConfigurationExportService _configurationExportService;
+    private readonly IGovernanceGrantService _grants;
 
-    /// <summary>Initializes a new instance of the <see cref="GovernanceController"/> class.</summary>
-    public GovernanceController(
-        IGovernanceGrantService governanceGrantService,
-        IConfigurationExportService configurationExportService)
-    {
-        _governanceGrantService = governanceGrantService ?? throw new ArgumentNullException(nameof(governanceGrantService));
-        _configurationExportService = configurationExportService ?? throw new ArgumentNullException(nameof(configurationExportService));
-    }
+    /// <summary>Creates the controller.</summary>
+    public GovernanceController(IGovernanceGrantService grants) => _grants = grants ?? throw new ArgumentNullException(nameof(grants));
 
-    /// <summary>
-    /// Lists the caller's active Governance grants, optionally narrowed to one grantee identity.
-    /// </summary>
-    /// <param name="granteeIdentity">Optional exact grantee identity filter.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <summary>The active grants, optionally of one grantee.</summary>
     [HttpGet("grants")]
     [ProducesResponseType(typeof(IReadOnlyList<GovernanceGrantResponse>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<IReadOnlyList<GovernanceGrantResponse>>> GetGrants(
-        [FromQuery] string? granteeIdentity = null,
-        CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> List([FromQuery] string? granteeIdentity, CancellationToken cancellationToken)
     {
+        if (await DeniedUnlessAsync(GovernanceRole.Admin, null, null, "see who has which role", cancellationToken) is { } denied) return denied;
         var result = string.IsNullOrWhiteSpace(granteeIdentity)
-            ? await _governanceGrantService.GetActiveGrantsAsync(OwnerId, cancellationToken)
-            : await _governanceGrantService.GetGrantsForGranteeAsync(OwnerId, granteeIdentity, cancellationToken);
-
-        if (result.IsFailure)
-        {
-            return ToActionResult<IReadOnlyList<GovernanceGrantResponse>>(result.Error);
-        }
-
-        return Ok(result.Value.Select(MapToResponse).ToList());
+            ? await _grants.GetActiveGrantsAsync(OwnerId, cancellationToken)
+            : await _grants.GetGrantsForGranteeAsync(OwnerId, granteeIdentity, cancellationToken);
+        return result.IsFailure ? Problem(result.Error) : Ok(result.Value.Select(ToResponse).ToList());
     }
 
-    /// <summary>
-    /// Grants a Governance role to an identity, scoped to an optional namespace and/or pillar.
-    /// </summary>
-    /// <param name="request">The role, grantee, and scope to grant.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <summary>Grants a role. Intent <c>grant-role</c>.</summary>
     [HttpPost("grants")]
     [ProducesResponseType(typeof(GovernanceGrantResponse), StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
-    public async Task<ActionResult<GovernanceGrantResponse>> Grant(
-        [FromBody] GrantGovernanceRoleRequest request,
-        CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
+    public async Task<IActionResult> Grant([FromBody] GrantGovernanceRoleRequest request, CancellationToken cancellationToken)
     {
-        var grantedByIdentity = ResolveGovernanceGranteeIdentity();
-
-        var result = await _governanceGrantService.GrantAsync(
-            new GrantRoleRequest(
-                OwnerId,
-                request.GranteeIdentity,
-                request.GranteeKind,
-                request.Role,
-                request.NamespaceId,
-                request.PillarKind,
-                grantedByIdentity),
-            cancellationToken);
-
-        if (result.IsFailure)
+        ArgumentNullException.ThrowIfNull(request);
+        if (!IntentHeaders.Declares(Request, IntentHeaders.GrantRole))
         {
-            return ToActionResult<GovernanceGrantResponse>(result.Error);
+            return Problem(StatusCodes.Status428PreconditionRequired, ErrorCodes.IntentRequired, IntentHeaders.MissingDetail("grant a role", IntentHeaders.GrantRole));
         }
 
-        return ToCreatedResult(
-            Result.Success(MapToResponse(result.Value)),
-            nameof(GetGrants));
+        if (await DeniedUnlessAsync(GovernanceRole.Admin, null, null, "grant roles", cancellationToken) is { } denied) return denied;
+        if (string.IsNullOrWhiteSpace(request.GranteeIdentity) || request.GranteeIdentity.Length > 256)
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "Say who (up to 256 characters): a sign-in name, or an API key's name.");
+        }
+
+        var by = Actor.Identity;
+        var first = await _grants.HasAnyGrantEverAsync(OwnerId, cancellationToken);
+        if (first.IsFailure) return Problem(first.Error);
+        if (!first.Value)
+        {
+            // Turning governance on: everyone not individually restricted keeps Admin (4.0.0's seeder rule).
+            var seed = await _grants.GrantAsync(new GrantRoleRequest(OwnerId, OwnerId, GranteeKind.User, GovernanceRole.Admin, null, null, by), cancellationToken);
+            if (seed.IsFailure) return Problem(seed.Error);
+        }
+
+        var result = await _grants.GrantAsync(
+            new GrantRoleRequest(OwnerId, request.GranteeIdentity.Trim(), request.GranteeKind, request.Role, request.NamespaceId, request.PillarKind, by), cancellationToken);
+        return result.IsFailure ? Problem(result.Error) : StatusCode(StatusCodes.Status201Created, ToResponse(result.Value));
     }
 
-    /// <summary>Revokes one Governance grant by ID.</summary>
-    /// <param name="id">The grant to revoke.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <summary>Revokes a grant (it stays in history). Intent <c>revoke-role</c>.</summary>
     [HttpPost("grants/{id:guid}/revoke")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Revoke(Guid id, CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
+    public async Task<IActionResult> Revoke(Guid id, CancellationToken cancellationToken)
     {
-        var revokedByIdentity = ResolveGovernanceGranteeIdentity();
-        var result = await _governanceGrantService.RevokeAsync(id, OwnerId, revokedByIdentity, cancellationToken);
-        return ToActionResult(result);
+        if (!IntentHeaders.Declares(Request, IntentHeaders.RevokeRole))
+        {
+            return Problem(StatusCodes.Status428PreconditionRequired, ErrorCodes.IntentRequired, IntentHeaders.MissingDetail("revoke a role", IntentHeaders.RevokeRole));
+        }
+
+        if (await DeniedUnlessAsync(GovernanceRole.Admin, null, null, "revoke roles", cancellationToken) is { } denied) return denied;
+        var result = await _grants.RevokeAsync(id, OwnerId, Actor.Identity, cancellationToken);
+        return result.IsFailure ? Problem(result.Error) : NoContent();
     }
 
-    /// <summary>
-    /// Exports every <c>AutoReplayRule</c> and active Governance grant for the caller's owner as
-    /// configuration-as-code (roadmap next-chapter M5.4) — meant to be committed to git and
-    /// reviewed via pull request. Never includes a namespace connection string or any ledger
-    /// event/finding — see <see cref="IConfigurationExportService"/>'s own remarks.
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    [HttpGet("configuration/export")]
-    [ProducesResponseType(typeof(ConfigurationBundle), StatusCodes.Status200OK)]
-    public async Task<ActionResult<ConfigurationBundle>> ExportConfiguration(CancellationToken cancellationToken = default)
-    {
-        var bundle = await _configurationExportService.ExportAsync(OwnerId, cancellationToken);
-        return Ok(bundle);
-    }
-
-    /// <summary>
-    /// Applies a previously-exported (and possibly hand-edited) configuration bundle back to the
-    /// caller's owner. Additive/upsert only — a rule already present (matched by name) is updated
-    /// in place, an already-active grant is left alone, and nothing present live but absent from
-    /// the bundle is ever deleted or revoked.
-    /// </summary>
-    /// <param name="bundle">The bundle to import, typically a previously exported one.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    [HttpPost("configuration/import")]
-    [ProducesResponseType(typeof(ConfigurationImportResult), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<ConfigurationImportResult>> ImportConfiguration(
-        [FromBody] ConfigurationBundle bundle, CancellationToken cancellationToken = default)
-    {
-        var actor = ResolveRecoveryActor();
-        var result = await _configurationExportService.ImportAsync(OwnerId, bundle, actor, cancellationToken);
-        return ToActionResult<ConfigurationImportResult>(result);
-    }
-
-    private static GovernanceGrantResponse MapToResponse(GovernanceGrant grant) => new(
-        Id: grant.Id,
-        GranteeIdentity: grant.GranteeIdentity,
-        GranteeKind: grant.GranteeKind.ToString(),
-        Role: grant.Role.ToString(),
-        NamespaceId: grant.NamespaceId,
-        PillarKind: grant.PillarKind?.ToString(),
-        GrantedAt: grant.GrantedAt,
-        GrantedByIdentity: grant.GrantedByIdentity,
-        RevokedAt: grant.RevokedAt,
-        RevokedByIdentity: grant.RevokedByIdentity);
+    private static GovernanceGrantResponse ToResponse(GovernanceGrant g) => new(
+        g.Id, g.GranteeIdentity, g.GranteeKind.ToString(), g.Role.ToString(), g.NamespaceId, g.PillarKind?.ToString(),
+        g.GrantedAt, g.GrantedByIdentity, g.RevokedAt, g.RevokedByIdentity);
 }

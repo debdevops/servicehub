@@ -1,80 +1,102 @@
 #!/usr/bin/env bash
-# ============================================================================
-# ServiceHub regression pack
+# ServiceHub 4.1.0 — the test suites.
 #
-#   ./runtest.sh                 run everything (backend unit + integration,
-#                                frontend unit with coverage threshold)
-#   ./runtest.sh --backend       backend suites only
-#   ./runtest.sh --frontend      frontend suite only
-#   ./runtest.sh --quick         backend unit + frontend unit (skips the
-#                                slower integration suite)
+# Every test lives under tests/ — see tests/README.md. This is the local twin of .github/workflows/servicehub-4-1-0.yml.
 #
-# Contract: if this script exits 0, the core messaging functionality for
-# Azure Service Bus, AWS SQS/SNS, and GCP Pub/Sub — plus the security
-# invariants around it — is verified by the automated regression pack.
-# ============================================================================
-set -uo pipefail
+# ⚠️  This script does NOT type-check the frontend, so local suites can be green while CI is red.
+#     Run `npm run typecheck` too — or use --all, which does everything CI does.
+set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-API_DIR="$SCRIPT_DIR/services/api"
-WEB_DIR="$SCRIPT_DIR/apps/web"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT"
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
+usage() {
+  cat <<'USAGE'
+Usage: ./runtest.sh [--quick | --backend | --frontend | --e2e | --all]
 
-RUN_BACKEND=true
-RUN_INTEGRATION=true
-RUN_FRONTEND=true
-
-case "${1:-}" in
-  --backend)  RUN_FRONTEND=false ;;
-  --frontend) RUN_BACKEND=false; RUN_INTEGRATION=false ;;
-  --quick)    RUN_INTEGRATION=false ;;
-  "") ;;
-  *) echo "Unknown option: $1 (use --backend | --frontend | --quick)"; exit 2 ;;
-esac
-
-declare -a RESULTS=()
-FAILED=0
-START_TIME=$(date +%s)
-
-section() { printf "\n${BLUE}══════════════════════════════════════════════════════════════${NC}\n${BLUE}  %s${NC}\n${BLUE}══════════════════════════════════════════════════════════════${NC}\n" "$1"; }
-
-record() { # name, exit code
-  if [ "$2" -eq 0 ]; then
-    RESULTS+=("$(printf "${GREEN}PASS${NC}  %s" "$1")")
-  else
-    RESULTS+=("$(printf "${RED}FAIL${NC}  %s" "$1")")
-    FAILED=1
-  fi
+  (no flags)   Backend + frontend test suites.
+  --quick      Backend unit tests only. For a fast inner loop.
+  --backend    Backend unit + integration tests.
+  --frontend   Frontend unit tests only (tests/web).
+  --e2e        Browser tests only (tests/e2e). Uses your installed Chrome; set PW_CHANNEL= to use Playwright's Chromium.
+  --all        Everything CI runs: lint, type-check, both suites with their 60% coverage floors, the browser
+               tests, and the guards.
+USAGE
 }
 
-if $RUN_BACKEND; then
-  section "Backend · unit tests (Azure + AWS + GCP providers, rules, security)"
-  (cd "$API_DIR" && dotnet test tests/ServiceHub.UnitTests/ServiceHub.UnitTests.csproj --nologo --verbosity quiet)
-  record "Backend unit tests" $?
+MODE="${1:-default}"
+case "$MODE" in
+  --help|-h) usage; exit 0 ;;
+  --quick|--backend|--frontend|--e2e|--all|default) ;;
+  *) echo "Unknown option: $MODE" >&2; usage; exit 1 ;;
+esac
+
+SLN="services/api/ServiceHub.slnx"
+step() { printf '\n\033[1m▶ %s\033[0m\n' "$1"; }
+
+if [ "$MODE" = "--quick" ]; then
+  step "Backend unit tests"
+  dotnet test "$SLN" --nologo --filter "FullyQualifiedName!~IntegrationTests"
+  exit 0
 fi
 
-if $RUN_INTEGRATION; then
-  section "Backend · integration tests (API pipeline, guards, persistence)"
-  (cd "$API_DIR" && dotnet test tests/ServiceHub.IntegrationTests/ServiceHub.IntegrationTests.csproj --nologo --verbosity quiet)
-  record "Backend integration tests" $?
+if [ "$MODE" = "--e2e" ]; then
+  step "Browser tests (tests/e2e)"
+  PW_CHANNEL="${PW_CHANNEL-chrome}" npm run e2e -w apps/servicehub
+  exit 0
 fi
 
-if $RUN_FRONTEND; then
-  section "Frontend · unit tests (hooks, pages, multi-cloud UI) + coverage gate"
-  (cd "$WEB_DIR" && npm run test:coverage --silent)
-  record "Frontend unit tests + coverage threshold" $?
+if [ "$MODE" != "--frontend" ]; then
+  if [ "$MODE" = "--all" ]; then
+    step "Backend tests (unit + integration) with the 60% coverage floor"
+    COV_DIR="$(mktemp -d)"
+    dotnet test "$SLN" --nologo --collect:"XPlat Code Coverage" --results-directory "$COV_DIR"
+    tests/scripts/check-backend-coverage.sh "$COV_DIR" 60
+    rm -rf "$COV_DIR"
+  else
+    step "Backend tests (unit + integration)"
+    dotnet test "$SLN" --nologo
+  fi
 fi
 
-ELAPSED=$(( $(date +%s) - START_TIME ))
-
-section "Regression pack summary"
-for line in "${RESULTS[@]}"; do printf "  %b\n" "$line"; done
-printf "\n  Elapsed: %dm %ds\n" $((ELAPSED / 60)) $((ELAPSED % 60))
-
-if [ "$FAILED" -eq 0 ]; then
-  printf "\n${GREEN}✔ All suites green — Azure, AWS, and GCP messaging core is protected.${NC}\n"
-else
-  printf "\n${RED}✘ Regression pack FAILED — do not ship. See suite output above.${NC}\n"
+if [ "$MODE" != "--backend" ]; then
+  if [ "$MODE" = "--all" ]; then
+    step "Frontend tests with the 60% coverage floor"
+    npm run test:coverage -w apps/servicehub
+  else
+    step "Frontend tests"
+    npm run test -w apps/servicehub
+  fi
 fi
-exit $FAILED
+
+if [ "$MODE" = "--all" ]; then
+  step "Frontend type-check (runtest.sh normally skips this — CI does not)"
+  npm run typecheck -w apps/servicehub
+
+  step "Frontend lint (app and tests)"
+  npm run lint -w apps/servicehub
+
+  step "Browser tests (tests/e2e)"
+  PW_CHANNEL="${PW_CHANNEL-chrome}" npm run e2e -w apps/servicehub
+
+  step "Bundle budget (built into a temp folder, so a running API's files are untouched)"
+  BUDGET_DIR="$(mktemp -d)"
+  (cd apps/servicehub && npx vite build --outDir "$BUDGET_DIR" --emptyOutDir --logLevel error)
+  ./.github/scripts/check-bundle-budget.sh "$BUDGET_DIR"
+  rm -rf "$BUDGET_DIR"
+
+  step "Documentation references resolve"
+  python3 .github/scripts/check-docs.py
+
+  step "Roadmap board vs task cards"
+  ./.github/scripts/verify-roadmap.sh
+
+  step "Archive freeze guard (against origin/main)"
+  if git rev-parse --verify --quiet origin/main >/dev/null; then
+    ./.github/scripts/archive-freeze-guard.sh origin/main
+  else
+    echo "  skipped — no origin/main in this clone"
+  fi
+fi
+
+printf '\n\033[32m✓ Done.\033[0m\n'
