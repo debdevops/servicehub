@@ -1,51 +1,47 @@
-using ServiceHub.Core.Enums;
-
 namespace ServiceHub.Core.Entities;
 
 /// <summary>
-/// Tracks whether a DLQ error cluster's signature has been seen before in a namespace,
-/// so a scan can answer "is this a new problem, or one I already know about?" One row per
-/// distinct (namespace, signature hash, hash kind) pair, owner-scoped.
+/// One distinct failure fingerprint seen in a namespace: what rules, the gate and (later) autonomy reason about
+/// (unit 3.1). One row per (owner, namespace, signature hash). Two messages that fail the same way share a row;
+/// two that fail differently do not.
 /// </summary>
+/// <remarks>
+/// Copied in shape from 4.0.0 without <c>HashKind</c>: 4.0.0 kept a second "cluster" vocabulary beside the trust
+/// fingerprint, and 4.1.0 has only the fingerprint. The hash is the fingerprint's <c>Hash</c>, unchanged — changing
+/// how it is computed silently invalidates every trust score keyed by it.
+/// </remarks>
 public sealed class NamespaceSignature
 {
     /// <summary>Primary key.</summary>
     public long Id { get; private set; }
 
-    /// <summary>Namespace identifier this signature was observed in.</summary>
+    /// <summary>The namespace this signature was seen in.</summary>
     public required Guid NamespaceId { get; init; }
 
-    /// <summary>Owner ID for multi-user isolation. Every query against this table is owner-scoped.</summary>
+    /// <summary>Owner scope. Every query against this table is owner-scoped.</summary>
     public required string OwnerId { get; init; }
 
-    /// <summary>
-    /// Stable hash of the cluster's top distinguishing terms plus its dominant deadletter
-    /// reason, or the trust fingerprint — which vocabulary depends on <see cref="HashKind"/>.
-    /// See <see cref="ServiceHub.Shared.Helpers.ClusterSignatureHasher"/> and
-    /// <c>FailureFingerprintBuilder</c>.
-    /// </summary>
+    /// <summary>The fingerprint's stable hash.</summary>
     public required string SignatureHash { get; init; }
 
-    /// <summary>
-    /// Which of the two identity vocabularies <see cref="SignatureHash"/> belongs to (M1.4,
-    /// ADR-0009 §Decision unit 2). Immutable for the lifetime of a row: reclassifying a hash
-    /// after it has been observed would be exactly the kind of trust-fingerprint drift the
-    /// safety boundary in ADR-0009 forbids.
-    /// </summary>
-    public required SignatureHashKind HashKind { get; init; }
-
-    /// <summary>When this signature was first observed.</summary>
+    /// <summary>When this signature was first seen.</summary>
     public required DateTimeOffset FirstSeenAt { get; init; }
 
-    /// <summary>When this signature was most recently observed.</summary>
+    /// <summary>When it was last seen.</summary>
     public DateTimeOffset LastSeenAt { get; set; }
 
-    /// <summary>Number of scans in which this signature has been observed.</summary>
+    /// <summary>How many messages have carried it.</summary>
     public int OccurrenceCount { get; set; }
 
-    /// <summary>Dominant deadletter reason of the cluster as first observed, for display.</summary>
+    /// <summary>The reason the cloud recorded, as first seen, for display.</summary>
     public required string DominantDeadletterReason { get; init; }
 
-    /// <summary>JSON array of the cluster's top distinguishing terms as first observed, for display.</summary>
+    /// <summary>The queue it was first seen in, for display.</summary>
+    public required string EntityName { get; init; }
+
+    /// <summary>An example error text as first seen (may be empty), for display. Plain words lead; the hash is secondary.</summary>
+    public string? ExampleError { get; init; }
+
+    /// <summary>JSON array of the fingerprint's distinguishing terms, for display.</summary>
     public required string TopTermsJson { get; init; }
 }

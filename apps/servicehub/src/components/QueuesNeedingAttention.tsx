@@ -1,0 +1,46 @@
+import { Link } from 'react-router-dom'
+import { namespaceTag } from './provider/scopeChoice'
+import type { Namespace } from '../lib/api/namespaces'
+import type { CloudSummary } from '../lib/homeSummary'
+import { columnHelp } from '../content/columns'
+import { InfoTip } from './ui/InfoTip'
+import { EntityCell } from './message/EntityCell'
+
+/**
+ * Queues holding dead letters, deepest first. It is built from entity counts alone — nothing is peeked or
+ * read — so it works on every cloud, including those where messages cannot be browsed safely. Each row opens
+ * Dead letters filtered to that queue. Draws nothing when no queue holds any: an empty box is not information.
+ */
+export function QueuesNeedingAttention({ summary, namespaces }: { summary: CloudSummary; namespaces: readonly Namespace[] }) {
+  const nameOf = new Map(namespaces.map((n) => [n.id, namespaceTag(n)]))
+  const several = namespaces.length > 1
+  const rows = summary.entities
+    .filter((r) => (r.entity.deadLetterMessages ?? 0) > 0)
+    .sort((a, b) => (b.entity.deadLetterMessages ?? 0) - (a.entity.deadLetterMessages ?? 0))
+    .slice(0, 5)
+  if (rows.length === 0) return null
+  return (
+    <section aria-label="Queues and topics needing attention" className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
+      <div className="flex items-center justify-between border-b border-[#f3f4f6] px-4 py-[13px]">
+        <h2 className="flex items-center text-[13.5px] font-bold text-[#1f2937]">Queues and topics needing attention<InfoTip help={columnHelp.attention.queue} /></h2>
+        <span className="text-[11px] text-[var(--color-text-muted)]">most dead letters first</span>
+      </div>
+      <ul>
+        {rows.map(({ namespaceId, entity: e }) => (
+          <li key={`${namespaceId}:${e.kind}:${e.name}`} className="flex items-center gap-3 border-b border-[#f3f4f6] px-4 py-[9px] last:border-b-0">
+            <span className="min-w-0 flex-1">
+              <EntityCell size="sm" entityName={e.name} entityType={e.kind} />
+              {several && <span className="block truncate text-[11px] text-[var(--color-text-muted)]">{nameOf.get(namespaceId) ?? 'Unknown namespace'}</span>}
+            </span>
+            <span className="rounded-full bg-[var(--color-error-light)] px-[9px] py-0.5 text-[11px] font-bold text-[#b91c1c]">
+              {(e.deadLetterMessages ?? 0).toLocaleString()} dead
+            </span>
+            <Link to={`/?tab=dlq&entity=${encodeURIComponent(e.name)}&ns=${encodeURIComponent(namespaceId)}`} className="text-[11.5px] font-semibold text-[var(--color-primary-600)] hover:underline">
+              Open →
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}

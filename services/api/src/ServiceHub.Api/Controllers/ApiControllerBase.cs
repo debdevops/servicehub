@@ -1,326 +1,159 @@
 using Microsoft.AspNetCore.Mvc;
-using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Security;
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
-using ServiceHub.Infrastructure.RecoveryLedger;
-using ServiceHub.Shared.Constants;
-using ServiceHub.Shared.Results;
+using ServiceHub.Core.Results;
 
 namespace ServiceHub.Api.Controllers;
 
 /// <summary>
-/// Base controller providing common functionality for all API controllers.
+/// What every product controller shares: who is asking, which namespaces they may see, and how a
+/// failure becomes a response.
 /// </summary>
 [ApiController]
 [Produces("application/json")]
 public abstract class ApiControllerBase : ControllerBase
 {
     /// <summary>
-    /// The owner ID for the current request, derived from authentication context.
-    /// Used for tenant isolation across all data-access operations.
+    /// The owner every query is scoped to: the identity middleware's, when one recognised the
+    /// caller; otherwise the one browser session. Until Users exist, every caller shares it.
     /// </summary>
-    protected string OwnerId =>
-        HttpContext.Items.TryGetValue("OwnerId", out var v) && v is string s
-            ? s
-            : Namespace.SpaOwnerId;
+    protected virtual string OwnerId =>
+        HttpContext.Items.TryGetValue("OwnerId", out var value) && value is string owner ? owner : Namespace.SpaOwnerId;
 
     /// <summary>
-    /// The namespace allow-list carried by the current caller's credential, if any — set by
-    /// <c>ApiKeyAuthenticationMiddleware</c>/<c>OidcBearerAuthenticationMiddleware</c> when the
-    /// key/token restricts access to a subset of namespaces. Null means unrestricted.
+    /// The namespaces this caller's credential is restricted to, or null when unrestricted. A
+    /// restricted caller must not be able to read, count or even confirm the existence of any
+    /// other namespace. Set by an identity source that restricts (an OIDC <c>namespaces</c> claim).
     /// </summary>
-    protected IReadOnlySet<Guid>? AllowedNamespaceIds =>
-        HttpContext.Items.TryGetValue("AllowedNamespaceIds", out var v) && v is IReadOnlySet<Guid> ids
-            ? ids
-            : null;
+    protected virtual IReadOnlySet<Guid>? AllowedNamespaceIds =>
+        HttpContext.Items.TryGetValue("AllowedNamespaceIds", out var value) && value is IReadOnlySet<Guid> ids ? ids : null;
 
     /// <summary>
-    /// Resolves the <see cref="RecoveryActor"/> for the current request — the only way an actor
-    /// identity enters the Recovery Evidence Ledger (see <see cref="IRecoveryLedger"/>).
-    /// Extracts the same primitives <see cref="SecurityAuditLogger.ResolveUserIdentity"/> reads
-    /// from <c>HttpContext</c> (API key name → claims identity name → <see cref="OwnerId"/>) and
-    /// passes them to <see cref="ActorIdentityResolver.ResolveHttpActor"/>, which has no
-    /// dependency on ASP.NET Core and so cannot read <c>HttpContext</c> itself.
+    /// How this request authenticated: <c>EasyAuth</c>, <c>Oidc</c>, <c>ApiKey</c>, or
+    /// <c>session</c> when nothing was configured or presented.
     /// </summary>
-    protected RecoveryActor ResolveRecoveryActor()
+    protected string AuthMethod =>
+        HttpContext.Items.TryGetValue("AuthMethod", out var value) && value is string method ? method : "session";
+
+    /// <summary>
+    /// Who is acting, named only as far as the product actually knows (rule R6). This is the only
+    /// way a controller obtains an actor.
+    /// </summary>
+    protected RecoveryActor Actor =>
+        HttpContext.RequestServices.GetRequiredService<IActorIdentityResolver>().Resolve(ActorContextFactory.From(HttpContext));
+
+    /// <summary>
+    /// Loads a namespace the caller may see. A namespace that exists but belongs to someone else,
+    /// or sits outside the caller's allow-list, is reported exactly like one that does not exist.
+    /// </summary>
+    protected async Task<Result<Namespace>> GetVisibleNamespaceAsync(
+        INamespaceRepository repository, Guid id, CancellationToken cancellationToken)
     {
-        var apiKeyName = HttpContext.Items.TryGetValue("ApiKeyName", out var keyName) && keyName is string name
-            ? name
-            : null;
-
-        var claimsIdentityName = HttpContext.User?.Identity?.Name;
-
-        var scopes = HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj)
-            && keyConfigObj is ApiKeyConfiguration keyConfig
-            && keyConfig.Scopes is { Length: > 0 }
-            ? string.Join(',', keyConfig.Scopes)
-            : null;
-
-        return ActorIdentityResolver.ResolveHttpActor(apiKeyName, claimsIdentityName, OwnerId, scopes);
-    }
-
-    /// <summary>
-    /// Resolves the <see cref="PlaybookActor"/> for the current request — the only way a human
-    /// actor identity enters the Playbook Ledger via HTTP (see <see cref="IPlaybookLedger"/>).
-    /// Unlike <see cref="ResolveRecoveryActor"/>, every HTTP-resolved actor here is
-    /// <see cref="PlaybookActorKind.User"/> — <see cref="PlaybookActorKind"/> has no ApiKey/
-    /// Automation variant of its own, and <see cref="PlaybookActorKind.System"/>/
-    /// <see cref="PlaybookActorKind.ReasoningAgent"/> are reserved for background workers and the
-    /// (not-yet-built) reasoning companion, never an HTTP caller.
-    /// </summary>
-    protected PlaybookActor ResolvePlaybookActor()
-    {
-        var apiKeyName = HttpContext.Items.TryGetValue("ApiKeyName", out var keyName) && keyName is string name
-            ? name
-            : null;
-
-        var claimsIdentityName = HttpContext.User?.Identity?.Name;
-
-        var identity = !string.IsNullOrEmpty(apiKeyName)
-            ? $"ApiKey:{apiKeyName}"
-            : !string.IsNullOrEmpty(claimsIdentityName)
-                ? claimsIdentityName
-                : !string.IsNullOrEmpty(OwnerId)
-                    ? OwnerId
-                    : "Unknown";
-
-        return new PlaybookActor(identity, PlaybookActorKind.User);
-    }
-
-    /// <summary>
-    /// Resolves the caller's Governance/RBAC grantee identity — the same precedence
-    /// <see cref="ResolveRecoveryActor"/> and <see cref="ResolvePlaybookActor"/> already use
-    /// (API key name → claims identity name → <see cref="OwnerId"/>), via the same
-    /// <see cref="ActorIdentityResolver"/> the Governance authorization filter uses, so an inline
-    /// check here (e.g. Playbook disposition, scoped to an entry's own dynamic pillar) and the
-    /// attribute-driven filter check always resolve identically for the same request.
-    /// </summary>
-    protected string ResolveGovernanceGranteeIdentity()
-    {
-        var apiKeyName = HttpContext.Items.TryGetValue("ApiKeyName", out var keyName) && keyName is string name
-            ? name
-            : null;
-
-        var claimsIdentityName = HttpContext.User?.Identity?.Name;
-
-        return ActorIdentityResolver.ResolveHttpActor(apiKeyName, claimsIdentityName, OwnerId).Identity;
-    }
-
-    /// <summary>
-    /// Fetches a namespace by ID and verifies <see cref="OwnerId"/> may access it — either as
-    /// the namespace's owner, or because the owner explicitly shared it (see
-    /// <see cref="Namespace.IsAccessibleBy(string)"/>) — so every controller enforces tenant isolation
-    /// through this single, tested path instead of reimplementing the check inline. Returns the
-    /// same NotFound failure whether the namespace doesn't exist or simply isn't accessible to
-    /// the caller, so the two cases can't be distinguished from the response (avoids leaking
-    /// namespace existence).
-    /// <para>
-    /// Use this for read/operate actions (browse, peek, replay, purge, Live Tail). For actions
-    /// only the true owner may perform (delete, share, revoke), use
-    /// <see cref="GetExclusivelyOwnedNamespaceAsync"/> instead.
-    /// </para>
-    /// </summary>
-    protected async Task<Result<Namespace>> GetOwnedNamespaceAsync(
-        INamespaceRepository namespaceRepository,
-        Guid namespaceId,
-        CancellationToken cancellationToken)
-    {
-        var namespaceResult = await namespaceRepository.GetByIdAsync(namespaceId, cancellationToken).ConfigureAwait(false);
-        if (namespaceResult.IsFailure)
+        var result = await repository.GetByIdAsync(id, cancellationToken);
+        if (result.IsFailure)
         {
-            return namespaceResult;
+            return result;
         }
 
-        if (!namespaceResult.Value.IsAccessibleBy(OwnerId, AllowedNamespaceIds))
-        {
-            return Result.Failure<Namespace>(Error.NotFound(
-                ErrorCodes.Namespace.NotFound,
-                $"Namespace with ID '{namespaceId}' was not found."));
-        }
+        var ns = result.Value;
+        var visible = string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal)
+            && (AllowedNamespaceIds is null || AllowedNamespaceIds.Contains(ns.Id));
 
-        return namespaceResult;
+        return visible
+            ? result
+            : Result.Failure<Namespace>(Error.NotFound(
+                ErrorCodes.Namespace.NotFound, $"Namespace with ID '{id}' was not found."));
     }
 
     /// <summary>
-    /// Fetches a namespace by ID and verifies <see cref="OwnerId"/> is its <b>true owner</b> —
-    /// a shared-with owner is not sufficient. Use this for privilege-sensitive actions a shared
-    /// collaborator must not be able to perform: deleting the namespace, or changing who it's
-    /// shared with. For everyday read/operate actions, use <see cref="GetOwnedNamespaceAsync"/>.
+    /// Governance (unit 5.7): null when the caller holds <paramref name="required"/> for <paramref name="namespaceId"/> (and
+    /// <paramref name="pillar"/>), otherwise a 403 <c>permission_denied</c> that says what is missing, what the caller has, and
+    /// who can grant it — never a bare 403 (IA §7). Until the first grant exists for an owner, governance is inactive and
+    /// everyone passes (the evaluator's rule, copied from 4.0.0 with its tests). A grant store that cannot be read fails closed.
     /// </summary>
-    protected async Task<Result<Namespace>> GetExclusivelyOwnedNamespaceAsync(
-        INamespaceRepository namespaceRepository,
-        Guid namespaceId,
-        CancellationToken cancellationToken)
+    protected async Task<ObjectResult?> DeniedUnlessAsync(
+        GovernanceRole required, Guid? namespaceId, PillarKind? pillar, string whatFor, CancellationToken cancellationToken)
     {
-        var namespaceResult = await namespaceRepository.GetByIdAsync(namespaceId, cancellationToken).ConfigureAwait(false);
-        if (namespaceResult.IsFailure)
+        var evaluator = HttpContext.RequestServices.GetRequiredService<IGovernanceAccessEvaluator>();
+        var identity = Actor.AuthorizationIdentity;
+        var verdict = await evaluator.EvaluateAsync(OwnerId, identity, required, namespaceId, pillar, cancellationToken);
+        if (verdict.IsSuccess)
         {
-            return namespaceResult;
+            return null;
         }
 
-        var allowedNamespaceIds = AllowedNamespaceIds;
-        if (!string.Equals(namespaceResult.Value.OwnerId, OwnerId, StringComparison.Ordinal)
-            || (allowedNamespaceIds is not null && !allowedNamespaceIds.Contains(namespaceResult.Value.Id)))
-        {
-            return Result.Failure<Namespace>(Error.NotFound(
-                ErrorCodes.Namespace.NotFound,
-                $"Namespace with ID '{namespaceId}' was not found."));
-        }
-
-        return namespaceResult;
+        var yours = await evaluator.GetEffectiveRoleAsync(OwnerId, identity, namespaceId, pillar, cancellationToken);
+        var grantors = await GrantorsAsync(namespaceId, cancellationToken);
+        var who = grantors.Count == 0 ? "the server's administrator" : string.Join(", ", grantors);
+        who = char.ToUpperInvariant(who[0]) + who[1..]; // it opens a sentence: "The server's owner can grant it."
+        var denied = Problem(StatusCodes.Status403Forbidden, ErrorCodes.PermissionDenied,
+            $"To {whatFor} you need the {required} role{(namespaceId is null ? "" : " for this namespace")}. You have {(yours is { } r ? $"the {r} role" : "no role here")}. {who} can grant it.");
+        var problem = (ProblemDetails)denied.Value!;
+        problem.Extensions["requiredRole"] = required.ToString();
+        problem.Extensions["yourRole"] = yours?.ToString();
+        problem.Extensions["grantors"] = grantors;
+        return denied;
     }
 
-    /// <summary>
-    /// Converts a Result to an appropriate ActionResult.
-    /// </summary>
-    /// <param name="result">The result to convert.</param>
-    /// <returns>An ActionResult based on the result status.</returns>
-    protected IActionResult ToActionResult(Result result)
+    /// <summary>Who can grant roles here: the Admins whose grant covers the namespace (or the whole fleet), as people read them.</summary>
+    protected async Task<IReadOnlyList<string>> GrantorsAsync(Guid? namespaceId, CancellationToken cancellationToken)
     {
-        if (result.IsSuccess)
-        {
-            return NoContent();
-        }
-
-        return ToErrorResult(result.Error);
+        var grants = await HttpContext.RequestServices.GetRequiredService<IGovernanceGrantService>().GetActiveGrantsAsync(OwnerId, cancellationToken);
+        return grants.IsFailure
+            ? []
+            : [.. grants.Value.Where(g => g.Role == GovernanceRole.Admin && (g.NamespaceId is null || g.NamespaceId == namespaceId))
+                .Select(g => g.GranteeIdentity == OwnerId ? "the server's owner" : RecoveryActorLabel.For(g.GranteeIdentity))
+                .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
     }
 
-    /// <summary>
-    /// Converts a Result&lt;T&gt; to an appropriate ActionResult.
-    /// </summary>
-    /// <typeparam name="T">The type of the result value.</typeparam>
-    /// <param name="result">The result to convert.</param>
-    /// <returns>An ActionResult based on the result status.</returns>
-    protected ActionResult<T> ToActionResult<T>(Result<T> result)
+    /// <summary>A failure as a ProblemDetails carrying its stable code.</summary>
+    protected ObjectResult Problem(Error error)
     {
-        if (result.IsSuccess)
-        {
-            return Ok(result.Value);
-        }
-
-        return ToErrorResult(result.Error);
+        ArgumentNullException.ThrowIfNull(error);
+        return Problem(StatusFor(error.Type), error.Code, error.Message);
     }
 
-    /// <summary>
-    /// Converts an Error to an appropriate ActionResult for typed results.
-    /// </summary>
-    /// <typeparam name="T">The type of the result value.</typeparam>
-    /// <param name="error">The error to convert.</param>
-    /// <returns>An ActionResult based on the error type.</returns>
-    protected ActionResult<T> ToActionResult<T>(Error error)
+    /// <summary>A failure as a ProblemDetails with an explicit status.</summary>
+    protected ObjectResult Problem(int status, string code, string detail)
     {
-        return ToErrorResult(error);
-    }
-
-    /// <summary>
-    /// Converts a Result&lt;T&gt; to a Created ActionResult.
-    /// </summary>
-    /// <typeparam name="T">The type of the result value.</typeparam>
-    /// <param name="result">The result to convert.</param>
-    /// <param name="actionName">The action name for the location header.</param>
-    /// <param name="routeValues">The route values for the location header.</param>
-    /// <returns>An ActionResult based on the result status.</returns>
-    protected ActionResult<T> ToCreatedResult<T>(Result<T> result, string actionName, object? routeValues = null)
-    {
-        if (result.IsSuccess)
+        var problem = new ProblemDetails
         {
-            return CreatedAtAction(actionName, routeValues, result.Value);
-        }
-
-        return ToErrorResult(result.Error);
-    }
-
-    /// <summary>
-    /// Converts a Result&lt;T&gt; to an Accepted ActionResult.
-    /// </summary>
-    /// <typeparam name="T">The type of the result value.</typeparam>
-    /// <param name="result">The result to convert.</param>
-    /// <returns>An ActionResult based on the result status.</returns>
-    protected ActionResult<T> ToAcceptedResult<T>(Result<T> result)
-    {
-        if (result.IsSuccess)
-        {
-            return Accepted(result.Value);
-        }
-
-        return ToErrorResult(result.Error);
-    }
-
-    /// <summary>
-    /// Converts an Error to an appropriate ActionResult.
-    /// </summary>
-    /// <param name="error">The error to convert.</param>
-    /// <returns>An ActionResult representing the error.</returns>
-    private ActionResult ToErrorResult(Error error)
-    {
-        var problemDetails = CreateProblemDetails(error);
-
-        return error.Type switch
-        {
-            ErrorType.Validation => BadRequest(problemDetails),
-            ErrorType.NotFound => NotFound(problemDetails),
-            ErrorType.Conflict => Conflict(problemDetails),
-            ErrorType.Unauthorized => Unauthorized(problemDetails),
-            ErrorType.Forbidden => new ObjectResult(problemDetails) { StatusCode = StatusCodes.Status403Forbidden },
-            ErrorType.RateLimited => new ObjectResult(problemDetails) { StatusCode = StatusCodes.Status429TooManyRequests },
-            ErrorType.Timeout => new ObjectResult(problemDetails) { StatusCode = StatusCodes.Status504GatewayTimeout },
-            ErrorType.ExternalService => new ObjectResult(problemDetails) { StatusCode = StatusCodes.Status502BadGateway },
-            _ => new ObjectResult(problemDetails) { StatusCode = StatusCodes.Status500InternalServerError }
+            Status = status,
+            Title = TitleFor(status),
+            Detail = detail,
+            Instance = HttpContext.Request.Path,
         };
+        problem.Extensions["code"] = code;
+        problem.Extensions["correlationId"] = HttpContext.TraceIdentifier;
+        return new ObjectResult(problem) { StatusCode = status, ContentTypes = { "application/problem+json" } };
     }
 
-    /// <summary>
-    /// Creates a ProblemDetails object from an Error.
-    /// </summary>
-    /// <param name="error">The error to convert.</param>
-    /// <returns>A ProblemDetails object.</returns>
-    private ProblemDetails CreateProblemDetails(Error error)
+    private static int StatusFor(ErrorType type) => type switch
     {
-        var (statusCode, title) = GetStatusCodeAndTitle(error.Type);
+        ErrorType.Validation => StatusCodes.Status400BadRequest,
+        ErrorType.NotFound => StatusCodes.Status404NotFound,
+        ErrorType.Conflict => StatusCodes.Status409Conflict,
+        ErrorType.Unauthorized => StatusCodes.Status401Unauthorized,
+        ErrorType.Forbidden => StatusCodes.Status403Forbidden,
+        ErrorType.RateLimited => StatusCodes.Status429TooManyRequests,
+        ErrorType.Timeout => StatusCodes.Status504GatewayTimeout,
+        ErrorType.ExternalService => StatusCodes.Status502BadGateway,
+        ErrorType.BusinessRule => StatusCodes.Status422UnprocessableEntity,
+        _ => StatusCodes.Status500InternalServerError,
+    };
 
-        var problemDetails = new ProblemDetails
-        {
-            Status = statusCode,
-            Title = title,
-            Detail = error.Message,
-            Type = $"https://httpstatuses.com/{statusCode}",
-            Instance = HttpContext.Request.Path
-        };
-
-        problemDetails.Extensions["code"] = error.Code;
-        problemDetails.Extensions["traceId"] = HttpContext.TraceIdentifier;
-
-        if (error.Details is not null && error.Details.Count > 0)
-        {
-            problemDetails.Extensions["details"] = error.Details;
-        }
-
-        return problemDetails;
-    }
-
-    /// <summary>
-    /// Gets the HTTP status code and title for an error type.
-    /// </summary>
-    /// <param name="errorType">The error type.</param>
-    /// <returns>A tuple containing the status code and title.</returns>
-    private static (int StatusCode, string Title) GetStatusCodeAndTitle(ErrorType errorType)
+    private static string TitleFor(int status) => status switch
     {
-        return errorType switch
-        {
-            ErrorType.Validation => (StatusCodes.Status400BadRequest, "Validation Error"),
-            ErrorType.NotFound => (StatusCodes.Status404NotFound, "Not Found"),
-            ErrorType.Conflict => (StatusCodes.Status409Conflict, "Conflict"),
-            ErrorType.Unauthorized => (StatusCodes.Status401Unauthorized, "Unauthorized"),
-            ErrorType.Forbidden => (StatusCodes.Status403Forbidden, "Forbidden"),
-            ErrorType.RateLimited => (StatusCodes.Status429TooManyRequests, "Rate Limited"),
-            ErrorType.Timeout => (StatusCodes.Status504GatewayTimeout, "Gateway Timeout"),
-            ErrorType.ExternalService => (StatusCodes.Status502BadGateway, "External Service Error"),
-            ErrorType.Internal => (StatusCodes.Status500InternalServerError, "Internal Server Error"),
-            ErrorType.BusinessRule => (StatusCodes.Status422UnprocessableEntity, "Business Rule Violation"),
-            _ => (StatusCodes.Status500InternalServerError, "Internal Server Error")
-        };
-    }
+        StatusCodes.Status400BadRequest => "The request is not valid",
+        StatusCodes.Status404NotFound => "Not found",
+        StatusCodes.Status409Conflict => "Conflict",
+        StatusCodes.Status428PreconditionRequired => "Confirmation required",
+        StatusCodes.Status502BadGateway => "The cloud provider reported a problem",
+        StatusCodes.Status503ServiceUnavailable => "Not available",
+        _ => "The request could not be completed",
+    };
 }

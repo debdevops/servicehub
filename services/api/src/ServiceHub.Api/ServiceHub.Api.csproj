@@ -1,40 +1,26 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
+  <!--
+    ServiceHub.Api — controllers, middleware and the composition root. This is the ONLY project
+    that references both ServiceHub.Infrastructure and the ServiceHub.Providers.* projects.
+
+    A controller validates, delegates, maps a Result to HTTP, and stops. Business rules live below.
+  -->
+
   <PropertyGroup>
-    <VersionFile>$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '..', '..', '..', '..', '.version'))</VersionFile>
-    <Version>$([System.IO.File]::ReadAllText($(VersionFile)).Trim())</Version>
-    <AssemblyVersion>$(Version).0</AssemblyVersion>
-    <InformationalVersion>$(Version)</InformationalVersion>
-    <TargetFramework>net10.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <LangVersion>14.0</LangVersion>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <NoWarn>$(NoWarn);1591;NU1510</NoWarn>
+    <!-- The SPA build writes here (apps/servicehub/vite.config.ts). It is git-ignored, so a local
+         build never dirties the tree. -->
+    <SpaRoot>wwwroot</SpaRoot>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" Version="2.22.0" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
-    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.19.2" />
-    <PackageReference Include="Scalar.AspNetCore" Version="2.16.10" />
-    <!-- Swashbuckle for Swagger UI -->
-    <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
-    <!-- Explicit dependency override to fix vulnerability (GHSA-v5pm-xwqc-g5wc) in transitively referenced Microsoft.OpenApi 2.4.1 -->
+    <!-- Transitive of Microsoft.AspNetCore.OpenApi; pinned forward past GHSA-v5pm-xwqc-g5wc. -->
     <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
-    <!-- AspNetCore.HealthChecks.UI.Client: no .NET 10 release yet; 9.0.0 is the latest compatible version -->
-    <PackageReference Include="AspNetCore.HealthChecks.UI.Client" Version="9.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.10" />
-    <!-- OpenTelemetry: vendor-neutral traces + metrics. Inert unless OpenTelemetry:Enabled
-         (or the OTEL_EXPORTER_OTLP_ENDPOINT env var) is set — see ObservabilityExtensions. -->
-    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.17.0" />
-    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.17.0" />
-    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.17.0" />
-    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.17.0" />
-    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.17.0" />
+    <!-- OIDC bearer-token validation (the optional claims identity source). -->
+    <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.19.2" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.19.2" />
-    <!-- Design-time only: powers `dotnet ef migrations add` against DlqDbContext in ServiceHub.Infrastructure -->
+    <!-- Design-time only: powers `dotnet ef migrations add` against ServiceHubDbContext in ServiceHub.Infrastructure -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -44,13 +30,14 @@
   <ItemGroup>
     <ProjectReference Include="..\ServiceHub.Core\ServiceHub.Core.csproj" />
     <ProjectReference Include="..\ServiceHub.Infrastructure\ServiceHub.Infrastructure.csproj" />
-    <ProjectReference Include="..\ServiceHub.Infrastructure.Aws\ServiceHub.Infrastructure.Aws.csproj" />
-    <ProjectReference Include="..\ServiceHub.Infrastructure.Gcp\ServiceHub.Infrastructure.Gcp.csproj" />
-    <ProjectReference Include="..\ServiceHub.Shared\ServiceHub.Shared.csproj" />
+    <ProjectReference Include="..\ServiceHub.Providers.Azure\ServiceHub.Providers.Azure.csproj" />
+    <ProjectReference Include="..\ServiceHub.Providers.Aws\ServiceHub.Providers.Aws.csproj" />
+    <ProjectReference Include="..\ServiceHub.Providers.Gcp\ServiceHub.Providers.Gcp.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="ServiceHub.UnitTests" />
+    <InternalsVisibleTo Include="ServiceHub.IntegrationTests" />
   </ItemGroup>
 
 </Project>

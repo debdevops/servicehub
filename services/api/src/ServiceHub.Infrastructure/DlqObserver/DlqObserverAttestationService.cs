@@ -2,17 +2,17 @@ using Microsoft.EntityFrameworkCore;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Persistence;
-using ServiceHub.Shared.Results;
+using ServiceHub.Core.Results;
 
 namespace ServiceHub.Infrastructure.DlqObserver;
 
 /// <inheritdoc cref="IDlqObserverAttestationService"/>
 public sealed class DlqObserverAttestationService : IDlqObserverAttestationService
 {
-    private readonly DlqDbContext _dbContext;
+    private readonly ServiceHubDbContext _dbContext;
 
     /// <summary>Initialises a new instance of <see cref="DlqObserverAttestationService"/>.</summary>
-    public DlqObserverAttestationService(DlqDbContext dbContext)
+    public DlqObserverAttestationService(ServiceHubDbContext dbContext)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
     }

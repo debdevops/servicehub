@@ -1,293 +1,131 @@
-using ServiceHub.Api.Configuration;
+using ServiceHub.Infrastructure.BulkOperations;
+using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Extensions;
-using ServiceHub.Api.Logging;
-using ServiceHub.Infrastructure;
-using ServiceHub.Infrastructure.Aws;
-using ServiceHub.Infrastructure.Gcp;
+using ServiceHub.Api.Middleware;
+using ServiceHub.Infrastructure.Agents;
 using ServiceHub.Infrastructure.Persistence;
-using ServiceHub.Core.Interfaces;
-using Microsoft.AspNetCore.HttpOverrides;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
+using ServiceHub.Infrastructure.Routing;
+using ServiceHub.Providers.Aws;
+using ServiceHub.Providers.Azure;
+using ServiceHub.Providers.Gcp;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Load appsettings.Local.json (git-ignored) for local dev secrets. Test hosts set
-// SkipLocalSettings so a dev machine's local overrides can't leak into assertions.
-if (!builder.Configuration.GetValue("Configuration:SkipLocalSettings", false))
+// ── Services ────────────────────────────────────────────────────────────────────────────────────
+// The composition root, and the ONLY place ServiceHub.Infrastructure and the ServiceHub.Providers.*
+// projects meet (ADR-0014 D5).
+
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+        // Enums travel as words ("azure", "dev"), never as numbers a client has to decode.
+        options.JsonSerializerOptions.Converters.Add(
+            new System.Text.Json.Serialization.JsonStringEnumConverter(System.Text.Json.JsonNamingPolicy.CamelCase)));
+builder.Services.AddProblemDetails(options =>
 {
-    builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false);
-}
-
-// Configure logging with redaction. RedactingLoggerProvider is the sole console
-// sink — do not also add the stock AddConsole() provider, which writes unredacted
-// log lines to the same destination and defeats the redaction guarantee.
-builder.Logging.ClearProviders();
-builder.Services.AddSingleton<ILoggerProvider, RedactingLoggerProvider>();
-
-if (builder.Environment.IsDevelopment())
-{
-    builder.Logging.SetMinimumLevel(LogLevel.Debug);
-}
-else
-{
-    builder.Logging.SetMinimumLevel(LogLevel.Information);
-}
-
-// Configure forwarded headers for reverse proxy scenarios.
-// Secure by default: headers are trusted only if explicitly configured via appsettings
-// or environment variables (ForwardedHeaders:Enabled=true, ForwardedHeaders:KnownProxies, etc).
-// Azure App Service is auto-detected and enabled if WEBSITE_AUTH_ENABLED=true.
-builder.Services.AddSecureForwardedHeaders(builder.Configuration, builder.Environment);
-
-// Configure request body size limit (prevent large payload attacks)
-builder.WebHost.ConfigureKestrel(options =>
-{
-    options.Limits.MaxRequestBodySize = 5 * 1024 * 1024; // 5 MB
-
-    // Suppress "Server: Kestrel" at the source. SecurityHeadersMiddleware also calls
-    // Headers.Remove("Server"), but that runs in an OnStarting callback while Kestrel writes
-    // its default Server header later, when the response is actually serialized — so the
-    // removal never took effect and every response still advertised the server product.
-    // This flag is the only thing that actually suppresses it.
-    options.AddServerHeader = false;
+    // Every failure leaves with a stable machine-readable code and a human sentence. A bare status
+    // code with no body is a bug (ARCHITECTURE §5.2).
+    options.CustomizeProblemDetails = context =>
+    {
+        context.ProblemDetails.Instance ??= context.HttpContext.Request.Path;
+        context.ProblemDetails.Extensions.TryAdd("code", ProblemCodes.ForStatus(context.ProblemDetails.Status));
+        context.ProblemDetails.Extensions.TryAdd("correlationId", context.HttpContext.TraceIdentifier);
+    };
 });
 
-// Add Application Insights telemetry (cost-effective configuration)
-builder.Services.AddApplicationInsightsTelemetryConfiguration(builder.Configuration, builder.Environment);
+builder.Services.AddHealthChecks();
+builder.Services.Configure<ServiceHub.Core.Models.OidcOptions>(builder.Configuration.GetSection(ServiceHub.Core.Models.OidcOptions.SectionName));
+builder.Services.AddServiceHubPersistence();
+builder.Services.AddCloudProviderRouting();
 
-// Add vendor-neutral OpenTelemetry (traces + metrics). Inert unless explicitly enabled or an
-// OTLP endpoint is configured — see ObservabilityExtensions. Coexists with App Insights.
-builder.Services.AddOpenTelemetryObservability(builder.Configuration);
-
-// Add ServiceHub API services
-builder.Services.AddServiceHubApi(builder.Configuration);
-
-// Register the live Azure provider — the CloudProviderRouter rejects duplicate
-// provider types, so exactly one Azure ICloudMessagingProvider may be registered.
+// One line per cloud: this is the only place the API knows a provider exists.
 builder.Services.AddAzureProvider();
+builder.Services.AddAwsProvider();
+builder.Services.AddGcpProvider();
+builder.Services.AddOpenApi();
 
-// AWS/GCP are preview providers, disabled by default. Enabling a flag registers
-// that provider's ICloudMessagingProvider, its client factory, and its
-// connectivity health check ("aws-connectivity" / "gcp-connectivity").
-// Registration is inert until a namespace for that provider exists.
-if (builder.Configuration.GetValue("CloudProviders:Aws:Enabled", false))
+// The agent platform. Agents arrive one file and one registration line at a time (unit 2.1 onwards).
+builder.Services.AddAgentPlatform();
+ServiceHub.Infrastructure.Webhooks.WebhookServiceCollectionExtensions.AddWebhooks(builder.Services, builder.Configuration);
+builder.Services.AddAgent<DlqMonitorAgent>();
+builder.Services.AddAgent<RecoveryVerificationAgent>();
+builder.Services.AddAgent<BulkOperationAgent>();
+builder.Services.AddAgent<ServiceHub.Infrastructure.Rules.AutoReplayAgent>();
+builder.Services.AddAgent<AutonomyEvaluationAgent>();
+builder.Services.AddAgent<ServiceHub.Infrastructure.Insights.AnomalyInsightAgent>();
+builder.Services.AddAgent<ServiceHub.Infrastructure.Insights.BacklogInsightAgent>();
+builder.Services.AddAgent<ServiceHub.Infrastructure.Insights.CorrelationInsightAgent>();
+builder.Services.AddAgent<ServiceHub.Infrastructure.Insights.NarrationInsightAgent>();
+if (builder.Configuration.GetValue<int>("Backup:ScheduledBackupIntervalHours") > 0)
 {
-    builder.Services.AddAwsProvider();
+    builder.Services.AddAgent<BackupAgent>(); // off by default (unit 6.13)
 }
 
-if (builder.Configuration.GetValue("CloudProviders:Gcp:Enabled", false))
-{
-    builder.Services.AddGcpProvider();
-}
-
-// Background workers (DLQ monitoring, message polling, anomaly detection).
-// Registered after the provider block so DlqMonitorWorker scans through
-// whichever ICloudMessagingProvider set is active for this host.
-builder.Services.AddBackgroundWorkers();
-
-// Local test infrastructure for the high-volume/flood verification pass (see
-// FloodSeedController). Registration is inert unless invoked, and the controller itself refuses
-// every request outside Development — safe to register unconditionally.
-builder.Services.AddScoped<ServiceHub.Infrastructure.Testing.FloodSeedService>();
+builder.Services.AddSingleton<ServiceHub.Api.Services.PlatformEventStreamBroker>();
 
 var app = builder.Build();
 
-// Enforce the single-instance invariant the recovery evidence ledger's hash chain depends on
-// (roadmap W1.4). Resolved first, before anything else touches the data directory: a second
-// instance already running against the same directory fails fast here with a clear message
-// instead of silently corrupting the ledger's hash chain later.
-app.Services.GetRequiredService<ServiceHub.Infrastructure.Persistence.SqliteInstanceLock>();
-
-// Emit a single, secret-free summary of the effective configuration for operability.
-app.LogStartupSummary();
-
-// Validate production configuration — fail fast if required settings are missing or invalid
-ProductionConfigurationValidator.ValidateProduction(
-    app.Configuration,
-    app.Environment,
-    app.Logger);
-
-// Loud, non-fatal warning outside Development when the recovery observation window is
-// non-default (roadmap W1.1) — Staging included, not only Production, unlike the fail-fast
-// check above.
-ProductionConfigurationValidator.WarnIfObservationWindowNonDefault(
-    app.Configuration,
-    app.Environment,
-    app.Logger);
-
-// Same treatment for the per-rule success-rate circuit-breaker floor: a lowered floor is
-// legitimate in a soak run and invisible in normal operation, so say so at startup.
-ProductionConfigurationValidator.WarnIfCircuitBreakerFloorNonDefault(
-    app.Configuration,
-    app.Environment,
-    app.Logger);
-
-// Eagerly resolve the connection-string protector so a broken or invalid encryption key
-// registry (Security:EncryptionKeyRegistry / Security:EncryptionKey) fails startup with a clear
-// error instead of surfacing lazily on the first namespace request — in every environment, not
-// just Production (ProductionConfigurationValidator above only runs there).
-app.Services.GetRequiredService<IConnectionStringProtector>();
-
-// Wire Platform Event subscribers before any hosted service starts.
-// This registers WebhookDlqSpikeHandler (and future handlers) with the
-// InProcessPlatformEventBus singleton drain loop.
-app.Services.SubscribePlatformEventHandlers();
-
-// Fan out platform events to connected SSE clients (GET /api/v1/events/stream).
-// In-process bus: clients only see events published by THIS instance — acceptable
-// while ServiceHub is single-instance (SQLite already pins deployment to one host).
+// The stream broker listens to the bus for the life of the process, so a browser tab can be told when something changed.
 app.Services.GetRequiredService<ServiceHub.Core.Interfaces.IPlatformEventBus>()
     .Subscribe(app.Services.GetRequiredService<ServiceHub.Api.Services.PlatformEventStreamBroker>().HandleAsync);
+// Escalations also go to Slack / Teams / a webhook when one is configured (unit 5.5) — best-effort, never the source of truth.
+app.Services.GetRequiredService<ServiceHub.Core.Interfaces.IPlatformEventBus>()
+    .Subscribe(app.Services.GetRequiredService<ServiceHub.Infrastructure.Webhooks.WebhookEscalationHandler>().HandleAsync);
 
-// Forwarded headers must be first in pipeline (before any middleware that reads client IP)
-app.UseForwardedHeaders();
+// Take the single-instance lock and apply migrations BEFORE serving. A second instance against the
+// same data directory, or a database this version does not recognise, stops here with a clear
+// message rather than starting up and corrupting anything (ADR-0003, ADR-0015 D4).
+await app.Services.InitializeServiceHubDatabaseAsync().ConfigureAwait(false);
 
-// Ensure DLQ Intelligence database schema is up to date before serving requests
-using (var scope = app.Services.CreateScope())
+// ── Pipeline ────────────────────────────────────────────────────────────────────────────────────
+// Order matters and is deliberate: correlate, then harden, then handle errors, then route.
+
+app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseMiddleware<SecurityHeadersMiddleware>();
+app.UseMiddleware<HostAllowListMiddleware>(); // refuse a Host that is not ours: DNS rebinding would otherwise make this no-login API reachable from any web page
+
+app.UseExceptionHandler(handler => handler.Run(async context =>
 {
-    try
-    {
-        var dlqDbContext = scope.ServiceProvider.GetRequiredService<DlqDbContext>();
+    // No stack trace ever reaches a response, in any environment.
+    var feature = context.Features.Get<IExceptionHandlerFeature>();
+    var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("ServiceHub.Api");
+    logger.LogError(feature?.Error, "Unhandled exception while handling {Path}", context.Request.Path);
 
-        // Databases created before EF Core Migrations were introduced (via EnsureCreatedAsync)
-        // already have every table the InitialCreate migration would create, but no
-        // __EFMigrationsHistory row recording that. Without this, MigrateAsync() would treat
-        // the database as empty and fail trying to re-create existing tables. Record
-        // InitialCreate as already applied first — idempotent, no-ops on fresh or
-        // already-migrated databases.
-        await BootstrapMigrationsHistoryForExistingDatabaseAsync(dlqDbContext, app.Logger);
-
-        await dlqDbContext.Database.MigrateAsync();
-        app.Logger.LogInformation("DLQ Intelligence database schema is up to date");
-
-        // One-shot, forward-only cutover from the JSON-file-backed namespace store to SQLite
-        // (M2 of the persistence wave). Must run after MigrateAsync (the Namespaces table needs
-        // to exist) and is allowed to throw — a failed import must not silently proceed with a
-        // partially-populated Namespaces table, so it shares the same non-Development rethrow
-        // behaviour as a failed MigrateAsync() below.
-        await NamespaceStoreImporter.ImportIfPresentAsync(dlqDbContext, app.Configuration, app.Logger);
-
-        // Classifies NamespaceSignatures.HashKind for rows the M1.4 migration defaulted to
-        // Fingerprint (ADR-0009 §Decision unit 2). Never throws — see
-        // NamespaceSignatureHashKindBackfiller's own remarks for why this is safe to leave
-        // non-fatal, unlike the import above.
-        await NamespaceSignatureHashKindBackfiller.BackfillAsync(dlqDbContext, app.Logger);
-
-        // Grandfathers every existing account into a fleet-wide Admin grant, plus one
-        // namespace-scoped Operator grant per existing namespace share (M3 of the persistence
-        // wave). Must run after the M2 import above (reads Namespaces/NamespaceSharedOwners).
-        // Unlike the import above, a seed-count mismatch here only logs a warning — never gates
-        // startup — since grant seeding is recoverable by hand.
-        try
+    context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+    await Results.Problem(
+        title: "Something went wrong",
+        detail: "ServiceHub could not complete this request. The failure has been logged.",
+        statusCode: StatusCodes.Status500InternalServerError,
+        extensions: new Dictionary<string, object?>
         {
-            await GovernanceGrantSeeder.SeedIfEmptyAsync(dlqDbContext, app.Logger);
-        }
-        catch (Exception governanceSeedEx)
-        {
-            app.Logger.LogError(governanceSeedEx, "Failed to seed Governance grants at startup");
-        }
+            ["code"] = ServiceHub.Core.Constants.ErrorCodes.UnexpectedFailure,
+            ["correlationId"] = context.TraceIdentifier
+        }).ExecuteAsync(context).ConfigureAwait(false);
+}));
 
-        // Reconcile messages stranded mid-replay or mid-purge by a previous process. This must
-        // run here — after the schema is ready but before any hosted service starts — so that
-        // every claimed row it sees is provably abandoned rather than actively in flight. See
-        // InterruptedOperationRecovery for the full rationale.
-        try
-        {
-            var recoveryLedger = scope.ServiceProvider.GetRequiredService<IRecoveryLedger>();
-            await InterruptedOperationRecovery.ReconcileInterruptedOperationsAsync(
-                dlqDbContext, recoveryLedger, app.Logger);
-        }
-        catch (Exception recoveryEx)
-        {
-            // A failed reconciliation must not stop the app: the stranded rows stay stranded,
-            // which is the pre-existing behaviour, and the operator gets a logged reason.
-            app.Logger.LogError(
-                recoveryEx, "Failed to reconcile DLQ messages stranded mid-operation at startup");
-        }
-    }
-    catch (Exception ex)
-    {
-        app.Logger.LogError(ex, "Failed to initialize DLQ Intelligence database schema");
-        // In production, fail fast if database can't initialize
-        if (!app.Environment.IsDevelopment())
-        {
-            throw;
-        }
-    }
+app.UseStatusCodePages();
+
+// Identity, in the order it is trusted: a platform-injected principal, then a validated bearer
+// token, then a configured API key. Each is a no-op unless configured, and none of them gates a
+// request — they only decide how the caller is named (rule R6). With none configured every request
+// is "from this browser session".
+app.UseMiddleware<EasyAuthMiddleware>();
+app.UseMiddleware<OidcBearerAuthenticationMiddleware>();
+app.UseMiddleware<ApiKeyIdentityMiddleware>();
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
 }
 
-// Configure the middleware pipeline
-app.UseServiceHubApi(app.Environment);
+app.MapHealthEndpoints();
+app.MapControllers();
 
-// Map endpoints
-app.MapServiceHubEndpoints();
+// The SPA. One application, at the origin root, with no prefix — ADR-0014 D3 removed the /new
+// mount, the cutover and the basename juggling along with it.
+app.MapServiceHubSpa();
 
-app.Run();
+await app.RunAsync().ConfigureAwait(false);
 
-// Records the InitialCreate migration as already applied when a pre-Migrations database
-// (created via the old EnsureCreatedAsync path) is detected — i.e. its tables already exist
-// but it has no __EFMigrationsHistory table yet. No-ops on a fresh database (no tables to
-// find) and on an already-migrated one (history table already exists).
-static async Task BootstrapMigrationsHistoryForExistingDatabaseAsync(DlqDbContext dbContext, ILogger logger)
-{
-    var historyRepository = dbContext.GetService<IHistoryRepository>();
-    if (await historyRepository.ExistsAsync())
-        return;
-
-    var connection = dbContext.Database.GetDbConnection();
-    var wasOpen = connection.State == System.Data.ConnectionState.Open;
-    if (!wasOpen)
-        await connection.OpenAsync();
-
-    try
-    {
-        var appTablesExist = await TableExistsAsync(connection, "DlqMessages");
-        if (!appTablesExist)
-            return;
-
-        logger.LogWarning(
-            "Existing database predates EF Core Migrations — recording InitialCreate as already applied");
-
-        await ExecuteNonQueryAsync(connection, historyRepository.GetCreateIfNotExistsScript());
-
-        // Always bootstrap against InitialCreate specifically, not "whichever migration
-        // exists" — once later migrations are added, GetMigrations() returns more than one
-        // and a positional Single() would throw for every pre-Migrations database out there.
-        var migrationId = dbContext.Database.GetMigrations()
-            .Single(id => id.EndsWith("_InitialCreate", StringComparison.Ordinal));
-        var productVersion = ProductInfo.GetVersion();
-        await ExecuteNonQueryAsync(connection, historyRepository.GetInsertScript(new HistoryRow(migrationId, productVersion)));
-
-        logger.LogInformation("Schema upgrade applied: InitialCreate recorded for pre-existing database");
-    }
-    finally
-    {
-        if (!wasOpen)
-            connection.Close();
-    }
-}
-
-static async Task<bool> TableExistsAsync(
-    System.Data.Common.DbConnection connection, string tableName)
-{
-    using var cmd = connection.CreateCommand();
-    cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=@name";
-    var param = cmd.CreateParameter();
-    param.ParameterName = "@name";
-    param.Value = tableName;
-    cmd.Parameters.Add(param);
-    var count = (long)(await cmd.ExecuteScalarAsync() ?? 0L);
-    return count > 0;
-}
-
-static async Task ExecuteNonQueryAsync(System.Data.Common.DbConnection connection, string sql)
-{
-    using var cmd = connection.CreateCommand();
-    cmd.CommandText = sql;
-    await cmd.ExecuteNonQueryAsync();
-}
-
-// Make Program class visible to tests
-public partial class Program { }
+/// <summary>Entry point marker, so integration tests can host the application.</summary>
+public partial class Program;

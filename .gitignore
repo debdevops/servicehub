@@ -273,8 +273,8 @@ How-To-Use.md
 .claude/skills/e2e-verify
 
 # Playwright test artifacts
-apps/web/test-results/
-apps/web/playwright-report/
+archive/servicehub-4.0.0/apps/web/test-results/
+archive/servicehub-4.0.0/apps/web/playwright-report/
 
 
 MODEL-ROUTING-GUIDE.md
@@ -287,6 +287,30 @@ CLAUDE.md
 
 docs/architecture/ARCHITECTURE_VISION.md
 .claude/skills/full-e2e-and-docs-refresh
-docs/BACKUP-RESTORE.md
-docs/BACKUP-RESTORE.md
-docs/BACKUP-RESTORE.md
+
+# ── ServiceHub 4.1.0 ────────────────────────────────────────────────────────────────────────────
+# The SPA build output. It is generated — by `npm run build` locally
+# and by the Docker build for a release — and never committed (ARCHITECTURE §9.3).
+services/api/src/ServiceHub.Api/wwwroot/
+
+# .NET build output for the new stack (the archive keeps its own rules)
+services/api/**/bin/
+services/api/**/obj/
+
+# The local SQLite database and its write-ahead log
+*.db
+*.db-shm
+*.db-wal
+
+# Playwright (4.1.0 web app)
+apps/servicehub/test-results/
+apps/servicehub/playwright-report/
+
+# 4.1.0 tests/ folder outputs
+tests/e2e/playwright-report/
+tests/e2e/test-results/
+tests/web/coverage/
+
+# The API's development data directory (`dotnet run` resolves ServiceHub:DataDirectory to ./data under the project):
+# the database, its lock, logs and backups are runtime state, never source.
+services/api/src/ServiceHub.Api/data/

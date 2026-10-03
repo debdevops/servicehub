@@ -1,1108 +1,577 @@
 using Microsoft.AspNetCore.Mvc;
-using ServiceHub.Api.Authorization;
 using ServiceHub.Api.Security;
-using ServiceHub.Infrastructure.Security;
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
-using ServiceHub.Core.Events;
-using ServiceHub.Core.Events.Payloads;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
+using ServiceHub.Core.Security;
 using ServiceHub.Core.Validation;
-using ServiceHub.Infrastructure.Aws;
-using ServiceHub.Infrastructure.Gcp;
-using ServiceHub.Shared.Constants;
-using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Api.Controllers.V1;
 
 /// <summary>
-/// Controller for managing Service Bus namespaces.
-/// Provides endpoints for creating, listing, testing, and deleting namespace configurations.
+/// Connect, test, list, inspect and remove a cloud namespace — the same six operations for every
+/// cloud.
 /// </summary>
-[Route(ApiRoutes.Namespaces.Base)]
-[Tags("Namespaces")]
+/// <remarks>
+/// <para>
+/// <b>One entities endpoint, not three.</b> Which kinds a provider has is a capability fact, so
+/// <c>GET …/entities?kind=</c> serves queues, topics and subscriptions alike and the UI never
+/// needs a controller per kind.
+/// </para>
+/// <para>
+/// <b>No provider is named here</b> (rule R4): dispatch goes through <see cref="ICloudProviderRouter"/>,
+/// credential rules through <see cref="NamespaceCredentials"/>. And <b>no response carries a
+/// connection string</b> — the type that would carry one does not exist.
+/// </para>
+/// </remarks>
+[Route("api/v1/namespaces")]
 public sealed class NamespacesController : ApiControllerBase
 {
-    private readonly INamespaceRepository _namespaceRepository;
-    private readonly IServiceBusClientFactory _clientFactory;
-    private readonly IServiceBusClientCache _clientCache;
-    private readonly IConnectionStringProtector _connectionStringProtector;
-    private readonly IAuditLogger _auditLogger;
-    private readonly IPlatformEventBus? _eventBus;
-    private readonly IEnumerable<ICloudMessagingProvider> _messagingProviders;
+    private static readonly string[] EntityKinds = ["queue", "topic", "subscription"];
+
+    private readonly INamespaceRepository _namespaces;
+    private readonly IAuditTrail _audit;
+    private readonly ICloudProviderRouter _router;
     private readonly ILogger<NamespacesController> _logger;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="NamespacesController"/> class.
-    /// </summary>
-    /// <param name="namespaceRepository">The namespace repository.</param>
-    /// <param name="clientFactory">The Service Bus client factory.</param>
-    /// <param name="clientCache">The Service Bus client cache.</param>
-    /// <param name="connectionStringProtector">The connection string protector.</param>
-    /// <param name="logger">The logger.</param>
-    /// <param name="auditLogger">The security audit logger.</param>
-    /// <param name="eventBus">The platform event bus. Optional — omitted in test contexts.</param>
-    /// <param name="messagingProviders">The registered cloud messaging providers, used to reject
-    /// creation of namespaces for providers that are not enabled on this server.</param>
+    /// <summary>Creates the controller.</summary>
     public NamespacesController(
-        INamespaceRepository namespaceRepository,
-        IServiceBusClientFactory clientFactory,
-        IServiceBusClientCache clientCache,
-        IConnectionStringProtector connectionStringProtector,
-        ILogger<NamespacesController> logger,
-        IAuditLogger? auditLogger = null,
-        IPlatformEventBus? eventBus = null,
-        IEnumerable<ICloudMessagingProvider>? messagingProviders = null)
+        INamespaceRepository namespaces, IAuditTrail audit, ICloudProviderRouter router, ILogger<NamespacesController> logger)
     {
-        _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
-        _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
-        _clientCache = clientCache ?? throw new ArgumentNullException(nameof(clientCache));
-        _connectionStringProtector = connectionStringProtector ?? throw new ArgumentNullException(nameof(connectionStringProtector));
-        _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
-        _eventBus = eventBus;
-        _messagingProviders = messagingProviders ?? [];
+        _namespaces = namespaces ?? throw new ArgumentNullException(nameof(namespaces));
+        _audit = audit ?? throw new ArgumentNullException(nameof(audit));
+        _router = router ?? throw new ArgumentNullException(nameof(router));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// Gets the correlation ID for the current request from the HTTP context.
-    /// Set by <c>CorrelationIdMiddleware</c> into <c>HttpContext.Items["CorrelationId"]</c>.
-    /// Returns null when running outside a full HTTP pipeline (e.g. unit tests).
-    /// </summary>
-    private string? CorrelationId =>
-        HttpContext.Items.TryGetValue("CorrelationId", out var v) && v is string s ? s : null;
-
-    /// <summary>
-    /// Creates a new namespace configuration.
-    /// </summary>
-    /// <param name="request">The create namespace request.</param>
-    /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>The created namespace response.</returns>
-    /// <response code="201">Namespace created successfully.</response>
-    /// <response code="400">Invalid request parameters.</response>
-    /// <response code="409">Namespace with the same name already exists.</response>
-    [HttpPost]
-    [RequireScope(ApiKeyScopes.NamespacesWrite)]
-    [ProducesResponseType(typeof(NamespaceResponse), StatusCodes.Status201Created)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
-    public async Task<ActionResult<NamespaceResponse>> Create(
-        [FromBody] CreateNamespaceRequest request,
-        CancellationToken cancellationToken = default)
-    {
-        _logger.LogInformation("Creating namespace with name {Name}", LogRedactor.SanitiseForLog(request.Name));
-
-        // Auth types whose credential material is stored (encrypted) in ConnectionString:
-        // Azure connection strings, AWS access key pairs, GCP service account JSON keys.
-        var storesCredential = request.AuthType is ConnectionAuthType.ConnectionString
-            or ConnectionAuthType.AwsAccessKey
-            or ConnectionAuthType.GcpServiceAccount;
-
-        if (request.AuthType == ConnectionAuthType.AwsAccessKey && request.Provider != CloudProviderType.Aws)
-        {
-            return ToActionResult<NamespaceResponse>(Error.Validation(
-                ErrorCodes.Namespace.ConnectionStringInvalid,
-                "AuthType 'AwsAccessKey' is only valid when Provider is Aws."));
-        }
-
-        if (request.AuthType == ConnectionAuthType.GcpServiceAccount && request.Provider != CloudProviderType.Gcp)
-        {
-            return ToActionResult<NamespaceResponse>(Error.Validation(
-                ErrorCodes.Namespace.ConnectionStringInvalid,
-                "AuthType 'GcpServiceAccount' is only valid when Provider is Gcp."));
-        }
-
-        // Reject namespaces for providers that are not registered on this server, so the
-        // API cannot mint namespace records nothing can serve. Azure is always registered.
-        if (request.Provider is CloudProviderType.Aws or CloudProviderType.Gcp
-            && !_messagingProviders.Any(p => p.ProviderType == request.Provider))
-        {
-            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
-            {
-                Status = StatusCodes.Status503ServiceUnavailable,
-                Title = "Provider not enabled",
-                Detail = $"The '{request.Provider}' cloud provider is not enabled on this server. " +
-                         $"Set 'CloudProviders:{request.Provider}:Enabled' to 'true' in appsettings and restart.",
-                Instance = HttpContext.Request.Path
-            });
-        }
-
-        // Owner-scoped duplicate checks: only look within the same tenant's pool. Deliberately
-        // not narrowed by AllowedNamespaceIds — this is a conflict check against the full owner
-        // pool, not a response payload, so a restricted key still gets a clean Conflict instead
-        // of creating a namespace whose name collides with one it can't see.
-        var ownerNamespaces = await _namespaceRepository.GetByOwnerAsync(OwnerId, allowedNamespaceIds: null, cancellationToken);
-        if (ownerNamespaces.IsSuccess)
-        {
-            // Check for existing namespace with same name (within this owner's pool)
-            var nameConflict = ownerNamespaces.Value.FirstOrDefault(n =>
-                string.Equals(n.Name, request.Name.Trim().ToLowerInvariant(), StringComparison.OrdinalIgnoreCase));
-            if (nameConflict is not null)
-            {
-                var error = Error.Conflict(
-                    ErrorCodes.Namespace.AlreadyExists,
-                    $"A namespace with name '{request.Name}' already exists.");
-                return ToActionResult<NamespaceResponse>(error);
-            }
-
-            // Hash-based duplicate connection string check — O(1) hash compare, no decryption needed.
-            if (storesCredential && !string.IsNullOrEmpty(request.ConnectionString))
-            {
-                var incomingHash = Namespace.ComputeConnectionStringHash(request.ConnectionString);
-                var connStringConflict = ownerNamespaces.Value.FirstOrDefault(n =>
-                    n.ConnectionStringHash is not null &&
-                    string.Equals(n.ConnectionStringHash, incomingHash, StringComparison.Ordinal));
-
-                if (connStringConflict is not null)
-                {
-                    var error = Error.Conflict(
-                        ErrorCodes.Namespace.AlreadyExists,
-                        $"A namespace with this connection string already exists (Display Name: '{connStringConflict.DisplayName ?? connStringConflict.Name}'). Please use a different connection string.");
-                    return ToActionResult<NamespaceResponse>(error);
-                }
-            }
-        }
-
-        // Create the namespace entity based on auth type
-        Result<Namespace> createResult;
-
-        if (storesCredential)
-        {
-            if (string.IsNullOrEmpty(request.ConnectionString))
-            {
-                return BadRequest("Connection string is required for connection string authentication.");
-            }
-
-            // Validate the plaintext credential format BEFORE encryption, branched by provider:
-            // Azure keeps the Service Bus connection string check; AWS and GCP validate their
-            // own credential formats with the same rigor.
-            var validationResult = request.Provider switch
-            {
-                CloudProviderType.Aws => CloudCredentialValidator.ValidateAwsAccessKeyPair(request.ConnectionString),
-                CloudProviderType.Gcp => CloudCredentialValidator.ValidateGcpServiceAccountJson(request.ConnectionString),
-                _ => _clientFactory.ValidateConnectionString(request.ConnectionString),
-            };
-            if (validationResult.IsFailure)
-            {
-                return ToActionResult<NamespaceResponse>(validationResult.Error);
-            }
-
-            // Compute hash of plaintextconnection string BEFORE encryption for deduplication
-            var connectionStringHash = Namespace.ComputeConnectionStringHash(request.ConnectionString);
-
-            // Protect the connection string before storing
-            var protectedConnectionStringResult = _connectionStringProtector.Protect(request.ConnectionString);
-            if (protectedConnectionStringResult.IsFailure)
-            {
-                return ToActionResult<NamespaceResponse>(protectedConnectionStringResult.Error);
-            }
-
-            createResult = Namespace.Create(
-                request.Name,
-                protectedConnectionStringResult.Value,
-                request.DisplayName,
-                request.Description,
-                request.Environment,
-                request.Provider,
-                ownerId: OwnerId,
-                connectionStringHash: connectionStringHash,
-                awsRegion: request.AwsRegion,
-                gcpProjectId: request.GcpProjectId);
-        }
-        else
-        {
-            createResult = Namespace.CreateWithManagedIdentity(
-                request.Name,
-                request.AuthType,
-                request.DisplayName,
-                request.Description,
-                request.Environment,
-                request.Provider,
-                ownerId: OwnerId,
-                awsRegion: request.AwsRegion,
-                gcpProjectId: request.GcpProjectId);
-        }
-
-        if (createResult.IsFailure)
-        {
-            return ToActionResult<NamespaceResponse>(createResult.Error);
-        }
-
-        var ns = createResult.Value;
-
-        // Save to repository
-        var saveResult = await _namespaceRepository.AddAsync(ns, cancellationToken);
-        if (saveResult.IsFailure)
-        {
-            return ToActionResult<NamespaceResponse>(saveResult.Error);
-        }
-
-        var response = MapToResponse(ns);
-
-        _logger.LogInformation("Namespace {NamespaceId} created successfully", ns.Id);
-
-        _auditLogger.LogCriticalAction(
-            HttpContext,
-            OwnerId,
-            action: "Namespace.Create",
-            outcome: "Succeeded",
-            namespaceId: ns.Id,
-            environment: ns.Environment,
-            resourceName: ns.Name);
-
-        // Publish after commit — only fires when AddAsync has durably succeeded.
-        if (_eventBus is not null)
-        {
-            var payload = new NamespaceCreatedPayload
-            {
-                NamespaceId = ns.Id,
-                NamespaceName = ns.Name,
-                DisplayName = ns.DisplayName,
-                CloudProvider = ns.Provider.ToString().ToLowerInvariant(),
-                AuthType = ns.AuthType.ToString(),
-                OwnerId = ns.OwnerId,
-            };
-
-            var evt = new PlatformEvent
-            {
-                Source = "ServiceHub.Api.Controllers.V1.NamespacesController",
-                Category = EventCategories.Namespace,
-                EventType = EventTypes.NamespaceCreated,
-                Severity = EventSeverity.Info,
-                CloudProvider = ns.Provider.ToString().ToLowerInvariant(),
-                NamespaceId = ns.Id,
-                NamespaceName = ns.Name,
-                CorrelationId = CorrelationId,
-                Actor = OwnerId,
-                TargetScope = ns.Name,
-                Payload = payload,
-            };
-
-            await _eventBus.PublishAsync(evt, cancellationToken);
-
-            _logger.LogDebug(
-                "Published Platform Event {EventType} for NamespaceId {NamespaceId} CorrelationId {CorrelationId}",
-                evt.EventType, ns.Id, evt.CorrelationId);
-        }
-
-        return CreatedAtAction(
-            nameof(GetById),
-            new { id = ns.Id },
-            response);
-    }
-
-    /// <summary>
-    /// Gets all namespace configurations.
-    /// </summary>
-    /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>A list of namespace responses.</returns>
-    /// <response code="200">Namespaces retrieved successfully.</response>
+    /// <summary>Lists the namespaces this caller may see — and only those.</summary>
     [HttpGet]
-    [RequireScope(ApiKeyScopes.NamespacesRead)]
     [ProducesResponseType(typeof(IReadOnlyList<NamespaceResponse>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<IReadOnlyList<NamespaceResponse>>> GetAll(
-        CancellationToken cancellationToken = default)
+    public async Task<IActionResult> List(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Getting all namespaces");
-
-        // TENANT ISOLATION: Only return namespaces owned by the authenticated caller, further
-        // narrowed by the caller's namespace allow-list when its credential carries one.
-        var result = await _namespaceRepository.GetByOwnerAsync(OwnerId, AllowedNamespaceIds, cancellationToken);
-        if (result.IsFailure)
-        {
-            return ToActionResult<IReadOnlyList<NamespaceResponse>>(result.Error);
-        }
-
-        var responses = result.Value
-            .Select(MapToResponse)
-            .ToList();
-
-        return Ok(responses);
+        var result = await _namespaces.GetByOwnerAsync(OwnerId, AllowedNamespaceIds, cancellationToken);
+        return result.IsFailure
+            ? Problem(result.Error)
+            : Ok(result.Value.OrderBy(n => n.CreatedAt).Select(ToResponse).ToList());
     }
 
-    /// <summary>
-    /// Gets a namespace configuration by ID.
-    /// </summary>
-    /// <param name="id">The namespace ID.</param>
-    /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>The namespace response.</returns>
-    /// <response code="200">Namespace retrieved successfully.</response>
-    /// <response code="404">Namespace not found.</response>
-    [RequireScope(ApiKeyScopes.NamespacesRead)]
+    /// <summary>Gets one namespace.</summary>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(NamespaceResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<NamespaceResponse>> GetById(
-        [FromRoute] Guid id,
-        CancellationToken cancellationToken = default)
+    public async Task<IActionResult> Get(Guid id, CancellationToken cancellationToken)
     {
-        // When authentication is enabled, enforce read scope in-method so
-        // static-analysis tools can trace the authorization check before the data access.
-        // SPA token auth gets full access — scope restrictions only apply to API keys.
-        if (HttpContext.Items.ContainsKey("Authenticated") &&
-            HttpContext.Items["AuthMethod"] is not "SpaToken" &&
-            (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
-             keyConfigObj is not ApiKeyConfiguration keyConfig ||
-             !keyConfig.HasScope(ApiKeyScopes.NamespacesRead)))
-        {
-            return Forbid();
-        }
-
-        _logger.LogInformation("Getting namespace {NamespaceId}", id);
-
-        // TENANT ISOLATION: Returns 404 (not 403) when the namespace exists but belongs
-        // to a different owner, to avoid leaking that the ID is in use.
-        var result = await GetOwnedNamespaceAsync(_namespaceRepository, id, cancellationToken);
-        if (result.IsFailure)
-        {
-            return ToActionResult<NamespaceResponse>(result.Error);
-        }
-
-        var response = MapToResponse(result.Value);
-        return Ok(response);
+        var result = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        return result.IsFailure ? Problem(result.Error) : Ok(ToResponse(result.Value));
     }
 
-    /// <summary>
-    /// Tests the connection to a namespace.
-    /// </summary>
-    /// <param name="id">The namespace ID.</param>
-    /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>The test result.</returns>
-    /// <response code="200">Connection test completed.</response>
-    /// <response code="404">Namespace not found.</response>
-    [RequireScope(ApiKeyScopes.NamespacesRead)]
-    [HttpGet("{id:guid}/test")]
+    /// <summary>Connects a namespace. Requires the <c>create-namespace</c> intent header.</summary>
+    [HttpPost]
+    [ProducesResponseType(typeof(NamespaceResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Create([FromBody] CreateNamespaceRequest request, CancellationToken cancellationToken)
+    {
+        if (!IntentHeaders.Declares(Request, IntentHeaders.CreateNamespace))
+        {
+            return Problem(
+                StatusCodes.Status428PreconditionRequired,
+                ErrorCodes.IntentRequired,
+                IntentHeaders.MissingDetail("connect this namespace", IntentHeaders.CreateNamespace));
+        }
+
+        if (await DeniedUnlessAsync(GovernanceRole.Admin, null, null, "connect a cloud", cancellationToken) is { } denied) return denied;
+
+        _logger.LogInformation("Connecting namespace {Name}", LogRedactor.SanitiseForLog(request.Name));
+
+        // Never store a namespace nothing in this build can serve.
+        if (!_router.IsRegistered(request.Provider))
+        {
+            return Problem(
+                StatusCodes.Status503ServiceUnavailable,
+                ErrorCodes.CapabilityUnavailable,
+                $"This build of ServiceHub has no adapter for '{request.Provider}', so a namespace on it cannot be connected.");
+        }
+
+        var credentialCheck = NamespaceCredentials.Validate(request.Provider, request.AuthType, request.ConnectionString);
+        if (credentialCheck.IsFailure)
+        {
+            return Problem(credentialCheck.Error);
+        }
+
+        // Duplicates are judged across the owner's whole pool, not only what this caller may see:
+        // a restricted caller still gets a clean conflict rather than a name that collides with a
+        // namespace it cannot see.
+        var pool = await _namespaces.GetByOwnerAsync(OwnerId, allowedNamespaceIds: null, cancellationToken);
+        if (pool.IsFailure)
+        {
+            return Problem(pool.Error);
+        }
+
+        var name = request.Name.Trim().ToLowerInvariant();
+        if (pool.Value.Any(n => string.Equals(n.Name, name, StringComparison.Ordinal)))
+        {
+            return Problem(StatusCodes.Status409Conflict, ErrorCodes.Namespace.AlreadyExists,
+                $"A namespace named '{request.Name}' is already connected.");
+        }
+
+        // The hash is taken from the plaintext so the same credential is recognised without ever
+        // decrypting a stored one. The credential itself is encrypted by the database layer on save.
+        var hash = Namespace.ComputeConnectionStringHash(request.ConnectionString);
+        if (hash is not null && pool.Value.FirstOrDefault(n => n.ConnectionStringHash == hash) is { } duplicate)
+        {
+            return Problem(StatusCodes.Status409Conflict, ErrorCodes.Namespace.AlreadyExists,
+                $"This credential is already connected as '{duplicate.DisplayName ?? duplicate.Name}'.");
+        }
+
+        var created = string.IsNullOrEmpty(request.ConnectionString)
+            ? Namespace.CreateWithManagedIdentity(
+                request.Name, request.AuthType, request.DisplayName, request.Description,
+                request.Environment, request.Provider, OwnerId, request.AwsRegion, request.GcpProjectId)
+            : Namespace.Create(
+                request.Name, request.ConnectionString, request.DisplayName, request.Description,
+                request.Environment, request.Provider, OwnerId, hash, request.AwsRegion, request.GcpProjectId);
+        if (created.IsFailure)
+        {
+            return Problem(created.Error);
+        }
+
+        var saved = await _namespaces.AddAsync(created.Value, cancellationToken);
+        if (saved.IsFailure)
+        {
+            await RecordAsync(AuditActions.NamespaceConnect, AuditActions.Failure, created.Value, saved.Error.Message, cancellationToken);
+            return Problem(saved.Error);
+        }
+
+        await RecordAsync(AuditActions.NamespaceConnect, AuditActions.Success, created.Value, null, cancellationToken);
+
+        _logger.LogInformation("Namespace {NamespaceId} connected", created.Value.Id);
+        return CreatedAtAction(nameof(Get), new { id = created.Value.Id }, ToResponse(created.Value));
+    }
+
+    /// <summary>Probes the namespace live and records the outcome. A failed probe is a 200 that says so.</summary>
     [HttpPost("{id:guid}/test-connection")]
     [ProducesResponseType(typeof(ConnectionTestResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<ConnectionTestResponse>> TestConnection(
-        [FromRoute] Guid id,
-        CancellationToken cancellationToken = default)
+    public async Task<IActionResult> TestConnection(Guid id, CancellationToken cancellationToken)
     {
-        // When authentication is enabled, enforce read scope in-method so
-        // static-analysis tools can trace the authorization check before the data access.
-        // SPA token auth gets full access — scope restrictions only apply to API keys.
-        if (HttpContext.Items.ContainsKey("Authenticated") &&
-            HttpContext.Items["AuthMethod"] is not "SpaToken" &&
-            (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
-             keyConfigObj is not ApiKeyConfiguration keyConfig ||
-             !keyConfig.HasScope(ApiKeyScopes.NamespacesRead)))
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
         {
-            return Forbid();
+            return Problem(found.Error);
         }
 
-        _logger.LogInformation("Testing connection for namespace {NamespaceId}", id);
-
-        // TENANT ISOLATION: Returns 404 when the namespace exists but belongs to a different owner.
-        var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, id, cancellationToken);
-        if (namespaceResult.IsFailure)
+        var ns = found.Value;
+        if (!_router.IsRegistered(ns.Provider))
         {
-            return ToActionResult<ConnectionTestResponse>(namespaceResult.Error);
+            return NoAdapter(ns);
         }
 
-        var ns = namespaceResult.Value;
+        var probe = await _router.Resolve(ns.Provider).ValidateConnectionAsync(ns, cancellationToken);
+        ns.RecordConnectionTest(probe.IsSuccess);
 
-        // AWS/GCP have their own ICloudMessagingProvider.ValidateConnectionAsync implementation
-        // that resolves credentials (including the connection-string-less IAM-role/ADC auth
-        // types) internally and issues a cheap live probe (ListQueues/ListSubscriptions).
-        // Route to it instead of the Azure-only, connection-string-only path below.
-        if (ns.Provider is CloudProviderType.Aws or CloudProviderType.Gcp)
-        {
-            var provider = _messagingProviders.FirstOrDefault(p => p.ProviderType == ns.Provider);
-            if (provider is null)
-            {
-                return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
-                {
-                    Status = StatusCodes.Status503ServiceUnavailable,
-                    Title = "Provider not enabled",
-                    Detail = $"The '{ns.Provider}' cloud provider is not enabled on this server. " +
-                             $"Set 'CloudProviders:{ns.Provider}:Enabled' to 'true' in appsettings and restart.",
-                    Instance = HttpContext.Request.Path
-                });
-            }
-
-            var validateResult = await provider.ValidateConnectionAsync(ns, cancellationToken);
-            ns.RecordConnectionTest(validateResult.IsSuccess);
-            await _namespaceRepository.UpdateAsync(ns, cancellationToken);
-
-            if (validateResult.IsFailure)
-            {
-                _logger.LogWarning(
-                    "Connection test failed for namespace {NamespaceId}: {Error}",
-                    id,
-                    validateResult.Error.Message);
-
-                return Ok(new ConnectionTestResponse(
-                    IsConnected: false,
-                    Message: $"Connection test failed: {validateResult.Error.Message}",
-                    TestedAt: DateTimeOffset.UtcNow));
-            }
-
-            _logger.LogInformation("Connection test successful for namespace {NamespaceId}", id);
-
-            return Ok(new ConnectionTestResponse(
-                IsConnected: true,
-                Message: "Connection successful",
-                TestedAt: DateTimeOffset.UtcNow));
-        }
-
-        if (ns.ConnectionString is null)
-        {
-            return Ok(new ConnectionTestResponse(
-                IsConnected: false,
-                Message: "Namespace does not have a connection string configured.",
-                TestedAt: DateTimeOffset.UtcNow));
-        }
-
-        var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
-        if (unprotectResult.IsFailure)
-        {
-            return Ok(new ConnectionTestResponse(
-                IsConnected: false,
-                Message: $"Failed to decrypt connection string: {unprotectResult.Error.Message}",
-                TestedAt: DateTimeOffset.UtcNow));
-        }
-
-        // Try to create a client and get basic info
         try
         {
-            var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
-            var queuesResult = await wrapper.GetQueuesAsync(cancellationToken);
-
-            if (queuesResult.IsFailure)
+            var recorded = await _namespaces.UpdateAsync(ns, cancellationToken);
+            if (recorded.IsFailure)
             {
-                _logger.LogWarning(
-                    "Connection test failed for namespace {NamespaceId}: {Error}",
-                    id,
-                    queuesResult.Error.Message);
-
-                ns.RecordConnectionTest(false);
-                await _namespaceRepository.UpdateAsync(ns, cancellationToken);
-
-                return Ok(new ConnectionTestResponse(
-                    IsConnected: false,
-                    Message: $"Connection test failed: {queuesResult.Error.Message}",
-                    TestedAt: DateTimeOffset.UtcNow));
+                _logger.LogWarning("Could not record the connection test for {NamespaceId}: {Code}", id, recorded.Error.Code);
             }
-
-            // Update the namespace with successful test
-            ns.RecordConnectionTest(true);
-            await _namespaceRepository.UpdateAsync(ns, cancellationToken);
-
-            _logger.LogInformation("Connection test successful for namespace {NamespaceId}", id);
-
-            return Ok(new ConnectionTestResponse(
-                IsConnected: true,
-                Message: "Connection successful",
-                TestedAt: DateTimeOffset.UtcNow));
         }
-        catch (Exception ex)
+        catch (InvalidOperationException ex)
         {
-            _logger.LogWarning(
-                ex,
-                "Connection test exception for {Id}",
-                id);
-
-            // Update the namespace with failed test
-            ns.RecordConnectionTest(false);
-            await _namespaceRepository.UpdateAsync(ns, cancellationToken);
-
-            return Ok(new ConnectionTestResponse(
-                IsConnected: false,
-                Message: "An error occurred while testing the connection.",
-                TestedAt: DateTimeOffset.UtcNow));
+            // The database layer refuses to save a namespace whose stored credential it cannot re-protect — the encryption
+            // key it was saved under is no longer configured. Nothing is written; the probe's answer is still the answer.
+            _logger.LogWarning(ex, "Could not record the connection test for {NamespaceId}: its stored credential cannot be re-protected", id);
         }
+
+        var message = probe.IsSuccess
+            ? "Connection successful."
+            : $"Connection test failed: {probe.Error.Message}";
+        return Ok(new ConnectionTestResponse(probe.IsSuccess, message, DateTimeOffset.UtcNow));
     }
 
-    /// <summary>
-    /// Deletes a namespace configuration.
-    /// </summary>
-    /// <param name="id">The namespace ID.</param>
-    /// <param name="cancellationToken">The cancellation token.</param>
-    /// <returns>No content on success.</returns>
-    /// <response code="204">Namespace deleted successfully.</response>
-    /// <response code="404">Namespace not found.</response>
+    /// <summary>Removes a namespace. Requires the <c>delete-namespace</c> intent header.</summary>
     [HttpDelete("{id:guid}")]
-    [RequireScope(ApiKeyScopes.NamespacesWrite)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Delete(
-        [FromRoute] Guid id,
-        CancellationToken cancellationToken = default)
+    public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
-        if (!IntentHeaders.HasExplicitIntent(HttpContext, IntentHeaders.IntentDeleteNamespace))
+        if (!IntentHeaders.Declares(Request, IntentHeaders.DeleteNamespace))
         {
-            _auditLogger.LogCriticalAction(
-                HttpContext,
-                OwnerId,
-                action: IntentHeaders.IntentDeleteNamespace,
-                outcome: "Denied",
-                namespaceId: id,
-                detail: "Missing explicit intent headers");
-
             return Problem(
-                statusCode: StatusCodes.Status428PreconditionRequired,
-                title: "Explicit Intent Required",
-                detail: IntentHeaders.BuildIntentRequiredDetail("namespace deletion"));
+                StatusCodes.Status428PreconditionRequired,
+                ErrorCodes.IntentRequired,
+                IntentHeaders.MissingDetail("remove this namespace", IntentHeaders.DeleteNamespace));
         }
 
-        // When authentication is enabled, enforce write scope in-method in addition to
-        // the [RequireScope] filter, so the check is visible to static-analysis tools.
-        // SPA token auth gets full access — scope restrictions only apply to API keys.
-        if (HttpContext.Items.ContainsKey("Authenticated") &&
-            HttpContext.Items["AuthMethod"] is not "SpaToken" &&
-            (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
-             keyConfigObj is not ApiKeyConfiguration keyConfig ||
-             !keyConfig.HasScope(ApiKeyScopes.NamespacesWrite)))
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
         {
-            return Forbid();
+            return Problem(found.Error);
         }
 
-        // Verify the namespace exists and is owned (not merely shared) by the caller first —
-        // a shared collaborator must not be able to delete a namespace out from under its
-        // owner. Subsequent operations use the repository-verified entity ID, not the raw
-        // route value.
-        var getResult = await GetExclusivelyOwnedNamespaceAsync(_namespaceRepository, id, cancellationToken);
-        if (getResult.IsFailure)
-            return ToActionResult(Result.Failure(getResult.Error));
+        if (await DeniedUnlessAsync(GovernanceRole.Admin, id, null, "remove this namespace", cancellationToken) is { } denied) return denied;
 
-        var ns = getResult.Value;
-
-        _logger.LogInformation("Deleting namespace {NamespaceId}", ns.Id);
-        _auditLogger.LogCriticalAction(
-            HttpContext,
-            OwnerId,
-            action: IntentHeaders.IntentDeleteNamespace,
-            outcome: "Attempt",
-            namespaceId: ns.Id,
-            environment: ns.Environment,
-            resourceName: ns.Name,
-            detail: "Namespace deletion requested");
-
-        if (_clientCache.Contains(ns.Id))
-            await _clientCache.RemoveAsync(ns.Id, cancellationToken);
-
-        // AWS/GCP client factories are only registered when their provider flag is enabled,
-        // so they're resolved optionally here rather than as a hard constructor dependency.
-        HttpContext.RequestServices.GetService<IAwsClientFactory>()?.RemoveClient(ns.Id);
-        var gcpClientFactory = HttpContext.RequestServices.GetService<IGcpClientFactory>();
-        if (gcpClientFactory is not null)
-            await gcpClientFactory.RemoveClientAsync(ns.Id, cancellationToken);
-
-        var result = await _namespaceRepository.DeleteAsync(ns.Id, cancellationToken);
-        if (result.IsFailure)
+        var deleted = await _namespaces.DeleteAsync(id, cancellationToken);
+        if (deleted.IsFailure)
         {
-            _auditLogger.LogCriticalAction(
-                HttpContext,
-                OwnerId,
-                action: IntentHeaders.IntentDeleteNamespace,
-                outcome: "Failed",
-                namespaceId: ns.Id,
-                environment: ns.Environment,
-                resourceName: ns.Name,
-                detail: result.Error.Message);
-            return ToActionResult(result);
+            await RecordAsync(AuditActions.NamespaceRemove, AuditActions.Failure, found.Value, deleted.Error.Message, cancellationToken);
+            return Problem(deleted.Error);
         }
 
-        _auditLogger.LogCriticalAction(
-            HttpContext,
-            OwnerId,
-            action: IntentHeaders.IntentDeleteNamespace,
-            outcome: "Succeeded",
-            namespaceId: ns.Id,
-            environment: ns.Environment,
-            resourceName: ns.Name,
-            detail: "Namespace deleted");
-
-        _logger.LogInformation("Namespace {NamespaceId} deleted successfully", ns.Id);
-
-        // Publish after commit — only fires when DeleteAsync has durably succeeded.
-        if (_eventBus is not null)
-        {
-            var payload = new NamespaceDeletedPayload
-            {
-                NamespaceId = ns.Id,
-                NamespaceName = ns.Name,
-                CloudProvider = ns.Provider.ToString().ToLowerInvariant(),
-                OwnerId = ns.OwnerId,
-            };
-
-            var evt = new PlatformEvent
-            {
-                Source = "ServiceHub.Api.Controllers.V1.NamespacesController",
-                Category = EventCategories.Namespace,
-                EventType = EventTypes.NamespaceDeleted,
-                Severity = EventSeverity.Info,
-                CloudProvider = ns.Provider.ToString().ToLowerInvariant(),
-                NamespaceId = ns.Id,
-                NamespaceName = ns.Name,
-                CorrelationId = CorrelationId,
-                Actor = OwnerId,
-                TargetScope = ns.Name,
-                Payload = payload,
-            };
-
-            await _eventBus.PublishAsync(evt, cancellationToken);
-
-            _logger.LogDebug(
-                "Published Platform Event {EventType} for NamespaceId {NamespaceId} CorrelationId {CorrelationId}",
-                evt.EventType, ns.Id, evt.CorrelationId);
-        }
-
+        await RecordAsync(AuditActions.NamespaceRemove, AuditActions.Success, found.Value, null, cancellationToken);
         return NoContent();
     }
 
     /// <summary>
-    /// Grants another owner identity live operational access to this namespace — browse
-    /// entities, peek/replay/purge messages, Live Tail. Only the namespace's true owner may
-    /// share it; a shared collaborator cannot re-share.
+    /// Where this cloud's DLQ observer stands (unit 4.2): whether it is needed, whether a person turned it on, and whether its own
+    /// log has shown a test message recently. "Live" is never assumed.
     /// </summary>
-    /// <remarks>
-    /// <b>Preview:</b> shared access covers live operations only. DLQ Intelligence history,
-    /// Bulk Operation job history, and the audit trail remain scoped to whichever owner
-    /// performed each action, and are not yet resolved through namespace sharing.
-    /// </remarks>
-    /// <param name="id">The namespace ID.</param>
-    /// <param name="request">The owner ID to grant access to.</param>
-    /// <param name="cancellationToken">The cancellation token.</param>
-    /// <response code="200">Access granted; returns the updated namespace.</response>
-    /// <response code="400">Invalid owner ID (e.g. sharing with the namespace's own owner, or the shared-owner cap was reached).</response>
-    /// <response code="404">Namespace not found or not owned by the caller.</response>
-    /// <response code="428">Missing explicit-intent headers.</response>
-    [HttpPost("{id:guid}/share")]
-    [RequireScope(ApiKeyScopes.NamespacesWrite)]
-    [ProducesResponseType(typeof(NamespaceResponse), StatusCodes.Status200OK)]
+    [HttpGet("{id:guid}/dlq-observer")]
+    [ProducesResponseType(typeof(DlqObserverResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetDlqObserver(Guid id, [FromServices] IDlqObserverAttestationService attestations, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(attestations);
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        var ns = found.Value;
+        var needed = _router.IsRegistered(ns.Provider) && !_router.Resolve(ns.Provider).Capabilities.CanProveDlqAbsence;
+        return Ok(ToObserverResponse(needed, await attestations.GetAsync(OwnerId, id, cancellationToken)));
+    }
+
+    /// <summary>
+    /// Records where this cloud's DLQ observer writes and which dead-letter queue it watches. API-only in 4.1.0: there is no setup screen
+    /// and nothing sends the liveness test message any more, so an observer recorded here is never confirmed live and does not make
+    /// any replay read "verified" — AWS and GCP stay "verification required". Requires the <c>configure-dlq-observer</c> intent header
+    /// and the Admin role for this namespace. A cloud that can confirm a fix on its own (Azure) refuses: there is nothing to set up.
+    /// </summary>
+    [HttpPut("{id:guid}/dlq-observer")]
+    [ProducesResponseType(typeof(DlqObserverResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
-    public async Task<ActionResult<NamespaceResponse>> Share(
-        [FromRoute] Guid id,
-        [FromBody] ShareNamespaceRequest request,
-        CancellationToken cancellationToken = default)
+    public async Task<IActionResult> ConfigureDlqObserver(
+        Guid id, [FromBody] ConfigureDlqObserverRequest request, [FromServices] IDlqObserverAttestationService attestations, CancellationToken cancellationToken)
     {
-        if (!IntentHeaders.HasExplicitIntent(HttpContext, IntentHeaders.IntentShareNamespace))
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(attestations);
+        if (!IntentHeaders.Declares(Request, IntentHeaders.ConfigureDlqObserver))
         {
-            _auditLogger.LogCriticalAction(
-                HttpContext, OwnerId, action: IntentHeaders.IntentShareNamespace, outcome: "Denied",
-                namespaceId: id, detail: "Missing explicit intent headers");
-
             return Problem(
-                statusCode: StatusCodes.Status428PreconditionRequired,
-                title: "Explicit Intent Required",
-                detail: IntentHeaders.BuildIntentRequiredDetail("sharing a namespace"));
+                StatusCodes.Status428PreconditionRequired,
+                ErrorCodes.IntentRequired,
+                IntentHeaders.MissingDetail("change this cloud's DLQ observer", IntentHeaders.ConfigureDlqObserver));
         }
 
-        var getResult = await GetExclusivelyOwnedNamespaceAsync(_namespaceRepository, id, cancellationToken);
-        if (getResult.IsFailure)
-            return ToActionResult<NamespaceResponse>(getResult.Error);
-
-        var ns = getResult.Value;
-
-        var shareResult = ns.ShareWith(request.OwnerId);
-        if (shareResult.IsFailure)
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
         {
-            _auditLogger.LogCriticalAction(
-                HttpContext, OwnerId, action: IntentHeaders.IntentShareNamespace, outcome: "Failed",
-                namespaceId: ns.Id, environment: ns.Environment, resourceName: ns.Name,
-                detail: shareResult.Error.Message);
-            return ToActionResult<NamespaceResponse>(shareResult.Error);
+            return Problem(found.Error);
         }
 
-        var updateResult = await _namespaceRepository.UpdateAsync(ns, cancellationToken);
-        if (updateResult.IsFailure)
+        var ns = found.Value;
+        if (await DeniedUnlessAsync(GovernanceRole.Admin, id, null, "change this cloud's DLQ observer", cancellationToken) is { } denied) return denied;
+
+        if (!_router.IsRegistered(ns.Provider))
         {
-            _auditLogger.LogCriticalAction(
-                HttpContext, OwnerId, action: IntentHeaders.IntentShareNamespace, outcome: "Failed",
-                namespaceId: ns.Id, environment: ns.Environment, resourceName: ns.Name,
-                detail: updateResult.Error.Message);
-            return ToActionResult<NamespaceResponse>(updateResult.Error);
+            return NoAdapter(ns);
         }
 
-        _auditLogger.LogCriticalAction(
-            HttpContext, OwnerId, action: IntentHeaders.IntentShareNamespace, outcome: "Succeeded",
-            namespaceId: ns.Id, environment: ns.Environment, resourceName: ns.Name,
-            detail: $"Shared with owner {request.OwnerId}");
+        if (_router.Resolve(ns.Provider).Capabilities.CanProveDlqAbsence)
+        {
+            return Problem(
+                StatusCodes.Status409Conflict,
+                ErrorCodes.CapabilityUnavailable,
+                $"{ns.Provider} can confirm a replay stayed fixed on its own, so there is no DLQ observer to set up for it.");
+        }
 
-        _logger.LogInformation("Namespace {NamespaceId} shared with a new owner", ns.Id);
+        var staleness = request.StalenessBoundMinutes ?? 30;
+        if (staleness is < 3 or > 1440)
+        {
+            return Problem(
+                StatusCodes.Status400BadRequest,
+                ErrorCodes.ValidationFailed,
+                "The longest an observer may go without a confirmed test message must be between 3 minutes and 24 hours.");
+        }
 
-        return Ok(MapToResponse(ns));
+        var observerReference = request.ObserverReference?.Trim();
+        var entityName = request.DlqEntityName?.Trim();
+        if (request.Enabled && (string.IsNullOrEmpty(observerReference) || string.IsNullOrEmpty(entityName)))
+        {
+            return Problem(
+                StatusCodes.Status400BadRequest,
+                ErrorCodes.ValidationFailed,
+                "To turn the observer on, say where it writes (its table or collection) and which dead-letter queue the test message goes to.");
+        }
+
+        var saved = await attestations.ConfigureAsync(OwnerId, id, request.Enabled, observerReference, entityName, staleness, cancellationToken);
+        if (saved.IsFailure)
+        {
+            await RecordAsync(AuditActions.DlqObserverConfigure, AuditActions.Failure, ns, saved.Error.Message, cancellationToken);
+            return Problem(saved.Error);
+        }
+
+        await RecordAsync(AuditActions.DlqObserverConfigure, AuditActions.Success, ns, null, cancellationToken);
+        return Ok(ToObserverResponse(true, saved.Value));
+    }
+
+    private static DlqObserverResponse ToObserverResponse(bool needed, DlqObserverAttestation? a)
+    {
+        if (!needed)
+        {
+            return new DlqObserverResponse(false, false, false, null, null, 30, null, null,
+                "This cloud can confirm a replay stayed fixed on its own — no observer needed.");
+        }
+
+        if (a is not { Enabled: true })
+        {
+            return new DlqObserverResponse(true, false, false, a?.ObserverReference, a?.DlqEntityName, a?.StalenessBoundMinutes ?? 30,
+                a?.LastCanarySentAt, a?.LastConfirmedAt,
+                "No observer is set up, so a replay here can be sent back but not confirmed as fixed.");
+        }
+
+        var live = a.IsLiveAt(DateTimeOffset.UtcNow);
+        var status = live
+            ? "The observer is working: its log showed a test message recently."
+            : a.LastConfirmedAt is null
+                ? "Turned on, but the observer's log has not shown a test message yet — not confirming anything."
+                : "Turned on, but the observer's log has not shown a test message recently — not confirming anything until it does.";
+        return new DlqObserverResponse(true, true, live, a.ObserverReference, a.DlqEntityName, a.StalenessBoundMinutes, a.LastCanarySentAt, a.LastConfirmedAt, status);
     }
 
     /// <summary>
-    /// Revokes a previously-granted owner's shared access to this namespace. Only the
-    /// namespace's true owner may revoke access. Idempotent — revoking access an owner never
-    /// had returns success.
+    /// Looks at the namespace's dead letters now and records what it finds, so each one can be opened, read and
+    /// replayed. This is how AWS and Google Cloud dead letters reach the list: ServiceHub never looks there on a
+    /// timer, because a look is a receive that counts as a delivery attempt — a person asking is the consent.
+    /// Requires the <c>look-at-dead-letters</c> intent header. A cloud that cannot be read is a 200 that says so.
     /// </summary>
-    /// <param name="id">The namespace ID.</param>
-    /// <param name="ownerId">The owner ID to revoke access from.</param>
-    /// <param name="cancellationToken">The cancellation token.</param>
-    /// <response code="204">Access revoked (or the owner never had access).</response>
-    /// <response code="404">Namespace not found or not owned by the caller.</response>
-    /// <response code="428">Missing explicit-intent headers.</response>
-    [HttpDelete("{id:guid}/share/{ownerId}")]
-    [RequireScope(ApiKeyScopes.NamespacesWrite)]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [HttpPost("{id:guid}/dead-letters/look")]
+    [ProducesResponseType(typeof(DeadLetterLookResult), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
-    public async Task<IActionResult> RevokeShare(
-        [FromRoute] Guid id,
-        [FromRoute] string ownerId,
-        CancellationToken cancellationToken = default)
+    public async Task<IActionResult> LookAtDeadLetters(Guid id, [FromServices] IDeadLetterLook look, CancellationToken cancellationToken)
     {
-        if (!IntentHeaders.HasExplicitIntent(HttpContext, IntentHeaders.IntentShareNamespace))
+        ArgumentNullException.ThrowIfNull(look);
+        if (!IntentHeaders.Declares(Request, IntentHeaders.LookAtDeadLetters))
         {
-            _auditLogger.LogCriticalAction(
-                HttpContext, OwnerId, action: IntentHeaders.IntentShareNamespace, outcome: "Denied",
-                namespaceId: id, detail: "Missing explicit intent headers");
-
             return Problem(
-                statusCode: StatusCodes.Status428PreconditionRequired,
-                title: "Explicit Intent Required",
-                detail: IntentHeaders.BuildIntentRequiredDetail("revoking namespace access"));
+                StatusCodes.Status428PreconditionRequired,
+                ErrorCodes.IntentRequired,
+                IntentHeaders.MissingDetail("look at these dead letters now", IntentHeaders.LookAtDeadLetters));
         }
 
-        var getResult = await GetExclusivelyOwnedNamespaceAsync(_namespaceRepository, id, cancellationToken);
-        if (getResult.IsFailure)
-            return ToActionResult(Result.Failure(getResult.Error));
-
-        var ns = getResult.Value;
-        ns.RevokeShare(ownerId);
-
-        var updateResult = await _namespaceRepository.UpdateAsync(ns, cancellationToken);
-        if (updateResult.IsFailure)
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
         {
-            _auditLogger.LogCriticalAction(
-                HttpContext, OwnerId, action: IntentHeaders.IntentShareNamespace, outcome: "Failed",
-                namespaceId: ns.Id, environment: ns.Environment, resourceName: ns.Name,
-                detail: updateResult.Error.Message);
-            return ToActionResult(updateResult);
+            return Problem(found.Error);
         }
 
-        _auditLogger.LogCriticalAction(
-            HttpContext, OwnerId, action: IntentHeaders.IntentShareNamespace, outcome: "Succeeded",
-            namespaceId: ns.Id, environment: ns.Environment, resourceName: ns.Name,
-            detail: $"Revoked access for owner {ownerId}");
+        var ns = found.Value;
+        if (!_router.IsRegistered(ns.Provider))
+        {
+            return NoAdapter(ns);
+        }
 
-        _logger.LogInformation("Namespace {NamespaceId} access revoked for an owner", ns.Id);
+        // A look is a delivery attempt on some clouds, so it is a recovery action, not a read.
+        if (await DeniedUnlessAsync(GovernanceRole.Operator, ns.Id, PillarKind.Recover, "look at these dead letters", cancellationToken) is { } denied) return denied;
 
-        return NoContent();
+        var result = await look.LookNowAsync(ns, cancellationToken);
+        if (result.Outcome == "busy")
+        {
+            return Problem(StatusCodes.Status409Conflict, ErrorCodes.AlreadyRunning, result.Reason ?? "Already looking.");
+        }
+
+        await RecordAsync(
+            AuditActions.DeadLettersLook, result.Outcome == "looked" ? AuditActions.Success : AuditActions.Failure,
+            ns, result.Reason, cancellationToken);
+        return Ok(result);
     }
 
     /// <summary>
-    /// Gets aggregate statistics for a namespace, including both queue and subscription DLQ counts.
+    /// A namespace at a glance. Message totals are null — not zero — when the provider cannot count
+    /// messages (rule R5).
     /// </summary>
-    /// <param name="id">The namespace ID.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Aggregate stats across queues and topic subscriptions.</returns>
     [HttpGet("{id:guid}/stats")]
-    [RequireScope(ApiKeyScopes.MessagesPeek)]
     [ProducesResponseType(typeof(NamespaceStatsResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<NamespaceStatsResponse>> GetStats(
-        Guid id,
-        CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Stats(Guid id, CancellationToken cancellationToken)
     {
-        var nsResult = await GetOwnedNamespaceAsync(_namespaceRepository, id, cancellationToken);
-        if (nsResult.IsFailure)
-            return ToActionResult<NamespaceStatsResponse>(nsResult.Error);
+        var listed = await ListEntitiesAsync(id, cancellationToken);
+        if (listed.Failure is not null)
+        {
+            return listed.Failure;
+        }
 
-        var entry = await ComputeNamespaceStatsAsync(nsResult.Value, cancellationToken);
-        return Ok(entry.Stats);
+        var (ns, capabilities, entities) = listed.Value;
+        var counts = capabilities.SupportsMessageCounts;
+
+        // Messages live in queues and subscriptions; a topic only fans out to them. A queue that another entity names as its
+        // dead-letter target (an SQS DLQ is an ordinary queue) holds dead letters: its messages are already counted as the source's
+        // dead letters, so counting them again as active would show every dead letter twice.
+        var deadLetterTargets = entities
+            .Select(e => e.DeadLetterTargetName)
+            .Where(n => !string.IsNullOrEmpty(n))
+            .ToHashSet(StringComparer.Ordinal);
+        var holders = entities
+            .Where(e => Kind(e) is "queue" or "subscription" && !deadLetterTargets.Contains(e.Name))
+            .ToList();
+
+        return Ok(new NamespaceStatsResponse(
+            ns.Id,
+            EntityKinds
+                .Select(k => new EntityKindCount(k, entities.Count(e => Kind(e) == k)))
+                .Where(c => c.Count > 0)
+                .ToList(),
+            counts ? holders.Sum(e => e.ActiveMessageCount) : null,
+            counts ? holders.Sum(e => e.DeadLetterCount) : null,
+            counts,
+            DateTimeOffset.UtcNow));
     }
 
-    /// <summary>
-    /// Maximum namespace IDs accepted by <see cref="GetStatsBatch"/> in a single call — wide
-    /// enough for any sane fleet, narrow enough that the endpoint can't be turned into an
-    /// unbounded provider-request generator by a crafted request body.
-    /// </summary>
-    private const int MaxStatsBatchSize = 500;
-
-    /// <summary>
-    /// Bounds how many <see cref="ComputeNamespaceStatsAsync"/> calls run concurrently —
-    /// <b>across every concurrent request</b> (every operator's browser tab, every in-flight
-    /// batch call), not per-call. A per-call <c>using var semaphore = new SemaphoreSlim(10)</c>
-    /// (the shape <see cref="ServiceHub.Infrastructure.ServiceBus.ServiceBusHealthCheck"/> and
-    /// <c>DlqMonitorWorker</c> use) bounds one request's own fan-out, but under concurrent
-    /// callers — several operators viewing the fleet dashboard at once — each request's own
-    /// semaphore has no idea about the others', so <c>N</c> concurrent callers still let up to
-    /// <c>N × 10</c> live-provider connection attempts run at once; the resource actually being
-    /// protected (the shared outbound connection/DNS capacity) doesn't care which HTTP request
-    /// an attempt came from. A single static (process-wide) semaphore, shared by every caller of
-    /// this method, is what actually caps total concurrent live-provider work regardless of how
-    /// many operators are asking at once. Measured: 4 simulated operators concurrently batch-
-    /// fetching a 38-namespace fleet, with an unrelated fast DB-only endpoint
-    /// (<c>GET /namespaces</c>, ~2-6ms baseline) polled throughout — with a per-call semaphore
-    /// the probe's worst observed latency was ~0.9s under load; with this static gate it stayed
-    /// at that same few-ms baseline for the whole run. This does not yet share a gate with
-    /// <c>ServiceBusHealthCheck</c>/<c>DlqMonitorWorker</c> — see the final report for that
-    /// remaining cross-endpoint unification as an open item.
-    /// </summary>
-    private static readonly SemaphoreSlim StatsComputationGate = new(MaxConcurrentStatsComputations);
-
-    private const int MaxConcurrentStatsComputations = 10;
-
-    /// <summary>
-    /// Gets aggregate statistics — plus queue and topic names, for entity-picker use cases like
-    /// <c>RulesPage</c>'s scope validation — for many namespaces in one call.
-    /// </summary>
-    /// <remarks>
-    /// Replaces what used to be <c>N</c> browser-initiated <c>GET .../stats</c> (and, on some
-    /// pages, a further <c>N</c> <c>GET .../queues</c> and <c>N</c> <c>GET .../topics</c>) calls
-    /// fired in parallel by <c>useAllNamespacesQueues</c>/<c>useNamespaceStats</c> — at fleet
-    /// scale (30+ namespaces) that fan-out saturated outbound provider connections badly enough
-    /// that even fast, unrelated requests queued behind it (observed: proxy timeouts under a
-    /// 36-namespace fleet). <c>Header</c> and <c>QuickAccessPanel</c> call
-    /// <c>useNamespaceStats</c> with the full namespace list on effectively every page, so this
-    /// single change collapses the fan-out fleet-wide rather than on just the pages that call
-    /// <c>useAllNamespacesQueues</c> directly. Concurrency is bounded server-side (not left to
-    /// the browser to pace) because the provider connection pool is shared across every
-    /// concurrent caller/operator, not just one browser tab.
-    /// </remarks>
-    /// <param name="request">The namespace IDs to compute stats for.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    [HttpPost("stats/batch")]
-    [RequireScope(ApiKeyScopes.MessagesPeek)]
-    [ProducesResponseType(typeof(IReadOnlyList<NamespaceStatsBatchEntry>), StatusCodes.Status200OK)]
+    /// <summary>Lists a namespace's queues, topics and subscriptions, optionally of one <c>kind</c>.</summary>
+    [HttpGet("{id:guid}/entities")]
+    [ProducesResponseType(typeof(EntityListResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<IReadOnlyList<NamespaceStatsBatchEntry>>> GetStatsBatch(
-        [FromBody] NamespaceStatsBatchRequest request,
-        CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Entities(Guid id, [FromQuery] string? kind, CancellationToken cancellationToken)
     {
-        var requestedIds = (request?.NamespaceIds ?? []).Distinct().ToList();
-
-        if (requestedIds.Count == 0)
-            return Ok(Array.Empty<NamespaceStatsBatchEntry>());
-
-        if (requestedIds.Count > MaxStatsBatchSize)
+        var wanted = kind?.Trim().ToLowerInvariant();
+        if (wanted is not null && !EntityKinds.Contains(wanted))
         {
-            return ToActionResult<IReadOnlyList<NamespaceStatsBatchEntry>>(Error.Validation(
-                ErrorCodes.General.ValidationFailed,
-                $"At most {MaxStatsBatchSize} namespace IDs may be requested in one batch (received {requestedIds.Count})."));
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed,
+                $"'kind' must be one of: {string.Join(", ", EntityKinds)}.");
         }
 
-        // Silently drop IDs the caller can't access — same "not found vs. inaccessible are
-        // indistinguishable" posture as GetOwnedNamespaceAsync for a single namespace, applied
-        // per-item so one bad/foreign ID in the batch doesn't fail the whole request.
-        var owned = new List<Namespace>(requestedIds.Count);
-        foreach (var id in requestedIds)
+        var listed = await ListEntitiesAsync(id, cancellationToken);
+        if (listed.Failure is not null)
         {
-            var nsResult = await GetOwnedNamespaceAsync(_namespaceRepository, id, cancellationToken);
-            if (nsResult.IsSuccess)
-                owned.Add(nsResult.Value);
+            return listed.Failure;
         }
 
-        var tasks = owned.Select(ns => ComputeNamespaceStatsAsync(ns, cancellationToken));
+        var (_, capabilities, entities) = listed.Value;
+        var counts = capabilities.SupportsMessageCounts;
 
-        var entries = await Task.WhenAll(tasks);
-        return Ok(entries);
+        var items = entities
+            .Where(e => wanted is null || Kind(e) == wanted)
+            .OrderBy(e => Kind(e), StringComparer.Ordinal)
+            .ThenBy(e => e.Name, StringComparer.Ordinal)
+            .Select(e => new EntityResponse(
+                e.Name,
+                Kind(e),
+                counts ? e.ActiveMessageCount : null,
+                counts ? e.DeadLetterCount : null,
+                e.DeadLetterTargetName))
+            .ToList();
+
+        return Ok(new EntityListResponse(id, items));
+    }
+
+    private async Task<Listing> ListEntitiesAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return new Listing(default, Problem(found.Error));
+        }
+
+        var ns = found.Value;
+        if (!_router.IsRegistered(ns.Provider))
+        {
+            return new Listing(default, NoAdapter(ns));
+        }
+
+        var provider = _router.Resolve(ns.Provider);
+        var entities = await provider.ListEntitiesAsync(ns.Id, cancellationToken);
+        return entities.IsFailure
+            ? new Listing(default, Problem(entities.Error))
+            : new Listing((ns, provider.Capabilities, entities.Value), null);
     }
 
     /// <summary>
-    /// Computes aggregate stats plus queue/topic names for one namespace — the shared
-    /// implementation behind both <see cref="GetStats"/> (one namespace) and
-    /// <see cref="GetStatsBatch"/> (many), so the two never drift. Gated by the process-wide
-    /// <see cref="StatsComputationGate"/>, not a per-call semaphore — see that field's remarks
-    /// for why the distinction is load-bearing.
+    /// Writes one audit row. The row snapshots the namespace's name, provider and environment, so it
+    /// still reads correctly after the namespace is gone. A failure to record is logged, never
+    /// allowed to fail the request that has already happened.
     /// </summary>
-    private async Task<NamespaceStatsBatchEntry> ComputeNamespaceStatsAsync(
-        Namespace ns,
-        CancellationToken cancellationToken)
+    private async Task RecordAsync(string action, string outcome, Namespace ns, string? error, CancellationToken cancellationToken)
     {
-        await StatsComputationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return await ComputeNamespaceStatsCoreAsync(ns, cancellationToken).ConfigureAwait(false);
+            await _audit.RecordAsync(
+                new AuditLog
+                {
+                    Id = Guid.NewGuid(),
+                    Timestamp = DateTimeOffset.UtcNow,
+                    OwnerId = OwnerId,
+                    UserIdentity = Actor.Identity,
+                    Action = action,
+                    Outcome = outcome,
+                    NamespaceId = ns.Id,
+                    NamespaceName = ns.Name,
+                    CloudProvider = ns.Provider.ToString().ToLowerInvariant(),
+                    Environment = ns.Environment.ToString(),
+                    ResourceName = ns.Name,
+                    ErrorDetails = error is null ? null : LogRedactor.SanitiseForLog(error),
+                    CorrelationId = HttpContext.TraceIdentifier,
+                    HttpMethod = Request.Method,
+                    HttpPath = Request.Path.Value,
+                },
+                cancellationToken);
         }
-        finally
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            StatsComputationGate.Release();
+            _logger.LogWarning(ex, "Could not record {Action} for namespace {NamespaceId} in the audit trail", action, ns.Id);
         }
     }
 
-    private async Task<NamespaceStatsBatchEntry> ComputeNamespaceStatsCoreAsync(
-        Namespace ns,
-        CancellationToken cancellationToken)
-    {
-        // AWS/GCP: aggregate from the provider's own entity listing (already includes
-        // active/dead-letter counts per entity) instead of the Azure-only client cache below.
-        if (ns.Provider is CloudProviderType.Aws or CloudProviderType.Gcp)
-        {
-            var provider = _messagingProviders.FirstOrDefault(p => p.ProviderType == ns.Provider);
-            if (provider is null)
-                return new NamespaceStatsBatchEntry(ns.Id, new NamespaceStatsResponse(0, 0, 0, 0, 0, 0), [], []);
-
-            var entitiesResult = await provider.ListEntitiesAsync(ns.Id, cancellationToken);
-            if (entitiesResult.IsFailure)
-                return new NamespaceStatsBatchEntry(ns.Id, new NamespaceStatsResponse(0, 0, 0, 0, 0, 0), [], []);
-
-            var entities = entitiesResult.Value;
-            var queueEntities = entities.Where(e => string.Equals(e.EntityType, "Queue", StringComparison.OrdinalIgnoreCase)).ToList();
-            // Suffix match, not equality: AWS labels its topics "SNS Topic" while GCP uses "Topic",
-            // so an exact comparison counted every AWS namespace as having zero topics. Mirrors the
-            // "*Topic" match TopicsController.ListTopics already uses as the canonical convention.
-            var topicEntities = entities.Where(e => e.EntityType.EndsWith("Topic", StringComparison.OrdinalIgnoreCase)).ToList();
-            var totalSubscriptionsLive = entities.Count(e => string.Equals(e.EntityType, "Subscription", StringComparison.OrdinalIgnoreCase));
-
-            return new NamespaceStatsBatchEntry(
-                ns.Id,
-                new NamespaceStatsResponse(
-                    TotalQueues: queueEntities.Count,
-                    TotalTopics: topicEntities.Count,
-                    TotalSubscriptions: totalSubscriptionsLive,
-                    TotalActive: entities.Sum(e => e.ActiveMessageCount),
-                    TotalDlq: entities.Sum(e => e.DeadLetterCount),
-                    TotalScheduled: 0),
-                queueEntities.Select(e => e.Name).ToList(),
-                topicEntities.Select(e => e.Name).ToList());
-        }
-
-        if (string.IsNullOrEmpty(ns.ConnectionString))
-            return new NamespaceStatsBatchEntry(ns.Id, new NamespaceStatsResponse(0, 0, 0, 0, 0, 0), [], []);
-
-        var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
-        if (unprotectResult.IsFailure)
-            return new NamespaceStatsBatchEntry(ns.Id, new NamespaceStatsResponse(0, 0, 0, 0, 0, 0), [], []);
-
-        try
-        {
-            var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
-
-            long totalActive = 0, totalDlq = 0, totalScheduled = 0;
-            int totalQueues = 0, totalSubscriptions = 0;
-            List<string> queueNames = [];
-            List<string> topicNames = [];
-
-            // Aggregate queue stats
-            var queuesResult = await wrapper.GetQueuesAsync(cancellationToken);
-            if (queuesResult.IsSuccess)
-            {
-                totalQueues = queuesResult.Value.Count;
-                queueNames = queuesResult.Value.Select(q => q.Name).ToList();
-                foreach (var q in queuesResult.Value)
-                {
-                    totalActive += q.ActiveMessageCount;
-                    totalDlq += q.DeadLetterMessageCount;
-                    totalScheduled += q.ScheduledMessageCount;
-                }
-            }
-
-            // Aggregate topic subscription stats
-            var topicsResult = await wrapper.GetTopicsAsync(cancellationToken);
-            int totalTopics = 0;
-            if (topicsResult.IsSuccess)
-            {
-                totalTopics = topicsResult.Value.Count;
-                topicNames = topicsResult.Value.Select(t => t.Name).ToList();
-                foreach (var topic in topicsResult.Value)
-                {
-                    var subsResult = await wrapper.GetSubscriptionsAsync(topic.Name, cancellationToken);
-                    if (subsResult.IsSuccess)
-                    {
-                        totalSubscriptions += subsResult.Value.Count;
-                        foreach (var sub in subsResult.Value)
-                        {
-                            totalActive += sub.ActiveMessageCount;
-                            totalDlq += sub.DeadLetterMessageCount;
-                        }
-                    }
-                }
-            }
-
-            return new NamespaceStatsBatchEntry(
-                ns.Id,
-                new NamespaceStatsResponse(
-                    TotalQueues: totalQueues,
-                    TotalTopics: totalTopics,
-                    TotalSubscriptions: totalSubscriptions,
-                    TotalActive: totalActive,
-                    TotalDlq: totalDlq,
-                    TotalScheduled: totalScheduled),
-                queueNames,
-                topicNames);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to get stats for namespace {NamespaceId}", ns.Id);
-            return new NamespaceStatsBatchEntry(ns.Id, new NamespaceStatsResponse(0, 0, 0, 0, 0, 0), [], []);
-        }
-    }
+    private ObjectResult NoAdapter(Namespace ns) =>
+        Problem(
+            StatusCodes.Status503ServiceUnavailable,
+            ErrorCodes.CapabilityUnavailable,
+            $"This build of ServiceHub has no adapter for '{ns.Provider}', so '{ns.Name}' cannot be reached.");
 
     /// <summary>
-    /// Maps a Namespace entity to a NamespaceResponse DTO, from the current caller's
-    /// perspective (instance method, not static, so it can populate <see cref="NamespaceResponse.IsSharedWithMe"/>).
+    /// The contract's three words. An adapter may describe an entity in its own service's terms ("sns topic"); the API
+    /// answers in queue, topic or subscription — a screen indexes its wording by these and must never meet a fourth.
     /// </summary>
-    /// <param name="ns">The namespace entity.</param>
-    /// <returns>The namespace response.</returns>
-    private NamespaceResponse MapToResponse(Namespace ns)
+    internal static string Kind(CloudEntity entity)
     {
-        var isTrueOwner = string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal);
+        var raw = entity.EntityType.Trim().ToLowerInvariant();
+        return raw.Contains("subscription", StringComparison.Ordinal) ? "subscription"
+            : raw.Contains("topic", StringComparison.Ordinal) ? "topic"
+            : raw.Contains("queue", StringComparison.Ordinal) ? "queue"
+            : raw;
+    }
 
-        return new NamespaceResponse(
-            Id: ns.Id,
-            Name: ns.Name,
-            DisplayName: ns.DisplayName,
-            Description: ns.Description,
-            AuthType: ns.AuthType,
-            IsActive: ns.IsActive,
-            CreatedAt: ns.CreatedAt,
-            ModifiedAt: ns.ModifiedAt,
-            LastConnectionTestAt: ns.LastConnectionTestAt,
-            LastConnectionTestSucceeded: ns.LastConnectionTestSucceeded,
-            HasListenPermission: ns.HasListenPermission,
-            HasSendPermission: ns.HasSendPermission,
-            HasManagePermission: ns.HasManagePermission,
-            Environment: ns.Environment)
-        {
-            Provider = ns.Provider,
-            AwsRegion = ns.AwsRegion,
-            GcpProjectId = ns.GcpProjectId,
-            // Only the true owner sees who else has access — a shared collaborator sees their
-            // own access to the namespace, not the owner's full sharing list.
-            SharedWithOwnerIds = isTrueOwner ? ns.SharedWithOwnerIds : [],
-            IsSharedWithMe = !isTrueOwner,
-        };
+    private NamespaceResponse ToResponse(Namespace ns) => new(
+        ns.Id,
+        ns.Name,
+        ns.DisplayName,
+        ns.Description,
+        ns.Provider,
+        ns.Environment,
+        ns.AuthType,
+        ns.AwsRegion,
+        ns.GcpProjectId,
+        ns.IsActive,
+        ns.CreatedAt,
+        ns.LastConnectionTestAt,
+        ns.LastConnectionTestSucceeded,
+        _router.IsRegistered(ns.Provider) ? _router.Resolve(ns.Provider).Capabilities : null);
+
+    private readonly record struct Listing((Namespace Ns, ProviderCapabilities Capabilities, IReadOnlyList<CloudEntity> Entities)? Success, ObjectResult? Failure)
+    {
+        public (Namespace Ns, ProviderCapabilities Capabilities, IReadOnlyList<CloudEntity> Entities) Value => Success!.Value;
     }
 }
-
-/// <summary>
-/// Response model for connection test results.
-/// </summary>
-/// <param name="IsConnected">Whether the connection was successful.</param>
-/// <param name="Message">The result message.</param>
-/// <param name="TestedAt">When the test was performed.</param>
-public sealed record ConnectionTestResponse(
-    bool IsConnected,
-    string Message,
-    DateTimeOffset TestedAt);
-
-/// <summary>
-/// Response model for namespace aggregate statistics including both queue and subscription data.
-/// </summary>
-public sealed record NamespaceStatsResponse(
-    int TotalQueues,
-    int TotalTopics,
-    int TotalSubscriptions,
-    long TotalActive,
-    long TotalDlq,
-    long TotalScheduled);
-
-/// <summary>
-/// Request body for <see cref="NamespacesController.GetStatsBatch"/>.
-/// </summary>
-/// <param name="NamespaceIds">The namespace IDs to compute stats for (at most 500, deduplicated).</param>
-public sealed record NamespaceStatsBatchRequest(IReadOnlyList<Guid> NamespaceIds);
-
-/// <summary>
-/// One namespace's entry in a <see cref="NamespacesController.GetStatsBatch"/> response.
-/// </summary>
-/// <param name="NamespaceId">The namespace this entry describes.</param>
-/// <param name="Stats">Aggregate queue/topic/subscription and message counts.</param>
-/// <param name="QueueNames">Names of every queue in the namespace (entity-picker use cases).</param>
-/// <param name="TopicNames">Names of every topic in the namespace (entity-picker use cases).</param>
-public sealed record NamespaceStatsBatchEntry(
-    Guid NamespaceId,
-    NamespaceStatsResponse Stats,
-    IReadOnlyList<string> QueueNames,
-    IReadOnlyList<string> TopicNames);

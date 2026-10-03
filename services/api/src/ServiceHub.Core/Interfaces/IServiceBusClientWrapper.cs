@@ -1,7 +1,7 @@
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
-using ServiceHub.Shared.Results;
+using ServiceHub.Core.Results;
 
 namespace ServiceHub.Core.Interfaces;
 

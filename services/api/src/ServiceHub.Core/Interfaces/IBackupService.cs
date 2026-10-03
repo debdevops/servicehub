@@ -1,12 +1,12 @@
 using ServiceHub.Core.Models.Backup;
-using ServiceHub.Shared.Results;
+using ServiceHub.Core.Results;
 
 namespace ServiceHub.Core.Interfaces;
 
 /// <summary>
 /// Creates and enumerates backup bundles for the SQLite database and namespace JSON store
-/// (roadmap F2). Restore is deliberately not part of this interface — restore is a manual,
-/// operator-driven procedure (see docs/BACKUP-RESTORE.md), not an automated code path.
+/// (roadmap F2). Restore is deliberately not part of this interface: in 4.1.0 it is <c>IBackupRestore</c> (unit 6.13),
+/// which checks a bundle and stages it for the next start — it never swaps the live database.
 /// </summary>
 public interface IBackupService
 {

@@ -1,6 +1,6 @@
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Entities;
-using ServiceHub.Shared.Results;
+using ServiceHub.Core.Results;
 
 namespace ServiceHub.Core.Interfaces;
 
@@ -18,6 +18,15 @@ public interface IMessageOperationsService
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A result indicating success or failure of the send operation.</returns>
     Task<Result> SendAsync(SendMessageRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// <see cref="SendAsync"/>, also returning the id the cloud assigned the message (null when the cloud's sender cannot say).
+    /// </summary>
+    async Task<Result<string?>> SendReturningProviderIdAsync(SendMessageRequest request, CancellationToken cancellationToken = default)
+    {
+        var sent = await SendAsync(request, cancellationToken).ConfigureAwait(false);
+        return sent.IsSuccess ? Result.Success<string?>(null) : Result.Failure<string?>(sent.Error);
+    }
 
     /// <summary>
     /// Sends multiple messages to a queue or topic in a batch.
@@ -82,11 +91,13 @@ public interface IMessageOperationsService
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
-    /// A result indicating success or failure. On success, the value is whether the marker was
-    /// actually applied — false whenever <paramref name="recoveryEntryId"/> was null, stamping
-    /// was disabled/unsupported, or the provider refused it (e.g. SQS's 10-attribute cap).
+    /// A result indicating success or failure. On success, the value carries whether the marker
+    /// was actually applied — false whenever <paramref name="recoveryEntryId"/> was null,
+    /// stamping was disabled/unsupported, or the provider refused it (e.g. SQS's 10-attribute
+    /// cap) — and the replayed message's new provider-assigned ID where the provider has one to
+    /// report (see <see cref="Models.ReplayExecutionResult"/>).
     /// </returns>
-    Task<Result<bool>> ReplayMessageAsync(
+    Task<Result<Models.ReplayExecutionResult>> ReplayMessageAsync(
         Guid namespaceId,
         string entityName,
         string? subscriptionName,

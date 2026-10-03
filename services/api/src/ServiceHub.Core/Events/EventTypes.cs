@@ -61,6 +61,15 @@ public static class EventTypes
     /// </summary>
     public const string AutoReplayRuleCircuitBreakerTripped = "servicehub.rule.circuitbreaker.tripped.v1";
 
+    // ── Escalation ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Raised when an agent stops and needs a person (unit 5.2): the gate escalated an automatic replay, or an agent has
+    /// stopped reporting. One per escalation, never one per retry; never for a Deny (not approvable). The durable pending
+    /// item is the truth — this event only says "look again".
+    /// </summary>
+    public const string EscalationRaised = "servicehub.escalation.raised.v1";
+
     // ── Autonomy ──────────────────────────────────────────────────────────────
 
     /// <summary>

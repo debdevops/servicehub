@@ -1,145 +1,100 @@
 # Encryption Key Rotation
 
-> **In this article:** why ServiceHub encrypts your cloud connection strings, how to safely change
-> ("rotate") the encryption key without losing access to anything, and what to do if you suspect
-> that key has been exposed.
+> **In this article:** how ServiceHub protects the cloud credentials you give it, how to change ("rotate") the encryption key without losing access to
+> anything, and what to do if you suspect the key has leaked.
 >
-> **In plain language:** every Azure/AWS/GCP connection string you paste into ServiceHub's Connect
-> page — which is effectively a password to your cloud messaging account — is encrypted before
-> it's ever written to disk. This document is about the encryption *key* itself: how to change it
-> periodically as good security hygiene, the same way you'd rotate any other credential, without
-> locking yourself out of namespaces you already connected.
+> **In plain language:** every Azure, AWS or GCP credential you add through *Add a cloud* is effectively a password to your messaging account. ServiceHub
+> encrypts it before it is written to disk. This page is about the encryption *key*: how to change it as ordinary hygiene, the way you would rotate any other
+> secret, without locking yourself out of clouds you already connected.
 
-ServiceHub encrypts every stored connection string (Azure Service Bus SAS, AWS access keys, GCP
-service-account JSON) with AES-GCM under a key derived from `Security:EncryptionKey`. Until this
-document, that key could never be changed after the first namespace was added — rotating it made
-every stored credential permanently undecryptable, and the product's own error message admitted it:
-*"The encryption key may have changed — please re-add this namespace."*
+Credentials (Azure connection strings, AWS access keys, GCP service-account JSON) are encrypted with AES-256-GCM. The key is **yours**: ServiceHub never
+generates or stores it. It comes from `SECURITY__ENCRYPTIONKEY` (one key) or `SECURITY__ENCRYPTIONKEYREGISTRY` (several — this is what makes rotation
+possible). A start with neither set **refuses to run** — at startup, not on the first request — with `Neither Security:EncryptionKeyRegistry nor
+Security:EncryptionKey is configured`. (`Security:EnableConnectionStringEncryption` defaults to `true`; leave it there.)
 
-> [!NOTE]
-> If you've never touched `Security:EncryptionKeyRegistry`, none of this affects you yet — skip to
-> the callout at the end of §1. Rotation is opt-in.
-
-This document describes the multi-key registry that fixes that, and the operator procedures for
-normal rotation and for responding to a suspected key compromise. It corresponds to Phases 1–2 of
-the `adr-encryption-key-rotation` design (project memory) and to item **W0.3** of
-`docs-private/SERVICEHUB-AUTONOMY-AUDIT-AND-ROADMAP-2026-09-01.md`.
+> [!IMPORTANT]
+> **Changing `SECURITY__ENCRYPTIONKEY` to a new value, on its own, makes every stored credential unreadable.** Never do that. To rotate, move to the
+> registry (§2) and keep the old key in it. Losing every key that protects a credential loses that credential: you would re-add the cloud.
 
 ## 1. The two envelope formats
 
-| Format | Used when | AAD-authenticated |
+Each stored credential carries a prefix that says how it was protected:
+
+| Prefix | When | Bound to its key? |
 |---|---|---|
-| `ENC[v1]:{base64}` | `Security:EncryptionKeyRegistry` is **not** set — today's default, single-key deployments. Unchanged from before this document. | No (predates key IDs) |
-| `ENC[v2:kid=<id>]:{base64}` | `Security:EncryptionKeyRegistry` **is** set. | Yes — the key ID is bound into the ciphertext as AES-GCM additional authenticated data. Tampering with the envelope (swapping the `kid`) is detected at decrypt time. |
+| `ENC[v1]:…` | No registry configured (one key) | No |
+| `ENC[v2:kid=<id>]:…` | A registry is configured | Yes — the key id is authenticated data, so swapping the `kid` is detected when it is read |
 
-Both formats always remain decryptable regardless of which one is currently being produced —
-decryption looks up whichever key ID the envelope names, not just the active one. A namespace is
-never silently made unreadable by this change; you always control when (and if) you opt in.
-
-**A single-key deployment does not need to do anything.** `ENC[v1]:` connection strings keep
-working exactly as they always have. Configure `Security:EncryptionKeyRegistry` only when you want
-the ability to rotate the key going forward.
+Reading looks up whichever key the prefix names, not just the active one. A single-key deployment does not have to do anything; configure the registry only when
+you want to be able to rotate.
 
 ## 2. Configuration
 
-Set the `SECURITY__ENCRYPTIONKEYREGISTRY` environment variable to a JSON object (never write real
-key material into a committed config file):
+Set the registry as an environment variable holding JSON (never write real key material into a committed file):
 
 ```bash
 export SECURITY__ENCRYPTIONKEYREGISTRY='{
   "ActiveKeyId": "prod-2026-09",
   "Keys": [
-    { "Id": "legacy-v1",    "Material": "<your existing 64-hex Security:EncryptionKey value>", "Status": "active" },
-    { "Id": "prod-2026-09", "Material": "<new 64-hex key from openssl rand -hex 32>",           "Status": "active" }
+    { "Id": "legacy-v1",    "Material": "<your existing SECURITY__ENCRYPTIONKEY value>", "Status": "retired" },
+    { "Id": "prod-2026-09", "Material": "<new key: openssl rand -hex 32>",               "Status": "active"  }
   ]
 }'
 ```
 
-- **`ActiveKeyId`** — which key new encryptions use. Must match one of `Keys[].Id`.
-- **`Keys[].Id`** — opaque, 1–64 alphanumeric/hyphen characters. Must be unique.
-- **`Keys[].Material`** — 64 hex chars (`openssl rand -hex 32`) or a password string (PBKDF2-derived
-  either way). Never persisted anywhere by ServiceHub; supply it only via this environment variable
-  or an external secret provider.
-- **`Keys[].Status`** — `active`, `retired`, or `compromised`. Informational today (only
-  `ActiveKeyId` decides which key encrypts new data); `compromised` exists for the future bulk
-  re-encryption workflow (Phase 4, not yet built — see §5).
-- **`legacy-v1`** is a reserved ID: every connection string encrypted before you configure a
-  registry is assumed to use it. **The first time you turn on the registry, you must include your
-  prior `Security:EncryptionKey` value under this exact ID**, or every existing namespace becomes
-  undecryptable the moment you switch over.
+- **`ActiveKeyId`** — the key new credentials are encrypted with. Must be one of `Keys[].Id`.
+- **`Keys[].Id`** — 1–64 letters, digits or hyphens; unique.
+- **`Keys[].Material`** — 64 hex characters (`openssl rand -hex 32`; derived with HKDF-SHA256) or any password string (derived with PBKDF2, 100,000 iterations).
+  ServiceHub never writes it anywhere.
+- **`Keys[].Status`** — `active`, `retired` or `compromised` (case-insensitive; anything else fails startup, naming the allowed values). Informational: only
+  `ActiveKeyId` decides which key encrypts.
+- **`legacy-v1`** is reserved: every credential encrypted before you had a registry is assumed to use it. **The first time you configure a registry, include your
+  previous `SECURITY__ENCRYPTIONKEY` value under exactly this id**, or every existing credential becomes unreadable.
 
-Validation runs at startup and fails fast (not on first request) if: `ActiveKeyId` doesn't match any
-key, two keys share an ID, a key ID has an invalid format, a key has empty material, or the JSON
-itself is malformed. In `ASPNETCORE_ENVIRONMENT=Production`, `ProductionConfigurationValidator` runs
-the same checks before the app is considered ready.
+An invalid registry (unknown `ActiveKeyId`, duplicate id, bad id format, empty material, malformed JSON) stops ServiceHub at startup, not later.
 
-## 3. Normal rotation procedure
+## 3. Rotate
 
-1. Generate new key material:
-   ```bash
-   openssl rand -hex 32
-   ```
-2. Update the registry, keeping every previously-active key present (with `Status: "retired"` if you
-   like) and pointing `ActiveKeyId` at the new one:
-   ```json
-   {
-     "ActiveKeyId": "prod-2026-10",
-     "Keys": [
-       { "Id": "legacy-v1",    "Material": "...", "Status": "retired" },
-       { "Id": "prod-2026-09", "Material": "...", "Status": "retired" },
-       { "Id": "prod-2026-10", "Material": "<new key>", "Status": "active" }
-     ]
-   }
-   ```
-3. Restart the ServiceHub process/container. Startup validates the registry and logs a summary:
-   `Encryption key registry loaded: 3 key(s) (active=prod-2026-10, mode=multi-key)`.
-4. Every existing namespace remains readable — its stored `ENC[v2:kid=...]` (or `ENC[v1]:`) envelope
-   still names whichever key encrypted it, and that key is still in the registry.
-5. New namespaces created from this point on are encrypted under `prod-2026-10`.
+1. Generate the new key: `openssl rand -hex 32`.
+2. Put it in the registry as a new entry, point `ActiveKeyId` at it, and **keep every earlier key** (mark it `retired` if you like).
+3. Restart. The log confirms it: `Encryption key registry loaded: 2 key(s) (active=prod-2026-09, mode=multi-key)`.
+4. Every existing cloud still works — its prefix names a key that is still in the registry. New clouds are encrypted under the new key.
 
-**Existing namespaces are not proactively re-encrypted under the new key** (Phase 1–2 ships lazy
-migration only: a namespace is re-encrypted to the active key the next time its plaintext connection
-string is supplied to `Protect` again — today, in practice, that only happens if you delete and
-re-add it, since there is no in-place connection-string-update endpoint yet). This is a deliberate,
-narrow scope: it means "you cannot rotate the key" is fixed — nothing is ever lost on rotation — and
-proactive bulk migration off a merely-rotated (not compromised) key is a lower-severity backlog item,
-not this fix's job.
+**Existing credentials move to the new key when they are next saved**, not before. Starting up, listing and opening a cloud change nothing; running **Test connection**
+on it re-encrypts it under the active key (there is no edit screen; deleting and re-adding also works). So an old key can be dropped only after every credential that used it has been saved once (§4).
 
-## 4. Verifying which key protects a namespace
+## 4. Which key protects a cloud
 
-Every backup manifest (see `docs/BACKUP-RESTORE.md` §2) records `encryptionKeyFingerprint` — a
-non-reversible `sha256:<16 hex>` fingerprint of whichever key was *active* when the backup was
-taken, never the key material itself. Compare fingerprints across environments (e.g. before
-restoring a backup) to confirm they were produced under compatible key configurations. There is no
-live endpoint exposing the current fingerprint outside of a backup run today.
+There is no screen for this. Read the prefix from the database while ServiceHub is stopped or running (read-only):
 
-## 5. Compromise response — what exists today, and what doesn't
+```bash
+sqlite3 "<data directory>/servicehub.db" "select Name, substr(ConnectionStringEncrypted, 1, 30) from Namespaces"
+# orders-dev | ENC[v1]:…                     ← still under the original key (legacy-v1)
+# billing    | ENC[v2:kid=prod-2026-09]:…    ← under prod-2026-09
+```
 
-If a key is known or suspected to be compromised:
+To confirm the *active* key is the one you expect, compare fingerprints: **Settings → Access & security** shows the active key's fingerprint (`sha256:` plus 16 hex
+characters — one-way, never the key), and every backup's manifest records the same (`docs/BACKUP-RESTORE.md`). Compare them before restoring a backup elsewhere.
 
-1. Rotate immediately per §3, and mark the compromised key `"Status": "compromised"` in the registry
-   instead of `"retired"` — this is recorded for operator visibility and for the re-encryption
-   service described next, but does **not** by itself revoke the key: it is still in the registry
-   and can still decrypt data, which is intentional — see step 3.
-2. **Not yet built:** an automated bulk re-encryption worker that scans every namespace encrypted
-   under the compromised key and re-encrypts it to the active key, so the compromised key can be
-   fully retired. This is Phase 4 of the ADR (`EncryptionKeyReEncryptionService`,
-   `GET /api/v1/admin/re-encryption-status`) and is intentionally deferred — build it when an actual
-   compromise makes it needed, not speculatively.
-3. **Until Phase 4 exists**, the operator-driven remediation path is: for each namespace you believe
-   was encrypted under the compromised key, delete it and re-add it with its (still-valid, unless the
-   underlying cloud credential was also rotated) connection string. This re-encrypts it under the
-   active key on write. Do not remove the compromised key from the registry until you have confirmed
-   every namespace that depended on it has been re-added — removing it first makes those namespaces'
-   stored connection strings permanently undecryptable, which is the exact failure mode this document
-   exists to prevent.
+**If you drop a key that a credential still needs:** ServiceHub starts and lists the cloud, but using it fails with `Key ID 'legacy-v1' not found in registry. Include the
+prior Security:EncryptionKey value under this ID … or re-add this namespace.` Nothing is corrupted. Put the key back in the registry and restart.
+
+## 5. If the key may have leaked
+
+1. Rotate immediately (§3), and mark the leaked key `"Status": "compromised"` rather than `retired`. This records intent; it does **not** revoke the key — it must stay in
+   the registry as long as any credential still uses it.
+2. Re-protect every cloud: run **Test connection** on each (§3 — this re-encrypts it under the new key), then check with §4 that none still shows the old key.
+3. Only then remove the compromised key from the registry and restart.
+4. **Rotate the cloud credentials themselves** (new Service Bus policy key, new IAM access key, new service-account key) and delete and re-add each cloud with the new credential — an attacker
+   who could read the key and the database could read every credential that was stored under it. Re-encrypting alone does not un-leak a secret.
+
+There is no automated bulk re-encryption job; steps 2–3 are yours to do, cloud by cloud.
 
 ## 6. What this does not change
 
-- The eligibility gate, the Recovery Evidence Ledger, and every other safety invariant are
-  untouched — this is a storage-layer change to how one field is encrypted.
-- No new database table or column exists for this. The registry lives entirely in configuration
-  (an environment variable or external secret provider), never in the SQLite database or any
-  committed file.
-- AWS access keys and GCP service-account JSON are protected by the exact same envelope as Azure
-  SAS connection strings — `IConnectionStringProtector` is provider-agnostic.
+- The eligibility gate, the Recovery Ledger and every other safety invariant are untouched: this is how one stored field is encrypted.
+- No table or column exists for this. The registry lives in configuration (an environment variable or your secret provider), never in the database or a committed file.
+- AWS and GCP credentials use exactly the same envelope as Azure connection strings.
+
+*Verified 2026-09-29 by running the procedure on a throw-away instance: single key → registry with a new active key → a second cloud came out as `ENC[v2:kid=…]` while the
+first stayed `ENC[v1]` until its Test connection → dropping `legacy-v1` while a cloud still used it failed that cloud with the message above and nothing else.*

@@ -6,103 +6,61 @@ using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
+using ServiceHub.Core.Results;
+using ServiceHub.Core.Security;
 using ServiceHub.Infrastructure.Persistence;
-using ServiceHub.Infrastructure.Security;
-using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Infrastructure.RecoveryLedger;
 
 /// <summary>
-/// EF Core-backed implementation of <see cref="IRecoveryLedger"/> — the sole writer of the
-/// Recovery Evidence Ledger. Owns hash-chain sequencing (per-owner, serialised by an in-process
-/// semaphore and backstopped by the unique <c>(OwnerId, Seq)</c> index) and the entry state
-/// machine. Append-only/immutability enforcement itself lives one layer down, in
-/// <see cref="DlqDbContext.SaveChangesAsync(bool, CancellationToken)"/> via
-/// <see cref="RecoveryLedgerAppendOnlyGuard"/> — this service never needs to defend against its
-/// own mistakes twice, but a hand-written or future caller still can't bypass the guard.
+/// EF Core-backed <see cref="IRecoveryLedger"/> — the sole writer of the Recovery Evidence Ledger. Owns
+/// hash-chain sequencing (per owner, serialised by an in-process semaphore and backstopped by the unique
+/// <c>(OwnerId, Seq)</c> index) and the entry state machine. Append-only enforcement lives one layer
+/// down, in <see cref="RecoveryLedgerAppendOnlyGuard"/>, so a caller other than this class cannot bypass it.
 /// </summary>
+/// <remarks>
+/// Adapted from 4.0.0's 1,875-line service, keeping only the state machine: open, begin, execute,
+/// observe, close, verify and the reads those need. Left behind, each for the unit that needs it:
+/// declining and ageing (2.6), autonomy grants, production elevation, epochs and rehearsal.
+/// </remarks>
 public sealed class RecoveryLedgerService : IRecoveryLedger
 {
     private const int SchemaVersion = 1;
 
-    /// <summary>
-    /// The observation window applied when <c>RecoveryEvidence:ObservationWindowHours</c> is not
-    /// configured. Also the value <c>ProductionConfigurationValidator</c> compares against
-    /// to decide whether a configured value counts as non-default for the startup warning.
-    /// </summary>
+    /// <summary>The observation window when <c>RecoveryEvidence:ObservationWindowHours</c> is not configured.</summary>
     public const double DefaultObservationWindowHours = 24.0;
-
-    /// <summary>
-    /// The floor <c>RecoveryEvidence:ObservationWindowHours</c> cannot be configured below in
-    /// Production (roadmap W1.1, fixes F4) — enforced at startup by
-    /// <c>ProductionConfigurationValidator</c>, not by this class, so the floor cannot be bypassed
-    /// by constructing this service directly. A shorter window is legitimate for staging,
-    /// rehearsal, or CI soak runs, where declaring "no recurrence" faster than 24h is the entire
-    /// point; in Production it would let auto-replay declare absence before a re-dead-lettered
-    /// message could plausibly reappear.
-    /// </summary>
-    public const double MinimumProductionObservationWindowHours = 1.0;
 
     private const double MinObservationWindowHours = 0.1;
     private const double MaxObservationWindowHours = 720.0;
 
-    private static readonly TimeSpan DefaultObservationWindow = TimeSpan.FromHours(DefaultObservationWindowHours);
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> OwnerLocks = new();
 
-    // Concretely typed as HashSet<T>, not IReadOnlySet<T>: GetAgeingAsync's query below uses
-    // NonTerminalStates.Contains(e.State) inside a LINQ-to-SQL expression, and EF Core's query
-    // translator only recognises the Contains pattern on concrete collection types — the
-    // interface-typed overload fails to translate against the SQLite provider.
-    private static readonly HashSet<RecoveryEntryState> NonTerminalStates = new()
-    {
+    private static readonly HashSet<RecoveryEntryState> NonTerminalStates =
+    [
         RecoveryEntryState.Executing,
         RecoveryEntryState.Observing,
         RecoveryEntryState.ExecutionUnknown,
-    };
+    ];
 
-    private readonly DlqDbContext _dbContext;
-    private readonly INamespaceRepository? _namespaceRepository;
+    private readonly ServiceHubDbContext _db;
     private readonly double _observationWindowHours;
-    private readonly TimeSpan _observationWindow;
-    private readonly bool _isNonDefaultObservationWindow;
 
-    /// <summary>
-    /// Initialises a new instance of <see cref="RecoveryLedgerService"/>.
-    /// </summary>
-    /// <param name="dbContext">The DLQ database context.</param>
-    /// <param name="configuration">
-    /// Application configuration — reads <c>RecoveryEvidence:ObservationWindowHours</c> (default
-    /// <see cref="DefaultObservationWindowHours"/>, clamped to [0.1, 720]). Optional and defaults
-    /// to <see langword="null"/> so existing callers that construct this service directly (tests,
-    /// mainly) keep the exact hardcoded-24h behaviour this class always had; DI-resolved instances
-    /// always receive the real <see cref="IConfiguration"/>. The Production floor
-    /// (<see cref="MinimumProductionObservationWindowHours"/>) is enforced separately, at startup,
-    /// by <c>ProductionConfigurationValidator</c> — this constructor does not re-check it, so a
-    /// value below the floor still clamps to <see cref="MinObservationWindowHours"/>/<see cref="MaxObservationWindowHours"/>
-    /// here rather than failing, exactly like every other worker in this codebase that reads
-    /// <c>RecoveryEvidence:*</c>.
-    /// </param>
-    /// <param name="namespaceRepository">
-    /// Used only as a fallback in <see cref="GetSignatureProviderAsync"/> when a signature has
-    /// never had a recovery ledger entry written for it yet (so no <c>ProviderSnapshot</c> exists)
-    /// — resolves the provider from the namespace the signature was last observed in instead.
-    /// Optional and defaults to <see langword="null"/> so existing direct-construction callers
-    /// (tests, mainly) are unaffected; DI-resolved instances always receive the real repository.
-    /// </param>
-    public RecoveryLedgerService(
-        DlqDbContext dbContext, IConfiguration? configuration = null, INamespaceRepository? namespaceRepository = null)
+    /// <summary>Creates the service.</summary>
+    /// <param name="db">The database.</param>
+    /// <param name="configuration">Optional; reads <c>RecoveryEvidence:ObservationWindowHours</c> (clamped to [0.1, 720]).</param>
+    public RecoveryLedgerService(ServiceHubDbContext db, IConfiguration? configuration = null)
     {
-        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
-        _namespaceRepository = namespaceRepository;
+        _db = db ?? throw new ArgumentNullException(nameof(db));
+        _observationWindowHours = ResolveObservationWindowHours(configuration);
+    }
 
-        _observationWindowHours = configuration is null
+    /// <summary>The window a replay will be watched for — one answer for the ledger and for the proposal that promises it.</summary>
+    public static double ResolveObservationWindowHours(IConfiguration? configuration) =>
+        configuration is null
             ? DefaultObservationWindowHours
             : Math.Clamp(
                 configuration.GetValue("RecoveryEvidence:ObservationWindowHours", DefaultObservationWindowHours),
                 MinObservationWindowHours, MaxObservationWindowHours);
-        _observationWindow = TimeSpan.FromHours(_observationWindowHours);
-        _isNonDefaultObservationWindow = _observationWindowHours != DefaultObservationWindowHours;
-    }
 
     /// <inheritdoc />
     public async Task<Result<RecoveryOperation>> OpenOperationAsync(
@@ -145,13 +103,10 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
             TargetCount = request.TargetCount,
         };
 
-        _dbContext.RecoveryOperations.Add(operation);
+        _db.RecoveryOperations.Add(operation);
+        await AppendEventAsync(operation.OwnerId, null, operation.Id, RecoveryEventType.OperationOpened, request.Actor, null, cancellationToken);
 
-        await AppendEventAsync(
-            operation.OwnerId, entryId: null, operation.Id,
-            RecoveryEventType.OperationOpened, request.Actor, detail: null, cancellationToken);
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
         return Result<RecoveryOperation>.Success(operation);
     }
 
@@ -161,8 +116,7 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     {
         using var _ = await AcquireOwnerLockAsync(request.OwnerId, cancellationToken);
 
-        var operation = await _dbContext.RecoveryOperations
-            .AsNoTracking()
+        var operation = await _db.RecoveryOperations.AsNoTracking()
             .FirstOrDefaultAsync(o => o.Id == request.OperationId, cancellationToken);
 
         if (operation is null || operation.OwnerId != request.OwnerId)
@@ -194,14 +148,12 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
             State = RecoveryEntryState.Executing,
         };
 
-        _dbContext.RecoveryLedgerEntries.Add(entry);
+        _db.RecoveryLedgerEntries.Add(entry);
 
-        var evt = await AppendEventAsync(
-            entry.OwnerId, entry.Id, entry.OperationId,
-            RecoveryEventType.EntryBegun, request.Actor, detail: null, cancellationToken);
+        var evt = await AppendEventAsync(entry.OwnerId, entry.Id, entry.OperationId, RecoveryEventType.EntryBegun, request.Actor, null, cancellationToken);
         entry.LastEventSeq = evt.Seq;
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
         return Result<RecoveryLedgerEntry>.Success(entry);
     }
 
@@ -211,9 +163,7 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     {
         using var _ = await AcquireOwnerLockAsync(request.OwnerId, cancellationToken);
 
-        var entry = await _dbContext.RecoveryLedgerEntries
-            .FirstOrDefaultAsync(e => e.Id == request.EntryId, cancellationToken);
-
+        var entry = await _db.RecoveryLedgerEntries.FirstOrDefaultAsync(e => e.Id == request.EntryId, cancellationToken);
         if (entry is null || entry.OwnerId != request.OwnerId)
         {
             return Result<RecoveryLedgerEntry>.Failure(Error.NotFound(
@@ -227,10 +177,8 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
                 $"Cannot record an execution outcome for an entry in state '{entry.State}'; expected '{RecoveryEntryState.Executing}'."));
         }
 
-        var operation = await _dbContext.RecoveryOperations
-            .AsNoTracking()
+        var operation = await _db.RecoveryOperations.AsNoTracking()
             .FirstOrDefaultAsync(o => o.Id == entry.OperationId, cancellationToken);
-
         if (operation is null)
         {
             return Result<RecoveryLedgerEntry>.Failure(Error.NotFound(
@@ -245,7 +193,7 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
         {
             case RecoveryExecutionOutcome.Accepted when operation.Kind == RecoveryOperationKind.Replay:
                 entry.State = RecoveryEntryState.Observing;
-                entry.ObservationWindowEndsAt = now.Add(_observationWindow);
+                entry.ObservationWindowEndsAt = now.AddHours(_observationWindowHours);
                 eventType = RecoveryEventType.ProviderAccepted;
                 opensObservationWindow = true;
                 break;
@@ -275,44 +223,27 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
 
         entry.RecoveryMarker = request.RecoveryMarker;
         entry.MarkerApplied = request.MarkerApplied;
+        entry.ReplayedProviderMessageId = request.ReplayedProviderMessageId;
 
-        var evt = await AppendEventAsync(
-            entry.OwnerId, entry.Id, entry.OperationId, eventType, request.Actor,
-            request.ProviderDetailJson, cancellationToken);
+        var evt = await AppendEventAsync(entry.OwnerId, entry.Id, entry.OperationId, eventType, request.Actor, request.ProviderDetailJson, cancellationToken);
         entry.LastEventSeq = evt.Seq;
 
         if (opensObservationWindow)
         {
-            // Always carries the applied window, not only when non-default: this is the one
-            // event every Observing entry is guaranteed to have, so it is where an auditor looks
-            // first to answer "what window governed this entry's recurrence check" — the
-            // evidence export's per-entry summary has no dedicated column for it (roadmap W1.1).
-            var windowDetail = JsonSerializer.Serialize(new
-            {
-                appliedObservationWindowHours = _observationWindowHours,
-                defaultObservationWindowHours = DefaultObservationWindowHours,
-            });
-
+            // Every Observing entry has this event, so it is where an auditor looks to answer "what
+            // window governed this entry's recurrence check".
             var windowEvt = await AppendEventAsync(
-                entry.OwnerId, entry.Id, entry.OperationId, RecoveryEventType.ObservationWindowOpened,
-                request.Actor, windowDetail, cancellationToken);
+                entry.OwnerId, entry.Id, entry.OperationId, RecoveryEventType.ObservationWindowOpened, request.Actor,
+                JsonSerializer.Serialize(new
+                {
+                    appliedObservationWindowHours = _observationWindowHours,
+                    defaultObservationWindowHours = DefaultObservationWindowHours,
+                }),
+                cancellationToken);
             entry.LastEventSeq = windowEvt.Seq;
-
-            if (_isNonDefaultObservationWindow)
-            {
-                // A second, distinct event on top of ObservationWindowOpened above — so a
-                // non-default window is individually queryable/countable across the ledger
-                // (roadmap W1.1's "an audit event on every non-default value"), not just
-                // recoverable by parsing every ObservationWindowOpened's DetailJson.
-                var nonDefaultEvt = await AppendEventAsync(
-                    entry.OwnerId, entry.Id, entry.OperationId,
-                    RecoveryEventType.NonDefaultObservationWindowApplied, request.Actor,
-                    windowDetail, cancellationToken);
-                entry.LastEventSeq = nonDefaultEvt.Seq;
-            }
         }
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
         return Result<RecoveryLedgerEntry>.Success(entry);
     }
 
@@ -323,15 +254,12 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
         if (request.Outcome == RecoveryObservationOutcome.RecurrenceObserved && request.Confidence is null)
         {
             return Result<RecoveryLedgerEntry>.Failure(Error.Validation(
-                "RecoveryLedger.ConfidenceRequired",
-                "Confidence is required when recording a recurrence observation."));
+                "RecoveryLedger.ConfidenceRequired", "Confidence is required when recording a recurrence observation."));
         }
 
         using var _ = await AcquireOwnerLockAsync(request.OwnerId, cancellationToken);
 
-        var entry = await _dbContext.RecoveryLedgerEntries
-            .FirstOrDefaultAsync(e => e.Id == request.EntryId, cancellationToken);
-
+        var entry = await _db.RecoveryLedgerEntries.FirstOrDefaultAsync(e => e.Id == request.EntryId, cancellationToken);
         if (entry is null || entry.OwnerId != request.OwnerId)
         {
             return Result<RecoveryLedgerEntry>.Failure(Error.NotFound(
@@ -355,7 +283,6 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
                 entry.Disposition = RecoveryDisposition.Returned;
                 entry.VerificationResult = VerificationResult.Returned;
                 entry.VerificationConfidence = request.Confidence;
-                entry.ClosedAt = now;
                 eventType = RecoveryEventType.RecurrenceObserved;
                 break;
 
@@ -363,7 +290,6 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
                 entry.State = RecoveryEntryState.Recovered;
                 entry.Disposition = RecoveryDisposition.Recovered;
                 entry.VerificationResult = VerificationResult.Recovered;
-                entry.ClosedAt = now;
                 eventType = RecoveryEventType.NoRecurrenceObserved;
                 break;
 
@@ -371,7 +297,6 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
                 entry.State = RecoveryEntryState.Unverified;
                 entry.Disposition = RecoveryDisposition.Unverified;
                 entry.VerificationResult = VerificationResult.Unverified;
-                entry.ClosedAt = now;
                 eventType = RecoveryEventType.ObservationUnavailable;
                 break;
 
@@ -379,17 +304,17 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
                 throw new ArgumentOutOfRangeException(nameof(request), request.Outcome, "Unknown observation outcome.");
         }
 
-        var evt = await AppendEventAsync(
-            entry.OwnerId, entry.Id, entry.OperationId, eventType, request.Actor,
-            request.DetailJson, cancellationToken);
+        entry.ClosedAt = now;
+
+        var evt = await AppendEventAsync(entry.OwnerId, entry.Id, entry.OperationId, eventType, request.Actor, request.DetailJson, cancellationToken);
         entry.LastEventSeq = evt.Seq;
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
         return Result<RecoveryLedgerEntry>.Success(entry);
     }
 
     /// <inheritdoc />
-    public async Task<Result<RecoveryLedgerEntry>> SetDispositionAsync(
+    public async Task<Result<RecoveryLedgerEntry>> CloseAsync(
         Guid entryId, string ownerId, RecoveryActor actor, string reason, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(reason))
@@ -400,9 +325,7 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
 
         using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
 
-        var entry = await _dbContext.RecoveryLedgerEntries
-            .FirstOrDefaultAsync(e => e.Id == entryId, cancellationToken);
-
+        var entry = await _db.RecoveryLedgerEntries.FirstOrDefaultAsync(e => e.Id == entryId, cancellationToken);
         if (entry is null || entry.OwnerId != ownerId)
         {
             return Result<RecoveryLedgerEntry>.Failure(Error.NotFound(
@@ -412,784 +335,72 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
         if (!NonTerminalStates.Contains(entry.State))
         {
             return Result<RecoveryLedgerEntry>.Failure(Error.Conflict(
-                "RecoveryLedger.InvalidTransition",
-                $"Cannot write off an entry already in terminal state '{entry.State}'."));
+                "RecoveryLedger.InvalidTransition", $"Cannot write off an entry already in terminal state '{entry.State}'."));
         }
 
         entry.State = RecoveryEntryState.WrittenOff;
         entry.Disposition = RecoveryDisposition.WrittenOff;
         entry.ClosedAt = DateTimeOffset.UtcNow;
 
-        var evt = await AppendEventAsync(
-            entry.OwnerId, entry.Id, entry.OperationId, RecoveryEventType.DispositionSet, actor,
-            reason, cancellationToken);
+        var evt = await AppendEventAsync(entry.OwnerId, entry.Id, entry.OperationId, RecoveryEventType.DispositionSet, actor, reason, cancellationToken);
         entry.LastEventSeq = evt.Seq;
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
         return Result<RecoveryLedgerEntry>.Success(entry);
-    }
-
-    /// <inheritdoc />
-    public async Task<Result<RecoveryEvent>> AppendNoteAsync(
-        Guid entryId, string ownerId, RecoveryActor actor, string note, CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(note))
-        {
-            return Result<RecoveryEvent>.Failure(Error.Validation(
-                "RecoveryLedger.NoteRequired", "Note text cannot be empty."));
-        }
-
-        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
-
-        var entry = await _dbContext.RecoveryLedgerEntries
-            .FirstOrDefaultAsync(e => e.Id == entryId, cancellationToken);
-
-        if (entry is null || entry.OwnerId != ownerId)
-        {
-            return Result<RecoveryEvent>.Failure(Error.NotFound(
-                "RecoveryLedger.EntryNotFound", "Recovery ledger entry not found."));
-        }
-
-        var evt = await AppendEventAsync(
-            entry.OwnerId, entry.Id, entry.OperationId, RecoveryEventType.OperatorNote, actor,
-            note, cancellationToken);
-        entry.LastEventSeq = evt.Seq;
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        return Result<RecoveryEvent>.Success(evt);
-    }
-
-    /// <inheritdoc />
-    public async Task<Result<RecoveryEvent>> RecordRecurrenceContextAsync(
-        Guid entryId, string ownerId, RecoveryActor actor, string reasonCode, int matchedCount,
-        CancellationToken cancellationToken = default)
-    {
-        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
-
-        var entry = await _dbContext.RecoveryLedgerEntries
-            .FirstOrDefaultAsync(e => e.Id == entryId, cancellationToken);
-
-        if (entry is null || entry.OwnerId != ownerId)
-        {
-            return Result<RecoveryEvent>.Failure(Error.NotFound(
-                "RecoveryLedger.EntryNotFound", "Recovery ledger entry not found."));
-        }
-
-        var detail = JsonSerializer.Serialize(new { reasonCode, matchedCount });
-
-        var evt = await AppendEventAsync(
-            entry.OwnerId, entry.Id, entry.OperationId, RecoveryEventType.RecurrenceCapObserved, actor,
-            detail, cancellationToken);
-        entry.LastEventSeq = evt.Seq;
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        return Result<RecoveryEvent>.Success(evt);
     }
 
     /// <inheritdoc />
     public async Task<ChainVerificationResult> VerifyChainAsync(string ownerId, CancellationToken cancellationToken = default)
     {
-        // Every past epoch's own EpochSealed marker stays live forever as that epoch's anchor
-        // (see RecoveryEpochArchiveService's remarks) — the live table is therefore only
-        // Seq-contiguous from the *most recent* marker onward, not from Seq 1. Anchoring
-        // verification there, instead of assuming genesis, is what makes this endpoint still
-        // pass for an owner who has archived one or more epochs.
-        var latestMarker = await _dbContext.RecoveryEvents
-            .AsNoTracking()
-            .Where(e => e.OwnerId == ownerId && e.EventType == RecoveryEventType.EpochSealed)
-            .OrderByDescending(e => e.Seq)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        var startingSeq = (latestMarker?.Seq ?? 0) + 1;
-        var startingPrevHash = latestMarker?.EntryHash;
-
-        var events = await _dbContext.RecoveryEvents
-            .AsNoTracking()
-            .Where(e => e.OwnerId == ownerId && e.Seq >= startingSeq)
+        // Epochs are not carried into 4.1.0, so a chain always starts at its own genesis.
+        var events = await _db.RecoveryEvents.AsNoTracking()
+            .Where(e => e.OwnerId == ownerId)
             .OrderBy(e => e.Seq)
             .ToListAsync(cancellationToken);
 
-        return RecoveryChainVerifier.Verify(ownerId, events, startingSeq, startingPrevHash);
+        return RecoveryChainVerifier.Verify(ownerId, events);
     }
 
     /// <inheritdoc />
     public async Task<RecoveryOperation?> GetOperationAsync(Guid operationId, string ownerId, CancellationToken cancellationToken = default)
     {
-        var operation = await _dbContext.RecoveryOperations
-            .AsNoTracking()
-            .FirstOrDefaultAsync(o => o.Id == operationId, cancellationToken);
-
+        var operation = await _db.RecoveryOperations.AsNoTracking().FirstOrDefaultAsync(o => o.Id == operationId, cancellationToken);
         return operation is not null && operation.OwnerId == ownerId ? operation : null;
     }
 
     /// <inheritdoc />
     public async Task<RecoveryLedgerEntry?> GetEntryAsync(Guid entryId, string ownerId, CancellationToken cancellationToken = default)
     {
-        var entry = await _dbContext.RecoveryLedgerEntries
-            .AsNoTracking()
-            .FirstOrDefaultAsync(e => e.Id == entryId, cancellationToken);
-
+        var entry = await _db.RecoveryLedgerEntries.AsNoTracking().FirstOrDefaultAsync(e => e.Id == entryId, cancellationToken);
         return entry is not null && entry.OwnerId == ownerId ? entry : null;
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<RecoveryOperation>> QueryOperationsAsync(
-        string ownerId, Guid? namespaceId, int limit, CancellationToken cancellationToken = default)
-    {
-        var operations = _dbContext.RecoveryOperations.AsNoTracking().Where(o => o.OwnerId == ownerId);
-
-        if (namespaceId is { } id)
-        {
-            operations = operations.Where(o => o.NamespaceId == id);
-        }
-
-        return await operations
-            .OrderByDescending(o => o.OpenedAt)
-            .Take(limit)
-            .ToListAsync(cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async Task<IReadOnlyDictionary<Guid, int>> GetEntryCountsAsync(
-        IReadOnlyCollection<Guid> operationIds, string ownerId, CancellationToken cancellationToken = default)
-    {
-        if (operationIds.Count == 0)
-        {
-            return new Dictionary<Guid, int>();
-        }
-
-        var counts = await _dbContext.RecoveryLedgerEntries.AsNoTracking()
-            .Where(e => e.OwnerId == ownerId && operationIds.Contains(e.OperationId))
-            .GroupBy(e => e.OperationId)
-            .Select(g => new { OperationId = g.Key, Count = g.Count() })
-            .ToListAsync(cancellationToken);
-
-        return counts.ToDictionary(c => c.OperationId, c => c.Count);
-    }
-
-    /// <inheritdoc />
-    public async Task<IReadOnlyList<RecoveryLedgerEntry>> QueryEntriesAsync(
-        RecoveryEntryQuery query, CancellationToken cancellationToken = default)
-    {
-        var entries = _dbContext.RecoveryLedgerEntries.AsNoTracking().Where(e => e.OwnerId == query.OwnerId);
-
-        if (query.OperationId is { } operationId)
-        {
-            entries = entries.Where(e => e.OperationId == operationId);
-        }
-
-        if (query.NamespaceId is { } namespaceId)
-        {
-            entries = entries.Where(e => e.NamespaceId == namespaceId);
-        }
-
-        if (query.DlqMessageId is { } dlqMessageId)
-        {
-            entries = entries.Where(e => e.DlqMessageId == dlqMessageId);
-        }
-
-        if (query.States is { Count: > 0 })
-        {
-            entries = entries.Where(e => query.States.Contains(e.State));
-        }
-
-        return await entries
-            .OrderByDescending(e => e.BegunAt)
-            .Take(query.Limit)
-            .ToListAsync(cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async Task<IReadOnlyList<RecoveryLedgerEntry>> GetAgeingAsync(
-        string ownerId, int limit = int.MaxValue, CancellationToken cancellationToken = default)
-    {
-        return await _dbContext.RecoveryLedgerEntries
-            .AsNoTracking()
-            .Where(e => e.OwnerId == ownerId && NonTerminalStates.Contains(e.State))
-            .OrderBy(e => e.BegunAt)
-            .Take(limit)
-            .ToListAsync(cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async Task<RecoveryLedgerEntry?> FindByMarkerAsync(string ownerId, string marker, CancellationToken cancellationToken = default)
-    {
-        return await _dbContext.RecoveryLedgerEntries
-            .AsNoTracking()
-            .FirstOrDefaultAsync(e => e.OwnerId == ownerId
-                                       && e.State == RecoveryEntryState.Observing
-                                       && e.RecoveryMarker == marker,
-                cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async Task<IReadOnlyList<RecoveryLedgerEntry>> FindHeuristicRecurrenceCandidatesAsync(
-        string ownerId, Guid? namespaceId, string entityName, string bodyHash, DateTimeOffset beganBefore,
-        CancellationToken cancellationToken = default)
-    {
-        return await _dbContext.RecoveryLedgerEntries
-            .AsNoTracking()
-            .Where(e => e.OwnerId == ownerId
-                        && e.State == RecoveryEntryState.Observing
-                        && !e.MarkerApplied
-                        && e.NamespaceId == namespaceId
-                        && e.EntityNameSnapshot == entityName
-                        && e.BodyHash == bodyHash
-                        && e.BegunAt < beganBefore)
-            .ToListAsync(cancellationToken);
-    }
-
-    /// <inheritdoc />
     public async Task<IReadOnlyList<RecoveryEvent>> GetEventsForOperationAsync(
-        Guid operationId, string ownerId, CancellationToken cancellationToken = default)
-    {
-        return await _dbContext.RecoveryEvents
-            .AsNoTracking()
+        Guid operationId, string ownerId, CancellationToken cancellationToken = default) =>
+        await _db.RecoveryEvents.AsNoTracking()
             .Where(e => e.OwnerId == ownerId && e.OperationId == operationId)
             .OrderBy(e => e.Seq)
             .ToListAsync(cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async Task<bool> HasAgeingFlagAsync(Guid entryId, string ownerId, CancellationToken cancellationToken = default)
-    {
-        return await _dbContext.RecoveryEvents
-            .AsNoTracking()
-            .AnyAsync(e => e.OwnerId == ownerId && e.EntryId == entryId && e.EventType == RecoveryEventType.AgeingFlagged,
-                cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async Task<Result<RecoveryLedgerEntry>> FlagAgeingAsync(
-        Guid entryId, string ownerId, RecoveryActor actor, int ageInDays, CancellationToken cancellationToken = default)
-    {
-        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
-
-        var entry = await _dbContext.RecoveryLedgerEntries
-            .FirstOrDefaultAsync(e => e.Id == entryId, cancellationToken);
-
-        if (entry is null || entry.OwnerId != ownerId)
-        {
-            return Result<RecoveryLedgerEntry>.Failure(Error.NotFound(
-                "RecoveryLedger.EntryNotFound", "Recovery ledger entry not found."));
-        }
-
-        if (!NonTerminalStates.Contains(entry.State))
-        {
-            // Already resolved itself — a normal race against verification/interrupted-operation
-            // recovery closing the entry between the ageing worker's query and this call. Not an
-            // error; nothing left to flag.
-            return Result<RecoveryLedgerEntry>.Success(entry);
-        }
-
-        var alreadyFlagged = await _dbContext.RecoveryEvents
-            .AsNoTracking()
-            .AnyAsync(e => e.EntryId == entryId && e.EventType == RecoveryEventType.AgeingFlagged, cancellationToken);
-
-        if (alreadyFlagged)
-        {
-            // Idempotent: a restarted or overlapping sweep must not double-flag.
-            return Result<RecoveryLedgerEntry>.Success(entry);
-        }
-
-        var evt = await AppendEventAsync(
-            entry.OwnerId, entry.Id, entry.OperationId, RecoveryEventType.AgeingFlagged, actor,
-            JsonSerializer.Serialize(new { ageInDays }), cancellationToken);
-        entry.LastEventSeq = evt.Seq;
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        return Result<RecoveryLedgerEntry>.Success(entry);
-    }
-
-    /// <inheritdoc />
-    public async Task<Result<RecoveryLedgerEntry>> ExpireEntryAsync(
-        Guid entryId, string ownerId, RecoveryActor actor, CancellationToken cancellationToken = default)
-    {
-        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
-
-        var entry = await _dbContext.RecoveryLedgerEntries
-            .FirstOrDefaultAsync(e => e.Id == entryId, cancellationToken);
-
-        if (entry is null || entry.OwnerId != ownerId)
-        {
-            return Result<RecoveryLedgerEntry>.Failure(Error.NotFound(
-                "RecoveryLedger.EntryNotFound", "Recovery ledger entry not found."));
-        }
-
-        if (!NonTerminalStates.Contains(entry.State))
-        {
-            return Result<RecoveryLedgerEntry>.Failure(Error.Conflict(
-                "RecoveryLedger.InvalidTransition",
-                $"Cannot expire an entry already in terminal state '{entry.State}'."));
-        }
-
-        var lastEvent = await _dbContext.RecoveryEvents
-            .AsNoTracking()
-            .Where(e => e.EntryId == entryId)
-            .OrderByDescending(e => e.Seq)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (lastEvent is null || lastEvent.EventType != RecoveryEventType.AgeingFlagged)
-        {
-            return Result<RecoveryLedgerEntry>.Failure(Error.Conflict(
-                "RecoveryLedger.NotFlagged",
-                "An entry can only expire immediately after being flagged by the ageing worker — its most recent event must be AgeingFlagged."));
-        }
-
-        entry.State = RecoveryEntryState.Expired;
-        entry.Disposition = RecoveryDisposition.Expired;
-        entry.ClosedAt = DateTimeOffset.UtcNow;
-
-        var evt = await AppendEventAsync(
-            entry.OwnerId, entry.Id, entry.OperationId, RecoveryEventType.DispositionSet, actor,
-            detail: "Expired: aged past the ageing threshold with no further recovery activity.", cancellationToken);
-        entry.LastEventSeq = evt.Seq;
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        return Result<RecoveryLedgerEntry>.Success(entry);
-    }
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<RecoveryLedgerEntry>> FindLineageMatchesAsync(
         string ownerId, Guid? namespaceId, string entityName, string bodyHash, DateTimeOffset since,
         CancellationToken cancellationToken = default)
     {
-        return await _dbContext.RecoveryLedgerEntries
-            .AsNoTracking()
-            .Where(e => e.OwnerId == ownerId
-                        && e.NamespaceId == namespaceId
-                        && e.EntityNameSnapshot == entityName
-                        && e.BodyHash == bodyHash
-                        && e.BegunAt >= since)
+        // Compared in memory: BegunAt is stored as sortable text, and the lineage set is small (one
+        // message's own history), so this stays correct without a provider-specific translation.
+        var candidates = await _db.RecoveryLedgerEntries.AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && e.NamespaceId == namespaceId
+                        && e.EntityNameSnapshot == entityName && e.BodyHash == bodyHash)
             .ToListAsync(cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async Task<IReadOnlyList<RecoveryLedgerEntry>> FindEntriesForEntitySinceAsync(
-        string ownerId, Guid? namespaceId, string entityName, DateTimeOffset since, int limit = 100,
-        CancellationToken cancellationToken = default)
-    {
-        return await _dbContext.RecoveryLedgerEntries
-            .AsNoTracking()
-            .Where(e => e.OwnerId == ownerId
-                        && e.NamespaceId == namespaceId
-                        && e.EntityNameSnapshot == entityName
-                        && e.BegunAt >= since)
-            .OrderBy(e => e.BegunAt)
-            .Take(limit)
-            .ToListAsync(cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async Task<IReadOnlyList<RecoveryLedgerEntry>> FindEntriesForSignatureSinceAsync(
-        string ownerId, string signatureHash, DateTimeOffset since, int limit = 100,
-        CancellationToken cancellationToken = default)
-    {
-        return await _dbContext.RecoveryLedgerEntries
-            .AsNoTracking()
-            .Where(e => e.OwnerId == ownerId
-                        && e.SignatureHashSnapshot == signatureHash
-                        && e.BegunAt >= since)
-            .OrderBy(e => e.BegunAt)
-            .Take(limit)
-            .ToListAsync(cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async Task<IReadOnlyDictionary<RecoveryDisposition, int>> GetDispositionCountsAsync(
-        string ownerId, string signatureHash, RecoveryOperationKind actionKind,
-        CancellationToken cancellationToken = default)
-    {
-        var counts = await _dbContext.RecoveryLedgerEntries
-            .AsNoTracking()
-            .Where(e => e.OwnerId == ownerId
-                        && e.SignatureHashSnapshot == signatureHash
-                        && e.Disposition != null)
-            .Join(
-                _dbContext.RecoveryOperations.AsNoTracking().Where(o => o.Kind == actionKind),
-                e => e.OperationId,
-                o => o.Id,
-                (e, _) => e.Disposition!.Value)
-            .GroupBy(disposition => disposition)
-            .Select(g => new { Disposition = g.Key, Count = g.Count() })
-            .ToListAsync(cancellationToken);
-
-        return counts.ToDictionary(x => x.Disposition, x => x.Count);
-    }
-
-    /// <inheritdoc />
-    public async Task<IReadOnlyList<string>> GetDistinctSignatureHashesAsync(
-        string ownerId, RecoveryOperationKind actionKind, int limit = int.MaxValue,
-        CancellationToken cancellationToken = default)
-    {
-        return await _dbContext.RecoveryLedgerEntries
-            .AsNoTracking()
-            .Where(e => e.OwnerId == ownerId && e.SignatureHashSnapshot != null)
-            .Join(
-                _dbContext.RecoveryOperations.AsNoTracking().Where(o => o.Kind == actionKind),
-                e => e.OperationId,
-                o => o.Id,
-                (e, _) => e.SignatureHashSnapshot!)
-            .Distinct()
-            .OrderBy(hash => hash)
-            .Take(limit)
-            .ToListAsync(cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async Task<CloudProviderType?> GetSignatureProviderAsync(
-        string ownerId, string signatureHash, CancellationToken cancellationToken = default)
-    {
-        var fromLedger = await _dbContext.RecoveryLedgerEntries
-            .AsNoTracking()
-            .Where(e => e.OwnerId == ownerId
-                        && e.SignatureHashSnapshot == signatureHash
-                        && e.ProviderSnapshot != null)
-            .Select(e => e.ProviderSnapshot)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (fromLedger is not null || _namespaceRepository is null)
-        {
-            return fromLedger;
-        }
-
-        // A signature that has never had a replay/purge recorded against it has no
-        // ProviderSnapshot in the ledger yet — falling back to null here (and letting callers
-        // fail closed to AWS's stricter capabilities) wrongly tells an operator a
-        // never-yet-replayed Azure signature can't do something Azure actually can. Resolve the
-        // provider from the namespace the signature was last (or most recently) observed in
-        // instead — NamespaceSignature rows exist independently of the recovery ledger.
-        var namespaceId = await _dbContext.NamespaceSignatures
-            .AsNoTracking()
-            .Where(s => s.OwnerId == ownerId && s.SignatureHash == signatureHash)
-            .OrderByDescending(s => s.LastSeenAt)
-            .Select(s => (Guid?)s.NamespaceId)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (namespaceId is null)
-        {
-            return null;
-        }
-
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId.Value, cancellationToken);
-        return namespaceResult.IsSuccess ? namespaceResult.Value.Provider : null;
-    }
-
-    /// <inheritdoc />
-    public async Task<EnvironmentType?> GetSignatureEnvironmentAsync(
-        string ownerId, string signatureHash, CancellationToken cancellationToken = default)
-    {
-        var fromLedger = await _dbContext.RecoveryLedgerEntries
-            .AsNoTracking()
-            .Where(e => e.OwnerId == ownerId
-                        && e.SignatureHashSnapshot == signatureHash
-                        && e.EnvironmentSnapshot != null)
-            .Select(e => e.EnvironmentSnapshot)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (fromLedger is not null || _namespaceRepository is null)
-        {
-            return fromLedger;
-        }
-
-        var namespaceId = await _dbContext.NamespaceSignatures
-            .AsNoTracking()
-            .Where(s => s.OwnerId == ownerId && s.SignatureHash == signatureHash)
-            .OrderByDescending(s => s.LastSeenAt)
-            .Select(s => (Guid?)s.NamespaceId)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (namespaceId is null)
-        {
-            return null;
-        }
-
-        var namespaceResult = await _namespaceRepository.GetByIdAsync(namespaceId.Value, cancellationToken);
-        return namespaceResult.IsSuccess ? namespaceResult.Value.Environment : null;
-    }
-
-    /// <inheritdoc />
-    public async Task<Guid?> GetSignatureNamespaceIdAsync(
-        string ownerId, string signatureHash, CancellationToken cancellationToken = default)
-    {
-        var fromLedger = await _dbContext.RecoveryLedgerEntries
-            .AsNoTracking()
-            .Where(e => e.OwnerId == ownerId
-                        && e.SignatureHashSnapshot == signatureHash
-                        && e.NamespaceId != null)
-            .Select(e => e.NamespaceId)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (fromLedger is not null)
-        {
-            return fromLedger;
-        }
-
-        return await _dbContext.NamespaceSignatures
-            .AsNoTracking()
-            .Where(s => s.OwnerId == ownerId && s.SignatureHash == signatureHash)
-            .OrderByDescending(s => s.LastSeenAt)
-            .Select(s => (Guid?)s.NamespaceId)
-            .FirstOrDefaultAsync(cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async Task<IReadOnlyList<RecoveryDisposition>> GetRecentVerifiedDispositionsAsync(
-        string ownerId, string signatureHash, RecoveryOperationKind actionKind, int count,
-        CancellationToken cancellationToken = default)
-    {
-        return await _dbContext.RecoveryLedgerEntries
-            .AsNoTracking()
-            .Where(e => e.OwnerId == ownerId
-                        && e.SignatureHashSnapshot == signatureHash
-                        && (e.Disposition == RecoveryDisposition.Recovered || e.Disposition == RecoveryDisposition.Returned))
-            .Join(
-                _dbContext.RecoveryOperations.AsNoTracking().Where(o => o.Kind == actionKind),
-                e => e.OperationId,
-                o => o.Id,
-                (e, _) => e)
-            .OrderByDescending(e => e.LastEventSeq)
-            .Take(count)
-            .Select(e => e.Disposition!.Value)
-            .ToListAsync(cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async Task<IReadOnlyList<RecoveryDisposition>> GetRecentVerifiedDispositionsByRuleAsync(
-        string ownerId, long ruleId, RecoveryOperationKind actionKind, int count,
-        CancellationToken cancellationToken = default)
-    {
-        return await _dbContext.RecoveryLedgerEntries
-            .AsNoTracking()
-            .Where(e => e.OwnerId == ownerId
-                        && (e.Disposition == RecoveryDisposition.Recovered || e.Disposition == RecoveryDisposition.Returned))
-            .Join(
-                _dbContext.RecoveryOperations.AsNoTracking()
-                    .Where(o => o.Kind == actionKind && o.SourceRuleId == ruleId),
-                e => e.OperationId,
-                o => o.Id,
-                (e, _) => e)
-            .OrderByDescending(e => e.LastEventSeq)
-            .Take(count)
-            .Select(e => e.Disposition!.Value)
-            .ToListAsync(cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async Task<Result<RecoveryOperation>> RecordAutoReplayCircuitBreakerTripAsync(
-        string ownerId, long ruleId, string ruleName, RecoveryActor actor, int sampleSize,
-        double verifiedSuccessRate, double appliedSuccessRateFloor,
-        CancellationToken cancellationToken = default)
-    {
-        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
-
-        var now = DateTimeOffset.UtcNow;
-        var operation = new RecoveryOperation
-        {
-            OwnerId = ownerId,
-            Kind = RecoveryOperationKind.AutoReplayRuleControl,
-            Trigger = RecoveryTrigger.AutoReplayCircuitBreaker,
-            ActorIdentity = actor.Identity,
-            ActorKind = actor.Kind,
-            ActorScopes = actor.Scopes,
-            Reason = $"Verified success rate {verifiedSuccessRate:P0} over last {sampleSize} outcomes fell below the {appliedSuccessRateFloor:P0} circuit-breaker floor",
-            NamespaceId = null,
-            SourceRuleId = ruleId,
-            ScopeDescription = $"auto-replay rule {ruleId} ({ruleName}) circuit breaker",
-            ServiceVersion = GetServiceVersion(),
-            OpenedAt = now,
-            TargetCount = 0,
-        };
-        _dbContext.RecoveryOperations.Add(operation);
-
-        var detail = JsonSerializer.Serialize(new
-        {
-            ruleId,
-            ruleName,
-            sampleSize,
-            verifiedSuccessRate,
-            appliedSuccessRateFloor,
-            defaultSuccessRateFloor = BackgroundServices.AutonomyEvaluationWorker.DefaultCircuitBreakerSuccessRateFloor,
-        });
-
-        await AppendEventAsync(
-            ownerId, entryId: null, operation.Id, RecoveryEventType.AutoReplayRuleCircuitBreakerTripped,
-            actor, detail, cancellationToken);
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        return Result<RecoveryOperation>.Success(operation);
-    }
-
-    /// <inheritdoc />
-    public async Task<Result<RecoveryLedgerEntry>> RecordDeclinedAsync(
-        BeginRecoveryEntryRequest request, string reasonCode, string? detailJson,
-        CancellationToken cancellationToken = default)
-    {
-        using var _ = await AcquireOwnerLockAsync(request.OwnerId, cancellationToken);
-
-        var operation = await _dbContext.RecoveryOperations
-            .AsNoTracking()
-            .FirstOrDefaultAsync(o => o.Id == request.OperationId, cancellationToken);
-
-        if (operation is null || operation.OwnerId != request.OwnerId)
-        {
-            return Result<RecoveryLedgerEntry>.Failure(Error.NotFound(
-                "RecoveryLedger.OperationNotFound", "Recovery operation not found."));
-        }
-
-        var now = DateTimeOffset.UtcNow;
-        var entry = new RecoveryLedgerEntry
-        {
-            OperationId = request.OperationId,
-            OwnerId = request.OwnerId,
-            DlqMessageId = request.DlqMessageId,
-            NamespaceId = request.NamespaceId,
-            NamespaceNameSnapshot = request.NamespaceNameSnapshot,
-            ProviderSnapshot = request.ProviderSnapshot,
-            EnvironmentSnapshot = request.EnvironmentSnapshot,
-            EntityNameSnapshot = request.EntityNameSnapshot,
-            EntityTypeSnapshot = request.EntityTypeSnapshot,
-            TopicNameSnapshot = request.TopicNameSnapshot,
-            SourceMessageIdSnapshot = request.SourceMessageIdSnapshot,
-            SourceSequenceNumberSnapshot = request.SourceSequenceNumberSnapshot,
-            BodyHash = request.BodyHash,
-            FailureCategorySnapshot = request.FailureCategorySnapshot,
-            DeadLetterReasonSnapshot = request.DeadLetterReasonSnapshot,
-            SignatureHashSnapshot = request.SignatureHashSnapshot,
-            TargetEntity = request.TargetEntity,
-            BegunAt = now,
-            State = RecoveryEntryState.Declined,
-            Disposition = RecoveryDisposition.Declined,
-            ClosedAt = now,
-        };
-
-        _dbContext.RecoveryLedgerEntries.Add(entry);
-
-        var detail = string.IsNullOrEmpty(detailJson)
-            ? JsonSerializer.Serialize(new { reasonCode })
-            : detailJson;
-
-        var evt = await AppendEventAsync(
-            entry.OwnerId, entry.Id, entry.OperationId,
-            RecoveryEventType.EligibilityDeclined, request.Actor, detail, cancellationToken);
-        entry.LastEventSeq = evt.Seq;
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        return Result<RecoveryLedgerEntry>.Success(entry);
-    }
-
-    /// <inheritdoc />
-    public async Task<Result<AutonomyGrant>> RecordAutonomyGrantTransitionAsync(
-        string ownerId, string signatureHash, RecoveryOperationKind actionKind,
-        AutonomyLevel previousLevel, AutonomyLevel newLevel, string reason, string? evidenceJson,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(reason))
-        {
-            return Result<AutonomyGrant>.Failure(Error.Validation(
-                "RecoveryLedger.ReasonRequired", "A reason is required to record an autonomy grant transition."));
-        }
-
-        if (previousLevel == newLevel)
-        {
-            return Result<AutonomyGrant>.Failure(Error.Validation(
-                "RecoveryLedger.NotATransition", "previousLevel and newLevel must differ."));
-        }
-
-        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
-
-        var grant = await _dbContext.AutonomyGrants.FirstOrDefaultAsync(
-            g => g.OwnerId == ownerId && g.SignatureHash == signatureHash && g.ActionKind == actionKind,
-            cancellationToken);
-
-        var now = DateTimeOffset.UtcNow;
-
-        if (grant is null)
-        {
-            grant = new AutonomyGrant
-            {
-                OwnerId = ownerId,
-                SignatureHash = signatureHash,
-                ActionKind = actionKind,
-                CurrentLevel = newLevel,
-                UpdatedAtUtc = now,
-            };
-            _dbContext.AutonomyGrants.Add(grant);
-        }
-        else
-        {
-            if (grant.CurrentLevel != previousLevel)
-            {
-                // A losing snapshot race between two independent callers deciding a transition
-                // from the same stale read (e.g. the hourly sweep and an event-time fast-demotion
-                // check) — not a caller error. The winner already applied a transition; re-applying
-                // this one would log a duplicate forensic event against a previousLevel that no
-                // longer reflects the grant's real history.
-                return Result<AutonomyGrant>.Failure(Error.Conflict(
-                    "RecoveryLedger.StaleAutonomyGrantTransition",
-                    $"AutonomyGrant for signature {signatureHash} is currently at {grant.CurrentLevel}, not the expected {previousLevel}; another writer already transitioned it."));
-            }
-
-            grant.CurrentLevel = newLevel;
-            grant.UpdatedAtUtc = now;
-        }
-
-        var actor = ActorIdentityResolver.ResolveSystemActor("AutonomyEvaluationWorker");
-
-        var operation = new RecoveryOperation
-        {
-            OwnerId = ownerId,
-            Kind = RecoveryOperationKind.AutonomyGrantChange,
-            Trigger = RecoveryTrigger.AutonomyEvaluation,
-            ActorIdentity = actor.Identity,
-            ActorKind = actor.Kind,
-            ActorScopes = actor.Scopes,
-            NamespaceId = null,
-            ScopeDescription = $"signature={signatureHash}; action={actionKind}",
-            ServiceVersion = GetServiceVersion(),
-            OpenedAt = now,
-            TargetCount = 0,
-        };
-        _dbContext.RecoveryOperations.Add(operation);
-
-        var evidence = evidenceJson is null ? (JsonElement?)null : JsonSerializer.Deserialize<JsonElement>(evidenceJson);
-        var detail = JsonSerializer.Serialize(new
-        {
-            signatureHash,
-            actionKind = actionKind.ToString(),
-            previousLevel = previousLevel.ToString(),
-            newLevel = newLevel.ToString(),
-            reason,
-            evidence,
-        });
-
-        var eventType = newLevel > previousLevel
-            ? RecoveryEventType.AutonomyGrantPromoted
-            : RecoveryEventType.AutonomyGrantDemoted;
-
-        await AppendEventAsync(ownerId, entryId: null, operation.Id, eventType, actor, detail, cancellationToken);
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        return Result<AutonomyGrant>.Success(grant);
-    }
-
-    /// <inheritdoc />
-    public async Task<AutonomyGrant?> GetAutonomyGrantAsync(
-        string ownerId, string signatureHash, RecoveryOperationKind actionKind,
-        CancellationToken cancellationToken = default)
-    {
-        return await _dbContext.AutonomyGrants
-            .AsNoTracking()
-            .FirstOrDefaultAsync(
-                g => g.OwnerId == ownerId && g.SignatureHash == signatureHash && g.ActionKind == actionKind,
-                cancellationToken);
+        return [.. candidates.Where(e => e.BegunAt >= since)];
     }
 
     /// <inheritdoc />
     public async Task<bool> IsEmergencyStopActiveAsync(string ownerId, CancellationToken cancellationToken = default)
     {
-        var latest = await _dbContext.RecoveryEvents
-            .AsNoTracking()
+        var latest = await _db.RecoveryEvents.AsNoTracking()
             .Where(e => e.OwnerId == ownerId
                 && (e.EventType == RecoveryEventType.EmergencyStopActivated
                     || e.EventType == RecoveryEventType.EmergencyStopCleared))
@@ -1201,553 +412,96 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     }
 
     /// <inheritdoc />
-    public async Task<Result<RecoveryOperation>> RecordEmergencyControlEventAsync(
-        string ownerId, RecoveryActor actor, bool activate, string? reason,
-        CancellationToken cancellationToken = default)
-    {
-        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
-
-        var now = DateTimeOffset.UtcNow;
-        var operation = new RecoveryOperation
-        {
-            OwnerId = ownerId,
-            Kind = RecoveryOperationKind.EmergencyControl,
-            Trigger = RecoveryTrigger.EmergencyControl,
-            ActorIdentity = actor.Identity,
-            ActorKind = actor.Kind,
-            ActorScopes = actor.Scopes,
-            Reason = reason,
-            NamespaceId = null,
-            ScopeDescription = activate ? "emergency-stop=activate" : "emergency-stop=clear",
-            ServiceVersion = GetServiceVersion(),
-            OpenedAt = now,
-            TargetCount = 0,
-        };
-        _dbContext.RecoveryOperations.Add(operation);
-
-        var eventType = activate ? RecoveryEventType.EmergencyStopActivated : RecoveryEventType.EmergencyStopCleared;
-        var detail = JsonSerializer.Serialize(new { reason });
-
-        await AppendEventAsync(ownerId, entryId: null, operation.Id, eventType, actor, detail, cancellationToken);
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        return Result<RecoveryOperation>.Success(operation);
-    }
+    public async Task<AutonomyGrant?> GetAutonomyGrantAsync(
+        string ownerId, string signatureHash, RecoveryOperationKind actionKind, CancellationToken cancellationToken = default) =>
+        await _db.AutonomyGrants.AsNoTracking()
+            .FirstOrDefaultAsync(g => g.OwnerId == ownerId && g.SignatureHash == signatureHash && g.ActionKind == actionKind, cancellationToken);
 
     /// <inheritdoc />
-    public async Task<Result<ProductionElevation>> RequestProductionElevationAsync(
-        string ownerId, Guid namespaceId, string? namespaceNameSnapshot, RecoveryActor actor,
-        string reason, TimeSpan duration, CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(reason))
-        {
-            return Result<ProductionElevation>.Failure(Error.Validation(
-                "RecoveryLedger.ProductionElevationReasonRequired",
-                "A reason is required to request production access."));
-        }
-
-        if (duration <= TimeSpan.Zero)
-        {
-            return Result<ProductionElevation>.Failure(Error.Validation(
-                "RecoveryLedger.ProductionElevationDurationInvalid",
-                "Requested duration must be positive."));
-        }
-
-        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
-
-        var now = DateTimeOffset.UtcNow;
-        var elevation = new ProductionElevation
-        {
-            OwnerId = ownerId,
-            NamespaceId = namespaceId,
-            NamespaceNameSnapshot = namespaceNameSnapshot,
-            Reason = reason,
-            RequestedByIdentity = actor.Identity,
-            RequestedAt = now,
-            RequestedDuration = duration,
-        };
-        _dbContext.ProductionElevations.Add(elevation);
-
-        var operation = new RecoveryOperation
-        {
-            OwnerId = ownerId,
-            Kind = RecoveryOperationKind.ProductionElevationControl,
-            Trigger = RecoveryTrigger.ProductionElevationControl,
-            ActorIdentity = actor.Identity,
-            ActorKind = actor.Kind,
-            ActorScopes = actor.Scopes,
-            Reason = reason,
-            NamespaceId = namespaceId,
-            NamespaceNameSnapshot = namespaceNameSnapshot,
-            ScopeDescription = $"production-elevation=request; namespace={namespaceId}; duration={duration}",
-            ServiceVersion = GetServiceVersion(),
-            OpenedAt = now,
-            TargetCount = 0,
-        };
-        _dbContext.RecoveryOperations.Add(operation);
-
-        var detail = JsonSerializer.Serialize(new
-        {
-            namespaceId,
-            reason,
-            requestedDuration = duration.ToString(),
-        });
-
-        await AppendEventAsync(
-            ownerId, entryId: null, operation.Id, RecoveryEventType.ProductionElevationRequested,
-            actor, detail, cancellationToken);
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        return Result<ProductionElevation>.Success(elevation);
-    }
+    public async Task<IReadOnlyList<AutonomyGrant>> GetAutonomyGrantsAsync(string ownerId, CancellationToken cancellationToken = default) =>
+        await _db.AutonomyGrants.AsNoTracking().Where(g => g.OwnerId == ownerId).OrderBy(g => g.SignatureHash).ToListAsync(cancellationToken);
 
     /// <inheritdoc />
-    public async Task<Result<ProductionElevation>> ApproveProductionElevationAsync(
-        Guid elevationId, string ownerId, RecoveryActor actor, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyDictionary<RecoveryDisposition, int>> GetDispositionCountsAsync(
+        string ownerId, string signatureHash, RecoveryOperationKind actionKind, CancellationToken cancellationToken = default)
     {
-        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
-
-        var elevation = await _dbContext.ProductionElevations
-            .FirstOrDefaultAsync(e => e.Id == elevationId, cancellationToken);
-
-        if (elevation is null || elevation.OwnerId != ownerId)
-        {
-            return Result<ProductionElevation>.Failure(Error.NotFound(
-                "RecoveryLedger.ProductionElevationNotFound", "Production elevation not found."));
-        }
-
-        if (elevation.RevokedAt is not null)
-        {
-            return Result<ProductionElevation>.Failure(Error.Conflict(
-                "RecoveryLedger.ProductionElevationRevoked", "This elevation has already been revoked."));
-        }
-
-        if (elevation.ApprovedAt is not null)
-        {
-            return Result<ProductionElevation>.Failure(Error.Conflict(
-                "RecoveryLedger.ProductionElevationAlreadyApproved", "This elevation has already been approved."));
-        }
-
-        // Dual control admits no self-approval, including for Admin — enforced here regardless of
-        // what the caller's own governance check already found (ADR-0010 §Decision).
-        if (string.Equals(actor.Identity, elevation.RequestedByIdentity, StringComparison.Ordinal))
-        {
-            return Result<ProductionElevation>.Failure(Error.Forbidden(
-                "RecoveryLedger.ProductionElevationSelfApprovalForbidden",
-                "The identity that requested a production elevation cannot approve it."));
-        }
-
-        var now = DateTimeOffset.UtcNow;
-
-        elevation.ApprovedByIdentity = actor.Identity;
-        elevation.ApprovedAt = now;
-        elevation.ExpiresAt = now + elevation.RequestedDuration;
-
-        var operation = new RecoveryOperation
-        {
-            OwnerId = ownerId,
-            Kind = RecoveryOperationKind.ProductionElevationControl,
-            Trigger = RecoveryTrigger.ProductionElevationControl,
-            ActorIdentity = actor.Identity,
-            ActorKind = actor.Kind,
-            ActorScopes = actor.Scopes,
-            NamespaceId = elevation.NamespaceId,
-            NamespaceNameSnapshot = elevation.NamespaceNameSnapshot,
-            ScopeDescription = $"production-elevation=approve; namespace={elevation.NamespaceId}; expiresAt={elevation.ExpiresAt:O}",
-            ServiceVersion = GetServiceVersion(),
-            OpenedAt = now,
-            TargetCount = 0,
-        };
-        _dbContext.RecoveryOperations.Add(operation);
-
-        var detail = JsonSerializer.Serialize(new
-        {
-            elevationId = elevation.Id,
-            namespaceId = elevation.NamespaceId,
-            requestedByIdentity = elevation.RequestedByIdentity,
-            approvedByIdentity = actor.Identity,
-            expiresAt = elevation.ExpiresAt,
-        });
-
-        await AppendEventAsync(
-            ownerId, entryId: null, operation.Id, RecoveryEventType.ProductionElevationApproved,
-            actor, detail, cancellationToken);
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        return Result<ProductionElevation>.Success(elevation);
-    }
-
-    /// <inheritdoc />
-    public async Task<Result<ProductionElevation>> RevokeProductionElevationAsync(
-        Guid elevationId, string ownerId, RecoveryActor actor, string? reason,
-        CancellationToken cancellationToken = default)
-    {
-        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
-
-        var elevation = await _dbContext.ProductionElevations
-            .FirstOrDefaultAsync(e => e.Id == elevationId, cancellationToken);
-
-        if (elevation is null || elevation.OwnerId != ownerId)
-        {
-            return Result<ProductionElevation>.Failure(Error.NotFound(
-                "RecoveryLedger.ProductionElevationNotFound", "Production elevation not found."));
-        }
-
-        if (elevation.RevokedAt is not null)
-        {
-            return Result<ProductionElevation>.Failure(Error.Conflict(
-                "RecoveryLedger.ProductionElevationRevoked", "This elevation has already been revoked."));
-        }
-
-        var now = DateTimeOffset.UtcNow;
-        elevation.RevokedAt = now;
-        elevation.RevokedByIdentity = actor.Identity;
-
-        var operation = new RecoveryOperation
-        {
-            OwnerId = ownerId,
-            Kind = RecoveryOperationKind.ProductionElevationControl,
-            Trigger = RecoveryTrigger.ProductionElevationControl,
-            ActorIdentity = actor.Identity,
-            ActorKind = actor.Kind,
-            ActorScopes = actor.Scopes,
-            Reason = reason,
-            NamespaceId = elevation.NamespaceId,
-            NamespaceNameSnapshot = elevation.NamespaceNameSnapshot,
-            ScopeDescription = $"production-elevation=revoke; namespace={elevation.NamespaceId}",
-            ServiceVersion = GetServiceVersion(),
-            OpenedAt = now,
-            TargetCount = 0,
-        };
-        _dbContext.RecoveryOperations.Add(operation);
-
-        var detail = JsonSerializer.Serialize(new
-        {
-            elevationId = elevation.Id,
-            namespaceId = elevation.NamespaceId,
-            revokedByIdentity = actor.Identity,
-            reason,
-        });
-
-        await AppendEventAsync(
-            ownerId, entryId: null, operation.Id, RecoveryEventType.ProductionElevationRevoked,
-            actor, detail, cancellationToken);
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        return Result<ProductionElevation>.Success(elevation);
-    }
-
-    /// <inheritdoc />
-    public Task<ProductionElevation?> GetLiveProductionElevationAsync(
-        string ownerId, Guid namespaceId, CancellationToken cancellationToken = default) =>
-        ProductionElevationQueries.GetLiveAsync(_dbContext, ownerId, namespaceId, cancellationToken);
-
-    /// <inheritdoc />
-    public async Task<IReadOnlyList<ProductionElevation>> GetUnrecordedExpiredElevationsAsync(
-        string ownerId, CancellationToken cancellationToken = default)
-    {
-        var now = DateTimeOffset.UtcNow;
-        return await _dbContext.ProductionElevations
-            .AsNoTracking()
-            .Where(e => e.OwnerId == ownerId
-                && e.ApprovedAt != null
-                && e.RevokedAt == null
-                && !e.ExpiredEventRecorded
-                && e.ExpiresAt != null && e.ExpiresAt <= now)
+        var counts = await _db.RecoveryLedgerEntries.AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && e.SignatureHashSnapshot == signatureHash && e.Disposition != null)
+            .Join(_db.RecoveryOperations.AsNoTracking().Where(o => o.Kind == actionKind), e => e.OperationId, o => o.Id, (e, _) => e.Disposition!.Value)
+            .GroupBy(d => d)
+            .Select(g => new { Disposition = g.Key, Count = g.Count() })
             .ToListAsync(cancellationToken);
+        return counts.ToDictionary(x => x.Disposition, x => x.Count);
     }
 
     /// <inheritdoc />
-    public async Task<Result<ProductionElevation>> RecordProductionElevationExpiryAsync(
-        Guid elevationId, string ownerId, CancellationToken cancellationToken = default)
-    {
-        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
-
-        var elevation = await _dbContext.ProductionElevations
-            .FirstOrDefaultAsync(e => e.Id == elevationId, cancellationToken);
-
-        if (elevation is null || elevation.OwnerId != ownerId)
-        {
-            return Result<ProductionElevation>.Failure(Error.NotFound(
-                "RecoveryLedger.ProductionElevationNotFound", "Production elevation not found."));
-        }
-
-        if (elevation.ExpiredEventRecorded)
-        {
-            return Result<ProductionElevation>.Success(elevation);
-        }
-
-        elevation.ExpiredEventRecorded = true;
-
-        var actor = ActorIdentityResolver.ResolveSystemActor("ProductionElevationExpiryWorker");
-        var now = DateTimeOffset.UtcNow;
-        var operation = new RecoveryOperation
-        {
-            OwnerId = ownerId,
-            Kind = RecoveryOperationKind.ProductionElevationControl,
-            Trigger = RecoveryTrigger.ProductionElevationControl,
-            ActorIdentity = actor.Identity,
-            ActorKind = actor.Kind,
-            ActorScopes = actor.Scopes,
-            NamespaceId = elevation.NamespaceId,
-            NamespaceNameSnapshot = elevation.NamespaceNameSnapshot,
-            ScopeDescription = $"production-elevation=expire; namespace={elevation.NamespaceId}",
-            ServiceVersion = GetServiceVersion(),
-            OpenedAt = now,
-            TargetCount = 0,
-        };
-        _dbContext.RecoveryOperations.Add(operation);
-
-        var detail = JsonSerializer.Serialize(new
-        {
-            elevationId = elevation.Id,
-            namespaceId = elevation.NamespaceId,
-            expiresAt = elevation.ExpiresAt,
-        });
-
-        await AppendEventAsync(
-            ownerId, entryId: null, operation.Id, RecoveryEventType.ProductionElevationExpired,
-            actor, detail, cancellationToken);
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        return Result<ProductionElevation>.Success(elevation);
-    }
-
-    /// <inheritdoc />
-    public async Task<IReadOnlyList<ProductionElevation>> QueryProductionElevationsAsync(
-        string ownerId, Guid? namespaceId, int limit, CancellationToken cancellationToken = default)
-    {
-        var query = _dbContext.ProductionElevations
-            .AsNoTracking()
-            .Where(e => e.OwnerId == ownerId);
-
-        if (namespaceId is { } nsId)
-        {
-            query = query.Where(e => e.NamespaceId == nsId);
-        }
-
-        return await query
-            .OrderByDescending(e => e.RequestedAt)
+    public async Task<IReadOnlyList<string>> GetDistinctSignatureHashesAsync(
+        string ownerId, RecoveryOperationKind actionKind, int limit = int.MaxValue, CancellationToken cancellationToken = default) =>
+        await _db.RecoveryLedgerEntries.AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && e.SignatureHashSnapshot != null)
+            .Join(_db.RecoveryOperations.AsNoTracking().Where(o => o.Kind == actionKind), e => e.OperationId, o => o.Id, (e, _) => e.SignatureHashSnapshot!)
+            .Distinct()
+            .OrderBy(h => h)
             .Take(limit)
             .ToListAsync(cancellationToken);
-    }
 
     /// <inheritdoc />
-    public async Task<Result<RecoveryEvent>> SealEpochAsync(
-        string ownerId, RecoveryActor actor, CancellationToken cancellationToken = default)
-    {
-        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
-
-        var lastEvent = await _dbContext.RecoveryEvents
-            .AsNoTracking()
-            .Where(e => e.OwnerId == ownerId)
-            .OrderByDescending(e => e.Seq)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        if (lastEvent is null)
-        {
-            return Result<RecoveryEvent>.Failure(Error.Conflict(
-                "RecoveryLedger.EpochSealNothingToSeal",
-                "There is no recovery event for this owner to seal."));
-        }
-
-        var previousEpochNumber = 0;
-        if (lastEvent.EventType == RecoveryEventType.EpochSealed)
-        {
-            if (lastEvent.DetailJson is not null)
-            {
-                using var previousDetail = JsonDocument.Parse(lastEvent.DetailJson);
-                if (previousDetail.RootElement.TryGetProperty("epochNumber", out var previousEpochProp))
-                {
-                    previousEpochNumber = previousEpochProp.GetInt32();
-                }
-            }
-
-            return Result<RecoveryEvent>.Failure(Error.Conflict(
-                "RecoveryLedger.EpochSealNothingSinceLastSeal",
-                $"Epoch {previousEpochNumber} was already sealed through Seq {lastEvent.Seq}, and no event has been recorded since — there is nothing new to seal."));
-        }
-
-        var lastMarker = await _dbContext.RecoveryEvents
-            .AsNoTracking()
-            .Where(e => e.OwnerId == ownerId && e.EventType == RecoveryEventType.EpochSealed)
-            .OrderByDescending(e => e.Seq)
-            .FirstOrDefaultAsync(cancellationToken);
-        if (lastMarker?.DetailJson is not null)
-        {
-            using var lastMarkerDetail = JsonDocument.Parse(lastMarker.DetailJson);
-            if (lastMarkerDetail.RootElement.TryGetProperty("epochNumber", out var lastMarkerEpochProp))
-            {
-                previousEpochNumber = lastMarkerEpochProp.GetInt32();
-            }
-        }
-
-        var epochNumber = previousEpochNumber + 1;
-        var detail = JsonSerializer.Serialize(new { epochNumber, sealedThroughSeq = lastEvent.Seq });
-
-        var operation = new RecoveryOperation
-        {
-            OwnerId = ownerId,
-            Kind = RecoveryOperationKind.EpochControl,
-            Trigger = RecoveryTrigger.EpochControl,
-            ActorIdentity = actor.Identity,
-            ActorKind = actor.Kind,
-            ActorScopes = actor.Scopes,
-            Reason = $"Seal epoch {epochNumber}",
-            NamespaceId = null,
-            ScopeDescription = $"epoch-seal={epochNumber}",
-            ServiceVersion = GetServiceVersion(),
-            OpenedAt = DateTimeOffset.UtcNow,
-            TargetCount = 0,
-        };
-        _dbContext.RecoveryOperations.Add(operation);
-
-        var evt = await AppendEventAsync(
-            ownerId, entryId: null, operation.Id, RecoveryEventType.EpochSealed, actor, detail, cancellationToken);
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        return Result<RecoveryEvent>.Success(evt);
-    }
+    public async Task<CloudProviderType?> GetSignatureProviderAsync(string ownerId, string signatureHash, CancellationToken cancellationToken = default) =>
+        await _db.RecoveryLedgerEntries.AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && e.SignatureHashSnapshot == signatureHash && e.ProviderSnapshot != null)
+            .Select(e => e.ProviderSnapshot)
+            .FirstOrDefaultAsync(cancellationToken)
+        ?? (await LastSeenNamespaceAsync(ownerId, signatureHash, cancellationToken))?.Provider;
 
     /// <inheritdoc />
-    public async Task<Result<RecoveryEvent>> RecordOutcomeFlagAsync(
-        Guid entryId, string ownerId, RecoveryActor actor, RecoveryOutcomeFlagKind flagKind, string reason,
-        CancellationToken cancellationToken = default)
+    public async Task<EnvironmentType?> GetSignatureEnvironmentAsync(string ownerId, string signatureHash, CancellationToken cancellationToken = default) =>
+        await _db.RecoveryLedgerEntries.AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && e.SignatureHashSnapshot == signatureHash && e.EnvironmentSnapshot != null)
+            .Select(e => e.EnvironmentSnapshot)
+            .FirstOrDefaultAsync(cancellationToken)
+        ?? (await LastSeenNamespaceAsync(ownerId, signatureHash, cancellationToken))?.Environment;
+
+    /// <inheritdoc />
+    public async Task<Guid?> GetSignatureNamespaceIdAsync(string ownerId, string signatureHash, CancellationToken cancellationToken = default) =>
+        await _db.RecoveryLedgerEntries.AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && e.SignatureHashSnapshot == signatureHash && e.NamespaceId != null)
+            .Select(e => e.NamespaceId)
+            .FirstOrDefaultAsync(cancellationToken)
+        ?? await LastSeenNamespaceIdAsync(ownerId, signatureHash, cancellationToken);
+
+    // A signature never yet replayed has no snapshot in the ledger; where it was last seen still names its cloud and
+    // environment. Without this, a never-replayed Azure signature would fail closed to AWS's weaker capabilities.
+    private Task<Guid?> LastSeenNamespaceIdAsync(string ownerId, string signatureHash, CancellationToken cancellationToken) =>
+        _db.NamespaceSignatures.AsNoTracking()
+            .Where(s => s.OwnerId == ownerId && s.SignatureHash == signatureHash)
+            .OrderByDescending(s => s.LastSeenAt)
+            .Select(s => (Guid?)s.NamespaceId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    private async Task<Namespace?> LastSeenNamespaceAsync(string ownerId, string signatureHash, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(reason))
-        {
-            return Result<RecoveryEvent>.Failure(Error.Validation(
-                "RecoveryLedger.OutcomeFlagReasonRequired", "A reason is required to flag a recovery outcome."));
-        }
-
-        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
-
-        var entry = await _dbContext.RecoveryLedgerEntries
-            .FirstOrDefaultAsync(e => e.Id == entryId, cancellationToken);
-
-        if (entry is null || entry.OwnerId != ownerId)
-        {
-            return Result<RecoveryEvent>.Failure(Error.NotFound(
-                "RecoveryLedger.EntryNotFound", "Recovery ledger entry not found."));
-        }
-
-        var detail = JsonSerializer.Serialize(new { flagKind = flagKind.ToString(), reason });
-
-        var evt = await AppendEventAsync(
-            entry.OwnerId, entry.Id, entry.OperationId, RecoveryEventType.OutcomeFlagged, actor,
-            detail, cancellationToken);
-        entry.LastEventSeq = evt.Seq;
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        return Result<RecoveryEvent>.Success(evt);
+        var id = await LastSeenNamespaceIdAsync(ownerId, signatureHash, cancellationToken);
+        return id is null ? null : await _db.Namespaces.AsNoTracking().FirstOrDefaultAsync(n => n.Id == id, cancellationToken);
     }
 
     /// <inheritdoc />
     public async Task<bool> HasUnsafeOutcomeFlagAsync(string ownerId, CancellationToken cancellationToken = default)
     {
-        var detailJsonValues = await _dbContext.RecoveryEvents
-            .AsNoTracking()
+        var details = await _db.RecoveryEvents.AsNoTracking()
             .Where(e => e.OwnerId == ownerId && e.EventType == RecoveryEventType.OutcomeFlagged)
             .Select(e => e.DetailJson)
             .ToListAsync(cancellationToken);
-
-        return detailJsonValues.Any(json => TryParseFlagKind(json) == RecoveryOutcomeFlagKind.Unsafe);
+        return details.Any(json => TryParseFlagKind(json) == RecoveryOutcomeFlagKind.Unsafe);
     }
 
     /// <inheritdoc />
-    public async Task<bool> HasDuplicateAssociationAsync(
-        string ownerId, string signatureHash, CancellationToken cancellationToken = default)
+    public async Task<bool> HasDuplicateAssociationAsync(string ownerId, string signatureHash, CancellationToken cancellationToken = default)
     {
-        var detailJsonValues = await _dbContext.RecoveryEvents
-            .AsNoTracking()
+        var details = await _db.RecoveryEvents.AsNoTracking()
             .Where(e => e.OwnerId == ownerId && e.EventType == RecoveryEventType.OutcomeFlagged && e.EntryId != null)
-            .Join(
-                _dbContext.RecoveryLedgerEntries.AsNoTracking().Where(entry => entry.SignatureHashSnapshot == signatureHash),
-                e => e.EntryId,
-                entry => entry.Id,
-                (e, _) => e.DetailJson)
+            .Join(_db.RecoveryLedgerEntries.AsNoTracking().Where(x => x.SignatureHashSnapshot == signatureHash), e => e.EntryId, x => x.Id, (e, _) => e.DetailJson)
             .ToListAsync(cancellationToken);
-
-        return detailJsonValues.Any(json => TryParseFlagKind(json) == RecoveryOutcomeFlagKind.DuplicateBusinessEffect);
-    }
-
-    /// <inheritdoc />
-    public async Task<IReadOnlyList<AutonomyGrant>> GetAutonomyGrantsAsync(
-        string ownerId, CancellationToken cancellationToken = default)
-    {
-        return await _dbContext.AutonomyGrants
-            .AsNoTracking()
-            .Where(g => g.OwnerId == ownerId)
-            .ToListAsync(cancellationToken);
-    }
-
-    /// <inheritdoc />
-    public async Task<IReadOnlyList<AutonomyTransitionRecord>> GetRecentAutonomyTransitionsAsync(
-        string ownerId, int limit, CancellationToken cancellationToken = default)
-    {
-        var events = await _dbContext.RecoveryEvents
-            .AsNoTracking()
-            .Where(e => e.OwnerId == ownerId
-                && (e.EventType == RecoveryEventType.AutonomyGrantPromoted
-                    || e.EventType == RecoveryEventType.AutonomyGrantDemoted))
-            .OrderByDescending(e => e.Seq)
-            .Take(Math.Clamp(limit, 1, 500))
-            .ToListAsync(cancellationToken);
-
-        var results = new List<AutonomyTransitionRecord>(events.Count);
-        foreach (var evt in events)
-        {
-            if (TryParseTransitionDetail(evt.DetailJson) is { } transition)
-            {
-                results.Add(transition with { OccurredAtUtc = evt.OccurredAt });
-            }
-        }
-
-        return results;
-    }
-
-    private static AutonomyTransitionRecord? TryParseTransitionDetail(string? detailJson)
-    {
-        if (string.IsNullOrEmpty(detailJson))
-        {
-            return null;
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(detailJson);
-            var root = document.RootElement;
-
-            if (!root.TryGetProperty("signatureHash", out var signatureHashProp)
-                || !root.TryGetProperty("actionKind", out var actionKindProp)
-                || !root.TryGetProperty("previousLevel", out var previousLevelProp)
-                || !root.TryGetProperty("newLevel", out var newLevelProp)
-                || !root.TryGetProperty("reason", out var reasonProp))
-            {
-                return null;
-            }
-
-            if (!Enum.TryParse<RecoveryOperationKind>(actionKindProp.GetString(), out var actionKind)
-                || !Enum.TryParse<AutonomyLevel>(previousLevelProp.GetString(), out var previousLevel)
-                || !Enum.TryParse<AutonomyLevel>(newLevelProp.GetString(), out var newLevel))
-            {
-                return null;
-            }
-
-            var signatureHash = signatureHashProp.GetString();
-            var reason = reasonProp.GetString();
-            if (signatureHash is null || reason is null)
-            {
-                return null;
-            }
-
-            return new AutonomyTransitionRecord(
-                signatureHash, actionKind, previousLevel, newLevel, reason, OccurredAtUtc: default);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
+        return details.Any(json => TryParseFlagKind(json) == RecoveryOutcomeFlagKind.DuplicateBusinessEffect);
     }
 
     private static RecoveryOutcomeFlagKind? TryParseFlagKind(string? detailJson)
@@ -1764,12 +518,227 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
             : null;
     }
 
-    /// <summary>
-    /// Appends one event to <paramref name="ownerId"/>'s chain. Must be called while holding
-    /// that owner's lock (see <see cref="AcquireOwnerLockAsync"/>) — sequencing considers both
-    /// persisted rows and any not-yet-saved <see cref="RecoveryEvent"/> already added to this
-    /// unit of work, so a single caller may append more than one event before saving.
-    /// </summary>
+    /// <inheritdoc />
+    public async Task<Result<RecoveryLedgerEntry>> RecordDeclinedAsync(
+        BeginRecoveryEntryRequest request, string reasonCode, string? detailJson, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        using var _ = await AcquireOwnerLockAsync(request.OwnerId, cancellationToken);
+
+        var operation = await _db.RecoveryOperations.AsNoTracking().FirstOrDefaultAsync(o => o.Id == request.OperationId, cancellationToken);
+        if (operation is null || operation.OwnerId != request.OwnerId)
+        {
+            return Result<RecoveryLedgerEntry>.Failure(Error.NotFound("RecoveryLedger.OperationNotFound", "Recovery operation not found."));
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var entry = new RecoveryLedgerEntry
+        {
+            OperationId = request.OperationId, OwnerId = request.OwnerId, DlqMessageId = request.DlqMessageId, NamespaceId = request.NamespaceId,
+            NamespaceNameSnapshot = request.NamespaceNameSnapshot, ProviderSnapshot = request.ProviderSnapshot, EnvironmentSnapshot = request.EnvironmentSnapshot,
+            EntityNameSnapshot = request.EntityNameSnapshot, EntityTypeSnapshot = request.EntityTypeSnapshot, TopicNameSnapshot = request.TopicNameSnapshot,
+            SourceMessageIdSnapshot = request.SourceMessageIdSnapshot, SourceSequenceNumberSnapshot = request.SourceSequenceNumberSnapshot,
+            BodyHash = request.BodyHash, FailureCategorySnapshot = request.FailureCategorySnapshot, DeadLetterReasonSnapshot = request.DeadLetterReasonSnapshot,
+            SignatureHashSnapshot = request.SignatureHashSnapshot, TargetEntity = request.TargetEntity,
+            BegunAt = now, State = RecoveryEntryState.Declined, Disposition = RecoveryDisposition.Declined, ClosedAt = now,
+        };
+        _db.RecoveryLedgerEntries.Add(entry);
+
+        var detail = string.IsNullOrEmpty(detailJson) ? JsonSerializer.Serialize(new { reasonCode }) : detailJson;
+        var evt = await AppendEventAsync(entry.OwnerId, entry.Id, entry.OperationId, RecoveryEventType.EligibilityDeclined, request.Actor, detail, cancellationToken);
+        entry.LastEventSeq = evt.Seq;
+
+        await _db.SaveChangesAsync(cancellationToken);
+        return Result<RecoveryLedgerEntry>.Success(entry);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<RecoveryEvent>> RecordDecisionAsync(
+        Guid entryId, string ownerId, RecoveryActor actor, bool approved, string? reason, Guid? replayEntryId, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+        if (!approved && string.IsNullOrWhiteSpace(reason))
+        {
+            return Result<RecoveryEvent>.Failure(Error.Validation("RecoveryLedger.ReasonRequired", "Say why — the reason is recorded with your name."));
+        }
+
+        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
+        var entry = await _db.RecoveryLedgerEntries.FirstOrDefaultAsync(e => e.Id == entryId && e.OwnerId == ownerId, cancellationToken);
+        if (entry is null || entry.State != RecoveryEntryState.Declined)
+        {
+            return Result<RecoveryEvent>.Failure(Error.NotFound("RecoveryLedger.EntryNotFound", "Nothing is waiting under that id."));
+        }
+
+        var decided = await _db.RecoveryEvents.AsNoTracking()
+            .AnyAsync(e => e.EntryId == entryId && e.EventType == RecoveryEventType.OperatorNote, cancellationToken);
+        if (decided)
+        {
+            return Result<RecoveryEvent>.Failure(Error.Conflict("RecoveryLedger.AlreadyDecided", "Someone already answered this one."));
+        }
+
+        var evt = await AppendEventAsync(ownerId, entryId, entry.OperationId, RecoveryEventType.OperatorNote, actor,
+            JsonSerializer.Serialize(new { decision = approved ? "approved" : "declined", reason = reason?.Trim(), replayEntryId }), cancellationToken);
+        entry.LastEventSeq = evt.Seq;
+        await _db.SaveChangesAsync(cancellationToken);
+        return Result<RecoveryEvent>.Success(evt);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<RecoveryOperation>> RecordEmergencyControlEventAsync(
+        string ownerId, RecoveryActor actor, bool activate, string? reason, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
+
+        var now = DateTimeOffset.UtcNow;
+        var operation = new RecoveryOperation
+        {
+            OwnerId = ownerId, Kind = RecoveryOperationKind.EmergencyControl, Trigger = RecoveryTrigger.EmergencyControl,
+            ActorIdentity = actor.Identity, ActorKind = actor.Kind, ActorScopes = actor.Scopes, Reason = reason, NamespaceId = null,
+            ScopeDescription = activate ? "emergency-stop=activate" : "emergency-stop=clear", ServiceVersion = GetServiceVersion(),
+            OpenedAt = now, TargetCount = 0,
+        };
+        _db.RecoveryOperations.Add(operation);
+
+        var eventType = activate ? RecoveryEventType.EmergencyStopActivated : RecoveryEventType.EmergencyStopCleared;
+        await AppendEventAsync(ownerId, entryId: null, operation.Id, eventType, actor, JsonSerializer.Serialize(new { reason }), cancellationToken);
+
+        await _db.SaveChangesAsync(cancellationToken);
+        return Result<RecoveryOperation>.Success(operation);
+    }
+
+    /// <inheritdoc />
+    public async Task<EmergencyStopState> GetEmergencyStopStateAsync(string ownerId, CancellationToken cancellationToken = default)
+    {
+        var latest = await _db.RecoveryEvents.AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && (e.EventType == RecoveryEventType.EmergencyStopActivated || e.EventType == RecoveryEventType.EmergencyStopCleared))
+            .OrderByDescending(e => e.Seq)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (latest is null)
+        {
+            return new EmergencyStopState(false, null, null, null);
+        }
+
+        string? reason = null;
+        if (latest.DetailJson is { Length: > 0 } json)
+        {
+            using var doc = JsonDocument.Parse(json);
+            reason = doc.RootElement.TryGetProperty("reason", out var r) ? r.GetString() : null;
+        }
+
+        return new EmergencyStopState(latest.EventType == RecoveryEventType.EmergencyStopActivated, latest.ActorIdentity, latest.OccurredAt, reason);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<AutonomyGrant>> RecordAutonomyGrantTransitionAsync(
+        string ownerId, string signatureHash, RecoveryOperationKind actionKind,
+        AutonomyLevel previousLevel, AutonomyLevel newLevel, string reason, string? evidenceJson,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            return Result<AutonomyGrant>.Failure(Error.Validation("RecoveryLedger.ReasonRequired", "A reason is required to record an autonomy grant transition."));
+        }
+
+        if (previousLevel == newLevel)
+        {
+            return Result<AutonomyGrant>.Failure(Error.Validation("RecoveryLedger.NotATransition", "previousLevel and newLevel must differ."));
+        }
+
+        using var _ = await AcquireOwnerLockAsync(ownerId, cancellationToken);
+
+        var grant = await _db.AutonomyGrants.FirstOrDefaultAsync(
+            g => g.OwnerId == ownerId && g.SignatureHash == signatureHash && g.ActionKind == actionKind, cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+
+        if (grant is null)
+        {
+            grant = new AutonomyGrant { OwnerId = ownerId, SignatureHash = signatureHash, ActionKind = actionKind, CurrentLevel = newLevel, UpdatedAtUtc = now };
+            _db.AutonomyGrants.Add(grant);
+        }
+        else
+        {
+            if (grant.CurrentLevel != previousLevel)
+            {
+                // Two writers decided from the same stale read; the winner already moved it. Re-applying would record a
+                // transition from a level the grant was no longer at.
+                return Result<AutonomyGrant>.Failure(Error.Conflict(
+                    "RecoveryLedger.StaleAutonomyGrantTransition",
+                    $"AutonomyGrant for signature {signatureHash} is currently at {grant.CurrentLevel}, not the expected {previousLevel}; another writer already transitioned it."));
+            }
+
+            grant.CurrentLevel = newLevel;
+            grant.UpdatedAtUtc = now;
+        }
+
+        var actor = Identity.ActorIdentityResolver.ResolveSystemActor("AutonomyEvaluationAgent");
+        var operation = new RecoveryOperation
+        {
+            OwnerId = ownerId,
+            Kind = RecoveryOperationKind.AutonomyGrantChange,
+            Trigger = RecoveryTrigger.AutonomyEvaluation,
+            ActorIdentity = actor.Identity,
+            ActorKind = actor.Kind,
+            ActorScopes = actor.Scopes,
+            NamespaceId = null,
+            ScopeDescription = $"signature={signatureHash}; action={actionKind}",
+            ServiceVersion = GetServiceVersion(),
+            OpenedAt = now,
+            TargetCount = 0,
+        };
+        _db.RecoveryOperations.Add(operation);
+
+        var evidence = evidenceJson is null ? (JsonElement?)null : JsonSerializer.Deserialize<JsonElement>(evidenceJson);
+        var detail = JsonSerializer.Serialize(new
+        {
+            signatureHash,
+            actionKind = actionKind.ToString(),
+            previousLevel = previousLevel.ToString(),
+            newLevel = newLevel.ToString(),
+            reason,
+            evidence,
+        });
+
+        var eventType = newLevel > previousLevel ? RecoveryEventType.AutonomyGrantPromoted : RecoveryEventType.AutonomyGrantDemoted;
+        await AppendEventAsync(ownerId, entryId: null, operation.Id, eventType, actor, detail, cancellationToken);
+
+        await _db.SaveChangesAsync(cancellationToken);
+        return Result<AutonomyGrant>.Success(grant);
+    }
+
+    /// <inheritdoc />
+    public Task<ProductionElevation?> GetLiveProductionElevationAsync(
+        string ownerId, Guid namespaceId, CancellationToken cancellationToken = default) =>
+        Task.FromResult<ProductionElevation?>(null); // 4.1.0 ships no elevation: Prod recovery is denied
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<RecoveryLedgerEntry>> GetAgeingAsync(
+        string ownerId, int limit = int.MaxValue, CancellationToken cancellationToken = default) =>
+        await _db.RecoveryLedgerEntries.AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && NonTerminalStates.Contains(e.State))
+            .OrderBy(e => e.BegunAt)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<RecoveryLedgerEntry?> FindByMarkerAsync(string ownerId, string marker, CancellationToken cancellationToken = default) =>
+        await _db.RecoveryLedgerEntries.AsNoTracking()
+            .FirstOrDefaultAsync(
+                e => e.OwnerId == ownerId && e.State == RecoveryEntryState.Observing && e.RecoveryMarker == marker,
+                cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<RecoveryLedgerEntry>> FindHeuristicRecurrenceCandidatesAsync(
+        string ownerId, Guid? namespaceId, string entityName, string bodyHash, DateTimeOffset beganBefore,
+        CancellationToken cancellationToken = default)
+    {
+        var candidates = await _db.RecoveryLedgerEntries.AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && e.State == RecoveryEntryState.Observing && !e.MarkerApplied
+                        && e.NamespaceId == namespaceId && e.EntityNameSnapshot == entityName && e.BodyHash == bodyHash)
+            .ToListAsync(cancellationToken);
+        return [.. candidates.Where(e => e.BegunAt < beganBefore)];
+    }
+
     private async Task<RecoveryEvent> AppendEventAsync(
         string ownerId, Guid? entryId, Guid operationId, RecoveryEventType eventType,
         RecoveryActor actor, string? detail, CancellationToken cancellationToken)
@@ -1800,7 +769,7 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
             SchemaVersion = SchemaVersion,
         };
 
-        _dbContext.RecoveryEvents.Add(evt);
+        _db.RecoveryEvents.Add(evt);
         return evt;
     }
 
@@ -1809,8 +778,7 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
         long? bestSeq = null;
         string? bestHash = null;
 
-        var persistedLast = await _dbContext.RecoveryEvents
-            .AsNoTracking()
+        var persistedLast = await _db.RecoveryEvents.AsNoTracking()
             .Where(e => e.OwnerId == ownerId)
             .OrderByDescending(e => e.Seq)
             .Select(e => new { e.Seq, e.EntryHash })
@@ -1822,10 +790,9 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
             bestHash = persistedLast.EntryHash;
         }
 
-        // Also consider events already added to this unit of work but not yet saved — a single
-        // ledger call can append more than one event (e.g. RecordExecutionAsync's
-        // ProviderAccepted + ObservationWindowOpened) before its one SaveChangesAsync.
-        foreach (var tracked in _dbContext.ChangeTracker.Entries<RecoveryEvent>())
+        // Events added in this unit of work but not yet saved: one call can append several before its
+        // single SaveChanges.
+        foreach (var tracked in _db.ChangeTracker.Entries<RecoveryEvent>())
         {
             if (tracked.State != EntityState.Added || tracked.Entity.OwnerId != ownerId)
             {
@@ -1839,9 +806,7 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
             }
         }
 
-        return bestSeq is null
-            ? (1L, RecoveryHashChain.GenesisHash)
-            : (bestSeq.Value + 1, bestHash!);
+        return bestSeq is null ? (1L, RecoveryHashChain.GenesisHash) : (bestSeq.Value + 1, bestHash!);
     }
 
     private static async Task<IDisposable> AcquireOwnerLockAsync(string ownerId, CancellationToken cancellationToken)
@@ -1854,12 +819,9 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     private static string GetServiceVersion()
         => typeof(RecoveryLedgerService).Assembly.GetName().Version?.ToString() ?? "unknown";
 
-    private sealed class SemaphoreReleaser : IDisposable
+    private sealed class SemaphoreReleaser(SemaphoreSlim semaphore) : IDisposable
     {
-        private readonly SemaphoreSlim _semaphore;
         private bool _released;
-
-        public SemaphoreReleaser(SemaphoreSlim semaphore) => _semaphore = semaphore;
 
         public void Dispose()
         {
@@ -1869,7 +831,7 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
             }
 
             _released = true;
-            _semaphore.Release();
+            semaphore.Release();
         }
     }
 }

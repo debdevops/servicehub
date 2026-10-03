@@ -3,124 +3,99 @@ using ServiceHub.Core.Enums;
 namespace ServiceHub.Core.Entities;
 
 /// <summary>
-/// Represents a message detected in a dead-letter queue.
-/// Stores the complete snapshot of the message at detection time
-/// along with categorization and lifecycle tracking data.
+/// A message ServiceHub found in a dead-letter queue, kept durably so what is stuck is known between
+/// visits (unit 2.1). A snapshot taken when the message was first seen, plus a small lifecycle.
 /// </summary>
+/// <remarks>
+/// 4.0.0's shape without its analysis columns (failure category, forensic verdict, replay history,
+/// user notes): each of those arrives, by migration, in the unit that produces it.
+/// </remarks>
 public sealed class DlqMessage
 {
     /// <summary>Primary key.</summary>
     public long Id { get; private set; }
 
-    /// <summary>The Service Bus message ID.</summary>
+    /// <summary>The broker's message id.</summary>
     public required string MessageId { get; init; }
 
-    /// <summary>The Service Bus sequence number in the DLQ.</summary>
+    /// <summary>
+    /// Azure's broker-assigned sequence number. On AWS and GCP it is a stable hash of the message id — it
+    /// identifies the message but carries no order, so those providers are matched by <see cref="MessageId"/>.
+    /// </summary>
     public required long SequenceNumber { get; init; }
 
-    /// <summary>SHA-256 hash of the message body for deduplication.</summary>
+    /// <summary>SHA-256 of the body, or <c>empty</c>.</summary>
     public required string BodyHash { get; init; }
 
-    /// <summary>Namespace identifier (matches the registered namespace ID).</summary>
+    /// <summary>The connected namespace it was found in.</summary>
     public required Guid NamespaceId { get; init; }
 
-    /// <summary>
-    /// Cloud provider that owns the source namespace. Defaults to <see cref="CloudProviderType.Azure"/>
-    /// for backward compatibility with records created before this column existed.
-    /// </summary>
-    public CloudProviderType CloudProvider { get; init; } = CloudProviderType.Azure;
+    /// <summary>The cloud that namespace is on.</summary>
+    public required CloudProviderType CloudProvider { get; init; }
 
-    /// <summary>
-    /// Owner ID for multi-user isolation. Supported formats include <c>entra:{oid}</c> (Azure AD users),
-    /// <c>__spa__</c> (SPA/admin), and <c>key_{hash}</c> (scoped API keys).
-    /// </summary>
+    /// <summary>The owner of that namespace.</summary>
     public required string OwnerId { get; init; }
 
-    /// <summary>The queue or subscription name.</summary>
+    /// <summary>The queue, or <c>topic/subscriptions/subscription</c>. One format for every cloud.</summary>
     public required string EntityName { get; init; }
 
-    /// <summary>Type of the entity (queue or subscription).</summary>
+    /// <summary>Queue or subscription.</summary>
     public required ServiceBusEntityType EntityType { get; init; }
 
-    /// <summary>When the message was originally enqueued.</summary>
-    public required DateTimeOffset EnqueuedTimeUtc { get; init; }
-
-    /// <summary>When the message was moved to the dead-letter queue.</summary>
-    public DateTimeOffset? DeadLetterTimeUtc { get; init; }
-
-    /// <summary>When the DLQ monitor first detected this message.</summary>
-    public required DateTimeOffset DetectedAtUtc { get; init; }
-
-    /// <summary>The dead-letter reason assigned by Service Bus or the application.</summary>
-    public string? DeadLetterReason { get; init; }
-
-    /// <summary>The dead-letter error description.</summary>
-    public string? DeadLetterErrorDescription { get; init; }
-
-    /// <summary>Number of delivery attempts before dead-lettering.</summary>
-    public int DeliveryCount { get; init; }
-
-    /// <summary>The content type of the message body.</summary>
-    public string? ContentType { get; init; }
-
-    /// <summary>Size of the message in bytes.</summary>
-    public long MessageSize { get; init; }
-
-    /// <summary>Preview of the message body (first 500 characters).</summary>
-    public string? BodyPreview { get; init; }
-
-    /// <summary>JSON-serialized application properties.</summary>
-    public string? ApplicationPropertiesJson { get; init; }
-
-    /// <summary>Heuristic failure category.</summary>
-    public FailureCategory FailureCategory { get; set; } = FailureCategory.Unknown;
-
-    /// <summary>Confidence score of the failure categorization (0.0–1.0).</summary>
-    public double CategoryConfidence { get; set; }
-
-    /// <summary>Current lifecycle status of this DLQ message.</summary>
-    public DlqMessageStatus Status { get; set; } = DlqMessageStatus.Active;
-
-    /// <summary>When the message was replayed (if applicable).</summary>
-    public DateTimeOffset? ReplayedAt { get; set; }
-
-    /// <summary>Whether the replay was successful.</summary>
-    public bool? ReplaySuccess { get; set; }
-
-    /// <summary>When the message was archived (if applicable).</summary>
-    public DateTimeOffset? ArchivedAt { get; set; }
-
-    /// <summary>When the message was detected as no longer present in the DLQ.</summary>
-    public DateTimeOffset? ResolvedAt { get; set; }
-
-    /// <summary>Why this message is <see cref="DlqMessageStatus.Resolved"/>. Null for messages
-    /// resolved before this field existed, or for statuses other than Resolved.</summary>
-    public DlqResolutionCause? ResolutionCause { get; set; }
-
-    /// <summary>User-added notes for investigation.</summary>
-    public string? UserNotes { get; set; }
-
-    /// <summary>Forensic-engine root-cause explanation (plain English).</summary>
-    public string? ForensicRootCause { get; set; }
-
-    /// <summary>Forensic-engine confidence score (0.0–1.0).</summary>
-    public double ForensicConfidence { get; set; }
-
-    /// <summary>Replay-safety verdict: Safe, Unsafe, or RequiresReview.</summary>
-    public string? ReplaySafety { get; set; }
-
-    /// <summary>Correlation ID from the original message.</summary>
-    public string? CorrelationId { get; init; }
-
-    /// <summary>Session ID from the original message.</summary>
-    public string? SessionId { get; init; }
-
-    /// <summary>Topic name when the entity is a subscription.</summary>
+    /// <summary>The topic, when the entity is a subscription.</summary>
     public string? TopicName { get; init; }
 
-    /// <summary>Navigation property: replay history entries.</summary>
-    public ICollection<ReplayHistory> ReplayHistories { get; init; } = new List<ReplayHistory>();
+    /// <summary>When the message was first enqueued.</summary>
+    public required DateTimeOffset EnqueuedTimeUtc { get; init; }
 
-    /// <summary>Navigation property: extracted feature snapshot (one per message).</summary>
-    public MessageFeatureRecord? FeatureRecord { get; init; }
+    /// <summary>
+    /// When ServiceHub first saw it dead-lettered. No provider's peek exposes the real dead-letter time,
+    /// so this is the truthful proxy — it is not approximated with the enqueue time.
+    /// </summary>
+    public required DateTimeOffset DetectedAtUtc { get; init; }
+
+    /// <summary>The reason the broker or application gave.</summary>
+    public string? DeadLetterReason { get; init; }
+
+    /// <summary>The error description that came with it.</summary>
+    public string? DeadLetterErrorDescription { get; init; }
+
+    /// <summary>How many times delivery was attempted.</summary>
+    public int DeliveryCount { get; init; }
+
+    /// <summary>Body content type.</summary>
+    public string? ContentType { get; init; }
+
+    /// <summary>Size in bytes.</summary>
+    public long MessageSize { get; init; }
+
+    /// <summary>The first 500 characters of the body.</summary>
+    public string? BodyPreview { get; init; }
+
+    /// <summary>The application properties, as JSON.</summary>
+    public string? ApplicationPropertiesJson { get; init; }
+
+    /// <summary>The message's correlation id.</summary>
+    public string? CorrelationId { get; init; }
+
+    /// <summary>The message's session id.</summary>
+    public string? SessionId { get; init; }
+
+    /// <summary>The failure fingerprint hash assigned when the message was first seen (unit 3.1). Null for rows recorded before it.</summary>
+    public string? SignatureHash { get; set; }
+
+    /// <summary>
+    /// Where it is now. A concurrency token: two writers racing on one row (a scan and a replay) cannot
+    /// both win — the loser gets <c>DbUpdateConcurrencyException</c> rather than silently overwriting.
+    /// </summary>
+    public DlqMessageStatus Status { get; set; } = DlqMessageStatus.Active;
+
+    /// <summary>When a scan found it gone from the queue.</summary>
+    public DateTimeOffset? ResolvedAt { get; set; }
+
+    /// <summary>What is known about why it is gone. Null unless <see cref="Status"/> is Resolved.</summary>
+    public DlqResolutionCause? ResolutionCause { get; set; }
+
+    /// <summary>When it was archived because its namespace was removed.</summary>
+    public DateTimeOffset? ArchivedAt { get; set; }
 }

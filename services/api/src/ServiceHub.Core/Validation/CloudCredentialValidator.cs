@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using ServiceHub.Shared.Constants;
-using ServiceHub.Shared.Results;
+using ServiceHub.Core.Constants;
+using ServiceHub.Core.Results;
 
 namespace ServiceHub.Core.Validation;
 

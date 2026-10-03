@@ -2,9 +2,9 @@ using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
-using ServiceHub.Infrastructure.Security;
-using ServiceHub.Shared.Constants;
-using ServiceHub.Shared.Results;
+using ServiceHub.Core.Security;
+using ServiceHub.Core.Constants;
+using ServiceHub.Core.Results;
 
 namespace ServiceHub.Infrastructure.Governance;
 

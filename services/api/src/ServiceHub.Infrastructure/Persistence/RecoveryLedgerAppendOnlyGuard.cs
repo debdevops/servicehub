@@ -6,8 +6,8 @@ namespace ServiceHub.Infrastructure.Persistence;
 
 /// <summary>
 /// Enforces the Recovery Evidence Ledger's append-only invariant at the persistence layer,
-/// independent of caller discipline. Invoked from <see cref="DlqDbContext.SaveChanges"/> and
-/// <see cref="DlqDbContext.SaveChangesAsync"/> before every save.
+/// independent of caller discipline. Invoked from <see cref="ServiceHubDbContext.SaveChanges"/> and
+/// <see cref="ServiceHubDbContext.SaveChangesAsync"/> before every save.
 /// </summary>
 public static class RecoveryLedgerAppendOnlyGuard
 {
@@ -29,6 +29,7 @@ public static class RecoveryLedgerAppendOnlyGuard
         nameof(RecoveryLedgerEntry.ClosedAt),
         nameof(RecoveryLedgerEntry.RecoveryMarker),
         nameof(RecoveryLedgerEntry.MarkerApplied),
+        nameof(RecoveryLedgerEntry.ReplayedProviderMessageId),
     };
 
     /// <summary>

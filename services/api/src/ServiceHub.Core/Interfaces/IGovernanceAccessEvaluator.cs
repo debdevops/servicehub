@@ -1,5 +1,5 @@
 using ServiceHub.Core.Enums;
-using ServiceHub.Shared.Results;
+using ServiceHub.Core.Results;
 
 namespace ServiceHub.Core.Interfaces;
 

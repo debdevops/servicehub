@@ -24,21 +24,6 @@ public sealed class GenericWebhookFormatter : IWebhookMessageFormatter
     };
 
     /// <inheritdoc />
-    public object BuildBulkOperationCompletedPayload(BulkOperationCompletedNotification notification) => new BulkOperationCompletedPayload
-    {
-        JobId = notification.JobId,
-        OperationType = notification.OperationType.ToString(),
-        Status = notification.Status.ToString(),
-        NamespaceId = notification.NamespaceId,
-        NamespaceName = notification.NamespaceName,
-        TotalMatched = notification.TotalMatched,
-        SuccessCount = notification.SuccessCount,
-        FailureCount = notification.FailureCount,
-        SkippedCount = notification.SkippedCount,
-        CompletedAtUtc = notification.CompletedAtUtc,
-    };
-
-    /// <inheritdoc />
     public object BuildAutonomyTransitionPayload(AutonomyTransitionNotification notification) => new AutonomyTransitionPayload
     {
         SignatureHash = notification.SignatureHash,
@@ -56,6 +41,22 @@ public sealed class GenericWebhookFormatter : IWebhookMessageFormatter
         SampleSize = notification.SampleSize,
         VerifiedSuccessRate = notification.VerifiedSuccessRate,
         TrippedAtUtc = notification.TrippedAtUtc,
+    };
+
+    /// <inheritdoc />
+    public object BuildEscalationPayload(EscalationNotification notification) => new EscalationPayload
+    {
+        Kind = notification.Kind,
+        Headline = notification.Headline,
+        Where = notification.Where,
+        ReasonCode = notification.ReasonCode,
+        Reason = notification.Reason,
+        WhatToDo = notification.WhatToDo,
+        NamespaceName = notification.NamespaceName,
+        Provider = notification.Provider,
+        Entity = notification.Entity,
+        RaisedAtUtc = notification.RaisedAtUtc,
+        ReviewUrl = notification.ReviewUrl,
     };
 
     /// <inheritdoc />
@@ -203,5 +204,21 @@ public sealed class GenericWebhookFormatter : IWebhookMessageFormatter
 
         [JsonPropertyName("source")]
         public string Source { get; init; } = "ServiceHub";
+    }
+
+    internal sealed class EscalationPayload
+    {
+        [JsonPropertyName("event")] public string Event { get; init; } = "escalation.raised";
+        [JsonPropertyName("kind")] public string Kind { get; init; } = string.Empty;
+        [JsonPropertyName("headline")] public string Headline { get; init; } = string.Empty;
+        [JsonPropertyName("where")] public string Where { get; init; } = string.Empty;
+        [JsonPropertyName("reasonCode")] public string ReasonCode { get; init; } = string.Empty;
+        [JsonPropertyName("reason")] public string Reason { get; init; } = string.Empty;
+        [JsonPropertyName("whatToDo")] public string WhatToDo { get; init; } = string.Empty;
+        [JsonPropertyName("namespaceName")] public string? NamespaceName { get; init; }
+        [JsonPropertyName("provider")] public string? Provider { get; init; }
+        [JsonPropertyName("entity")] public string? Entity { get; init; }
+        [JsonPropertyName("raisedAtUtc")] public DateTimeOffset RaisedAtUtc { get; init; }
+        [JsonPropertyName("reviewUrl")] public string? ReviewUrl { get; init; }
     }
 }

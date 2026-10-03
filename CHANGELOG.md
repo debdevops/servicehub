@@ -1,5 +1,173 @@
 # ServiceHub Changelog
 
+## [Unreleased]
+
+*(Nothing yet — changes after 4.1.0 go here.)*
+
+## [4.1.0] — not yet released (the date is set when the tag is pushed)
+
+> ### ⚠ There is no upgrade path from 4.0.0
+>
+> 4.1.0 is a **from-scratch rewrite**, not an update. It starts with a fresh database (migrations `0001`–`0014`, frozen by
+> ADR-0017) and **cannot open a 4.0.0 SQLite file**. Nothing is migrated: connected clouds,
+> rules, grants, the recovery ledger and audit trail of a 4.0.0 install stay in that install. Run 4.1.0 beside it (different port, different
+> data folder), connect your clouds again, and retire 4.0.0 when you are ready. A 4.0.0 ledger stays readable and offline-verifiable in place (export it from 4.0.0
+> and check it with `scripts/verify-recovery-chain.py`); it does not continue into 4.1.0's new chain. 4.0.0 is frozen, unchanged, in [`archive/servicehub-4.0.0/`](archive/servicehub-4.0.0/) and is
+> still published from `v4.0.x` tags.
+
+### What 4.1.0 is
+
+The same job as 4.0.0 — recover stuck messages in Azure Service Bus, AWS SQS/SNS and GCP Pub/Sub, and prove what was done — in **two Simple pages and
+four read-only Advanced pages** instead of thirty-odd screens.
+
+- **Simple:** Home (one cloud, or *Fleet Overview* for all) with Dead letters, Active messages, Replayed and Auto Replay as tabs. Everything else
+  opens in place as a drawer, modal or panel and lives in the URL.
+- **Advanced:** Overview, Recovery Ledger, Failure Signatures, Agents. Read-only.
+- **One gate for every replay**, human or automatic. It fails closed: a check that cannot run blocks the replay. A replay shows what it will do first.
+- **Autonomy that is earned and stops itself:** the Agent replays alone only for a failure signature it has earned trust on; a circuit breaker and an
+  emergency stop (typed `STOP` / `LIFT`, with a reason, both recorded) halt it. Waiting approvals are approved or declined in one window.
+- **Honest about each cloud:** Azure can confirm a replayed message stayed out of the dead-letter queue. AWS and GCP cannot, so
+  they read *"verification required"*, never *"verified"*.
+- **Evidence:** a hash-chained recovery ledger with an offline verifier and *Export evidence*; backup and restore from Settings; credentials encrypted at
+  rest with key rotation.
+- **Tell a person:** bell, toast, and Slack / Teams / generic webhook delivery to every enabled channel, behind an SSRF guard.
+- **Step-by-step guides** for Azure, AWS and Google Cloud, with annotated real screenshots of every control, in the app's Help and in `docs/clouds/`, and a captioned walkthrough video per cloud (about five minutes: all of Simple mode, replaying one, a few or everything, then the switch to Advanced) — [Azure](docs/media/azure.mp4) · [AWS](docs/media/aws.mp4) · [Google Cloud](docs/media/gcp.mp4).
+
+### Not in 4.1.0
+
+Left out on purpose; each was a written decision and can return as a tab or panel if you ask:
+
+- **Production replay.** Production namespaces are refused for everyone; there is no elevation.
+- Rehearsal (dry-run) mode, the signature replay worker, recovery ageing, the playbook ledger and prevention rules.
+- The AI companion service (TF-IDF clustering) — failures are grouped by deterministic signatures instead.
+- Slack/Teams *bulk-completed* notifications (4.1.0's bulk operation status differs from 4.0.0's).
+
+### Known limits at this writing
+
+- **No sign-in.** ServiceHub does not log the browser in: whoever can reach its port is the server's owner, an Administrator. Keep it on `localhost`, on a private network, or behind an authenticating reverse proxy. API keys, OIDC and Azure Easy Auth identify who acted, and roles granted in Settings limit them; see `SECURITY.md`.
+- **One instance per data folder.** One process, one SQLite file on local disk; a second instance on the same folder exits on purpose.
+- **Replay All Messages replays everything in the chosen scope** (a cloud, an environment or one namespace), not just what the filters show. Its preview says how many, it runs about two a second on the server, and *Stop now* leaves every message not yet sent untouched.
+- The release workflow (`publish.yml`) selects the codebase from the tag (`v4.1.x` → repo root, `v4.0.x` → archive) and was proven by running every tag
+  shape locally; it has **not yet run in real GitHub Actions**.
+- Real Slack/Teams delivery has not been exercised against a live workspace (the send path and its test endpoint are covered by tests).
+- **AWS and GCP replays read *"verification required"*, never *"verified"*.** Neither cloud can prove a replayed message stayed out of the dead-letter queue, so ServiceHub says so instead of guessing, and a person decides each time. 4.1.0 offers no observer setup (the same as 4.0.0); an AWS observer was tried live and it hides dead letters from *Look now* and replay, so it is not offered.
+
+### Changes since the last entry below (kept as the build log)
+
+### Added / Fixed — 2026-10-03 final live pass against Azure, AWS and Google Cloud
+
+- **Security: ServiceHub now refuses any `Host` that is not `localhost`, `127.0.0.1` or `[::1]` (DNS rebinding).** It has no login, and until now it answered a request for *any* host name — a web page that re-pointed its own domain at `127.0.0.1` could call the whole API from a visitor's browser as the Administrator (found by sending `Host: evil.example.com` and getting the backup list back). The health endpoints still answer on any host. **If you reach ServiceHub by another name** (a reverse proxy, an App Service host name, a LAN address) **set `AllowedHosts`** to it (`;`-separated, `*.example.com` wildcards; `*` turns the check off) — [Hosting on Azure](docs/HOSTING-AZURE.md) now sets it for App Service. Tests added (4 fail without the fix).
+- **Security: a backup's manifest can no longer point the restore at another file.** `sqlite.fileName` was joined to the backup folder unchecked, so a manifest naming an absolute path or `..` made *Check* read, and *Restore* stage, any SQLite file on the machine whose checksum it also supplied. It must now be a plain file name inside the backup. Test added (it fails without the fix).
+- **Security: a restore can no longer be tricked by swapping the backup file between the check and the stage.** A plain-looking `servicehub-dlq.db` (or its folder) could be a symlink to a database elsewhere, and the file could be swapped after it was checksummed. Every restore check now runs on one private copy that is hashed while it is being copied, links are refused, and that very copy is what gets staged. Tests added.
+- **A person's pause could be silently undone by an agent finishing a cycle.** Pausing an agent and the agent recording its result at the same instant could write back a stale state, so the agent ran again as if never paused. State changes are now serialised; a 2,000-round race test fails without the fix.
+- **Tooling: the conformance suite no longer gives up on a slow Google Cloud purge.** A Pub/Sub pull can take ~20 s and a purge may need several, so against a deep backlog the suite's fixed 30 s limit cut one off (the server stopped before deleting anything). The purge step now waits up to 120 s.
+- **Security: a caller limited to some namespaces no longer receives an agent's ledger timeline** (`GET /agents/{id}/activity` read the owner-wide ledger by actor). Test added.
+- **Walkthrough videos.** One captioned video per cloud, about five minutes each, covering all of Simple mode — Home, Dead letters, Look now, opening a message, replaying one message, **Replay selected** and **Replay All** (preview, run, watch, stop), Active messages, Replayed, Auto Replay, approvals, Connections, Settings, Help — then the switch to Advanced and back. Recorded from the real app: `docs/media/{azure,aws,gcp}.mp4`, with a preview GIF and poster each. The README and the three cloud guides link them (with a chapter list); `scripts/docs-shots/videos.mjs` records them and `build-videos.sh` makes the files.
+- **Picking a cloud on Home's scope tabs (or opening a `?provider=` link) did not move the sidebar's "Dead letters / Active messages / Replayed" links.** They still opened the cloud chosen last — Azure by default — so choosing AWS and then clicking *Dead letters* showed Azure's list. Found by watching a recording of the flow; Home's scope now carries the sticky cloud with it. Regression tests added (they fail without the fix).
+- **One busy cloud could push another cloud's approvals off "Needs your attention" and the bell.** The server sent the *oldest 100* waiting approvals, so with 189 old ones on Google and 115 newer ones on AWS the AWS queue showed as "4+", and with a few more on Google it would not have shown at all. The page is now dealt out one namespace at a time (`PendingWorkService.InterleaveByNamespace`); one namespace gets exactly the order it had before. Unit tests added.
+- **Advanced Overview said "100 approvals waiting" beside "494 things"** — the page size shown as a count. It now says 494. Regression test added (it fails without the fix).
+
+### Added / Changed / Fixed — 2026-10-01 to 2026-10-03 (committed work that had no entry until now)
+
+- **An agent with nothing to do goes quiet.** An agent that no connected cloud can serve (a verifier with only AWS connected, say) is no longer run or listed on the Agents page; connecting a suitable cloud starts it again, and a person's pause is kept. (`AgentNeeds`)
+- **Google Cloud: a deep dead-letter backlog no longer fails half a bulk replay.** The replay/purge scan walks up to 40 pulls of 100 (it was 5), and the acknowledgement-deadline lock is extended on every message held during the scan, in chunks of 500 to stay under Pub/Sub's request-size limit.
+- **An Auto Replay rule for "Unknown" now matches messages with no recorded reason** (AWS never records one).
+- **Rule changes are on the audit trail.** Creating, updating, switching, deleting or generating an Auto Replay rule left no audit entry although a rule is what lets the Agent replay without asking; each now records `Rule.Create` / `Update` / `Toggle` / `Delete` / `Generate` with the actor, rule id and name.
+- **Counts that disagreed now agree.** Home's *Replayed* tile counted replays the cloud accepted while the table counted every attempt (446 vs 439); the tile now says how many attempts were refused or lost. Simple's tiles also stop counting the history of a cloud you removed (`connectedOnly` on `GET /recovery/summary`; the Ledger and exports still show everything).
+- **Plain words for every action in *Recent activity*** (it showed `Message.Send`, `Backup.Create`, `Governance.Grant`), and the permission-denied message no longer starts a sentence in lower case.
+- **Add a cloud tells you the permissions that matter.** Azure needs *Manage, Send and Listen* (a Listen-only string connects but shows nothing); AWS needs `sqs:ChangeMessageVisibility` (without it a looked-at message stays hidden until SQS's visibility timeout ends). The AWS form also lists the regions, including `ap-south-1`.
+- **The documentation guard no longer passes locally and fails in CI.** `check-docs.py` judged a cited path by whether it existed on the local disk, so `docs/LOCAL-SETUP.md` naming the git-ignored data folder passed on a machine that had run `./run.sh` and failed on a fresh checkout (red *Plan & Provenance Guards* on every push since the guide was added). It now judges against what a fresh checkout contains (tracked plus new, non-ignored files), allows naming a git-ignored runtime or build folder, and still refuses any citation of `docs-private/`.
+- **Guides and tooling.** [Local setup](docs/LOCAL-SETUP.md) and [Hosting on Azure](docs/HOSTING-AZURE.md) are new; `run.sh` now checks your tools and ports, waits until both servers answer, stops what it started on Ctrl-C, and has `--check`, `--api-only` and `--web-only`. A `v4.1.x` tag publishes the repo root and `v4.0.x` still publishes the archive. The runtime instance lock and two backup manifests are no longer tracked.
+- **The DLQ observer was built and then taken out of 4.1.0.** Its setup screen and test-message agent are gone; AWS and Google replays read *"verification required"*. The API-only `GET/PUT /namespaces/{id}/dlq-observer` and the attestation service remain, but with nothing sending the test message an observer recorded there is never confirmed live and never makes a replay read *verified*.
+
+### Changed / Fixed — 2026-09-30 (uncommitted work verified live against AWS)
+
+- **One dropdown for the whole app.** Every native `<select>` (page-size, filters, Settings, Send message, Approve, Auto Replay) is now the same rounded, keyboard-driven list the namespace picker uses (`ui/Select`). Verified live: every screen opens and closes each dropdown, choices reach the URL/preferences, no side-scroll at 1366×768.
+- **AWS bulk replay and purge no longer rescan the queue for every message.** A scan keeps the messages it inspected locked and remembers them, so the next message in the batch is an O(1) lookup; they are released after 10 s idle or as soon as anything else scans the queue. Verified live: 4 dead letters replayed, each removed from the DLQ (original ids gone, one copy each), and nothing left hidden afterwards (0 not-visible).
+- **Dead letters showed the internal key `__none__` as a reason name** in the strip beside the title when a cloud records no reason (AWS never does). It now reads "No reason recorded", like the reason chips. Regression test added.
+
+### Fixed — found while re-verifying the documentation, 2026-09-29
+
+- **`docker compose up --build` and the CI container smoke test crashed at start.** A Production start with no encryption key refuses to run (by design), and neither compose nor the smoke test supplied one. `docker-compose.yml` now requires `SERVICEHUB_ENCRYPTION_KEY` (with a clear message if it is missing) and the smoke test passes a throw-away key.
+- **Dead letters and Recovery Ledger tables needed a side-scroll at 1366×768, one Replayed tile failed colour contrast, and two browser specs used stale selectors** — all caught by the existing layout/accessibility gates once CI's browser job was run against the redesign. Fixed; the gates now pass.
+- **`docker compose` published ServiceHub on every network interface.** ServiceHub does not log the browser in — a request with no API key is the server's owner, an Administrator, and granted roles limit only key holders — so the Compose file now binds `127.0.0.1:8080`. The README and SECURITY.md implied API keys protect an exposed instance; they do not, and now say what does.
+- **Test connection returned a bare 500 for a cloud whose encryption key had been dropped from the registry.** It now answers; the database layer still refuses to save what it cannot re-protect. Regression test added.
+- **The three operator runbooks described 4.0.0** (a manual-only restore, `ProductionConfigurationValidator`, per-operation exports, epoch sealing). `docs/BACKUP-RESTORE.md`, `docs/ENCRYPTION-KEY-ROTATION.md` and `docs/RECOVERY-EVIDENCE.md` were rewritten from 4.1.0's behaviour, and each procedure was run on a throw-away instance.
+
+- **AWS showed every dead letter twice** — once as dead-lettered and again as "active" — because an SQS dead-letter queue is itself a queue and the namespace total added its messages to the active count (live: 71 dead-lettered *and* 71 active, with 0 actually waiting). A queue that another entity names as its dead-letter target is now left out of the active total. Regression test added.
+- **A look at AWS or Google Cloud dead letters marked messages it had not seen as gone.** A second Pub/Sub look returned fewer messages than a full batch, the scan took that for the whole queue, and 19 dead letters were marked "no longer in the queue" — all 19 were still there (checked by pulling the queue directly). An SQS receive or Pub/Sub pull is a sample, so absence is no longer concluded from one; rows leave the list when ServiceHub replays or deletes them, or when a cloud that counts reports the queue empty. The Look now result says the cloud hands back a sample. Regression tests added; the 19 came back on the next look.
+- **"100 replays need your approval" when 612 were waiting.** The attention card, bell and Waiting tab counted only the first page the server returns. They now say "100+" when the page is truncated.
+- **Home's All clouds table needed a side-scroll at 1366×768 with three clouds connected** (1103 px in 1070). Cell padding tightened; measured live with Azure, AWS and GCP connected.
+
+### Changed — tests and documentation, 2026-09-29
+
+- **All tests now live under `tests/`** (`backend/`, `web/`, `e2e/`; see `tests/README.md`). CI enforces a 60 % backend line-coverage floor (generated code excluded) beside the existing 60 % frontend floor, and runs new browser journey specs and an API-contract suite.
+- **Documentation cut to the bare minimum.** The README, `CONTRIBUTING.md` and `llms.txt` were rewritten for 4.1.0 (they described 4.0.0 paths, screens and tests that no longer exist). `docs/` now holds only the backup/restore and key-rotation runbooks and the recovery-evidence reference; the architecture doc, decision records, provider conformance, guides, `LOCAL-DEPLOYMENT.md`, `self-hosting/README.md` and the old screenshots are no longer tracked. A CI guard fails the build if a tracked doc links to something that does not exist.
+
+### Fixed — found by the 2026-09-29 live verification pass
+
+- **Home said "Replayed 2,420" while the Replayed page it links to said 848.** The tile counted every recovery-ledger entry in the window, including 1,572 *Declined* ones — messages the safety checks stopped before any cloud was contacted, which were never replayed. The tile now counts only what was actually sent back, so it matches the page it opens.
+- **"Watching · until 20:06" looked like the time of the replay.** The watch lasts 24 hours, so the end is tomorrow, but only a clock time was shown (in the browser's zone, ignoring the time zone chosen in Settings). It now reads "until Sep 30, 20:06" when the end is not today, in the Settings time zone — on the Replayed page and in the replay drawer's watch card.
+
+### Changed — 2026-09-29 Advanced and Simple pages redesign (commits `db37ceef`, `14e36931`; had no entry until now)
+
+- **Recovery Ledger, Failure Signatures, Agents, Dead letters, Active and Replayed pages rebuilt** with one shared filter row, pill tabs, a numbered pager and summary tiles. Ledger, signatures and Replayed can be filtered by who acted (people / autonomous), queue and a word; the Replayed list also by how it ended and time window. Each ledger entry carries the autonomy level its signature held at the time, the message ID and the entity type.
+- **Every message is named by its ID** wherever it is acted on (tables, timeline, rule activity, live tail); the Replay window shows the message it will replay and the Approve window lists each message with select-all and progress. Bulk Replay pages ten at a time and names held-back messages by their own ID.
+- **One click opens one window:** row Replay uses its own parameter, and Settings, Help, Approve, Send and Bulk Replay put away any open drawer. The sidebar lights exactly one item. The header and data tables now fit narrow viewports.
+- **API:** the pending-work list can be asked for one entry by ID, so approving one past the 500th waiting item no longer returns 404. The Bulk Replay agent works in slices of at most 20 s so a long run is not reported as a stopped agent.
+- **Azure replay/purge scans release locked messages 16 at a time** instead of one round trip each (uncommitted at the time of writing).
+
+### Fixed — found by the 2026-09-28 live verification pass
+
+- **Home and the scope tabs said "can't count here" about a cloud that can count.** A dead-letter
+  total that was still being read (or whose read failed) rendered as `can’t count here` /
+  `not watched` — a claim about the *cloud's capability* made about a read that had merely not
+  landed, seen live on Azure under load. They now say `Reading…`, then `Couldn’t read — will retry`;
+  `can’t count` is only said for a cloud whose read has settled with no count (Google Cloud).
+- **"just now ago".** Ten places appended " ago" to an age that reads "just now" under a minute
+  (Bulk Replay preview, message drawer, Agents, Failure Signatures, Auto Replay, Settings, outcome
+  card). One `formatAgo` helper now says "just now" or "N min ago".
+- **Provider conformance suite:** `--namespace aws=<id>` (lowercase) was silently ignored and ended
+  as an all-SKIPPED "pass"; provider names are now case-insensitive and an unknown one is an error.
+  A "positive purge" passed on HTTP 200 alone even when the body said `result: rejected`; it now
+  requires `accepted` and reports a provider-side `MessageNotFound` as SKIPPED (unproven).
+- **Auto Replay looked at only the oldest 200 matches per rule.** A rule matching 885 messages said "200 matching messages are waiting for a person" (a cap read as a count) and never reached the newer ones. The agent now pages through every match, 200 at a time, up to 2,000 per rule per cycle; the count is exact below that, and reads "2,000+" (card, tile, Home) only when a rule has more matches than a cycle looks at. No migration.
+- **Lifting emergency stop is now as deliberate as switching it on.** It took one click with no confirmation, though it hands automatic authority back. Switching it off now needs a reason (*why is it safe to resume?*, recorded in the ledger with the name of whoever lifted it) and the typed word `LIFT`, enforced by the API too — a bare `POST /settings/emergency-stop {"active":false}` is refused with 400 and the stop stays on.
+- **Wave 6 polish pass (2026-09-28):** the *Recovery Ledger* no longer hides *Outcome* and *Details* behind a side-scroll at 1366 px (its empty entry pane took 360 px; it now appears only when an entry is open, and the redundant Cloud/Namespace columns are gone); the Advanced Overview no longer says a person "declined" what the safety checks stopped; the emergency-stop banner reads "since 19:51 from this browser session" instead of "by from…"; the "can't verify" hint links to an answer that exists. New browser gate: no horizontal scroll at 1366×768.
+- **Test coverage:** the new Auto Replay rule routes (`PUT`/`DELETE /rules/{id}`, `POST
+  /rules/generate`) had no test proving a lower role is refused — added
+  (`Rule_management_is_gated_by_role…`, verified to fail when the gate is weakened). The
+  welcome→Home `AddCloudModal` journey test no longer times out on a loaded machine.
+
+### Added — provider conformance suite ported to 4.1.0 (2026-09-27)
+
+- **`scripts/conformance-suite.py`** (PORTING-MAP.md P46): a live, HTTP-level suite proving each
+  connected provider's real behaviour matches `ProviderCapabilities` — including the negative
+  cases (an unsupported operation is rejected with the documented error, not silently accepted or
+  a 500) — ported from the archived 4.0.0 script to 4.1.0's actual routes (capabilities read from
+  `GET /api/v1/namespaces`, not a standalone endpoint; purge/replay act on a recorded dead-letter
+  row id; Live Tail and the manual DLQ-scan trigger merged into one `POST .../dead-letters/look`
+  action). Run live against real Azure/AWS/GCP DEV: 19 passed, 0 failed, 4 skipped (two of the
+  skips are a real finding — 4.1.0's public API currently has no route to schedule a message send
+  on any provider, Azure included). See `docs/PROVIDER-CONFORMANCE.md`.
+
+> **Note:** the 4.1.0 rewrite itself (Home redesign, Waves 1–6, the governance/RBAC and DLQ-observer
+> work, etc.) has landed in a long run of commits with no corresponding entries here yet — this
+> section only covers the conformance-suite work above. Backfilling the rest is tracked separately
+> and was out of scope for this change.
+
+### Changed — repository restructure (ADR-0012, ADR-0013)
+
+- **The complete 4.0.0 codebase moved to `archive/servicehub-4.0.0/`** — `apps/{web,demo,sandbox}`,
+  `services/{api,ai,agent}`, `packages/servicehub-ui-shared`, `scripts/`, and the run/Docker/npm
+  files — as one folder that mirrors the old repository root. **No behaviour change:** all 1,401
+  files are byte-identical to `8844f31f`, it builds, tests and runs unmodified from inside that
+  folder, and CI, the release-image workflow, deploy, CodeQL and Dependabot now build it from there.
+  The folder is frozen; see `archive/README.md`. Every command in the README, CONTRIBUTING and
+  LOCAL-DEPLOYMENT now starts with `cd archive/servicehub-4.0.0`.
+- Paths in the entries below, and in ADRs 0001–0012, are as they were when written: prefix
+  `apps/`, `services/`, `packages/` and `scripts/` with `archive/servicehub-4.0.0/`.
+
 ## [4.0.0] — 2026-09-20
 
 Everything in this file's "Unreleased" section (through the 2026-09-11 Home/Quick Access/
@@ -984,9 +1152,3 @@ followed it.
 ## Known Issues
 
 None at this time. Report issues at: https://github.com/debdevops/servicehub/issues
-
----
-
-## Roadmap
-
-See [README.md](README.md#roadmap) for planned features.

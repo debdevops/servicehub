@@ -1,0 +1,15 @@
+{
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "devDependencies": {
+    "playwright": "^1.58.2"
+  },
+  "overrides": {
+    "js-yaml": "^4.3.2",
+    "vitest": "^4.1.11",
+    "@vitest/mocker": "^4.1.11"
+  }
+}

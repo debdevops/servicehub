@@ -1,21 +1,13 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <LangVersion>14.0</LangVersion>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <WarningLevel>7</WarningLevel>
-    <AnalysisLevel>latest</AnalysisLevel>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <NoWarn>$(NoWarn);1591</NoWarn>
-    <RootNamespace>ServiceHub.Core</RootNamespace>
-    <AssemblyName>ServiceHub.Core</AssemblyName>
-  </PropertyGroup>
+  <!--
+    ServiceHub.Core — contracts, entities, enums, value models and Result.
+    DEPENDS ON NOTHING, by design (ADR-0014 D5). No EF, no cloud SDK, no ASP.NET, no I/O.
+    DependencyDirectionTests fails the build if that ever stops being true.
+  -->
 
   <ItemGroup>
-    <ProjectReference Include="..\ServiceHub.Shared\ServiceHub.Shared.csproj" />
+    <InternalsVisibleTo Include="ServiceHub.UnitTests" />
   </ItemGroup>
 
 </Project>

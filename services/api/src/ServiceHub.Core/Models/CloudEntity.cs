@@ -39,4 +39,11 @@ public sealed class CloudEntity
     /// for providers where the DLQ is its own queue (e.g., AWS SQS RedrivePolicy).
     /// </summary>
     public string? DeadLetterTargetName { get; init; }
+
+    /// <summary>
+    /// Gets or sets when the queue that holds this entity's dead letters was created, where the cloud says
+    /// (AWS SQS does; Azure and Google do not). A dead letter recorded before then was in an earlier queue of
+    /// the same name, and is not in this one.
+    /// </summary>
+    public DateTimeOffset? DeadLetterQueueCreatedAt { get; init; }
 }

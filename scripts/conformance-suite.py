@@ -1,38 +1,61 @@
 #!/usr/bin/env python3
-"""W4.1 provider-conformance suite: asserts, against a LIVE running ServiceHub API talking to
-REAL cloud brokers, that each connected provider's behaviour actually matches what
-ProviderCapabilities.{Azure,Aws,Gcp} (services/api/src/ServiceHub.Core/Models/ProviderCapabilities.cs)
-declares — including the negative facts (an unsupported operation must be rejected with the
-documented capability-unsupported error, not silently ignored or 500). This is the gap the
-2026-08-30/2026-09-03 campaigns and the existing per-provider unit tests never closed: the code is
-proven correct in isolation (mocked SDKs), never proven correct end to end against a live broker.
+"""4.1.0 provider-conformance suite (P46 of PORTING-MAP.md): asserts, against a LIVE running
+ServiceHub API talking to REAL cloud brokers, that each connected provider's behaviour actually
+matches what ProviderCapabilities.{Azure,Aws,Gcp}
+(services/api/src/ServiceHub.Core/Models/ProviderCapabilities.cs) declares — including the
+negative facts (an unsupported operation must be rejected with the documented
+capability-unsupported error, not silently ignored or 500).
 
-Reads the capability facts to assert from the API's own GET /cloud-bridge/capabilities response
-(the same static ProviderCapabilities presets, served live) rather than hardcoding a duplicate
-table here, so this suite can't drift from the source of truth it's checking.
+This is a PORT of archive/servicehub-4.0.0/scripts/conformance-suite.py (PORTING-MAP.md P46), not
+a copy — 4.1.0 is a from-scratch rewrite with a different API shape. What changed, concretely:
+
+  * There is no standalone GET /cloud-bridge/capabilities endpoint any more. Capabilities are
+    carried on every namespace in GET /api/v1/namespaces (NamespaceResponse.Capabilities) — this
+    suite reads them from there, still never hardcoding a duplicate table.
+  * DLQ actions (replay, purge) now act on a durable *row id* ServiceHub recorded for a dead
+    letter (DeadLettersController, `/api/v1/dead-letters/{id}/...`), not on live provider
+    coordinates (sequence number + entity name) the way 4.0.0's `/api/v1/messages/purge` did. A
+    row has to exist first — this suite's "look" step (below) is what creates one for AWS/GCP.
+  * "Live Tail" (an open SSE session) and the old "DLQ background scan" trigger
+    (`POST /dlq/scan/{id}`) no longer exist as separate concepts. Both were replaced by one
+    on-demand action, `POST /api/v1/namespaces/{id}/dead-letters/look`
+    (IDeadLetterLook/DeadLetterLook.cs): a person-consented look that records what it finds,
+    flagged `countsAsDeliveryAttempt` for providers with no repeatable peek. This suite exercises
+    that single action for every provider instead of the old two.
+  * There is no manual-dead-letter action exposed over the API in 4.1.0 (no
+    `POST .../deadletter` the way 4.0.0 had). `SupportsManualDeadLetter` is reported as SKIPPED —
+    not silently dropped — with the reason recorded, since fabricating a check against a route
+    that does not exist would be worse than admitting the gap.
+  * `SupportsScheduledMessages` is only checked negatively where the capability is false: the
+    public `POST .../messages` request body (MessagesController.SendRequest) does not expose a
+    `scheduledEnqueueTimeUtc` field at all any more (the internal SendMessageRequest DTO still
+    has one, but nothing in the REST API sets it) — so 4.1.0 currently has no way to schedule a
+    message through the API on ANY provider, Azure included. This suite reports that as its own
+    finding (a real product gap, not a suite bug) rather than pretending to exercise a positive
+    scheduled-send path that does not exist. The negative path (`GET .../messages/scheduled`
+    returning 409 CapabilityUnavailable on AWS/GCP) is still checked, since that endpoint is real.
+  * `CanProveDlqAbsence` is a static per-provider fact on `ProviderCapabilities` in both versions;
+    4.1.0 has no per-namespace DLQ-observer-attestation lookup route (that concept now lives
+    inside signature trust, `GET /api/v1/signatures/{hash}/trust`, keyed by a failure signature
+    hash rather than a namespace id) — this suite reports the static fact directly, same as it
+    always was, and separately best-effort cross-checks a live signature's trust reason when
+    `--signature-hash` is given for a provider.
 
 Never fabricates data: every assertion is a real HTTP call against a running ServiceHub API
-(:5153 by default), which talks to whatever real namespaces are registered on it. Prerequisites:
-ServiceHub API running and at least one namespace already registered per provider you want
-exercised (`register-aws` below can add one for AWS given AKID:secret; Azure needs its own
-connection-string setup first; GCP can register with AuthType `gcpWorkloadIdentity`, which uses
-the host's already-authenticated `gcloud auth application-default login` credential — no service
-account key needs to be minted — this script does not provision cloud infra either way).
+(:5153 by default), which talks to whatever real namespaces are registered on it (default owner
+partition `__spa__`, i.e. no X-API-KEY needed — matching how the browser session itself talks to
+the API). Prerequisites: ServiceHub API running and at least one namespace already registered per
+provider you want exercised.
 
 Usage: python3 scripts/conformance-suite.py run
-           [--namespace Provider=<namespace-id>=<entityName>[=<subscriptionName>] ...]
+           --namespace Provider=<namespace-id> [--namespace Provider=<namespace-id> ...]
+           [--signature-hash Provider=<hash>]
        python3 scripts/conformance-suite.py preflight
-       python3 scripts/conformance-suite.py register-aws <namespace-name> <region> <akid> <secret>
 
-A trailing `=<subscriptionName>` is only needed for a topic-backed entity whose DLQ lives on a
-subscription rather than the topic itself (GCP Pub/Sub) — the queue-shaped DLQ peek/purge routes
-otherwise used (Azure/AWS) 404 on a topic name.
-
-Example (this run's actual namespaces):
-  python3 scripts/conformance-suite.py run \\
-      --namespace Azure=5f815da0-931b-4ed6-a9e2-af124bcb6200=orders \\
-      --namespace Aws=ed21bf7a-c595-468d-992d-fc495803d21e=servicehub-dev-orders \\
-      --namespace Gcp=b1425746-b363-4d3c-aad6-ea1edc22f8c1=servicehub-dev-orders-topic=servicehub-dev-orders-subscription
+Unlike the 4.0.0 script, `run` takes only a namespace id per provider — no entity name is needed,
+because every action here (send excepted) now works off ServiceHub's own dead-letter row ids, not
+raw queue/topic coordinates. `send` picks the namespace's first queue-kind entity automatically
+via `GET /api/v1/namespaces/{id}/entities?kind=queue`.
 
 Exit code is 0 iff every assertion that actually ran passed. Providers with no --namespace given
 are reported SKIPPED (not FAILED) — this lets the suite run against whichever providers happen to
@@ -43,25 +66,23 @@ import json
 import sys
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import requests
 
 SH_BASE = "http://localhost:5153"
-API_KEY = "a1a1a1a1000000000000000000000000000000000000000000000000scopefull"
-HEADERS = {"X-API-KEY": API_KEY, "Content-Type": "application/json"}
+HEADERS = {"Content-Type": "application/json"}
 
 INTENT_HEADER = "X-ServiceHub-Intent"
-CONFIRM_HEADER = "X-ServiceHub-Confirm"
 
 
 def intent_headers(intent):
-    return {**HEADERS, INTENT_HEADER: intent, CONFIRM_HEADER: "true"}
+    return {**HEADERS, INTENT_HEADER: intent}
 
 
-def sh(method, path, extra_headers=None, **kwargs):
+def sh(method, path, extra_headers=None, timeout=30, **kwargs):
     headers = {**HEADERS, **extra_headers} if extra_headers else HEADERS
-    r = requests.request(method, f"{SH_BASE}{path}", headers=headers, timeout=30, **kwargs)
+    r = requests.request(method, f"{SH_BASE}{path}", headers=headers, timeout=timeout, **kwargs)
     try:
         body = r.json()
     except ValueError:
@@ -76,12 +97,8 @@ class Report:
     def check(self, provider, name, ok, detail, trust_root=None):
         """trust_root (ADR-004; ADR-0011; M3.3): which fact CanProveDlqAbsence actually rests on
         for this provider right now — "provider-native" (a real, uncapped peek; Azure only),
-        "operator-attested" (a live, independently-verified DLQ observer; AWS/GCP once one is
-        deployed and its liveness canary has confirmed), or "none" (AWS/GCP with neither). Kept as
-        its own field, not folded into detail, so a reader — or a future automated check — can
-        tell "supported" apart from "supported, and here is whose infrastructure that rests on"
-        without parsing prose.
-        """
+        "operator-attested" (a live, independently-verified DLQ observer signature trust reason),
+        or "none" (AWS/GCP with neither)."""
         status = "PASS" if ok else "FAIL"
         entry = {"provider": provider, "assertion": name, "status": status, "detail": detail}
         if trust_root is not None:
@@ -110,206 +127,215 @@ def cmd_preflight(_args):
     code, body = sh("GET", "/api/v1/namespaces")
     print(f"GET /namespaces -> HTTP {code}")
     print(json.dumps(body, indent=2))
-    code, caps = sh("GET", "/api/v1/cloud-bridge/capabilities")
-    print(f"GET /cloud-bridge/capabilities -> HTTP {code}")
-    print(json.dumps(caps, indent=2))
 
 
-def cmd_register_aws(args):
-    conn = f"{args.akid}:{args.secret}"
-    code, body = sh(
-        "POST",
-        "/api/v1/namespaces",
-        json={
-            "name": args.name,
-            "connectionString": conn,
-            "authType": "awsAccessKey",
-            "provider": "Aws",
-            "displayName": args.name,
-            "environment": "Dev",
-            "awsRegion": args.region,
-        },
-    )
-    print(f"HTTP {code}")
-    print(json.dumps(body, indent=2))
+PROVIDERS = ("Azure", "Aws", "Gcp")
+
+
+def canonical_provider(name):
+    """`aws`, `AWS` and `Aws` all mean Aws. An unknown name is a usage error — silently ignoring it
+    used to turn a mistyped `--namespace aws=...` into an all-SKIP run that looked like a pass."""
+    for known in PROVIDERS:
+        if known.lower() == name.strip().lower():
+            return known
+    sys.exit(f"unknown provider '{name}' (expected one of: {', '.join(PROVIDERS)})")
 
 
 def parse_namespace_args(pairs):
-    """--namespace Provider=<id>=<entityName>[=<subscriptionName>] repeated ->
-    {"Azure": (id, entity, subscription_or_None), ...}. A subscription is only needed for a
-    topic-backed entity (e.g. GCP, whose DLQ lives on the subscription, not the topic itself)."""
+    """--namespace Provider=<namespace-id>, repeated -> {"Azure": ns_id, ...}."""
     out = {}
     for p in pairs:
-        parts = p.split("=", 3)
-        provider, ns_id, entity = parts[0], parts[1], parts[2]
-        subscription = parts[3] if len(parts) > 3 else None
-        out[provider] = (ns_id, entity, subscription)
+        provider, ns_id = p.split("=", 1)
+        out[canonical_provider(provider)] = ns_id
     return out
 
 
-def peek_dead_letter(ns_id, entity, subscription, max_messages=5):
-    if subscription:
-        code, body = sh(
-            "GET",
-            f"/api/v1/messages/topic/{entity}/subscription/{subscription}/deadletter"
-            f"?namespaceId={ns_id}&maxMessages={max_messages}",
-        )
-    else:
-        code, body = sh("GET", f"/api/v1/messages/queue/{entity}/deadletter?namespaceId={ns_id}&maxMessages={max_messages}")
-    return code, body
+def parse_signature_args(pairs):
+    out = {}
+    for p in pairs or []:
+        provider, hash_ = p.split("=", 1)
+        out[canonical_provider(provider)] = hash_
+    return out
 
 
-def run_provider(report, provider, ns_id, entity, subscription, caps):
-    print(f"\n=== {provider} (namespace {ns_id}, entity {entity}) ===")
-    print(f"Declared capabilities: {json.dumps(caps, indent=2)}")
+def first_sendable_entity(ns_id):
+    """(name, is_topic) for the first queue this namespace has, or its first topic if it has no
+    queue at all (e.g. GCP, which is topic/subscription-only in this dataset) — send works on
+    either, it just needs to know which."""
+    code, body = sh("GET", f"/api/v1/namespaces/{ns_id}/entities")
+    if code != 200 or not isinstance(body, dict):
+        return None, False
+    items = body.get("entities") or []
+    queues = [e for e in items if e.get("kind") == "queue"]
+    if queues:
+        return queues[0]["name"], False
+    topics = [e for e in items if e.get("kind") == "topic"]
+    return (topics[0]["name"], True) if topics else (None, False)
+
+
+def first_any_entity(ns_id):
+    """Any queue or topic entity — used only to have *something* resolvable to ask
+    messages/scheduled about; a topic-only provider (GCP) has no queue-kind entity at all, which
+    is itself expected and not a capability failure."""
+    name, _ = first_sendable_entity(ns_id)
+    return name
+
+
+def latest_active_dlq_id(ns_id):
+    code, body = sh("GET", f"/api/v1/dead-letters?namespaceId={ns_id}&status=active&pageSize=1")
+    if code != 200 or not isinstance(body, dict):
+        return None
+    items = body.get("items") or []
+    return items[0]["id"] if items else None
+
+
+def run_provider(report, provider, ns_id, sig_hash, caps):
+    print(f"\n=== {provider} (namespace {ns_id}) ===")
+    print(f"Declared capabilities (from GET /namespaces): {json.dumps(caps, indent=2)}")
 
     # --- send: baseline positive op every provider must support ---
-    marker = f"conformance-{provider.lower()}-{uuid.uuid4().hex[:8]}"
-    code, body = sh(
-        "POST", f"/api/v1/namespaces/{ns_id}/queues/{entity}/messages",
-        extra_headers=intent_headers("messages:send"),
-        json={"body": marker, "contentType": "text/plain"},
-    )
-    report.check(provider, "send (baseline)", code == 202, f"HTTP {code}: {body if code != 202 else 'accepted'}")
-
-    # --- manual dead-letter: SupportsManualDeadLetter ---
-    time.sleep(2)  # let the send settle before we ask to dead-letter it
-    code, body = sh(
-        "POST", f"/api/v1/namespaces/{ns_id}/queues/{entity}/deadletter?messageCount=1&reason=ConformanceSuite",
-        extra_headers=intent_headers("messages:deadletter"),
-    )
-    if caps["supportsManualDeadLetter"]:
-        report.check(provider, "manual dead-letter (positive)", code == 200,
-                     f"HTTP {code}: {body if code != 200 else body}")
+    entity, entity_is_topic = first_sendable_entity(ns_id)
+    if entity is None:
+        report.skip(provider, "send (baseline)", "no queue- or topic-kind entity found via GET .../entities")
     else:
-        report.check(provider, "manual dead-letter (negative — must be REJECTED, not silently accepted or 500)",
-                     code == 400, f"HTTP {code}: {body}")
+        marker = f"conformance-{provider.lower()}-{uuid.uuid4().hex[:8]}"
+        code, body = sh(
+            "POST", f"/api/v1/namespaces/{ns_id}/messages",
+            extra_headers=intent_headers("send-message"),
+            json={"entity": entity, "isTopic": entity_is_topic, "body": marker, "contentType": "text/plain"},
+        )
+        report.check(provider, "send (baseline)", code == 200, f"HTTP {code}: {body if code != 200 else 'accepted'}")
+
+    # --- manual dead-letter: SupportsManualDeadLetter — no API action exists in 4.1.0 ---
+    report.skip(
+        provider, "manual dead-letter",
+        "4.1.0 exposes no POST .../deadletter action over the API (removed vs. 4.0.0); "
+        f"static capability value is SupportsManualDeadLetter={caps['supportsManualDeadLetter']}, unverifiable live")
 
     # --- scheduled messages: SupportsScheduledMessages ---
-    sched_time = datetime.now(timezone.utc) + timedelta(minutes=5)
-    code, body = sh(
-        "POST", f"/api/v1/namespaces/{ns_id}/queues/{entity}/messages",
-        extra_headers=intent_headers("messages:send"),
-        json={"body": f"scheduled-{marker}", "contentType": "text/plain",
-              "scheduledEnqueueTimeUtc": sched_time.isoformat()},
-    )
-    if caps["supportsScheduledMessages"]:
-        report.check(provider, "scheduled send (positive)", code == 202, f"HTTP {code}: {body}")
-        if code == 202:
-            time.sleep(2)
-            code2, listed = sh("GET", f"/api/v1/namespaces/{ns_id}/queues/{entity}/scheduled")
-            found = isinstance(listed, dict) and listed.get("totalCount", 0) > 0 or (isinstance(listed, list) and len(listed) > 0)
-            report.check(provider, "scheduled message appears in listing", code2 == 200 and found,
-                         f"HTTP {code2}: {listed}")
+    # No provider can be sent a scheduled message through the public API any more (see module
+    # docstring) — only the negative listing path is real and checkable. Needs *some* resolvable
+    # entity, not necessarily a queue (GCP has none) — a topic works equally well here.
+    sched_entity = entity or first_any_entity(ns_id)
+    if sched_entity is None:
+        report.skip(provider, "scheduled messages listing", "no queue or topic entity found to resolve against")
+        report.skip(provider, "scheduled send", "no entity to target")
     else:
-        report.check(provider, "scheduled send (negative — must be REJECTED, not silently sent)",
-                     code != 202, f"HTTP {code}: {body}")
+        code, body = sh("GET", f"/api/v1/namespaces/{ns_id}/messages/scheduled?entity={sched_entity}")
+        if caps["supportsScheduledMessages"]:
+            report.check(provider, "scheduled messages listing (positive — no 409)", code != 409, f"HTTP {code}: {body}")
+            report.skip(provider, "scheduled send",
+                         "4.1.0's public API has no field to schedule a send on ANY provider (SendRequest carries no "
+                         "scheduledEnqueueTimeUtc) — this is a real product gap, not exercisable here even for Azure")
+        else:
+            report.check(provider, "scheduled messages listing (negative — must be REJECTED, 409 CapabilityUnavailable)",
+                          code == 409, f"HTTP {code}: {body}")
 
-    # --- purge: SupportsPurge ---
-    code, dlq = peek_dead_letter(ns_id, entity, subscription)
-    target_seq = None
-    if code == 200 and isinstance(dlq, list) and len(dlq) > 0:
-        target_seq = dlq[0].get("sequenceNumber")
-    if target_seq is None:
-        report.skip(provider, "purge", "no dead-letter message available to target (DLQ peek returned none)")
+    # --- look at dead letters now: replaces both Live Tail and the old manual DLQ-scan trigger ---
+    code, body = sh(
+        "POST", f"/api/v1/namespaces/{ns_id}/dead-letters/look",
+        extra_headers=intent_headers("look-at-dead-letters"),
+    )
+    if code == 200 and isinstance(body, dict):
+        outcome_ok = body.get("outcome") == "looked"
+        expected_destructive = not caps["supportsRepeatablePeek"]
+        flag_ok = body.get("countsAsDeliveryAttempt") == expected_destructive
+        report.check(
+            provider, "look at dead letters now (outcome=looked)", outcome_ok, f"HTTP {code}: {body}")
+        report.check(
+            provider,
+            f"look's countsAsDeliveryAttempt matches !SupportsRepeatablePeek (expected {expected_destructive})",
+            flag_ok, f"HTTP {code}: countsAsDeliveryAttempt={body.get('countsAsDeliveryAttempt')}")
+    elif code == 409 and isinstance(body, dict) and body.get("code") == "already_running":
+        report.skip(provider, "look at dead letters now", f"another look was already running: {body}")
     else:
-        sub_param = f"&subscriptionName={subscription}" if subscription else ""
+        report.check(provider, "look at dead letters now", False, f"HTTP {code}: {body}")
+
+    time.sleep(1)  # let the look's recording settle before reading the DLQ list back
+
+    # --- purge: SupportsPurge, against a real recorded dead-letter row ---
+    dlq_id = latest_active_dlq_id(ns_id)
+    if dlq_id is None:
+        report.skip(provider, "purge", "no active dead-letter row found via GET /dead-letters (none recorded yet)")
+    else:
         code, body = sh(
-            "DELETE",
-            f"/api/v1/messages/purge?namespaceId={ns_id}&sequenceNumber={target_seq}&entityName={entity}"
-            f"{sub_param}&fromDeadLetter=true&reason=ConformanceSuite",
-            extra_headers=intent_headers("messages:purge"),
+            "POST", f"/api/v1/dead-letters/{dlq_id}/purge",
+            extra_headers=intent_headers("purge-message"),
+            json={"reason": "ConformanceSuite"},
+            # A Pub/Sub pull can take ~20 s and a purge may need several to find its message (a deep backlog on 2026-10-03 hit 30 s once).
+            timeout=120,
         )
         if caps["supportsPurge"]:
-            report.check(provider, "purge (positive)", code == 202, f"HTTP {code}: {body}")
-        else:
-            report.check(provider, "purge (negative — must be REJECTED, not silently accepted or 500)",
-                          code in (400, 422), f"HTTP {code}: {body}")
-
-    # --- Live Tail: SupportsRepeatablePeek ---
-    try:
-        with requests.get(
-            f"{SH_BASE}/api/v1/messages/live-tail?namespaceId={ns_id}&entityName={entity}",
-            headers=HEADERS, stream=True, timeout=8,
-        ) as r:
-            if caps["supportsRepeatablePeek"]:
-                report.check(provider, "Live Tail (positive — session opens)", r.status_code == 200,
-                              f"HTTP {r.status_code}")
+            # HTTP 200 alone proves nothing: the endpoint answers 200 with `result: rejected` when the
+            # provider refused (2026-09-28: GCP, straight after a `look` that had leased the message
+            # for its ack deadline -> GCP.PubSub.MessageNotFound). Only `accepted` proves a purge.
+            result = body.get("result") if isinstance(body, dict) else None
+            if code == 200 and result == "accepted":
+                report.check(provider, "purge (positive)", True, f"HTTP {code}: {body}")
+            elif code == 200 and result == "rejected" and body.get("errorCode", "").endswith("MessageNotFound"):
+                report.skip(provider, "purge (positive)",
+                            f"unproven, not failed: the provider could not find the row's message right after the look "
+                            f"(a pull-based look leases messages for the ack deadline): {body}")
             else:
-                report.check(provider, "Live Tail (negative — 409, SupportsRepeatablePeek)", r.status_code == 409,
-                              f"HTTP {r.status_code}: {r.text[:300]}")
-    except requests.exceptions.ReadTimeout:
-        # Azure's live-tail is a long-lived SSE stream by design; a read timeout on an open
-        # connection with no error body IS the positive case succeeding, not a failure.
-        report.check(provider, "Live Tail (positive — session opened and stayed open)",
-                      caps["supportsRepeatablePeek"], "connection opened, held open past the read timeout (expected for SSE)")
-
-    # --- DLQ background scan: SupportsRepeatablePeek + DlqMonitor:AllowDestructivePeek default-off ---
-    # Providers with no non-destructive peek (AWS, GCP) must have their DLQ background scan refuse
-    # to run (Dlq.NotMonitored) *unless* this server's own config has explicitly opted the provider
-    # in via DlqMonitor:AllowDestructivePeek:{Provider} — see DlqMonitorService.ScanNamespaceAsync.
-    # Both outcomes are a PASS here (the gate is honoured either way); only a shape that matches
-    # neither — e.g. a 500, or a 400 with some other code — is a real capability-enforcement defect.
-    code, body = sh("POST", f"/api/v1/dlq/scan/{ns_id}")
-    if caps["supportsRepeatablePeek"]:
-        report.check(provider, "DLQ background scan (positive — non-destructive peek allowed)",
-                     code == 200, f"HTTP {code}: {body}")
-    elif code == 200:
-        report.check(provider,
-                     "DLQ background scan (this server opted {} in via DlqMonitor:AllowDestructivePeek)".format(provider),
-                     True, f"HTTP {code}: {body} — not the default; an operator enabled this explicitly")
-    else:
-        report.check(provider,
-                     "DLQ background scan (negative — refused by default, DlqMonitor:AllowDestructivePeek off)",
-                     code == 400 and isinstance(body, dict) and body.get("code") == "Dlq.NotMonitored",
-                     f"HTTP {code}: {body}")
+                report.check(provider, "purge (positive)", False, f"HTTP {code}: {body}")
+        else:
+            report.check(provider, "purge (negative — must be REJECTED, 409 CapabilityUnavailable)",
+                          code == 409 and isinstance(body, dict) and body.get("code") == "capability_unavailable",
+                          f"HTTP {code}: {body}")
 
     # --- CanProveDlqAbsence trust root (ADR-004; ADR-0011; M3.3) ---
-    # Azure's is a provider fact (uncapped peek) and always true. AWS/GCP's static default is
-    # false; it can only ever become true via a live, independently-verified DLQ observer
-    # attestation for THIS namespace — never a config flag. This assertion resolves and names
-    # which of the two is actually in force, rather than reporting one flattened PASS/FAIL column
-    # that can't distinguish "Amazon's own guarantee" from "infrastructure this operator stood up
-    # and this suite is trusting."
+    # Static per-provider fact either way, same as 4.0.0 — Azure's is always true (uncapped peek);
+    # AWS/GCP's is always false absent an independently-verified DLQ observer, which in 4.1.0 is
+    # reported per FAILURE SIGNATURE (not per namespace) via GET /signatures/{hash}/trust.
     if caps["canProveDlqAbsence"]:
         report.check(provider, "CanProveDlqAbsence", True,
                      "true via the provider's own native capability (uncapped, non-destructive peek)",
                      trust_root="provider-native")
-    else:
-        att_code, attestation = sh("GET", f"/api/v1/namespaces/{ns_id}/dlq-observer-attestation")
-        if att_code == 200 and isinstance(attestation, dict) and attestation.get("isLive"):
-            report.check(provider, "CanProveDlqAbsence", True,
-                         f"true via a live DLQ observer attestation confirmed {attestation.get('lastConfirmedAt')} "
-                         f"(observerReference={attestation.get('observerReference')})",
-                         trust_root="operator-attested")
-        elif att_code == 200 and isinstance(attestation, dict):
-            report.check(provider, "CanProveDlqAbsence (negative — attestation configured but not live)", True,
-                         f"false — attestation row exists but IsLive is false (stale, revoked, or never confirmed): {attestation}",
-                         trust_root="none")
+    elif sig_hash:
+        att_code, attestation = sh("GET", f"/api/v1/signatures/{sig_hash}/trust?provider={provider}")
+        if att_code == 200 and isinstance(attestation, dict):
+            report.check(provider, "CanProveDlqAbsence (via a real signature's trust reason)", True,
+                         f"false by default (no provider-native capability); this signature's own trust reason: "
+                         f"{json.dumps(attestation)}", trust_root="operator-attested" if attestation.get("cloudCanConfirm") else "none")
         else:
-            report.check(provider, "CanProveDlqAbsence (negative — no attestation configured)", True,
-                         f"false — no DLQ observer attestation configured for this namespace (HTTP {att_code}); "
-                         "capped at L3 (human-approved replay only)",
-                         trust_root="none")
+            report.check(provider, "CanProveDlqAbsence (signature trust lookup)", False,
+                         f"HTTP {att_code}: {attestation}", trust_root="none")
+    else:
+        report.check(provider, "CanProveDlqAbsence (negative — no --signature-hash given to cross-check)", True,
+                     "false via the static capability preset; no --signature-hash provided so the "
+                     "operator-attested path (GET /signatures/{hash}/trust) was not exercised",
+                     trust_root="none")
 
 
 def cmd_run(args):
     ns_map = parse_namespace_args(args.namespace or [])
-    code, caps_all = sh("GET", "/api/v1/cloud-bridge/capabilities")
+    sig_map = parse_signature_args(args.signature_hash)
+    code, namespaces = sh("GET", "/api/v1/namespaces")
     if code != 200:
-        print(f"FATAL: GET /cloud-bridge/capabilities -> HTTP {code}")
+        print(f"FATAL: GET /namespaces -> HTTP {code}")
         sys.exit(2)
 
     report = Report()
-    report.check("suite", "cloud-bridge/capabilities reachable", code == 200, f"HTTP {code}")
+    report.check("suite", "GET /namespaces reachable", code == 200, f"HTTP {code}")
+
+    by_id = {n["id"]: n for n in namespaces} if isinstance(namespaces, list) else {}
 
     for provider in ("Azure", "Aws", "Gcp"):
-        caps = caps_all.get(provider)
         if provider not in ns_map:
             report.skip(provider, "all live assertions", "no --namespace given for this provider")
             continue
-        ns_id, entity, subscription = ns_map[provider]
-        run_provider(report, provider, ns_id, entity, subscription, caps)
+        ns_id = ns_map[provider]
+        ns = by_id.get(ns_id)
+        if ns is None:
+            report.check(provider, "namespace visible via GET /namespaces", False,
+                         f"namespace id {ns_id} not found in the caller's own namespace list")
+            continue
+        caps = ns.get("capabilities")
+        if not caps:
+            report.check(provider, "namespace has capabilities (adapter registered)", False,
+                         f"Capabilities was null for namespace {ns_id} — no adapter registered for this provider in this build")
+            continue
+        run_provider(report, provider, ns_id, sig_map.get(provider), caps)
 
     passed, failed, skipped = report.summary()
     print(f"\n=== SUMMARY: {passed} passed, {failed} failed, {skipped} skipped ===")
@@ -325,18 +351,14 @@ def main():
     sub.add_parser("preflight")
 
     p_run = sub.add_parser("run")
-    p_run.add_argument("--namespace", action="append",
-                        help="Provider=<namespace-id>=<entityName>[=<subscriptionName>], repeatable")
+    p_run.add_argument("--namespace", action="append", help="Provider=<namespace-id>, repeatable")
+    p_run.add_argument("--signature-hash", action="append",
+                        help="Provider=<hash>, repeatable — best-effort cross-check of a real signature's "
+                             "trust reason for CanProveDlqAbsence; optional")
     p_run.add_argument("--report-path", default="conformance-report.json")
 
-    p_reg = sub.add_parser("register-aws")
-    p_reg.add_argument("name")
-    p_reg.add_argument("region")
-    p_reg.add_argument("akid")
-    p_reg.add_argument("secret")
-
     args = parser.parse_args()
-    {"preflight": cmd_preflight, "run": cmd_run, "register-aws": cmd_register_aws}[args.command](args)
+    {"preflight": cmd_preflight, "run": cmd_run}[args.command](args)
 
 
 if __name__ == "__main__":
