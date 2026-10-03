@@ -44,7 +44,7 @@ describe('Send a message', () => {
   it('has no accessibility violations (6.6)', async () => {
     const { container } = wrap()
     await openSelect('Queue or topic')
-    await expectNoAxeViolations(container)
+    await expectNoAxeViolations(container, { isolatedComponent: true })
   })
 
   it('never offers a production namespace, or a subscription as a target', async () => {
