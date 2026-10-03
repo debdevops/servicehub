@@ -1,68 +1,39 @@
-using ServiceHub.Shared.Helpers;
-
 namespace ServiceHub.Api.Middleware;
 
 /// <summary>
-/// Middleware for managing correlation IDs across requests.
-/// Ensures every request has a correlation ID for distributed tracing.
+/// Gives every request a correlation id, echoes it back, and puts it on the log scope — so one
+/// identifier ties a browser request, a log line, an event and a ledger entry together.
 /// </summary>
-public sealed class CorrelationIdMiddleware
+public sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationIdMiddleware> logger)
 {
-    private readonly RequestDelegate _next;
-    private readonly ILogger<CorrelationIdMiddleware> _logger;
+    /// <summary>The request and response header carrying the correlation id.</summary>
+    public const string HeaderName = "X-Correlation-Id";
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="CorrelationIdMiddleware"/> class.
-    /// </summary>
-    /// <param name="next">The next middleware in the pipeline.</param>
-    /// <param name="logger">The logger instance.</param>
-    public CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationIdMiddleware> logger)
-    {
-        _next = next;
-        _logger = logger;
-    }
-
-    /// <summary>
-    /// Invokes the middleware.
-    /// </summary>
-    /// <param name="context">The HTTP context.</param>
+    /// <summary>Runs the middleware.</summary>
     public async Task InvokeAsync(HttpContext context)
     {
-        var correlationId = GetOrCreateCorrelationId(context);
+        ArgumentNullException.ThrowIfNull(context);
 
-        // Store in HttpContext.Items for access throughout the request
-        context.Items["CorrelationId"] = correlationId;
+        // A caller-supplied id is echoed into a response header and every log line, so only a short,
+        // plain one is trusted. Anything else is replaced, not rejected — correlation is a courtesy.
+        var correlationId = context.Request.Headers.TryGetValue(HeaderName, out var supplied)
+                            && IsAcceptable(supplied.ToString())
+            ? supplied.ToString()
+            : context.TraceIdentifier;
 
-        // Add to response headers
-        context.Response.OnStarting(() =>
-        {
-            context.Response.Headers[CorrelationIdGenerator.DefaultHeaderName] = correlationId;
-            return Task.CompletedTask;
-        });
+        context.TraceIdentifier = correlationId;
+        context.Response.Headers[HeaderName] = correlationId;
 
-        // Add to logging scope
-        using (_logger.BeginScope(new Dictionary<string, object>
+        using (logger.BeginScope(new Dictionary<string, object> { ["CorrelationId"] = correlationId }))
         {
-            ["CorrelationId"] = correlationId
-        }))
-        {
-            await _next(context);
+            await next(context).ConfigureAwait(false);
         }
     }
 
-    private static string GetOrCreateCorrelationId(HttpContext context)
-    {
-        // Try to get from request header
-        if (context.Request.Headers.TryGetValue(CorrelationIdGenerator.DefaultHeaderName, out var headerValue))
-        {
-            var existingId = headerValue.FirstOrDefault();
-            if (CorrelationIdGenerator.IsValid(existingId))
-            {
-                return existingId!;
-            }
-        }
+    /// <summary>The longest caller-supplied correlation id that is accepted as-is.</summary>
+    public const int MaxLength = 64;
 
-        // Generate a new one
-        return CorrelationIdGenerator.Generate();
-    }
+    internal static bool IsAcceptable(string value) =>
+        value.Length is > 0 and <= MaxLength
+        && value.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.' or ':');
 }

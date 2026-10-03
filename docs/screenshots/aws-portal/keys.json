@@ -1,0 +1,88 @@
+{
+ "portal-01-queues.png": [
+  {
+   "n": 1,
+   "t": "Queue names \u2014 your orders queue and its dead-letter queue (the one ending -dlq). ServiceHub finds every queue in the region; you do not list them."
+  },
+  {
+   "n": 2,
+   "t": "Messages available \u2014 waiting to be received. The dead-letter queue's number is what ServiceHub counts as dead letters (here 324)."
+  },
+  {
+   "n": 3,
+   "t": "Region \u2014 queues belong to a region. You choose the same region in ServiceHub when you connect (here Asia Pacific (Mumbai), ap-south-1)."
+  }
+ ],
+ "portal-02-orders-queue.png": [
+  {
+   "n": 1,
+   "t": "URL \u2014 the address of this queue. ServiceHub builds it for you from the queue's name and your region."
+  },
+  {
+   "n": 2,
+   "t": "Dead-letter queue \u2014 Enabled: a message that fails too often is moved to a second queue instead of being lost."
+  },
+  {
+   "n": 3,
+   "t": "Dead-letter queue tab \u2014 shows which queue receives the failures (next screenshot)."
+  }
+ ],
+ "portal-03-dead-letter-queue.png": [
+  {
+   "n": 1,
+   "t": "Queue \u2014 the dead-letter queue that receives the failures. ServiceHub reads this one to show Dead letters."
+  },
+  {
+   "n": 2,
+   "t": "Maximum receives \u2014 3: after three failed tries SQS moves the message here. Reading a dead letter from ServiceHub counts as one more receive, which is why ServiceHub only looks when you ask."
+  }
+ ],
+ "portal-04-iam-users.png": [
+  {
+   "n": 1,
+   "t": "Create user \u2014 start here to make a user just for ServiceHub, not your own."
+  },
+  {
+   "n": 2,
+   "t": "The ServiceHub user \u2014 separate from your own, so you can switch it off later without disturbing anything else."
+  }
+ ],
+ "portal-05-user-permissions.png": [
+  {
+   "n": 1,
+   "t": "Console access \u2014 Disabled. This user is for programs only: nobody can sign in to the AWS console as it."
+  },
+  {
+   "n": 2,
+   "t": "Access key 1 \u2014 what ServiceHub signs in with. It is made on the Security credentials tab; AWS shows its secret only once."
+  },
+  {
+   "n": 3,
+   "t": "servicehub-sqs \u2014 one inline policy, limited to the two queues (next screenshot). The user has no other permissions."
+  }
+ ],
+ "portal-06-policy-json.png": [
+  {
+   "n": 1,
+   "t": "Actions \u2014 what ServiceHub may do: read queue counts, receive (to look), change visibility (to hand a looked-at message back), send and delete (to replay). Above these, sqs:ListQueues lets it find your queues."
+  },
+  {
+   "n": 2,
+   "t": "Resource \u2014 only these two queues. If the key ever leaked, it could touch nothing else in your account."
+  }
+ ],
+ "portal-07-access-keys.png": [
+  {
+   "n": 1,
+   "t": "Create access key \u2014 choose \u201cApplication running outside AWS\u201d, then copy the Access key ID and the Secret access key. AWS shows the secret once."
+  },
+  {
+   "n": 2,
+   "t": "Status \u2014 Active. Make it Inactive or delete it at any time to cut ServiceHub off."
+  },
+  {
+   "n": 3,
+   "t": "Actions \u2014 make the key inactive or delete it: the way to revoke ServiceHub\u2019s access later."
+  }
+ ]
+}

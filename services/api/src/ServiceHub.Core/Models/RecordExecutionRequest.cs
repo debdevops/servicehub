@@ -27,4 +27,8 @@ public sealed class RecordExecutionRequest
 
     /// <summary>Whether the marker was actually applied.</summary>
     public bool MarkerApplied { get; init; }
+
+    /// <summary>The replayed message's new provider-assigned ID, if the provider reported one.
+    /// See <see cref="Entities.RecoveryLedgerEntry.ReplayedProviderMessageId"/>.</summary>
+    public string? ReplayedProviderMessageId { get; init; }
 }

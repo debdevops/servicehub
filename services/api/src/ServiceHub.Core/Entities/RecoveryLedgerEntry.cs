@@ -103,6 +103,16 @@ public sealed class RecoveryLedgerEntry
     /// </summary>
     public bool MarkerApplied { get; set; }
 
+    /// <summary>
+    /// The replayed message's <b>new</b> provider-assigned ID (unit 4.2) — replay always mints a
+    /// fresh one, on every provider, so <see cref="SourceMessageIdSnapshot"/> cannot be reused
+    /// for this. Null when the provider has none to report (Azure) or the replay never reached
+    /// the point of sending. This is the key the replay verification agent looks up in
+    /// an AWS/GCP DLQ observer's log to prove this specific replay stayed fixed, once that
+    /// namespace's observer is attested live (ADR-004; ADR-0011).
+    /// </summary>
+    public string? ReplayedProviderMessageId { get; set; }
+
     /// <summary>Current lifecycle state.</summary>
     public RecoveryEntryState State { get; set; } = RecoveryEntryState.Executing;
 

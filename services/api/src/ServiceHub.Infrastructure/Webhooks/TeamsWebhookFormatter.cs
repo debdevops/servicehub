@@ -40,35 +40,6 @@ public sealed class TeamsWebhookFormatter : IWebhookMessageFormatter
             PotentialAction: n.InvestigateUrl is null ? null : [TeamsOpenUriAction.To("Investigate", n.InvestigateUrl)]);
     }
 
-    /// <inheritdoc />
-    public object BuildBulkOperationCompletedPayload(BulkOperationCompletedNotification n)
-    {
-        var (color, headline) = n.Status switch
-        {
-            BulkOperationStatus.Completed => (SuccessColor, "✅ Bulk operation completed"),
-            BulkOperationStatus.CompletedWithErrors => (WarningColor, "⚠️ Bulk operation completed with errors"),
-            BulkOperationStatus.Failed => (ErrorColor, "❌ Bulk operation failed"),
-            BulkOperationStatus.Cancelled => (NeutralColor, "⏹️ Bulk operation cancelled"),
-            _ => (NeutralColor, "Bulk operation finished"),
-        };
-
-        var facts = new List<TeamsFact>
-        {
-            new("Operation", $"{n.OperationType} — {n.NamespaceName}"),
-            new("Succeeded", n.SuccessCount.ToString()),
-            new("Failed", n.FailureCount.ToString()),
-            new("Skipped", n.SkippedCount.ToString()),
-            new("Total Matched", n.TotalMatched.ToString()),
-            new("Completed", $"{n.CompletedAtUtc:yyyy-MM-dd HH:mm} UTC"),
-        };
-
-        return new TeamsMessageCard(
-            Summary: headline,
-            ThemeColor: color,
-            Title: headline,
-            Sections: [new TeamsSection(facts)],
-            PotentialAction: n.InvestigateUrl is null ? null : [TeamsOpenUriAction.To("View DLQ History", n.InvestigateUrl)]);
-    }
 
     /// <inheritdoc />
     public object BuildAutonomyTransitionPayload(AutonomyTransitionNotification n)
@@ -110,6 +81,26 @@ public sealed class TeamsWebhookFormatter : IWebhookMessageFormatter
             Title: "🛑 Circuit breaker tripped",
             Sections: [new TeamsSection(facts)],
             PotentialAction: n.InvestigateUrl is null ? null : [TeamsOpenUriAction.To("View Rules", n.InvestigateUrl)]);
+    }
+
+    /// <inheritdoc />
+    public object BuildEscalationPayload(EscalationNotification n)
+    {
+        var facts = new List<TeamsFact>
+        {
+            new("Where", n.Where.Length > 0 ? n.Where : "ServiceHub"),
+            new("Why", n.Reason),
+            new("What to do", n.WhatToDo),
+            new("Reason code", n.ReasonCode),
+            new("Raised", $"{n.RaisedAtUtc:yyyy-MM-dd HH:mm} UTC"),
+        };
+
+        return new TeamsMessageCard(
+            Summary: n.Headline,
+            ThemeColor: WarningColor,
+            Title: $"⏸️ {n.Headline}",
+            Sections: [new TeamsSection(facts)],
+            PotentialAction: n.ReviewUrl is null ? null : [TeamsOpenUriAction.To(n.Kind == "agent" ? "Open Agents" : "Review in ServiceHub", n.ReviewUrl)]);
     }
 
     /// <inheritdoc />

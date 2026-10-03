@@ -12,6 +12,7 @@ on:
       - develop
       - 'release'
       - 'bugfix/**'
+      - 'feat/**'
       - 'feature/**'
       - 'fix/**'
       - 'hotfix/**'
@@ -21,6 +22,7 @@ on:
       - develop
       - 'release'
       - 'bugfix/**'
+      - 'feat/**'
       - 'feature/**'
       - 'fix/**'
       - 'hotfix/**'
@@ -28,6 +30,10 @@ on:
   schedule:
     # Run full scan weekly on Sunday at 2 AM IST (8:30 PM UTC Saturday)
     - cron: '30 20 * * 6'
+
+# 4.1.0 lives at the repository root (`services/api`, `apps/servicehub`). The frozen 4.0.0 tree under archive/ is neither
+# built nor scanned here (it is excluded in .github/codeql/codeql-config.yml): until 2026-10-03 this workflow built and
+# scanned ONLY archive/servicehub-4.0.0, so no 4.1.0 code was ever analysed.
 
 jobs:
   analyze-csharp:
@@ -56,12 +62,12 @@ jobs:
           queries: security-extended
 
       - name: Restore dependencies
-        run: dotnet restore services/api/ServiceHub.sln
+        run: dotnet restore services/api/ServiceHub.slnx
 
       - name: Build for CodeQL analysis
         # CodeQL needs to observe the build to understand the code
         run: |
-          dotnet build services/api/ServiceHub.sln \
+          dotnet build services/api/ServiceHub.slnx \
             --configuration Release \
             --no-restore
 
@@ -97,11 +103,13 @@ jobs:
           queries: security-extended
 
       - name: Install dependencies (monorepo workspace)
-        run: npm ci --include=optional
+        run: npm ci
 
       - name: Build for CodeQL analysis
-        # TypeScript build helps CodeQL resolve types accurately
-        run: npm exec -w apps/web -- tsc -b --noEmit || true
+        # A type-check helps CodeQL resolve types accurately; it is not a gate here (CI's own job is).
+        run: npx tsc -b
+        working-directory: apps/servicehub
+        continue-on-error: true
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3

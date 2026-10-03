@@ -1,0 +1,43 @@
+# Keep the build context small and reproducible — never copy build outputs, deps, or secrets.
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/coverage/
+**/playwright-report/
+**/test-results/
+**/TestResults/
+
+# The API's wwwroot is a git-committed convenience copy for local `dotnet run`. The image build
+# always regenerates the SPA fresh (see Dockerfile web stage) — never let this stale, pre-built
+# copy enter the API publish stage, or dotnet publish bakes its old hash-named assets into the
+# image layer permanently (a later `rm -rf` can't undo it — Trivy's secret scan reads layer
+# history, not just the final merged filesystem).
+services/api/src/ServiceHub.Api/wwwroot/
+
+# Local secrets & environment overrides (must never enter an image)
+**/appsettings.Local.json
+**/*.user
+.env
+.env.*
+!apps/web/.env.production
+
+# VCS / tooling / editor
+.git/
+.github/
+.vscode/
+.venv/
+**/.DS_Store
+
+# Docs & private material — not needed to build or run the app
+docs/
+docs-private/
+self-hosting/
+deploy/
+azuredevops/
+*.md
+!README.md
+
+# Local data
+**/servicehub-namespaces.json
+**/*.db

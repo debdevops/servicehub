@@ -1,1592 +1,179 @@
-using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using ServiceHub.Api.Authorization;
-using ServiceHub.Api.Security;
-using ServiceHub.Infrastructure.Security;
-using ServiceHub.Core.DTOs.Requests;
-using ServiceHub.Core.DTOs.Responses;
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
-using ServiceHub.Infrastructure.Persistence;
-using ServiceHub.Infrastructure.RecoveryLedger;
-using ServiceHub.Shared.Constants;
-using ServiceHub.Shared.Results;
 
 namespace ServiceHub.Api.Controllers.V1;
 
 /// <summary>
-/// Controller for auto-replay rule operations.
-/// Provides CRUD, testing, templates, and statistics for DLQ replay rules.
+/// Auto Replay rules (unit 3.6). A rule is a failure and a pace — there is no rule language. Making or changing one never
+/// sends anything: the Auto Replay agent applies rules, and only through the eligibility gate.
 /// </summary>
-[Route(ApiRoutes.Dlq.Rules.Base)]
-[Tags("Auto-Replay Rules")]
+[Route("api/v1/rules")]
 public sealed class RulesController : ApiControllerBase
 {
-    private readonly DlqDbContext _dbContext;
-    private readonly IRuleEngine _ruleEngine;
-    private readonly INamespaceRepository _namespaceRepository;
-    private readonly IGovernanceAccessEvaluator _governanceAccessEvaluator;
-    private readonly IAuditLogger _auditLogger;
-    private readonly ILogger<RulesController> _logger;
+    private readonly IRulesService _rules;
+    private readonly IAuditTrail _audit;
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    /// <summary>Creates the controller.</summary>
+    public RulesController(IRulesService rules, IAuditTrail audit)
     {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false,
-    };
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="RulesController"/> class.
-    /// </summary>
-    public RulesController(
-        DlqDbContext dbContext,
-        IRuleEngine ruleEngine,
-        INamespaceRepository namespaceRepository,
-        IGovernanceAccessEvaluator governanceAccessEvaluator,
-        ILogger<RulesController> logger,
-        IAuditLogger? auditLogger = null)
-    {
-        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
-        _ruleEngine = ruleEngine ?? throw new ArgumentNullException(nameof(ruleEngine));
-        _namespaceRepository = namespaceRepository ?? throw new ArgumentNullException(nameof(namespaceRepository));
-        _governanceAccessEvaluator = governanceAccessEvaluator ?? throw new ArgumentNullException(nameof(governanceAccessEvaluator));
-        _auditLogger = auditLogger ?? NoOpAuditLogger.Instance;
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _rules = rules ?? throw new ArgumentNullException(nameof(rules));
+        _audit = audit ?? throw new ArgumentNullException(nameof(audit));
     }
 
-    /// <summary>
-    /// Requires <see cref="GovernanceRole.Operator"/> — the same role
-    /// <see cref="MessagesController.ReplayMessage"/> requires — scoped to the rule's own
-    /// <paramref name="namespaceId"/> under <see cref="PillarKind.Recover"/>. A declarative
-    /// <see cref="RequireGovernanceRoleAttribute"/> can't express this: on Create/Update
-    /// <c>namespaceId</c> is a body field, not route/query, and on Toggle the request carries no
-    /// <c>namespaceId</c> at all — it's read off the existing row instead.
-    /// </summary>
-    private async Task<Result> EvaluateRuleGovernanceAsync(Guid? namespaceId, CancellationToken cancellationToken)
-    {
-        var granteeIdentity = ResolveGovernanceGranteeIdentity();
-        return await _governanceAccessEvaluator.EvaluateAsync(
-            OwnerId, granteeIdentity, GovernanceRole.Operator, namespaceId, PillarKind.Recover, cancellationToken);
-    }
+    // A rule is a standing instruction that lets a machine replay on its own, so every change to one is on the audit trail with who made it.
+    private Task AuditAsync(string action, string resource, bool succeeded, CancellationToken cancellationToken) =>
+        _audit.RecordAsync(new AuditLog
+        {
+            Id = Guid.NewGuid(), Timestamp = DateTimeOffset.UtcNow, OwnerId = OwnerId, UserIdentity = Actor.Identity,
+            Action = action, Outcome = succeeded ? AuditActions.Success : AuditActions.Failure, ResourceName = resource,
+            CorrelationId = HttpContext.TraceIdentifier, HttpMethod = Request.Method, HttpPath = Request.Path.Value,
+        }, cancellationToken);
 
-    /// <summary>
-    /// Loads every namespace accessible to the current caller into a lookup dictionary, used to
-    /// resolve <see cref="RuleNamespaceScope"/> for rule responses without an N+1 namespace fetch
-    /// per rule.
-    /// </summary>
-    private async Task<IReadOnlyDictionary<Guid, Core.Entities.Namespace>> LoadNamespaceLookupAsync(
-        CancellationToken cancellationToken)
-    {
-        var result = await _namespaceRepository.GetByOwnerAsync(OwnerId, AllowedNamespaceIds, cancellationToken);
-        return result.IsSuccess
-            ? result.Value.ToDictionary(n => n.Id)
-            : new Dictionary<Guid, Core.Entities.Namespace>();
-    }
-
-    // ── 1. GET /api/v1/dlq/rules — List all rules ──────────────
-
-    /// <summary>
-    /// Gets all auto-replay rules, optionally filtered.
-    /// </summary>
-    /// <param name="enabledOnly">Only return enabled rules.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>List of rules.</returns>
+    /// <summary>One cloud's rules, with what actually happened under each.</summary>
     [HttpGet]
-    [RequireScope(ApiKeyScopes.DlqRead)]
-    [ProducesResponseType(typeof(IReadOnlyList<RuleResponse>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<IReadOnlyList<RuleResponse>>> GetAll(
-        [FromQuery] bool? enabledOnly = null,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var query = _dbContext.AutoReplayRules.AsNoTracking().AsQueryable();
+    [ProducesResponseType(typeof(IReadOnlyList<RuleView>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> List([FromQuery] CloudProviderType? provider, CancellationToken cancellationToken) =>
+        provider is { } cloud ? Ok(await _rules.ListAsync(OwnerId, cloud, cancellationToken)) : NeedsCloud();
 
-            // TENANT ISOLATION: Filter rules by owner
-            query = query.Where(r => r.OwnerId == OwnerId);
+    /// <summary>Failures a rule can be created from.</summary>
+    [HttpGet("sources")]
+    [ProducesResponseType(typeof(IReadOnlyList<RuleSource>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Sources([FromQuery] CloudProviderType? provider, CancellationToken cancellationToken) =>
+        provider is { } cloud ? Ok(await _rules.SourcesAsync(OwnerId, AllowedNamespaceIds, cloud, cancellationToken)) : NeedsCloud();
 
-            if (enabledOnly == true)
-                query = query.Where(r => r.Enabled);
+    /// <summary>The distinct dead letters this cloud's rules are holding for a person — one message counted once however many rules match it.</summary>
+    [HttpGet("held")]
+    [ProducesResponseType(typeof(RulesHeld), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Held([FromQuery] CloudProviderType? provider, CancellationToken cancellationToken) =>
+        provider is { } cloud ? Ok(await _rules.HeldAsync(OwnerId, AllowedNamespaceIds, cloud, cancellationToken)) : NeedsCloud();
 
-            var rules = await query
-                .OrderByDescending(r => r.CreatedAt)
-                .ToListAsync(cancellationToken);
+    // A rule belongs to one cloud, and an enum left out would quietly mean the first one — so a missing cloud is refused, never defaulted.
+    private ObjectResult NeedsCloud() => Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "Say which cloud: give a 'provider'.");
 
-            // Compute live pending match counts for each rule
-            var activeMessages = await _dbContext.DlqMessages
-                .AsNoTracking()
-                .Where(m => m.Status == DlqMessageStatus.Active && m.OwnerId == OwnerId)
-                .ToListAsync(cancellationToken);
-
-            var namespaceLookup = await LoadNamespaceLookupAsync(cancellationToken);
-
-            var response = rules.Select(rule =>
-            {
-                var conditions = DeserializeOrDefault<List<RuleCondition>>(rule.ConditionsJson) ?? [];
-                var pendingCount = 0;
-                if (rule.Enabled && conditions.Count > 0 && activeMessages.Count > 0)
-                {
-                    foreach (var msg in activeMessages)
-                    {
-                        var result = _ruleEngine.Evaluate(msg, conditions);
-                        if (result.IsMatch)
-                            pendingCount++;
-                    }
-                }
-                return MapToResponse(rule, pendingCount, namespaceLookup);
-            }).ToList();
-            return Ok(response);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to list auto-replay rules");
-            return ToActionResult<IReadOnlyList<RuleResponse>>(
-                Error.Internal(ErrorCodes.Rule.NotFound, "Failed to retrieve rules"));
-        }
-    }
-
-    // ── 2. GET /api/v1/dlq/rules/{id} — Get single rule ────────
-
-    /// <summary>
-    /// Gets a single auto-replay rule by ID.
-    /// </summary>
-    /// <param name="id">The rule ID.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The rule details.</returns>
-    [HttpGet("{id:long}")]
-    [RequireScope(ApiKeyScopes.DlqRead)]
-    [ProducesResponseType(typeof(RuleResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<RuleResponse>> GetById(
-        long id,
-        CancellationToken cancellationToken = default)
-    {
-        // When authentication is enabled, enforce read scope in-method so
-        // static-analysis tools can trace the authorization check before the data access.
-        // SPA token auth gets full access — scope restrictions only apply to API keys.
-        if (HttpContext.Items.ContainsKey("Authenticated") &&
-            HttpContext.Items["AuthMethod"] is not "SpaToken" &&
-            (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
-             keyConfigObj is not ApiKeyConfiguration keyConfig ||
-             !keyConfig.HasScope(ApiKeyScopes.DlqRead)))
-        {
-            return Forbid();
-        }
-
-        // TENANT ISOLATION: Verify rule belongs to current owner
-        var rule = await _dbContext.AutoReplayRules
-            .AsNoTracking()
-            .FirstOrDefaultAsync(r => r.Id == id && r.OwnerId == OwnerId, cancellationToken);
-
-        if (rule is null)
-            return ToActionResult<RuleResponse>(
-                Error.NotFound(ErrorCodes.Rule.NotFound, $"Rule {id} not found"));
-
-        // Compute live pending match count
-        var conditions = DeserializeOrDefault<List<RuleCondition>>(rule.ConditionsJson) ?? [];
-        var pendingCount = 0;
-        if (rule.Enabled && conditions.Count > 0)
-        {
-            var activeMessages = await _dbContext.DlqMessages
-                .AsNoTracking()
-                .Where(m => m.Status == DlqMessageStatus.Active && m.OwnerId == OwnerId)
-                .ToListAsync(cancellationToken);
-            foreach (var msg in activeMessages)
-            {
-                var result = _ruleEngine.Evaluate(msg, conditions);
-                if (result.IsMatch)
-                    pendingCount++;
-            }
-        }
-
-        var namespaceLookup = await LoadNamespaceLookupAsync(cancellationToken);
-        return Ok(MapToResponse(rule, pendingCount, namespaceLookup));
-    }
-
-    // ── 3. POST /api/v1/dlq/rules — Create rule ────────────────
-
-    /// <summary>
-    /// Creates a new auto-replay rule.
-    /// </summary>
-    /// <param name="request">The rule definition.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The created rule.</returns>
+    /// <summary>Makes a rule. It starts on.</summary>
     [HttpPost]
-    [RequireScope(ApiKeyScopes.DlqWrite)]
-    [ProducesResponseType(typeof(RuleResponse), StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<RuleResponse>> Create(
-        [FromBody] CreateRuleRequest request,
-        CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(RuleView), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Create([FromBody] CreateRuleRequest request, CancellationToken cancellationToken)
     {
-        try
+        if (request.Provider is not { } cloud)
         {
-            // TENANT ISOLATION: Check for duplicate name within current owner's rules
-            var exists = await _dbContext.AutoReplayRules
-                .AnyAsync(r => r.Name == request.Name && r.OwnerId == OwnerId, cancellationToken);
-
-            if (exists)
-                return ToActionResult<RuleResponse>(
-                    Error.Conflict(ErrorCodes.Rule.AlreadyExists, $"A rule named '{request.Name}' already exists"));
-
-            Core.Entities.Namespace? scopedNamespace = null;
-            if (request.NamespaceId.HasValue)
-            {
-                var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, request.NamespaceId.Value, cancellationToken);
-                if (namespaceResult.IsFailure)
-                    return ToActionResult<RuleResponse>(
-                        Error.Validation("Rule.NamespaceInvalid", $"Namespace '{request.NamespaceId}' does not exist or is not accessible."));
-
-                scopedNamespace = namespaceResult.Value;
-            }
-
-            var governanceResult = await EvaluateRuleGovernanceAsync(request.NamespaceId, cancellationToken);
-            if (governanceResult.IsFailure)
-                return ToActionResult<RuleResponse>(governanceResult.Error);
-
-            var entity = new AutoReplayRule
-            {
-                Name = request.Name,
-                OwnerId = OwnerId,
-                Description = request.Description,
-                Enabled = request.Enabled,
-                ConditionsJson = JsonSerializer.Serialize(request.Conditions, JsonOptions),
-                ActionsJson = JsonSerializer.Serialize(request.Action, JsonOptions),
-                CreatedAt = DateTimeOffset.UtcNow,
-                MaxReplaysPerHour = request.MaxReplaysPerHour,
-                NamespaceId = request.NamespaceId,
-            };
-
-            _dbContext.AutoReplayRules.Add(entity);
-            await _dbContext.SaveChangesAsync(cancellationToken);
-
-            _auditLogger.LogCriticalAction(
-                HttpContext,
-                OwnerId,
-                action: "Rule.Create",
-                outcome: "Succeeded",
-                resourceName: entity.Name);
-
-            _logger.LogInformation("Created auto-replay rule {RuleId}/{RuleName}", entity.Id, LogRedactor.SanitiseForLog(entity.Name));
-
-            var namespaceLookup = scopedNamespace is not null
-                ? new Dictionary<Guid, Core.Entities.Namespace> { [scopedNamespace.Id] = scopedNamespace }
-                : null;
-
-            return CreatedAtAction(
-                nameof(GetById),
-                new { id = entity.Id },
-                MapToResponse(entity, namespaceLookup: namespaceLookup));
+            return NeedsCloud();
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to create auto-replay rule");
-            return ToActionResult<RuleResponse>(
-                Error.Internal(ErrorCodes.Rule.SaveFailed, "Failed to create rule"));
-        }
+
+        // A rule starts on — it hands a machine the right to replay — so creating one is an Approver's call, like switching one on.
+        if (await DeniedUnlessAsync(GovernanceRole.Approver, null, PillarKind.Recover, "create an auto-replay rule", cancellationToken) is { } denied) return denied;
+        var result = await _rules.CreateAsync(
+            OwnerId, cloud, request.Name, request.Reason, request.EntityName, request.SignatureHash,
+            request.MaxPerHour ?? 10, request.WaitSeconds ?? 120, request.BackOff ?? true, cancellationToken);
+        await AuditAsync(AuditActions.RuleCreate, result.IsSuccess ? $"{result.Value.Id} · {result.Value.Name}" : request.Name, result.IsSuccess, cancellationToken);
+        return result.IsFailure ? Problem(result.Error) : Created($"/api/v1/rules/{result.Value.Id}", result.Value);
     }
 
-    // ── 4. PUT /api/v1/dlq/rules/{id} — Update rule ────────────
+    /// <summary>Turns a rule on or off.</summary>
+    [HttpPost("{id:long}/enabled")]
+    [ProducesResponseType(typeof(RuleView), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> SetEnabled(long id, [FromBody] EnabledRequest request, CancellationToken cancellationToken)
+    {
+        // Switching a rule on hands a machine the right to replay: an Approver's call. Switching it off only takes that away.
+        if (await DeniedUnlessAsync(request.Enabled ? GovernanceRole.Approver : GovernanceRole.Operator, null, PillarKind.Recover,
+                request.Enabled ? "switch an auto-replay rule on" : "switch an auto-replay rule off", cancellationToken) is { } denied) return denied;
+        var result = await _rules.SetEnabledAsync(OwnerId, id, request.Enabled, cancellationToken);
+        await AuditAsync(AuditActions.RuleToggle, $"{id} · {(request.Enabled ? "on" : "off")}", result.IsSuccess, cancellationToken);
+        return result.IsFailure ? Problem(result.Error) : Ok(result.Value);
+    }
 
-    /// <summary>
-    /// Updates an existing auto-replay rule.
-    /// </summary>
-    /// <param name="id">The rule ID.</param>
-    /// <param name="request">The updated rule definition.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The updated rule.</returns>
+    /// <summary>Changes a rule's name and pace. Raising the pace widens what a machine may do, so it is an Approver's call, like making a rule.</summary>
     [HttpPut("{id:long}")]
-    [RequireScope(ApiKeyScopes.DlqWrite)]
-    [ProducesResponseType(typeof(RuleResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<RuleResponse>> Update(
-        long id,
-        [FromBody] CreateRuleRequest request,
-        CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(RuleView), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Update(long id, [FromBody] UpdateRuleRequest request, CancellationToken cancellationToken)
     {
-        // When authentication is enabled, enforce write scope in-method so
-        // static-analysis tools can trace the authorization check before the data access.
-        // SPA token auth gets full access — scope restrictions only apply to API keys.
-        if (HttpContext.Items.ContainsKey("Authenticated") &&
-            HttpContext.Items["AuthMethod"] is not "SpaToken" &&
-            (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
-             keyConfigObj is not ApiKeyConfiguration keyConfig ||
-             !keyConfig.HasScope(ApiKeyScopes.DlqWrite)))
-        {
-            return Forbid();
-        }
-
-        try
-        {
-            // TENANT ISOLATION: Verify rule belongs to current owner
-            var rule = await _dbContext.AutoReplayRules
-                .FirstOrDefaultAsync(r => r.Id == id && r.OwnerId == OwnerId, cancellationToken);
-
-            if (rule is null)
-                return ToActionResult<RuleResponse>(
-                    Error.NotFound(ErrorCodes.Rule.NotFound, $"Rule {id} not found"));
-
-            // Check for duplicate name (excluding current rule, within current owner's rules)
-            var duplicate = await _dbContext.AutoReplayRules
-                .AnyAsync(r => r.Name == request.Name && r.Id != id && r.OwnerId == OwnerId, cancellationToken);
-
-            if (duplicate)
-                return ToActionResult<RuleResponse>(
-                    Error.Conflict(ErrorCodes.Rule.AlreadyExists, $"A rule named '{request.Name}' already exists"));
-
-            Core.Entities.Namespace? scopedNamespace = null;
-            if (request.NamespaceId.HasValue)
-            {
-                var namespaceResult = await GetOwnedNamespaceAsync(_namespaceRepository, request.NamespaceId.Value, cancellationToken);
-                if (namespaceResult.IsFailure)
-                    return ToActionResult<RuleResponse>(
-                        Error.Validation("Rule.NamespaceInvalid", $"Namespace '{request.NamespaceId}' does not exist or is not accessible."));
-
-                scopedNamespace = namespaceResult.Value;
-            }
-
-            var governanceResult = await EvaluateRuleGovernanceAsync(request.NamespaceId, cancellationToken);
-            if (governanceResult.IsFailure)
-                return ToActionResult<RuleResponse>(governanceResult.Error);
-
-            // Update properties in-place — preserves the same ID, stats, and external references.
-            var wasEnabled = rule.Enabled;
-            rule.Name = request.Name;
-            rule.Description = request.Description;
-            rule.Enabled = request.Enabled;
-            ApplyManualDisableReason(rule, wasEnabled);
-            rule.ConditionsJson = JsonSerializer.Serialize(request.Conditions, JsonOptions);
-            rule.ActionsJson = JsonSerializer.Serialize(request.Action, JsonOptions);
-            rule.UpdatedAt = DateTimeOffset.UtcNow;
-            rule.MaxReplaysPerHour = request.MaxReplaysPerHour;
-            rule.NamespaceId = request.NamespaceId;
-
-            await _dbContext.SaveChangesAsync(cancellationToken);
-
-            _auditLogger.LogCriticalAction(
-                HttpContext,
-                OwnerId,
-                action: "Rule.Update",
-                outcome: "Succeeded",
-                resourceName: rule.Name);
-
-            _logger.LogInformation("Updated auto-replay rule {RuleId}/{RuleName}", rule.Id, LogRedactor.SanitiseForLog(rule.Name));
-
-            var namespaceLookup = scopedNamespace is not null
-                ? new Dictionary<Guid, Core.Entities.Namespace> { [scopedNamespace.Id] = scopedNamespace }
-                : null;
-
-            return Ok(MapToResponse(rule, namespaceLookup: namespaceLookup));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to update auto-replay rule {RuleId}", id);
-            return ToActionResult<RuleResponse>(
-                Error.Internal(ErrorCodes.Rule.SaveFailed, "Failed to update rule"));
-        }
+        if (await DeniedUnlessAsync(GovernanceRole.Approver, null, PillarKind.Recover, "change an auto-replay rule", cancellationToken) is { } denied) return denied;
+        var result = await _rules.UpdateAsync(OwnerId, id, request.Name, request.MaxPerHour ?? 10, request.WaitSeconds ?? 120, request.BackOff ?? true, cancellationToken);
+        await AuditAsync(AuditActions.RuleUpdate, $"{id} · {request.Name}", result.IsSuccess, cancellationToken);
+        return result.IsFailure ? Problem(result.Error) : Ok(result.Value);
     }
 
-    // ── 5. DELETE /api/v1/dlq/rules/{id} — Delete rule ─────────
-
-    /// <summary>
-    /// Deletes an auto-replay rule.
-    /// </summary>
-    /// <param name="id">The rule ID.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>No content on success.</returns>
+    /// <summary>Deletes a rule. Only takes authority away, so an Operator may — like switching one off. Its replays stay in the ledger.</summary>
     [HttpDelete("{id:long}")]
-    [RequireScope(ApiKeyScopes.DlqWrite)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Delete(
-        long id,
-        CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Delete(long id, CancellationToken cancellationToken)
     {
-        // When authentication is enabled, enforce write scope in-method in addition to
-        // the [RequireScope] filter, so the check is visible to static-analysis tools.
-        // SPA token auth gets full access — scope restrictions only apply to API keys.
-        if (HttpContext.Items.ContainsKey("Authenticated") &&
-            HttpContext.Items["AuthMethod"] is not "SpaToken" &&
-            (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
-             keyConfigObj is not ApiKeyConfiguration keyConfig ||
-             !keyConfig.HasScope(ApiKeyScopes.DlqWrite)))
-        {
-            return Forbid();
-        }
-
-        if (id <= 0)
-            return BadRequest(new ProblemDetails { Title = "Invalid ID", Detail = "Rule ID must be a positive integer.", Status = 400 });
-
-        try
-        {
-            // TENANT ISOLATION: Verify rule belongs to current owner
-            var rule = await _dbContext.AutoReplayRules
-                .FirstOrDefaultAsync(r => r.Id == id && r.OwnerId == OwnerId, cancellationToken);
-
-            if (rule is null)
-                return ToActionResult(
-                    Result.Failure(Error.NotFound(ErrorCodes.Rule.NotFound, $"Rule {id} not found")));
-
-            var governanceResult = await EvaluateRuleGovernanceAsync(rule.NamespaceId, cancellationToken);
-            if (governanceResult.IsFailure)
-                return ToActionResult(governanceResult);
-
-            _dbContext.AutoReplayRules.Remove(rule);
-            await _dbContext.SaveChangesAsync(cancellationToken);
-
-            _auditLogger.LogCriticalAction(
-                HttpContext,
-                OwnerId,
-                action: "Rule.Delete",
-                outcome: "Succeeded",
-                resourceName: rule.Name);
-
-            _logger.LogInformation("Deleted auto-replay rule {RuleId}/{RuleName}", rule.Id, LogRedactor.SanitiseForLog(rule.Name));
-
-            return NoContent();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to delete rule {RuleId}", id);
-            return ToActionResult(
-                Result.Failure(Error.Internal(ErrorCodes.Rule.DeleteFailed, "Failed to delete rule")));
-        }
+        if (await DeniedUnlessAsync(GovernanceRole.Operator, null, PillarKind.Recover, "delete an auto-replay rule", cancellationToken) is { } denied) return denied;
+        var result = await _rules.DeleteAsync(OwnerId, id, cancellationToken);
+        await AuditAsync(AuditActions.RuleDelete, id.ToString(System.Globalization.CultureInfo.InvariantCulture), result.IsSuccess, cancellationToken);
+        return result.IsFailure ? Problem(result.Error) : NoContent();
     }
 
-    // ── 6. POST /api/v1/dlq/rules/{id}/toggle — Toggle rule ────
-
-    /// <summary>
-    /// Toggles an auto-replay rule's enabled/disabled state.
-    /// </summary>
-    /// <param name="id">The rule ID.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The updated rule.</returns>
-    [HttpPost("{id:long}/toggle")]
-    [RequireScope(ApiKeyScopes.DlqWrite)]
-    [ProducesResponseType(typeof(RuleResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<RuleResponse>> Toggle(
-        long id,
-        CancellationToken cancellationToken = default)
+    /// <summary>The dead letters the rule matches right now. Sends nothing; Replay all hands these to the bulk preview.</summary>
+    [HttpGet("{id:long}/matches")]
+    [ProducesResponseType(typeof(IReadOnlyList<long>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Matches(long id, [FromQuery] int? limit, CancellationToken cancellationToken)
     {
-        // When authentication is enabled, enforce write scope in-method so
-        // static-analysis tools can trace the authorization check before the data access.
-        // SPA token auth gets full access — scope restrictions only apply to API keys.
-        if (HttpContext.Items.ContainsKey("Authenticated") &&
-            HttpContext.Items["AuthMethod"] is not "SpaToken" &&
-            (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
-             keyConfigObj is not ApiKeyConfiguration keyConfig ||
-             !keyConfig.HasScope(ApiKeyScopes.DlqWrite)))
-        {
-            return Forbid();
-        }
-
-        // TENANT ISOLATION: Verify rule belongs to current owner
-        var rule = await _dbContext.AutoReplayRules
-            .FirstOrDefaultAsync(r => r.Id == id && r.OwnerId == OwnerId, cancellationToken);
-
-        if (rule is null)
-            return ToActionResult<RuleResponse>(
-                Error.NotFound(ErrorCodes.Rule.NotFound, $"Rule {id} not found"));
-
-        var governanceResult = await EvaluateRuleGovernanceAsync(rule.NamespaceId, cancellationToken);
-        if (governanceResult.IsFailure)
-            return ToActionResult<RuleResponse>(governanceResult.Error);
-
-        var wasEnabled = rule.Enabled;
-        rule.Enabled = !rule.Enabled;
-        ApplyManualDisableReason(rule, wasEnabled);
-        rule.UpdatedAt = DateTimeOffset.UtcNow;
-        await _dbContext.SaveChangesAsync(cancellationToken);
-
-        _auditLogger.LogCriticalAction(
-            HttpContext,
-            OwnerId,
-            action: "Rule.Toggle",
-            outcome: "Succeeded",
-            resourceName: rule.Name,
-            detail: rule.Enabled ? "enabled" : "disabled");
-
-        _logger.LogInformation(
-            "Toggled rule {RuleId} to {State}", rule.Id, rule.Enabled ? "enabled" : "disabled");
-
-        var namespaceLookup = await LoadNamespaceLookupAsync(cancellationToken);
-        return Ok(MapToResponse(rule, namespaceLookup: namespaceLookup));
+        var result = await _rules.MatchesAsync(OwnerId, AllowedNamespaceIds, id, limit ?? 500, cancellationToken);
+        return result.IsFailure ? Problem(result.Error) : Ok(result.Value);
     }
 
-    // ── 7a. POST /api/v1/dlq/rules/{id}/replay-all — Replay all matched messages ──
-
-    /// <summary>
-    /// Evaluates a rule against all active DLQ messages and replays every match.
-    /// This is a destructive operation — messages are removed from the DLQ and
-    /// re-sent to their original (or alternate) entity.
-    /// </summary>
-    /// <param name="id">The rule ID to execute.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Summary of replay results.</returns>
-    [HttpPost("{id:long}/replay-all")]
-    [RequireScope(ApiKeyScopes.DlqWrite)]
-    [ProducesResponseType(typeof(ReplayAllResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<ReplayAllResponse>> ReplayAll(
-        long id,
-        CancellationToken cancellationToken = default)
-    {
-        if (!IntentHeaders.HasExplicitIntent(HttpContext, IntentHeaders.IntentReplayAllRules))
-        {
-            _auditLogger.LogCriticalAction(
-                HttpContext,
-                OwnerId,
-                action: IntentHeaders.IntentReplayAllRules,
-                outcome: "Denied",
-                detail: "Missing explicit intent headers");
-
-            return Problem(
-                statusCode: StatusCodes.Status428PreconditionRequired,
-                title: "Explicit Intent Required",
-                detail: IntentHeaders.BuildIntentRequiredDetail("rule-based replay-all operations"));
-        }
-
-        // Apply a 30-second timeout to prevent the endpoint from hanging indefinitely
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(TimeSpan.FromSeconds(30));
-        var ct = timeoutCts.Token;
-        // When authentication is enabled, enforce write scope in-method so
-        // static-analysis tools can trace the authorization check before the data access.
-        // SPA token auth gets full access — scope restrictions only apply to API keys.
-        if (HttpContext.Items.ContainsKey("Authenticated") &&
-            HttpContext.Items["AuthMethod"] is not "SpaToken" &&
-            (!HttpContext.Items.TryGetValue("ApiKeyConfig", out var keyConfigObj) ||
-             keyConfigObj is not ApiKeyConfiguration keyConfig ||
-             !keyConfig.HasScope(ApiKeyScopes.DlqWrite)))
-        {
-            return Forbid();
-        }
-
-        try
-        {
-            // TENANT ISOLATION: Verify rule belongs to current owner
-            var rule = await _dbContext.AutoReplayRules
-                .FirstOrDefaultAsync(r => r.Id == id && r.OwnerId == OwnerId, cancellationToken);
-
-            if (rule is null)
-                return ToActionResult<ReplayAllResponse>(
-                    Error.NotFound(ErrorCodes.Rule.NotFound, $"Rule {id} not found"));
-
-            if (!rule.Enabled)
-                return ToActionResult<ReplayAllResponse>(
-                    Error.Validation("Rule.Disabled", "Cannot replay-all with a disabled rule. Enable it first."));
-
-            // Namespace-scoped rules fail closed: if the scoped namespace no longer resolves (or
-            // is outside the caller's access), refuse rather than silently falling back to Global.
-            // Resolved via the service locator, matching every other namespace lookup in this
-            // action (below) rather than the constructor-injected repository used elsewhere in
-            // this controller.
-            if (rule.NamespaceId.HasValue)
-            {
-                var scopedNsRepo = HttpContext.RequestServices.GetRequiredService<INamespaceRepository>();
-                var scopedNamespaceResult = await GetOwnedNamespaceAsync(scopedNsRepo, rule.NamespaceId.Value, cancellationToken);
-                if (scopedNamespaceResult.IsFailure)
-                    return ToActionResult<ReplayAllResponse>(
-                        Error.Validation("Rule.NamespaceUnresolved", $"Rule '{rule.Name}' is scoped to a namespace that no longer resolves; refusing to replay-all."));
-            }
-
-            var governanceResult = await EvaluateRuleGovernanceAsync(rule.NamespaceId, cancellationToken);
-            if (governanceResult.IsFailure)
-                return ToActionResult<ReplayAllResponse>(governanceResult.Error);
-
-            _auditLogger.LogCriticalAction(
-                HttpContext,
-                OwnerId,
-                action: IntentHeaders.IntentReplayAllRules,
-                outcome: "Attempt",
-                detail: $"Replay-all requested for rule {rule.Id}");
-
-            var conditions = DeserializeOrDefault<List<RuleCondition>>(rule.ConditionsJson) ?? [];
-            var action = DeserializeOrDefault<RuleAction>(rule.ActionsJson) ?? new RuleAction();
-
-            // Note: autoReplay flag is no longer required for manual Replay All.
-            // User explicitly clicks Replay All — that IS their intent.
-
-            // Load all Active DLQ messages, narrowed to the rule's own namespace scope when set —
-            // NULL (Global) matches every namespace, unchanged from today's behavior.
-            var activeMessagesQuery = _dbContext.DlqMessages
-                .Where(m => m.Status == DlqMessageStatus.Active && m.OwnerId == OwnerId);
-
-            if (rule.NamespaceId.HasValue)
-                activeMessagesQuery = activeMessagesQuery.Where(m => m.NamespaceId == rule.NamespaceId.Value);
-
-            var activeMessages = await activeMessagesQuery
-                .OrderBy(m => m.DetectedAtUtc)
-                .ToListAsync(ct);
-
-            // Evaluate the rule against each message
-            var matched = new List<DlqMessage>();
-            foreach (var msg in activeMessages)
-            {
-                var result = _ruleEngine.Evaluate(msg, conditions);
-                if (result.IsMatch)
-                    matched.Add(msg);
-            }
-
-            if (matched.Count == 0)
-            {
-                return Ok(new ReplayAllResponse(
-                    TotalMatched: 0,
-                    Replayed: 0,
-                    Failed: 0,
-                    Skipped: 0,
-                    Results: []));
-            }
-
-            // Rate-limit check (once for the entire batch, not per message)
-            var executor = HttpContext.RequestServices.GetRequiredService<IAutoReplayExecutor>();
-            if (!await executor.CanReplayAsync(rule.Id, ct))
-            {
-                return Ok(new ReplayAllResponse(
-                    TotalMatched: matched.Count,
-                    Replayed: 0,
-                    Failed: 0,
-                    Skipped: matched.Count,
-                    Results: matched.Select(m => new ReplayAllItemResponse(
-                        DlqRecordId: m.Id,
-                        MessageId: m.MessageId,
-                        EntityName: m.EntityName,
-                        Outcome: "Skipped",
-                        Error: $"Rule '{rule.Name}' has exceeded its hourly replay limit"
-                    )).ToList()));
-            }
-
-            // Resolve services — routed entirely through IMessageOperationsService (the same
-            // provider-neutral facade every other replay path uses) rather than
-            // IServiceBusClientCache directly, which was Azure-only and never claimed a message
-            // before sending it (roadmap P6: multicloud-broken and racy).
-            var nsRepo = HttpContext.RequestServices.GetRequiredService<INamespaceRepository>();
-            var messageOperationsService = HttpContext.RequestServices.GetRequiredService<IMessageOperationsService>();
-            var recoveryLedger = HttpContext.RequestServices.GetRequiredService<IRecoveryLedger>();
-            var eligibilityGate = HttpContext.RequestServices.GetRequiredService<IRecoveryEligibilityGate>();
-
-            var results = new List<ReplayAllItemResponse>();
-            var replayed = 0;
-            var failed = 0;
-            var skipped = 0;
-
-            var actor = ResolveRecoveryActor();
-            var operationResult = await recoveryLedger.OpenOperationAsync(new OpenRecoveryOperationRequest
-            {
-                OwnerId = OwnerId,
-                Kind = RecoveryOperationKind.Replay,
-                Trigger = RecoveryTrigger.RuleReplayAll,
-                Actor = actor,
-                IntentHeader = IntentHeaders.IntentReplayAllRules,
-                ScopeDescription = $"rule {rule.Id} ({rule.Name}) replay-all",
-                SourceRuleId = rule.Id,
-                CorrelationId = HttpContext.Items.TryGetValue("CorrelationId", out var cid) ? cid?.ToString() : null,
-                TargetCount = matched.Count,
-            }, ct);
-
-            if (operationResult.IsFailure)
-            {
-                _auditLogger.LogCriticalAction(
-                    HttpContext,
-                    OwnerId,
-                    action: IntentHeaders.IntentReplayAllRules,
-                    outcome: "Failed",
-                    detail: $"Recovery ledger error: {operationResult.Error.Message}");
-                return ToActionResult<ReplayAllResponse>(operationResult.Error);
-            }
-
-            var operationId = operationResult.Value.Id;
-
-            // Group messages by (NamespaceId, EntityPath) so the namespace/scope guard checks
-            // below run once per entity rather than once per message. The provider call itself is
-            // per message now — IMessageOperationsService has no batch API — but the guard
-            // evaluation stays O(entities), matching the original batch grouping's intent.
-            var entityGroups = matched.GroupBy(m =>
-            {
-                string entity;
-                string? sub = null;
-                if (!string.IsNullOrEmpty(action.TargetEntity))
-                {
-                    entity = action.TargetEntity;
-                }
-                else if (m.EntityType == ServiceBusEntityType.Subscription && m.TopicName is not null)
-                {
-                    entity = m.TopicName;
-                    // EntityName stores full path: "topicName/subscriptions/subName"
-                    // Extract just the subscription name for the Service Bus receiver
-                    var prefix = $"{m.TopicName}/subscriptions/";
-                    sub = m.EntityName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
-                        ? m.EntityName[prefix.Length..]
-                        : m.EntityName;
-                }
-                else
-                {
-                    entity = m.EntityName;
-                }
-                return new { m.NamespaceId, Entity = entity, Subscription = sub ?? "" };
-            });
-
-            foreach (var group in entityGroups)
-            {
-                ct.ThrowIfCancellationRequested();
-
-                // Resolve namespace once per group
-                var nsResult = await nsRepo.GetByIdAsync(group.Key.NamespaceId, ct);
-                if (nsResult.IsFailure)
-                {
-                    // The namespace registration is gone (deleted or re-created with a new ID),
-                    // so these records can never be replayed. Archive them so they stop
-                    // matching — otherwise every replay-all re-fails on the same orphans.
-                    foreach (var msg in group)
-                    {
-                        skipped++;
-                        msg.Status = DlqMessageStatus.Archived;
-                        msg.ArchivedAt = DateTimeOffset.UtcNow;
-                        results.Add(new ReplayAllItemResponse(
-                            DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
-                            Outcome: "Skipped", Error: "Namespace no longer registered — record archived"));
-                    }
-                    continue;
-                }
-
-                var ns = nsResult.Value;
-
-                // Defense-in-depth tenant isolation for namespace lookups, further narrowed by
-                // the caller's namespace allow-list when its credential carries one — otherwise a
-                // key restricted to one namespace could still trigger a rule-driven replay-all
-                // against another namespace it truly owns.
-                var allowedNamespaceIds = AllowedNamespaceIds;
-                if (!string.Equals(ns.OwnerId, OwnerId, StringComparison.Ordinal)
-                    || (allowedNamespaceIds is not null && !allowedNamespaceIds.Contains(ns.Id)))
-                {
-                    foreach (var msg in group)
-                    {
-                        skipped++;
-                        results.Add(new ReplayAllItemResponse(
-                            DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
-                            Outcome: "Skipped", Error: "Namespace is outside caller scope"));
-                    }
-                    continue;
-                }
-
-                // Safety-by-default guard (ADR-0010 §Decision phase 2): replay-all in production
-                // requires a live, two-person-approved ProductionElevation for this namespace.
-                if (ns.Environment == EnvironmentType.Prod
-                    && await recoveryLedger.GetLiveProductionElevationAsync(OwnerId, ns.Id, ct) is null)
-                {
-                    foreach (var msg in group)
-                    {
-                        skipped++;
-                        results.Add(new ReplayAllItemResponse(
-                            DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
-                            Outcome: "Skipped", Error: "Replay-all is blocked for production namespaces without a live elevation"));
-                    }
-                    continue;
-                }
-
-                var entityName = group.Key.Entity;
-                var subscriptionName = string.IsNullOrEmpty(group.Key.Subscription) ? null : group.Key.Subscription;
-
-                // Per message: claim (Status = Replaying, the same EF concurrency-token protocol
-                // BulkOperationExecutor/SignatureReplayExecutor/AutoReplayExecutor already use) →
-                // ledger entry → provider call → recorded outcome. This replaces the old batch
-                // ReplayMessagesAsync call and fixes P6 on both counts: routed through the same
-                // provider-neutral facade every other replay path uses (multicloud, not
-                // Azure-only), and no longer able to double-send against a concurrent bulk/auto
-                // replay on the same message — a lost claim here is skipped, not retried.
-                foreach (var msg in group)
-                {
-                    ct.ThrowIfCancellationRequested();
-
-                    // Eligibility Gate (roadmap §9/Phase B) — the same gate instance every
-                    // recovery path shares (Pass 6 correction: this call site was omitted from
-                    // every prior wiring draft despite §27 acceptance criterion 1's unqualified
-                    // "no code path" wording).
-                    var decision = await eligibilityGate.EvaluateAsync(
-                        new RecoveryEligibilityRequest(
-                            OwnerId, RecoveryOperationKind.Replay, actor.Kind, RecoveryTrigger.RuleReplayAll,
-                            ns.Id, msg.EntityName, msg.BodyHash, SignatureHash: null, ns.Environment,
-                            Provider: ns.Provider),
-                        ct);
-
-                    if (decision.Verdict != EligibilityVerdict.Allow)
-                    {
-                        skipped++;
-                        results.Add(new ReplayAllItemResponse(
-                            DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
-                            Outcome: "Skipped", Error: $"Blocked by the Eligibility Gate ({decision.ReasonCode})"));
-
-                        try
-                        {
-                            await recoveryLedger.RecordDeclinedAsync(
-                                RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest(
-                                    msg, ns, operationId, OwnerId, actor, entityName),
-                                decision.ReasonCode ?? "ELIGIBILITY_GATE_DENIED",
-                                JsonSerializer.Serialize(new { reasonCode = decision.ReasonCode, matchedCount = decision.MatchedCount }),
-                                ct);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex,
-                                "Failed to record Declined ledger entry for message {MessageId}",
-                                LogRedactor.SanitiseForLog(msg.MessageId));
-                        }
-
-                        continue;
-                    }
-
-                    msg.Status = DlqMessageStatus.Replaying;
-                    try
-                    {
-                        await _dbContext.SaveChangesAsync(ct);
-                    }
-                    catch (DbUpdateConcurrencyException)
-                    {
-                        await _dbContext.Entry(msg).ReloadAsync(ct);
-                        skipped++;
-                        results.Add(new ReplayAllItemResponse(
-                            DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
-                            Outcome: "Skipped", Error: "Message was claimed by another concurrent replay"));
-                        continue;
-                    }
-
-                    // CancellationToken.None from here through the provider call: the claim above
-                    // is already committed, so this message must run to completion — an
-                    // abandoned-mid-flight message here is exactly the per-message persistence gap
-                    // the CancellationToken.None on RecordExecutionAsync/the final SaveChangesAsync
-                    // below already guards against. The shared 30-second budget still bounds the
-                    // batch: ct.ThrowIfCancellationRequested() at the top of each loop iteration
-                    // stops the batch from *starting* a new message once the budget is spent, it
-                    // just no longer abandons one already claimed.
-                    var beginResult = await recoveryLedger.BeginEntryAsync(
-                        RecoveryLedgerEntrySnapshot.BuildBeginEntryRequest(
-                            msg, ns, operationId, OwnerId, actor, entityName),
-                        CancellationToken.None);
-
-                    if (beginResult.IsFailure)
-                    {
-                        // No message movement without ledger coverage: release the claim so a
-                        // retry can pick the message up again rather than call the provider
-                        // unrecorded.
-                        msg.Status = DlqMessageStatus.Active;
-                        failed++;
-                        results.Add(new ReplayAllItemResponse(
-                            DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
-                            Outcome: "Failed", Error: $"Recovery ledger error: {beginResult.Error.Message}"));
-                        continue;
-                    }
-
-                    var entry = beginResult.Value;
-
-                    if (decision.ReasonCode is not null)
-                    {
-                        try
-                        {
-                            await recoveryLedger.RecordRecurrenceContextAsync(
-                                entry.Id, OwnerId, actor, decision.ReasonCode, decision.MatchedCount, CancellationToken.None);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex,
-                                "Failed to record RecurrenceCapObserved ledger event for entry {EntryId}", entry.Id);
-                        }
-                    }
-
-                    var replayResult = await messageOperationsService.ReplayMessageAsync(
-                        group.Key.NamespaceId, entityName, subscriptionName, msg.SequenceNumber, entry.Id, CancellationToken.None);
-
-                    // CancellationToken.None: the provider call above already happened, so this
-                    // outcome must be recorded even if the 30-second request timeout fires in the
-                    // meantime.
-                    //
-                    // AWS.SQS.ReplayAmbiguous (send to source succeeded, delete from DLQ failed)
-                    // routes to Unknown rather than Rejected: the message is genuinely
-                    // duplicated-if-retried, not safely retriable — see
-                    // AwsMessageReceiver.ReplayMessageAsync.
-                    var executionOutcome = replayResult.IsSuccess
-                        ? RecoveryExecutionOutcome.Accepted
-                        : replayResult.Error.Code == "AWS.SQS.ReplayAmbiguous"
-                            ? RecoveryExecutionOutcome.Unknown
-                            : RecoveryExecutionOutcome.Rejected;
-
-                    await recoveryLedger.RecordExecutionAsync(new RecordExecutionRequest
-                    {
-                        EntryId = entry.Id,
-                        OwnerId = OwnerId,
-                        Actor = actor,
-                        Outcome = executionOutcome,
-                        ProviderDetailJson = replayResult.IsSuccess ? null : replayResult.Error.Message,
-                        RecoveryMarker = replayResult.IsSuccess && replayResult.Value ? entry.Id.ToString() : null,
-                        MarkerApplied = replayResult.IsSuccess && replayResult.Value,
-                    }, CancellationToken.None);
-
-                    if (replayResult.IsSuccess)
-                    {
-                        replayed++;
-                        msg.Status = DlqMessageStatus.Replayed;
-                        msg.ReplayedAt = DateTimeOffset.UtcNow;
-                        msg.ReplaySuccess = true;
-                        rule.SuccessCount++;
-                        results.Add(new ReplayAllItemResponse(
-                            DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
-                            Outcome: "Success", Error: null));
-                    }
-                    else
-                    {
-                        failed++;
-                        // Left ReplayFailed (retry-eligible) rather than a new status even for the
-                        // ambiguous case — DlqMessageStatus has no "send confirmed, needs manual
-                        // dedup check" value and adding one is an EF Core migration, out of scope
-                        // for this fix. The Recovery Ledger (Unknown, non-terminal — see
-                        // executionOutcome above) and this per-item Error message are the
-                        // authoritative, truthful record; an operator re-running this rule should
-                        // check the ledger/DLQ history for "Ambiguous" entries before trusting a
-                        // retry is safe.
-                        msg.Status = DlqMessageStatus.ReplayFailed;
-                        msg.ReplaySuccess = false;
-                        results.Add(new ReplayAllItemResponse(
-                            DlqRecordId: msg.Id, MessageId: msg.MessageId, EntityName: msg.EntityName,
-                            Outcome: replayResult.Error.Code == "AWS.SQS.ReplayAmbiguous" ? "Ambiguous" : "Failed",
-                            Error: replayResult.Error.Message));
-                    }
-
-                    rule.MatchCount++;
-
-                    // Record replay history
-                    _dbContext.ReplayHistories.Add(new ReplayHistory
-                    {
-                        DlqMessageId = msg.Id,
-                        RuleId = rule.Id,
-                        ReplayedAt = DateTimeOffset.UtcNow,
-                        ReplayedBy = $"manual-replay-all:{rule.Name}",
-                        ReplayStrategy = action.TargetEntity is not null ? "alternate-entity" : "original-entity",
-                        ReplayedToEntity = entityName,
-                        OutcomeStatus = replayResult.IsSuccess ? "Success" : "Failed",
-                        ErrorDetails = replayResult.IsSuccess ? null : replayResult.Error.Message,
-                    });
-
-                    // CancellationToken.None: this message's terminal DlqMessages.Status and
-                    // ReplayHistories row must survive the shared 30-second timeout the same way
-                    // the RecordExecutionAsync call above does — otherwise a mid-batch timeout can
-                    // leave the Recovery Ledger recording an outcome for a message whose status/
-                    // history change never left the EF change tracker.
-                    await _dbContext.SaveChangesAsync(CancellationToken.None);
-                }
-            }
-
-            rule.UpdatedAt = DateTimeOffset.UtcNow;
-            await _dbContext.SaveChangesAsync(ct);
-
-            _logger.LogInformation(
-                "Replay-all for rule {RuleId}/{RuleName}: {Matched} matched, {Replayed} replayed, {Failed} failed, {Skipped} skipped",
-                id, LogRedactor.SanitiseForLog(rule.Name), matched.Count, replayed, failed, skipped);
-
-            _auditLogger.LogCriticalAction(
-                HttpContext,
-                OwnerId,
-                action: IntentHeaders.IntentReplayAllRules,
-                outcome: "Succeeded",
-                detail: $"rule={rule.Id}; matched={matched.Count}; replayed={replayed}; failed={failed}; skipped={skipped}");
-
-            return Ok(new ReplayAllResponse(
-                TotalMatched: matched.Count,
-                Replayed: replayed,
-                Failed: failed,
-                Skipped: skipped,
-                Results: results));
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            // Timeout from our 30-second CTS, not client disconnect
-            _logger.LogWarning("Replay-all for rule {RuleId} timed out after 30 seconds", id);
-            _auditLogger.LogCriticalAction(
-                HttpContext,
-                OwnerId,
-                action: IntentHeaders.IntentReplayAllRules,
-                outcome: "Failed",
-                detail: "Replay-all timed out after 30 seconds");
-            return StatusCode(StatusCodes.Status504GatewayTimeout, new ProblemDetails
-            {
-                Title = "Replay operation timed out",
-                Detail = "The replay operation took too long. Some messages may have been replayed. Please check and retry.",
-                Status = 504,
-            });
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to execute replay-all for rule {RuleId}", id);
-            _auditLogger.LogCriticalAction(
-                HttpContext,
-                OwnerId,
-                action: IntentHeaders.IntentReplayAllRules,
-                outcome: "Failed",
-                detail: ex.Message);
-            return ToActionResult<ReplayAllResponse>(
-                Error.Internal(ErrorCodes.Rule.TestFailed, "Failed to execute replay-all"));
-        }
-    }
-
-    // ── 7b. POST /api/v1/dlq/rules/test — Test a rule ───────────
-
-    /// <summary>
-    /// Tests a rule (or ad-hoc conditions) against current active DLQ messages.
-    /// Returns how many messages would match without actually replaying.
-    /// </summary>
-    /// <param name="request">The test request with conditions.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Test results showing matched messages.</returns>
-    [HttpPost("test")]
-    [RequireScope(ApiKeyScopes.DlqRead)]
-    [ProducesResponseType(typeof(RuleTestResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<RuleTestResponse>> TestRule(
-        [FromBody] TestRuleRequest request,
-        CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            // Resolve conditions
-            List<RuleCondition> conditions;
-
-            if (request.RuleId.HasValue)
-            {
-                var rule = await _dbContext.AutoReplayRules
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(r => r.Id == request.RuleId.Value, cancellationToken);
-
-                if (rule is null)
-                    return ToActionResult<RuleTestResponse>(
-                        Error.NotFound(ErrorCodes.Rule.NotFound, $"Rule {request.RuleId} not found"));
-
-                conditions = JsonSerializer.Deserialize<List<RuleCondition>>(rule.ConditionsJson) ?? [];
-            }
-            else if (request.Conditions is { Count: > 0 })
-            {
-                conditions = request.Conditions.ToList();
-            }
-            else
-            {
-                return ToActionResult<RuleTestResponse>(
-                    Error.Validation(ErrorCodes.Rule.ValidationFailed, "Either RuleId or Conditions must be provided"));
-            }
-
-            // Get active messages to test against
-            var query = _dbContext.DlqMessages
-                .AsNoTracking()
-                .Where(m => m.Status == DlqMessageStatus.Active && m.OwnerId == OwnerId);
-
-            if (request.NamespaceId.HasValue)
-                query = query.Where(m => m.NamespaceId == request.NamespaceId.Value);
-
-            var messages = await query
-                .OrderByDescending(m => m.DetectedAtUtc)
-                .Take(request.MaxMessages)
-                .ToListAsync(cancellationToken);
-
-            var results = _ruleEngine.EvaluateBatch(messages, conditions);
-            var matched = results.Where(r => r.IsMatch).ToList();
-
-            // Estimate success rate based on failure category of matched messages
-            var matchedMessages = messages.Where(m => matched.Any(r => r.MessageId == m.Id)).ToList();
-            var transientCount = matchedMessages.Count(m =>
-                m.FailureCategory is FailureCategory.Transient or FailureCategory.MaxDelivery or FailureCategory.Expired);
-            var estimatedSuccessRate = matchedMessages.Count > 0
-                ? (double)transientCount / matchedMessages.Count
-                : 0.0;
-
-            var sampleMatches = matched.Take(10).Select(r => new RuleMatchResultResponse(
-                MessageId: r.MessageId,
-                ServiceBusMessageId: r.ServiceBusMessageId,
-                EntityName: r.EntityName,
-                IsMatch: r.IsMatch,
-                MatchReason: r.MatchReason,
-                DeadLetterReason: r.DeadLetterReason
-            )).ToList();
-
-            var response = new RuleTestResponse(
-                TotalTested: messages.Count,
-                MatchedCount: matched.Count,
-                EstimatedSuccessRate: Math.Round(estimatedSuccessRate * 100, 1),
-                SampleMatches: sampleMatches);
-
-            return Ok(response);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to test rule");
-            return ToActionResult<RuleTestResponse>(
-                Error.Internal(ErrorCodes.Rule.TestFailed, "Failed to test rule"));
-        }
-    }
-
-    // ── 8. GET /api/v1/dlq/rules/templates — Rule templates ────
-
-    /// <summary>
-    /// Gets a catalog of pre-built rule templates.
-    /// </summary>
-    /// <returns>List of rule templates.</returns>
-    [HttpGet("templates")]
-    [RequireScope(ApiKeyScopes.DlqRead)]
-    [ProducesResponseType(typeof(IReadOnlyList<RuleTemplateResponse>), StatusCodes.Status200OK)]
-    public ActionResult<IReadOnlyList<RuleTemplateResponse>> GetTemplates()
-    {
-        var templates = GetBuiltInTemplates();
-        return Ok(templates);
-    }
-
-    // ── Mapping ─────────────────────────────────────────────────
-
-    /// <summary>
-    /// Keeps <see cref="AutoReplayRule.DisabledReason"/> honest for a manual API write (Toggle or
-    /// Update): clears it on an actual disabled→enabled transition, and marks it "Manual" on an
-    /// actual enabled→disabled transition. A no-op call (state unchanged) never overwrites an
-    /// existing circuit-breaker provenance.
-    /// </summary>
-    private static void ApplyManualDisableReason(AutoReplayRule rule, bool wasEnabled)
-    {
-        if (rule.Enabled && !wasEnabled)
-        {
-            rule.DisabledReason = null;
-            rule.DisabledReasonDetail = null;
-        }
-        else if (!rule.Enabled && wasEnabled)
-        {
-            rule.DisabledReason = "Manual";
-            rule.DisabledReasonDetail = null;
-        }
-    }
-
-    private RuleResponse MapToResponse(
-        AutoReplayRule rule,
-        int? pendingMatchCount = null,
-        IReadOnlyDictionary<Guid, Core.Entities.Namespace>? namespaceLookup = null)
-    {
-        var conditions = DeserializeOrDefault<List<RuleCondition>>(rule.ConditionsJson) ?? [];
-        var action = DeserializeOrDefault<RuleAction>(rule.ActionsJson) ?? new RuleAction();
-        var successRate = rule.MatchCount > 0
-            ? Math.Round((double)rule.SuccessCount / rule.MatchCount * 100, 1)
-            : 0.0;
-
-        return new RuleResponse(
-            Id: rule.Id,
-            Name: rule.Name,
-            Description: rule.Description,
-            Enabled: rule.Enabled,
-            Conditions: conditions,
-            Action: action,
-            CreatedAt: rule.CreatedAt,
-            UpdatedAt: rule.UpdatedAt,
-            MatchCount: rule.MatchCount,
-            SuccessCount: rule.SuccessCount,
-            SuccessRate: successRate,
-            MaxReplaysPerHour: rule.MaxReplaysPerHour,
-            PendingMatchCount: pendingMatchCount ?? 0,
-            DisabledReason: rule.DisabledReason,
-            DisabledReasonDetail: rule.DisabledReasonDetail,
-            NamespaceId: rule.NamespaceId,
-            NamespaceScope: ResolveNamespaceScope(rule.NamespaceId, namespaceLookup));
-    }
-
-    private static RuleNamespaceScope ResolveNamespaceScope(
-        Guid? namespaceId,
-        IReadOnlyDictionary<Guid, Core.Entities.Namespace>? namespaceLookup)
-    {
-        if (namespaceId is null)
-            return RuleNamespaceScope.Global;
-
-        if (namespaceLookup is not null && namespaceLookup.TryGetValue(namespaceId.Value, out var ns))
-            return new RuleNamespaceScope("Namespace", ns.DisplayName ?? ns.Name, ns.Provider, ns.Environment);
-
-        return RuleNamespaceScope.Unresolved;
-    }
-
-    private static T? DeserializeOrDefault<T>(string json)
-    {
-        try
-        {
-            return JsonSerializer.Deserialize<T>(json);
-        }
-        catch (JsonException)
-        {
-            return default;
-        }
-    }
-
-    // ── Templates ───────────────────────────────────────────────
-
-    private static IReadOnlyList<RuleTemplateResponse> GetBuiltInTemplates()
-    {
-        return new List<RuleTemplateResponse>
-        {
-            new(
-                Id: "database-timeouts",
-                Name: "Database Timeouts",
-                Description: "Auto-replay messages that failed due to database connection timeouts. These are typically transient failures that resolve when the database recovers.",
-                Category: "Transient",
-                Conditions: [
-                    new RuleCondition { Field = "DeadLetterReason", Operator = "Contains", Value = "timeout" },
-                    new RuleCondition { Field = "DeadLetterErrorDescription", Operator = "Contains", Value = "database" },
-                ],
-                Action: new RuleAction { AutoReplay = true, DelaySeconds = 300, MaxRetries = 3, ExponentialBackoff = true },
-                UsageCount: 47,
-                Rating: 4.8
-            ),
-            new(
-                Id: "payment-gateway-timeouts",
-                Name: "Payment Gateway Timeouts",
-                Description: "Auto-replay messages that failed due to payment gateway timeouts. Adds longer delay to allow gateway recovery.",
-                Category: "Transient",
-                Conditions: [
-                    new RuleCondition { Field = "DeadLetterErrorDescription", Operator = "Contains", Value = "payment" },
-                    new RuleCondition { Field = "DeadLetterErrorDescription", Operator = "Contains", Value = "timeout" },
-                ],
-                Action: new RuleAction { AutoReplay = true, DelaySeconds = 120, MaxRetries = 3, ExponentialBackoff = true },
-                UsageCount: 23,
-                Rating: 4.5
-            ),
-            new(
-                Id: "max-delivery-exceeded",
-                Name: "Max Delivery Exceeded",
-                Description: "Replay messages that exceeded max delivery count. Often caused by transient processing failures that resolve on retry.",
-                Category: "MaxDelivery",
-                Conditions: [
-                    new RuleCondition { Field = "FailureCategory", Operator = "Equals", Value = "MaxDelivery" },
-                ],
-                Action: new RuleAction { AutoReplay = true, DelaySeconds = 60, MaxRetries = 1 },
-                UsageCount: 85,
-                Rating: 4.2
-            ),
-            new(
-                Id: "expired-messages",
-                Name: "Expired Messages",
-                Description: "Re-send messages that expired (TTL exceeded) before being processed. Useful for non-time-sensitive workloads.",
-                Category: "Expired",
-                Conditions: [
-                    new RuleCondition { Field = "FailureCategory", Operator = "Equals", Value = "Expired" },
-                ],
-                Action: new RuleAction { AutoReplay = true, DelaySeconds = 30, MaxRetries = 1 },
-                UsageCount: 31,
-                Rating: 3.9
-            ),
-            new(
-                Id: "transient-network-errors",
-                Name: "Transient Network Errors",
-                Description: "Auto-replay messages that failed due to transient network errors including connection resets and DNS failures.",
-                Category: "Transient",
-                Conditions: [
-                    new RuleCondition { Field = "FailureCategory", Operator = "Equals", Value = "Transient" },
-                ],
-                Action: new RuleAction { AutoReplay = true, DelaySeconds = 180, MaxRetries = 3, ExponentialBackoff = true },
-                UsageCount: 62,
-                Rating: 4.6
-            ),
-            new(
-                Id: "resource-not-found",
-                Name: "Resource Not Found Retries",
-                Description: "Retry messages that failed because a resource was not yet available (eventual consistency scenarios).",
-                Category: "ResourceNotFound",
-                Conditions: [
-                    new RuleCondition { Field = "FailureCategory", Operator = "Equals", Value = "ResourceNotFound" },
-                    new RuleCondition { Field = "DeliveryCount", Operator = "LessThan", Value = "5" },
-                ],
-                Action: new RuleAction { AutoReplay = true, DelaySeconds = 600, MaxRetries = 2 },
-                UsageCount: 18,
-                Rating: 3.7
-            ),
-            new(
-                Id: "quota-exceeded",
-                Name: "Quota/Throttling Recovery",
-                Description: "Replay messages that failed due to rate limiting or quota exceeded errors, with longer delays.",
-                Category: "QuotaExceeded",
-                Conditions: [
-                    new RuleCondition { Field = "FailureCategory", Operator = "Equals", Value = "QuotaExceeded" },
-                ],
-                Action: new RuleAction { AutoReplay = true, DelaySeconds = 900, MaxRetries = 2, ExponentialBackoff = true },
-                UsageCount: 14,
-                Rating: 4.1
-            ),
-        };
-    }
-
-    // ── 10. POST /api/v1/dlq/rules/generate — Intelligent Auto-Replay ──
-
-    /// <summary>
-    /// Analyses active DLQ messages and generates intelligent auto-replay rules
-    /// based on observed patterns (dead-letter reasons, failure categories, entity groupings).
-    /// Rules that duplicate existing rules are skipped.
-    /// </summary>
-    /// <param name="namespaceId">Optional namespace filter.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>List of generated rules.</returns>
+    /// <summary>Makes rules for the most common failures nothing covers yet. Each starts on, so it is an Approver's call.</summary>
     [HttpPost("generate")]
-    [RequireScope(ApiKeyScopes.DlqWrite)]
-    [ProducesResponseType(typeof(GenerateRulesResponse), StatusCodes.Status200OK)]
-    public async Task<ActionResult<GenerateRulesResponse>> GenerateRules(
-        [FromQuery] Guid? namespaceId = null,
-        CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(IReadOnlyList<RuleView>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Generate([FromBody] GenerateRulesRequest request, CancellationToken cancellationToken)
     {
-        try
+        if (request.Provider is not { } cloud)
         {
-            var governanceResult = await EvaluateRuleGovernanceAsync(namespaceId, cancellationToken);
-            if (governanceResult.IsFailure)
-                return ToActionResult<GenerateRulesResponse>(governanceResult.Error);
-
-            // Load active DLQ messages, optionally filtered by namespace
-            var query = _dbContext.DlqMessages
-                .AsNoTracking()
-                .Where(m => m.Status == DlqMessageStatus.Active && m.OwnerId == OwnerId);
-
-            if (namespaceId.HasValue)
-                query = query.Where(m => m.NamespaceId == namespaceId.Value);
-
-            var activeMessages = await query
-                .OrderBy(m => m.DetectedAtUtc)
-                .ToListAsync(cancellationToken);
-
-            if (activeMessages.Count == 0)
-            {
-                return Ok(new GenerateRulesResponse(
-                    AnalysedMessages: 0,
-                    PatternsDetected: 0,
-                    RulesCreated: 0,
-                    RulesSkipped: 0,
-                    Rules: []));
-            }
-
-            // Load existing rules to avoid duplicates
-            var existingRules = await _dbContext.AutoReplayRules
-                .AsNoTracking()
-                .Where(r => r.OwnerId == OwnerId)
-                .ToListAsync(cancellationToken);
-
-            var existingConditionSets = new HashSet<string>(
-                existingRules.Select(r => r.ConditionsJson),
-                StringComparer.OrdinalIgnoreCase);
-
-            // ── Pattern Detection ──────────────────────────────────────
-
-            var candidates = new List<(string Name, string Description, List<RuleCondition> Conditions, RuleAction Action, int MatchCount)>();
-
-            // Pattern 1: Group by DeadLetterReason (most common pattern)
-            var byReason = activeMessages
-                .Where(m => !string.IsNullOrWhiteSpace(m.DeadLetterReason))
-                .GroupBy(m => m.DeadLetterReason!.Trim(), StringComparer.OrdinalIgnoreCase)
-                .Where(g => g.Count() >= 2) // At least 2 messages with same reason
-                .OrderByDescending(g => g.Count());
-
-            foreach (var group in byReason)
-            {
-                var reason = group.Key;
-                var count = group.Count();
-                var delaySeconds = InferDelay(reason, group.First().FailureCategory);
-                var maxRetries = InferMaxRetries(group.First().FailureCategory);
-                var backoff = group.First().FailureCategory is FailureCategory.Transient or FailureCategory.QuotaExceeded;
-
-                candidates.Add((
-                    Name: $"Auto: {TruncateReason(reason)}",
-                    Description: $"Automatically generated rule for {count} DLQ messages with reason: {reason}",
-                    Conditions: [new RuleCondition { Field = "DeadLetterReason", Operator = "Contains", Value = reason }],
-                    Action: new RuleAction { AutoReplay = true, DelaySeconds = delaySeconds, MaxRetries = maxRetries, ExponentialBackoff = backoff },
-                    MatchCount: count
-                ));
-            }
-
-            // Pattern 2: Group by FailureCategory (broader patterns)
-            var byCategory = activeMessages
-                .Where(m => m.FailureCategory != FailureCategory.Unknown)
-                .GroupBy(m => m.FailureCategory)
-                .Where(g => g.Count() >= 2)
-                .OrderByDescending(g => g.Count());
-
-            foreach (var group in byCategory)
-            {
-                var category = group.Key;
-                var count = group.Count();
-                var delaySeconds = InferDelay(null, category);
-                var maxRetries = InferMaxRetries(category);
-                var backoff = category is FailureCategory.Transient or FailureCategory.QuotaExceeded;
-
-                candidates.Add((
-                    Name: $"Auto: {category} failures",
-                    Description: $"Automatically generated rule for {count} DLQ messages categorised as {category}",
-                    Conditions: [new RuleCondition { Field = "FailureCategory", Operator = "Equals", Value = category.ToString() }],
-                    Action: new RuleAction { AutoReplay = true, DelaySeconds = delaySeconds, MaxRetries = maxRetries, ExponentialBackoff = backoff },
-                    MatchCount: count
-                ));
-            }
-
-            // Pattern 3: Group by Entity + Reason (entity-specific patterns)
-            var byEntityReason = activeMessages
-                .Where(m => !string.IsNullOrWhiteSpace(m.DeadLetterReason))
-                .GroupBy(m => new { m.EntityName, Reason = m.DeadLetterReason!.Trim() })
-                .Where(g => g.Count() >= 3) // Higher threshold for entity-specific rules
-                .OrderByDescending(g => g.Count());
-
-            foreach (var group in byEntityReason)
-            {
-                var count = group.Count();
-                var first = group.First();
-                var delaySeconds = InferDelay(group.Key.Reason, first.FailureCategory);
-
-                candidates.Add((
-                    Name: $"Auto: {group.Key.EntityName} — {TruncateReason(group.Key.Reason)}",
-                    Description: $"Entity-specific rule for {count} DLQ messages in {group.Key.EntityName} with reason: {group.Key.Reason}",
-                    Conditions: [
-                        new RuleCondition { Field = "EntityName", Operator = "Equals", Value = group.Key.EntityName },
-                        new RuleCondition { Field = "DeadLetterReason", Operator = "Contains", Value = group.Key.Reason },
-                    ],
-                    Action: new RuleAction { AutoReplay = true, DelaySeconds = delaySeconds, MaxRetries = InferMaxRetries(first.FailureCategory) },
-                    MatchCount: count
-                ));
-            }
-
-            // Pattern 4: Delivery count threshold (max delivery exceeded)
-            var maxDeliveryMessages = activeMessages
-                .Where(m => m.DeliveryCount >= 10)
-                .ToList();
-
-            if (maxDeliveryMessages.Count >= 2)
-            {
-                candidates.Add((
-                    Name: "Auto: Max delivery exceeded",
-                    Description: $"Rule for {maxDeliveryMessages.Count} messages that reached max delivery count (≥10 attempts)",
-                    Conditions: [new RuleCondition { Field = "DeliveryCount", Operator = "GreaterThan", Value = "9" }],
-                    Action: new RuleAction { AutoReplay = true, DelaySeconds = 300, MaxRetries = 1 },
-                    MatchCount: maxDeliveryMessages.Count
-                ));
-            }
-
-            // ── De-duplicate and Create ────────────────────────────────
-
-            var created = new List<(AutoReplayRule Entity, int PendingCount)>();
-            var skippedCount = 0;
-
-            // Sort by match count descending — create rules that cover the most messages first
-            foreach (var candidate in candidates.OrderByDescending(c => c.MatchCount))
-            {
-                var conditionsJson = JsonSerializer.Serialize(candidate.Conditions, JsonOptions);
-
-                // Skip if a rule with the same conditions already exists
-                if (existingConditionSets.Contains(conditionsJson))
-                {
-                    skippedCount++;
-                    continue;
-                }
-
-                // Skip if a rule with the same name already exists
-                var nameExists = existingRules.Any(r =>
-                    string.Equals(r.Name, candidate.Name, StringComparison.OrdinalIgnoreCase));
-                if (nameExists)
-                {
-                    skippedCount++;
-                    continue;
-                }
-
-                var entity = new AutoReplayRule
-                {
-                    Name = candidate.Name,
-                    OwnerId = OwnerId,
-                    Description = candidate.Description,
-                    Enabled = true,
-                    ConditionsJson = conditionsJson,
-                    ActionsJson = JsonSerializer.Serialize(candidate.Action, JsonOptions),
-                    CreatedAt = DateTimeOffset.UtcNow,
-                    MaxReplaysPerHour = 50,
-                    NamespaceId = namespaceId,
-                };
-
-                _dbContext.AutoReplayRules.Add(entity);
-                existingConditionSets.Add(conditionsJson); // Prevent duplicates within the same batch
-                existingRules.Add(entity);
-
-                // Compute pending match count for this new rule
-                var pendingCount = 0;
-                foreach (var msg in activeMessages)
-                {
-                    var evalResult = _ruleEngine.Evaluate(msg, candidate.Conditions);
-                    if (evalResult.IsMatch)
-                        pendingCount++;
-                }
-
-                created.Add((entity, pendingCount));
-            }
-
-            if (created.Count > 0)
-            {
-                await _dbContext.SaveChangesAsync(cancellationToken);
-            }
-
-            var namespaceLookup = await LoadNamespaceLookupAsync(cancellationToken);
-            var createdResponses = created
-                .Select(x => MapToResponse(x.Entity, x.PendingCount, namespaceLookup))
-                .ToList();
-
-            _logger.LogInformation(
-                "Intelligent auto-replay: analysed {MessageCount} messages, detected {PatternCount} patterns, " +
-                "created {Created} rules, skipped {Skipped} duplicates",
-                activeMessages.Count, candidates.Count, createdResponses.Count, skippedCount);
-
-            return Ok(new GenerateRulesResponse(
-                AnalysedMessages: activeMessages.Count,
-                PatternsDetected: candidates.Count,
-                RulesCreated: createdResponses.Count,
-                RulesSkipped: skippedCount,
-                Rules: createdResponses));
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to generate intelligent auto-replay rules");
-            return ToActionResult<GenerateRulesResponse>(
-                Error.Internal(ErrorCodes.General.UnexpectedError, "Failed to generate rules"));
-        }
-    }
-
-    // ── Intelligent Rule Helper Methods ──────────────────────────
-
-    private static int InferDelay(string? reason, FailureCategory category)
-    {
-        if (category == FailureCategory.Transient) return 30;
-        if (category == FailureCategory.QuotaExceeded) return 300;
-        if (category == FailureCategory.Expired) return 10;
-        if (category == FailureCategory.ResourceNotFound) return 120;
-
-        if (reason is not null)
-        {
-            var r = reason.ToUpperInvariant();
-            if (r.Contains("TIMEOUT") || r.Contains("TIMED OUT")) return 60;
-            if (r.Contains("THROTTL") || r.Contains("RATE LIMIT") || r.Contains("429")) return 300;
-            if (r.Contains("CONNECTION") || r.Contains("NETWORK")) return 30;
-            if (r.Contains("UNAUTHORIZED") || r.Contains("FORBIDDEN") || r.Contains("403")) return 0; // Don't replay auth errors quickly
+            return NeedsCloud();
         }
 
-        return 60; // Default moderate delay
+        if (await DeniedUnlessAsync(GovernanceRole.Approver, null, PillarKind.Recover, "create auto-replay rules", cancellationToken) is { } denied) return denied;
+        var made = await _rules.GenerateAsync(OwnerId, AllowedNamespaceIds, cloud, request.Max ?? 5, cancellationToken);
+        await AuditAsync(AuditActions.RuleGenerate, $"{cloud} · {made.Count} rule(s)", true, cancellationToken);
+        return Ok(made);
     }
 
-    private static int InferMaxRetries(FailureCategory category)
+    /// <summary>What a rule would have done over the last days, by today's checks. Sends nothing.</summary>
+    [HttpPost("test")]
+    [ProducesResponseType(typeof(RuleTest), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Test([FromBody] TestRuleRequest request, CancellationToken cancellationToken)
     {
-        return category switch
+        if (string.IsNullOrWhiteSpace(request.Reason) && string.IsNullOrWhiteSpace(request.EntityName) && string.IsNullOrWhiteSpace(request.SignatureHash))
         {
-            FailureCategory.Transient => 3,
-            FailureCategory.QuotaExceeded => 2,
-            FailureCategory.MaxDelivery => 1,
-            FailureCategory.Expired => 1,
-            FailureCategory.DataQuality => 0, // No retry — data is bad
-            FailureCategory.Authorization => 0, // No retry — auth issue
-            _ => 2,
-        };
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "Give at least one condition to test.");
+        }
+
+        if (request.Provider is not { } cloud)
+        {
+            return NeedsCloud();
+        }
+
+        return Ok(await _rules.TestAsync(OwnerId, AllowedNamespaceIds, cloud, request.Reason, request.EntityName, request.SignatureHash, request.Days ?? 7, cancellationToken));
     }
 
-    private static string TruncateReason(string reason)
-    {
-        const int maxLen = 60;
-        return reason.Length <= maxLen ? reason : reason[..maxLen] + "…";
-    }
+    /// <summary>A new rule.</summary>
+    public sealed record CreateRuleRequest(
+        CloudProviderType? Provider, string Name, string? Reason, string? EntityName, string? SignatureHash, int? MaxPerHour, int? WaitSeconds, bool? BackOff);
+
+    /// <summary>A rule's new name and pace.</summary>
+    public sealed record UpdateRuleRequest(string Name, int? MaxPerHour, int? WaitSeconds, bool? BackOff);
+
+    /// <summary>Which cloud to make rules for, and at most how many.</summary>
+    public sealed record GenerateRulesRequest(CloudProviderType? Provider, int? Max);
+
+    /// <summary>On or off.</summary>
+    public sealed record EnabledRequest(bool Enabled);
+
+    /// <summary>A rule to test.</summary>
+    public sealed record TestRuleRequest(CloudProviderType? Provider, string? Reason, string? EntityName, string? SignatureHash, int? Days);
 }

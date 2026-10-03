@@ -1,6 +1,6 @@
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Models;
-using ServiceHub.Shared.Results;
+using ServiceHub.Core.Results;
 
 namespace ServiceHub.Core.Interfaces;
 

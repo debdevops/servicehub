@@ -1,25 +1,15 @@
-# CodeQL configuration for ServiceHub
-# Suppresses known false positives — intentional dev-only values and test data.
+# CodeQL configuration for ServiceHub 4.1.0
 name: "ServiceHub CodeQL Config"
 
 queries:
   - uses: security-extended   # includes security-and-quality queries
 
-query-filters:
-  # ServiceHub is a single-tenant local development/operations tool.
-  # Neither Namespace nor AutoReplayRule carries a per-record OwnerId/TenantId
-  # field — every authenticated API key has access to all resources by design.
-  # IDOR (Insecure Direct Object Reference) is structurally inapplicable here;
-  # access control is enforced at the API key scope level, not per-record ownership.
-  - exclude:
-      id: cs/insecure-direct-object-reference
+# No query is excluded. (Until 2026-10-03 this file switched off cs/insecure-direct-object-reference on the grounds that nothing carries an
+# owner; 4.1.0 partitions every namespace and ledger row by owner and narrows reads by an allow-list, so that rule is exactly the one to keep.)
 
 paths-ignore:
-  # Test files — intentional weak values for testing only
-  - "services/api/tests/**"
-  - "apps/web/src/__tests__/**"
-  # Mock/fixture data — not application logic
-  - "apps/web/src/lib/mockData.ts"
-  - "apps/web/src/lib/aiMockData.ts"
-  - "apps/web/src/lib/insightsMockData.ts"
-  - "apps/web/src/lib/messageGenerator.ts"
+  # The frozen 4.0.0 tree: a parts bin that is never built, run or shipped from here.
+  - "archive/**"
+  # Tests and the documentation tooling use deliberately fake credentials and made-up data.
+  - "tests/**"
+  - "scripts/**"

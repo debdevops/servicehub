@@ -1,7 +1,7 @@
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Models;
-using ServiceHub.Shared.Results;
+using ServiceHub.Core.Results;
 
 namespace ServiceHub.Core.Interfaces;
 
@@ -42,6 +42,15 @@ public interface ICloudMessagingProvider
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A result containing the read-only list of cloud entities on success.</returns>
     Task<Result<IReadOnlyList<CloudEntity>>> ListEntitiesAsync(Guid namespaceId, CancellationToken ct);
+
+    /// <summary>
+    /// Whether an entity in this provider's listing can have dead letters of its own. False for an entity
+    /// that only exists to <i>receive</i> another's dead letters (Google's <c>{subscription}-dlq</c>), so a
+    /// scan does not go looking for a dead-letter queue of the dead-letter queue. The knowledge of how a
+    /// provider names such things belongs here, not in callers (rule R4).
+    /// </summary>
+    /// <param name="entity">An entity from <see cref="ListEntitiesAsync"/>.</param>
+    bool CanHaveDeadLetters(CloudEntity entity) => true;
 
     /// <summary>
     /// Lists entities the same way <see cref="ListEntitiesAsync"/> does, but also reports which

@@ -4,8 +4,8 @@ using System.Threading.Channels;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Events;
 using ServiceHub.Core.Interfaces;
-using ServiceHub.Infrastructure.Security;
-using ServiceHub.Shared.Results;
+using ServiceHub.Core.Results;
+using ServiceHub.Core.Security;
 
 namespace ServiceHub.Api.Services;
 
@@ -50,6 +50,8 @@ public sealed class PlatformEventStreamBroker
         EventTypes.BulkOperationCompleted,
         EventTypes.AutonomyGrantTransitioned,
         EventTypes.InsightDetected,
+        // 4.1.0 (unit 5.4): an agent stopped and needs a person — the toast and the bell refresh on it.
+        EventTypes.EscalationRaised,
     };
 
     private readonly ConcurrentDictionary<Guid, Connection> _connections = new();

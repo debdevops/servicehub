@@ -1,42 +1,36 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Interfaces;
-using ServiceHub.Shared.Constants;
 
 namespace ServiceHub.Api.Controllers.V1;
 
-/// <summary>
-/// Exposes the current caller's own identity — primarily so an owner can discover the exact
-/// owner ID string a colleague needs to share a namespace with them (see
-/// <c>NamespacesController.Share</c>), and, since Governance/RBAC enforcement shipped, their own
-/// fleet-wide effective Governance role, for the frontend to decide what to show without a 403
-/// round-trip. No scope requirement: any successfully authenticated caller can read their own
-/// identity and role regardless of granted scopes.
-/// </summary>
-[Route(ApiRoutes.Me.Base)]
-[Tags("Me")]
+/// <summary>Who ServiceHub believes is asking. Never fails because nothing is configured.</summary>
+[Route("api/v1/me")]
 public sealed class MeController : ApiControllerBase
 {
-    private readonly IGovernanceAccessEvaluator _governanceAccessEvaluator;
-
-    /// <summary>Initializes a new instance of the <see cref="MeController"/> class.</summary>
-    public MeController(IGovernanceAccessEvaluator governanceAccessEvaluator)
-    {
-        _governanceAccessEvaluator = governanceAccessEvaluator ?? throw new ArgumentNullException(nameof(governanceAccessEvaluator));
-    }
-
-    /// <summary>Returns the caller's own owner ID, how this request authenticated, and their
-    /// fleet-wide effective Governance role.</summary>
-    /// <response code="200">The caller's identity.</response>
+    /// <summary>
+    /// The caller's owner, how they authenticated, and how the audit trail will name them. With no
+    /// identity configured — a valid deployment — this answers "a browser session", not an error.
+    /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(MeResponse), StatusCodes.Status200OK)]
-    public async Task<ActionResult<MeResponse>> Get(CancellationToken cancellationToken = default)
+    public async Task<IActionResult> Get(CancellationToken cancellationToken)
     {
-        var authMethod = HttpContext.Items.TryGetValue("AuthMethod", out var v) && v is string s ? s : null;
+        // The fleet-wide role (a namespace grant can add to it, never take away). Admin while governance is inactive.
+        var active = (await HttpContext.RequestServices.GetRequiredService<IGovernanceGrantService>().HasAnyGrantEverAsync(OwnerId, cancellationToken)) is { IsSuccess: true, Value: true };
+        var role = await HttpContext.RequestServices.GetRequiredService<IGovernanceAccessEvaluator>()
+            .GetEffectiveRoleAsync(OwnerId, Actor.AuthorizationIdentity, null, null, cancellationToken);
+        var evaluator = HttpContext.RequestServices.GetRequiredService<IGovernanceAccessEvaluator>();
+        var identity = Actor.AuthorizationIdentity;
+        var recover = await evaluator.GetEffectiveRoleAsync(OwnerId, identity, null, Core.Enums.PillarKind.Recover, cancellationToken);
+        var perNamespace = new Dictionary<Guid, string?>();
+        var visible = await HttpContext.RequestServices.GetRequiredService<INamespaceRepository>().GetByOwnerAsync(OwnerId, AllowedNamespaceIds, cancellationToken);
+        foreach (var ns in visible.IsSuccess ? visible.Value : [])
+        {
+            perNamespace[ns.Id] = (await evaluator.GetEffectiveRoleAsync(OwnerId, identity, ns.Id, Core.Enums.PillarKind.Recover, cancellationToken))?.ToString();
+        }
 
-        var governanceRole = await _governanceAccessEvaluator.GetEffectiveRoleAsync(
-            OwnerId, ResolveGovernanceGranteeIdentity(), namespaceId: null, pillarKind: null, cancellationToken);
-
-        return Ok(new MeResponse(OwnerId, authMethod, governanceRole?.ToString()));
+        return Ok(new MeResponse(OwnerId, AuthMethod, AuditMapping.ToResponse(Actor), role?.ToString(), active, await GrantorsAsync(null, cancellationToken),
+            recover?.ToString(), perNamespace));
     }
 }

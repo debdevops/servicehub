@@ -13,13 +13,12 @@
 
 ## Checklist
 
-- [ ] `dotnet build services/api/ServiceHub.sln --configuration Release` passes with zero warnings
-- [ ] `npm run -w apps/web build` passes with zero warnings
-- [ ] Backend unit/integration tests pass (`dotnet test`)
-- [ ] Frontend tests pass (`npm run -w apps/web test`)
+From the repository root:
+
+- [ ] `./runtest.sh --all` passes (build with warnings-as-errors, lint, type-check, backend + frontend suites with their 60 % floors, browser tests, guards)
 - [ ] New/changed behavior has test coverage
 - [ ] No secrets, connection strings, or credentials added to source or logs
-- [ ] Docs updated if user-facing behavior changed (README, CHANGELOG, or `docs/`)
+- [ ] Docs updated if user-facing behavior changed (README, CHANGELOG; run `python3 .github/scripts/check-docs.py`)
 
 ## Screenshots (UI changes only)
 

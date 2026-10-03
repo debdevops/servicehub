@@ -1,0 +1,92 @@
+import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { PAGE_SIZES } from '../../lib/pageSize'
+import { Select } from './Select'
+
+/**
+ * "1–25 of 128" and previous/next. Counts the set it is given: unfiltered that is everything, filtered
+ * it is what the filter leaves — the caller says which by passing the right total, and `filtered`
+ * words the sentence so the number is never mistaken for the whole.
+ */
+export function Pager({
+  page,
+  pageSize,
+  total,
+  filtered = false,
+  onPage,
+  onPageSize,
+}: {
+  page: number
+  pageSize: number
+  total: number
+  filtered?: boolean
+  onPage: (page: number) => void
+  /** When given, the reader can choose rows per page. */
+  onPageSize?: (size: number) => void
+}) {
+  if (total === 0) return null
+  const first = (page - 1) * pageSize + 1
+  const last = Math.min(page * pageSize, total)
+  const pages = Math.ceil(total / pageSize)
+
+  return (
+    <nav aria-label="Pages" className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm text-[var(--color-text-muted)]">
+      <span aria-live="polite">
+        {first.toLocaleString()}–{last.toLocaleString()} of {total.toLocaleString()}
+        {filtered && ' matching'}
+      </span>
+      <span className="flex flex-wrap items-center gap-1">
+        {onPageSize && (
+          <div className="mr-3 flex items-center gap-1.5 text-[12px]">
+            Rows per page
+            <Select variant="inline" ariaLabel="Rows per page" value={String(pageSize)} onChange={(v) => onPageSize(Number(v))} className="text-[12px]">
+              {PAGE_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </Select>
+          </div>
+        )}
+        <button
+          type="button"
+          aria-label="Previous page"
+          disabled={page <= 1}
+          onClick={() => onPage(page - 1)}
+          className="rounded-lg border border-[var(--color-border)] p-1.5 enabled:hover:bg-[var(--color-surface-muted)] disabled:opacity-40"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <span className="sr-only">Page {page} of {pages}</span>
+        {pageNumbers(page, pages).map((n, i) =>
+          n === null ? (
+            <span key={`gap${i}`} aria-hidden="true" className="px-1">…</span>
+          ) : (
+            <button
+              key={n}
+              type="button"
+              aria-label={`Go to page ${n}`}
+              aria-current={n === page ? 'page' : undefined}
+              onClick={() => onPage(n)}
+              className={`tabular min-w-8 rounded-lg px-2 py-1 ${n === page ? 'bg-[var(--color-primary-50)] font-semibold text-[var(--color-primary-700)] ring-1 ring-[var(--color-primary-200)]' : 'hover:bg-[var(--color-surface-muted)]'}`}
+            >
+              {n}
+            </button>
+          ),
+        )}
+        <button
+          type="button"
+          aria-label="Next page"
+          disabled={page >= pages}
+          onClick={() => onPage(page + 1)}
+          className="rounded-lg border border-[var(--color-border)] p-1.5 enabled:hover:bg-[var(--color-surface-muted)] disabled:opacity-40"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </span>
+    </nav>
+  )
+}
+
+/** 1 2 3 … 60: the first pages, the ones around this page, and the last — `null` is a gap. */
+function pageNumbers(page: number, pages: number): (number | null)[] {
+  if (pages <= 7) return Array.from({ length: pages }, (_, i) => i + 1)
+  const wanted = new Set([1, 2, 3, page - 1, page, page + 1, pages].filter((n) => n >= 1 && n <= pages))
+  const sorted = [...wanted].sort((a, b) => a - b)
+  return sorted.flatMap((n, i) => (i > 0 && n - sorted[i - 1]! > 1 ? [null, n] : [n]))
+}

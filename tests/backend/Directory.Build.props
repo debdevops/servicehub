@@ -1,0 +1,10 @@
+<Project>
+
+  <!--
+    The backend test projects live outside services/api, so they no longer sit under its
+    Directory.Build.props. Import it explicitly: the tests must compile under the same rules as the
+    code they test (TreatWarningsAsErrors, nullable, the version file).
+  -->
+  <Import Project="$(MSBuildThisFileDirectory)..\..\services\api\Directory.Build.props" />
+
+</Project>

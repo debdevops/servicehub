@@ -5,7 +5,7 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.IdentityModel.Tokens;
 using ServiceHub.Api.Authorization;
 using ServiceHub.Core.Models;
-using ServiceHub.Infrastructure.Security;
+using ServiceHub.Core.Security;
 
 namespace ServiceHub.Api.Middleware;
 
@@ -138,6 +138,15 @@ public sealed class OidcBearerAuthenticationMiddleware
             context.Items["OwnerId"] = $"oidc:{subject}";
             context.Items["Authenticated"] = true;
             context.Items["AuthMethod"] = "Oidc";
+
+            // The person's own name, when the provider gave one — it is what the audit trail shows.
+            var claimsName = principal.FindFirst("name")?.Value
+                ?? principal.FindFirst("preferred_username")?.Value
+                ?? principal.FindFirst("email")?.Value;
+            if (!string.IsNullOrWhiteSpace(claimsName))
+            {
+                context.Items["ClaimsName"] = claimsName;
+            }
 
             // Optional standard OAuth2 'scope' claim (RFC 8693) — a space-delimited string,
             // e.g. "dlq:read dlq:write" or a role name like "Viewer". When present,

@@ -1,5 +1,5 @@
 using ServiceHub.Core.Enums;
-using ServiceHub.Shared.Results;
+using ServiceHub.Core.Results;
 
 namespace ServiceHub.Core.Interfaces;
 
@@ -25,33 +25,6 @@ public interface IWebhookNotifier
         int newMessageCount,
         CancellationToken cancellationToken = default);
 
-    /// <summary>
-    /// Notifies external systems that a bulk replay/purge job has finished. Unlike the DLQ
-    /// spike alert, this is not threshold-gated or cooled-down — every completed job (a
-    /// deliberate, human-triggered action) is worth reporting.
-    /// </summary>
-    /// <param name="jobId">The completed job's identifier.</param>
-    /// <param name="operationType">Replay or Purge.</param>
-    /// <param name="status">The job's terminal status.</param>
-    /// <param name="namespaceId">The namespace the job ran against.</param>
-    /// <param name="namespaceName">Human-readable namespace name.</param>
-    /// <param name="totalMatched">Total messages the job's filter matched.</param>
-    /// <param name="successCount">Messages successfully processed.</param>
-    /// <param name="failureCount">Messages that failed.</param>
-    /// <param name="skippedCount">Messages skipped without an attempt.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Success or failure result.</returns>
-    Task<Result> NotifyBulkOperationCompletedAsync(
-        Guid jobId,
-        BulkOperationType operationType,
-        BulkOperationStatus status,
-        Guid namespaceId,
-        string namespaceName,
-        int totalMatched,
-        int successCount,
-        int failureCount,
-        int skippedCount,
-        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Notifies external systems that a failure signature's autonomy grant transitioned
@@ -114,5 +87,13 @@ public interface IWebhookNotifier
         string? entityName,
         string description,
         int severity,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sends one escalation — what stopped, where, why, what to do (unit 5.5). No threshold and no cooldown: each escalation is
+    /// one decision a person owes, and it is raised once. Best-effort: a failure here never fails the escalation.
+    /// </summary>
+    Task<Result> NotifyEscalationAsync(
+        string kind, string reasonCode, string reason, string? namespaceName, string? provider, string? entity, Guid? entryId, string? agentId,
         CancellationToken cancellationToken = default);
 }

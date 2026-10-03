@@ -1,49 +1,46 @@
 using Microsoft.AspNetCore.Mvc;
-using ServiceHub.Infrastructure.Telemetry;
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.Interfaces;
-using ServiceHub.Api.Authorization;
-using ServiceHub.Shared.Constants;
+using ServiceHub.Core.Models;
 
 namespace ServiceHub.Api.Controllers.V1;
 
 /// <summary>
-/// Cross-namespace fleet operations overview — the "what died overnight across everything?"
-/// dashboard that turns ServiceHub from a per-namespace debugger into an operations platform.
+/// The only cross-cloud view (unit 3.5): every connected cloud side by side. Read-only. Each cloud keeps its own
+/// numbers — nothing here is added across clouds, and no provider is named (rule R4).
 /// </summary>
-[Route(ApiRoutes.Fleet.Base)]
-[Tags("Fleet Operations")]
+[Route("api/v1/fleet")]
 public sealed class FleetController : ApiControllerBase
 {
-    private readonly IFleetOverviewService _fleetOverviewService;
-    private readonly ServiceHubMetrics _metrics;
+    private readonly IFleetOverviewService _fleet;
+    private readonly TimeProvider _time;
 
-    /// <summary>Initializes a new instance of the <see cref="FleetController"/> class.</summary>
-    public FleetController(IFleetOverviewService fleetOverviewService, ServiceHubMetrics metrics)
+    /// <summary>Creates the controller.</summary>
+    public FleetController(IFleetOverviewService fleet, TimeProvider? time = null)
     {
-        _fleetOverviewService = fleetOverviewService
-            ?? throw new ArgumentNullException(nameof(fleetOverviewService));
-        _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
+        _fleet = fleet ?? throw new ArgumentNullException(nameof(fleet));
+        _time = time ?? TimeProvider.System;
     }
 
-    /// <summary>
-    /// Gets a fleet-wide DLQ overview across all namespaces owned by the caller.
-    /// </summary>
-    /// <param name="windowHours">The "recent activity" window in hours (default 24, clamped 1–720).</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The fleet overview snapshot.</returns>
+    /// <summary>The fleet. <paramref name="window"/> is <c>today</c> (default, since local-UTC midnight), <c>24h</c> or <c>7d</c>.</summary>
     [HttpGet("overview")]
-    [RequireScope(ApiKeyScopes.DlqRead)]
     [ProducesResponseType(typeof(FleetOverview), StatusCodes.Status200OK)]
-    public async Task<ActionResult<FleetOverview>> GetOverviewAsync(
-        [FromQuery] int windowHours = 24,
-        CancellationToken cancellationToken = default)
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Overview([FromQuery] string? window, CancellationToken cancellationToken)
     {
-        var result = await _fleetOverviewService.GetOverviewAsync(OwnerId, windowHours, cancellationToken, AllowedNamespaceIds);
-        if (result.IsSuccess)
+        var now = _time.GetUtcNow();
+        var (name, since) = (window ?? "today") switch
         {
-            _metrics.RecordFleetOverview(result.Value.TotalActive, result.Value.NamespaceCount);
+            "today" => ("today", new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero)),
+            "24h" => ("24h", now.AddHours(-24)),
+            "7d" => ("7d", now.AddDays(-7)),
+            _ => (null, default),
+        };
+        if (name is null)
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "'window' must be today, 24h or 7d.");
         }
 
-        return ToActionResult(result);
+        return Ok(await _fleet.GetAsync(OwnerId, AllowedNamespaceIds, name, since, cancellationToken));
     }
 }

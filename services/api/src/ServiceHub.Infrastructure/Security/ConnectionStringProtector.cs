@@ -5,8 +5,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Interfaces;
-using ServiceHub.Shared.Constants;
-using ServiceHub.Shared.Results;
+using ServiceHub.Core.Constants;
+using ServiceHub.Core.Results;
 
 namespace ServiceHub.Infrastructure.Security;
 
@@ -469,10 +469,7 @@ public sealed partial class ConnectionStringProtector : IConnectionStringProtect
     /// <summary>
     /// Derives a 256-bit AES key from the configured key material.
     ///
-    /// BREAKING CHANGE: This method was changed from single-round SHA-256 to
-    /// HKDF (for 64-char hex keys) / PBKDF2-100k (for other keys) in v3.1.0.
-    /// Any connection strings encrypted before this upgrade must be re-added —
-    /// they cannot be decrypted with the new derived key.
+    /// Uses HKDF for 64-char hex keys and PBKDF2 (100k iterations) for any other key.
     /// </summary>
     private static byte[] DeriveKey(string keyString)
     {

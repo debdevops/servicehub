@@ -45,8 +45,8 @@ public sealed class CloudProviderRouter : ICloudProviderRouter
     /// <returns>The registered provider implementation.</returns>
     /// <exception cref="InvalidOperationException">
     /// Thrown when no provider implementation has been registered for
-    /// <paramref name="providerType"/>.  This is expected for AWS and GCP in Phase 1 —
-    /// their providers will be added in subsequent phases.
+    /// <paramref name="providerType"/>.  This is expected for a cloud whose adapter has not
+    /// been registered in this build.
     /// </exception>
     public ICloudMessagingProvider Resolve(CloudProviderType providerType)
     {
@@ -58,7 +58,7 @@ public sealed class CloudProviderRouter : ICloudProviderRouter
         throw new InvalidOperationException(
             $"No ICloudMessagingProvider has been registered for cloud provider '{providerType}'. " +
             $"Registered providers: [{string.Join(", ", _providers.Keys)}]. " +
-            $"Add the required provider package and call the corresponding registration method in DependencyInjection.");
+            $"Register the provider's adapter in Program.cs.");
     }
 
     /// <summary>
