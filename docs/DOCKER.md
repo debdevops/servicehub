@@ -22,9 +22,8 @@ Prefer to build it yourself, or to run it without Docker? See [Run ServiceHub on
 | You need | Check with | Get it |
 |---|---|---|
 | **Docker** (Docker Desktop on macOS and Windows, Docker Engine on Linux) | `docker --version` and `docker info` (it must answer, so the daemon is running) | <https://docs.docker.com/get-docker/> |
-| **A way to make a random key** (`openssl`) | `openssl version` | Included on macOS and Linux |
-
-**Windows:** use Docker Desktop with its WSL 2 integration, and run the commands below inside a WSL 2 terminal (Ubuntu), where they work as written.
+| **A bash-style shell** (the commands use `export` and `\` line continuations) | `bash --version` | macOS Terminal and Linux have one. On **Windows**, use a WSL 2 terminal (Ubuntu) with Docker Desktop's WSL 2 integration turned on; plain PowerShell and Command Prompt will not run the commands as written |
+| **OpenSSL**, to make the random key | `openssl version` | Included on macOS and most Linux, and in Ubuntu on WSL 2. Any other way to make 64 random hex characters also works |
 
 ## Step 1. Make an encryption key (once)
 
@@ -66,6 +65,9 @@ docker ps --filter name=servicehub        # STATUS reads "healthy" after about 2
 curl -s http://localhost:8080/health      # → Healthy
 ```
 
+> `/health` answers on any host name, even one ServiceHub would refuse for everything else (see [Security](#security)). A passing health check proves the
+> container is running, not that the address you reach it by is allowed. Check that by opening the app itself.
+
 ## Step 4. Open it
 
 Go to **<http://localhost:8080>**. You will see the Welcome page.
@@ -96,8 +98,9 @@ docker stop servicehub && docker rm servicehub           # removes the container
 ```
 
 > **Moving from 4.0.0 is different.** 4.1.0 is a from-scratch rewrite: it cannot open a 4.0.0 database and there is no upgrade path. Run 4.1.0 beside
-> 4.0.0 with a different port and a different volume (for example `-p 127.0.0.1:8081:8080 -v servicehub-data-41:/data`), connect your clouds again,
-> and retire 4.0.0 when you are ready. See the [changelog](../CHANGELOG.md).
+> 4.0.0 with a different **container name**, port and volume, in case 4.0.0 already uses `servicehub` and 8080
+> (for example `--name servicehub-41 -p 127.0.0.1:8081:8080 -v servicehub-data-41:/data`; use `servicehub-41` in place of `servicehub` in the commands on this page).
+> Connect your clouds again and retire 4.0.0 when you are ready. See the [changelog](../CHANGELOG.md).
 
 Tags: `4.1.0` is one exact release, `4.1` follows the newest 4.1.x patch, and `latest` follows the newest release overall. Pin an exact version for
 anything you depend on.
@@ -126,7 +129,8 @@ docker image rm ghcr.io/debdevops/servicehub:4.1.0
   `127.0.0.1`: only this machine can reach it. Do not publish it on `0.0.0.0` or a public address.
 - **It answers only to `localhost`, `127.0.0.1` and `[::1]`.** Reach it by any other name (a proxy, a host name) and it answers `400` until you list that name,
   keeping `localhost` in the list: add `-e "AllowedHosts=localhost;your.host.name"`. Put an authenticating reverse proxy or a private network in front before
-  you do. See [Host ServiceHub on Azure](HOSTING-AZURE.md) and [SECURITY.md](../SECURITY.md).
+  you do. The one exception is `/health` and `/health/ready`, which answer on any name so load balancers and Docker's health check can probe it; a green
+  probe through a proxy therefore does not prove `AllowedHosts` is set correctly. See [Host ServiceHub on Azure](HOSTING-AZURE.md) and [SECURITY.md](../SECURITY.md).
 - **It stores part of each message.** For every dead letter it sees, ServiceHub keeps the first 500 characters of the body, the message properties and a hash
   in its database, in plain text. Cloud credentials and webhook URLs are encrypted; message content is not. Protect the volume and its backups like the messages.
 - **One instance per volume.** Never mount the same volume into two containers; a second one exits on purpose.

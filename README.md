@@ -7,7 +7,7 @@ sent back — then keeps a local record you can export and verify offline. It ru
 leaves your network: ServiceHub talks only to your clouds and, if you add one, to a notification channel (Slack, Teams or a webhook), which gets
 queue names and failure reasons, never message bodies.
 
-**Try it in two minutes — no cloud account, made-up data** (needs [Docker](https://docs.docker.com/get-docker/)):
+**Try it in two minutes — no cloud account, made-up data.** Needs [Docker](https://docs.docker.com/get-docker/), a bash shell (macOS, Linux, or a WSL 2 terminal on Windows) and `openssl`:
 
 ```bash
 export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"      # keep this key; it protects stored cloud credentials
