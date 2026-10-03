@@ -135,4 +135,30 @@ public sealed class BackupApiTests : IDisposable
         await File.WriteAllTextAsync(manifestPath, original);
         (await Failed()).GetProperty("name").GetString().Should().Contain("the one that was backed up");
     }
+
+    [Fact]
+    public async Task A_manifest_that_names_a_file_outside_its_own_folder_is_refused_even_when_that_files_checksum_matches()
+    {
+        // A backup folder is trusted input only as far as its own files go: a manifest whose `sqlite.fileName` is an absolute path (or climbs out
+        // with `..`) must not make the restore check read — and then stage — some other SQLite file on the machine.
+        using var host = ServiceHubApiFactory.Reusing(_dir);
+        var client = host.CreateClient();
+        var id = (await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/v1/admin/backup", "create-backup")))).GetProperty("backupId").GetString()!;
+        var bundle = Path.Combine(_dir, "backups", id);
+        var manifestPath = Path.Combine(bundle, "manifest.json");
+        var original = await File.ReadAllTextAsync(manifestPath);
+        var elsewhere = Path.Combine(_dir, "elsewhere.db");
+        File.Copy(Path.Combine(bundle, "servicehub-dlq.db"), elsewhere);
+        var sha = Convert.ToHexStringLower(SHA256.HashData(await File.ReadAllBytesAsync(elsewhere)));
+        var shaNow = JsonDocument.Parse(original).RootElement.GetProperty("sqlite").GetProperty("sha256").GetString()!;
+
+        foreach (var name in new[] { elsewhere, "../../elsewhere.db" })
+        {
+            await File.WriteAllTextAsync(manifestPath, original.Replace("\"fileName\": \"servicehub-dlq.db\"", $"\"fileName\": {JsonSerializer.Serialize(name)}").Replace(shaNow, sha));
+            var check = await Json(await client.GetAsync($"/api/v1/admin/backup/{id}/check"));
+            check.GetProperty("canRestore").GetBoolean().Should().BeFalse($"a manifest naming '{name}' must be refused");
+            (await client.SendAsync(Req(HttpMethod.Post, $"/api/v1/admin/backup/{id}/restore", "restore-backup", new { confirm = "RESTORE" })))
+                .StatusCode.Should().Be(HttpStatusCode.Conflict);
+        }
+    }
 }

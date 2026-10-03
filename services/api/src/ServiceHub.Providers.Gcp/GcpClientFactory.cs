@@ -235,7 +235,7 @@ public sealed class GcpClientFactory : IGcpClientFactory
             if (unprotected.IsSuccess)
             {
                 var match = System.Text.RegularExpressions.Regex.Match(
-                    unprotected.Value, @"projectId=([^;]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    unprotected.Value, @"projectId=([^;]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase, TimeSpan.FromMilliseconds(100));
                 if (match.Success)
                     return match.Groups[1].Value.Trim();
             }

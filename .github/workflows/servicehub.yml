@@ -23,6 +23,10 @@ on:
       - 'hotfix/**'
 
 
+# Least privilege: nothing in this workflow writes to the repository, packages or checks.
+permissions:
+  contents: read
+
 env:
   DOTNET_VERSION: '10.0.x'
   NODE_VERSION: '22.x'
@@ -680,10 +684,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Build image (no push)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: archive/servicehub-4.0.0
           load: true
@@ -693,7 +697,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Scan image for vulnerabilities (Trivy)
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: servicehub:ci
           format: table
@@ -703,7 +707,7 @@ jobs:
 
       - name: Generate CycloneDX SBOM from image
         if: always()
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: servicehub:ci
           scan-type: image

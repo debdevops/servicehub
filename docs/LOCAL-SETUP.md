@@ -134,6 +134,7 @@ See [tests/README.md](../tests/README.md) and [CONTRIBUTING.md](../CONTRIBUTING.
 | `The database at '…' is not a ServiceHub 4.1.0 database` | The folder holds a 4.0.0 (or other) database. **There is no upgrade path from 4.0.0** | Point `SERVICEHUB_DATA_DIR` at an empty folder |
 | `✖ Not ready after 180s` | The API did not come up | Read the error just above it; for a slow machine raise `SERVICEHUB_READY_TIMEOUT` |
 | Page loads but requests fail (proxy errors in the terminal), especially just after start | The web server is up but the API is not — still compiling, or you used `--web-only` | Wait for `✔ ServiceHub is ready`; or start the API too with `./run.sh` |
+| `This address is not one ServiceHub answers to` (HTTP 400) | You opened it by a name other than `localhost`, `127.0.0.1` or `[::1]` — a LAN address, a machine name. ServiceHub refuses other hosts so a web page on another site cannot drive it through your browser | Use `http://localhost:3000`; or, if you mean to reach it by another name, `AllowedHosts=that-name ./run.sh` |
 | `npm ci` fails | Half-installed `node_modules` | `rm -rf node_modules && ./run.sh` |
 | `Security:EncryptionKey … not configured`, API exits | Started as `Production` without a key | Use plain `./run.sh` (Development), or set `SECURITY__ENCRYPTIONKEY` |
 

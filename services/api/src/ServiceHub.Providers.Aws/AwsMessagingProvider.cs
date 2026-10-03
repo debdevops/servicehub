@@ -300,7 +300,7 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
-                        _logger.LogWarning(ex, "Could not list SNS subscriptions for topic {TopicArn}", topic.TopicArn);
+                        _logger.LogWarning(ex, "Could not list SNS subscriptions for topic {TopicArn}", ServiceHub.Core.Security.LogRedactor.SanitiseForLog(topic.TopicArn));
                         incompleteTopicNames.Add(topicName);
                     }
                 }

@@ -72,7 +72,7 @@ public sealed class ServiceBusClientFactory : IServiceBusClientFactory
             _logger.LogInformation(
                 "Service Bus client created/retrieved for namespace {NamespaceId} ({NamespaceName})",
                 @namespace.Id,
-                @namespace.Name);
+                ServiceHub.Core.Security.LogRedactor.SanitiseForLog(@namespace.Name));
 
             return Task.FromResult(Result.Success());
         }

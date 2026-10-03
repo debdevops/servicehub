@@ -50,6 +50,9 @@ public static class ErrorCodes
     /// <summary>An <c>X-API-KEY</c> was presented that is not a configured key.</summary>
     public const string InvalidApiKey = "invalid_api_key";
 
+    /// <summary>The request's <c>Host</c> header is not one this ServiceHub answers to (<c>AllowedHosts</c>).</summary>
+    public const string HostNotAllowed = "host_not_allowed";
+
     /// <summary>Codes for failures that belong to no single screen.</summary>
     /// <remarks>Raised by <c>ConnectionStringProtector</c>.</remarks>
     public static class General

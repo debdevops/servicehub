@@ -67,11 +67,13 @@ Known-vulnerable dependencies raise Dependabot security alerts and fail the CI a
 
 ## Security Fixes History
 
-Fixes in releases before 4.1.0. 4.1.0 is a from-scratch rewrite: the files named below are in the frozen 4.0.0 tree or are gone, and the fixes
-they describe were designed into the new code rather than ported.
+4.1.0 is a from-scratch rewrite. The 4.1.0 row is the pre-release security review of the new code; the rows below it are earlier releases, whose files are in the
+frozen 4.0.0 tree or gone (their fixes were checked against the 4.1.0 code on 2026-10-03 — the webhook SSRF guard, the namespace allow-list and the governance
+checks are all present in it).
 
 | Version | Date | Description |
 |---------|------|-------------|
+| v4.1.0 | 2026-10-03 | Pre-release review. **DNS rebinding:** ServiceHub answered a request for any `Host`, so a web page re-pointing its own domain at `127.0.0.1` could drive the no-login API from a visitor's browser; it now answers only `localhost`, `127.0.0.1` and `[::1]` unless `AllowedHosts` says otherwise. A backup manifest could name any file for the restore to read; it must now be a plain file inside the backup. A caller limited to some namespaces could read an agent's ledger timeline; it no longer can. CodeQL now analyses the 4.1.0 code (it had only ever scanned the frozen 4.0.0 tree), and CI actions from outside GitHub are pinned to commit SHAs. |
 | v2.1.2 | 2026-03-23 | Fixed CodeQL `cs/log-forging` in `ServiceBusClientWrapper.cs` — 65 taint paths sanitised with `LogRedactor.SanitiseForLog()` |
 | v2.1.3 | 2026-03-23 | Removed duplicate `LogSanitizer` classes; all callers consolidated to single `LogRedactor.SanitiseForLog()` |
 | v3.2.2 | 2026-06-13 | Fixed 6 CodeQL `cs/log-forging` alerts (Medium) in `AwsMessageSender.cs` (#143–#146) and `GcpClientFactory.cs` (#147–#148) — user-derived entity names, topic/subscription IDs, and project IDs now sanitised before logging |
@@ -83,6 +85,7 @@ ServiceHub defends against these scenarios:
 
 - **Accidental log leakage:** connection strings and secrets are masked from console output and
   telemetry
+- **A web page driving a local instance (DNS rebinding):** ServiceHub has no login, so on its own a malicious page that re-points its own domain at `127.0.0.1` could call the whole API from your browser as the Administrator. ServiceHub refuses any request whose `Host` is not `localhost`, `127.0.0.1` or `[::1]` (health endpoints excepted); set `AllowedHosts` (semicolon-separated, `*.example.com` wildcards) when you reach it by another name, and `*` only if you mean to turn the check off
 - **Delegated access going too far:** API keys, OIDC and Azure Easy Auth identify *who* acted, and roles granted
   in Settings (Viewer, Operator, Admin) limit what a key holder may do — a Viewer key is refused a backup (`403`),
   and a wrong key is refused (`401`)

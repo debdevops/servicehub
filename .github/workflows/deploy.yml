@@ -95,7 +95,7 @@ jobs:
             --no-build
 
       - name: Deploy to Azure App Service
-        uses: azure/webapps-deploy@v3
+        uses: azure/webapps-deploy@02a81bead70021f5284939794bcec79c271ab383 # v3
         with:
           app-name: ${{ secrets.AZURE_APP_SERVICE_NAME }}
           publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE }}

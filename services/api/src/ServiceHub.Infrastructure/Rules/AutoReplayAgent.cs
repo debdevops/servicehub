@@ -76,7 +76,7 @@ public sealed class AutoReplayAgent : IAgent
             if (await rules.SweepBreakerAsync(rule, ct).ConfigureAwait(false))
             {
                 tripped++;
-                _logger.LogWarning("Auto Replay rule {RuleId} '{Name}' stopped itself: {Detail}", rule.Id, rule.Name, rule.DisabledDetail);
+                _logger.LogWarning("Auto Replay rule {RuleId} '{Name}' stopped itself: {Detail}", rule.Id, ServiceHub.Core.Security.LogRedactor.SanitiseForLog(rule.Name), ServiceHub.Core.Security.LogRedactor.SanitiseForLog(rule.DisabledDetail));
                 continue;
             }
 

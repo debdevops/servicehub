@@ -20,6 +20,10 @@ on:
   pull_request:
     branches: [main, develop, release, 'feat/**', 'feature/**', 'fix/**', 'bugfix/**', 'hotfix/**']
 
+# Least privilege: nothing in this workflow writes to the repository, packages or checks.
+permissions:
+  contents: read
+
 env:
   DOTNET_VERSION: '10.0.x'
   NODE_VERSION: '22.x'

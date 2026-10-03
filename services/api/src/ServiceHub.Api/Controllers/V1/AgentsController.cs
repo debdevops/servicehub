@@ -74,7 +74,10 @@ public sealed class AgentsController : ApiControllerBase
             ? new AgentActivityItem(c.RunUtc, "cycle", CycleKind(r, state.Descriptor.CanAct), $"examined {r.Examined} · {r.Summary}", null)
             : new AgentActivityItem(c.RunUtc, "cycle", "failed", c.Failure ?? "the cycle failed", null)));
 
-        if (state.Descriptor.LedgerActor is { } actor)
+        // The ledger is one chain across every namespace and these events are read by actor, not by namespace, so a caller limited to some
+        // namespaces gets the agent's cycles and pauses (the audit trail below is already narrowed) but never its ledger timeline, which
+        // would name failures and queues outside its allow-list.
+        if (state.Descriptor.LedgerActor is { } actor && AllowedNamespaceIds is null)
         {
             var events = await _queries.EventsByActorAsync(OwnerId, actor, TimelineLimit, cancellationToken);
             // A promotion or demotion is about one failure: say which, and from what level to what, not only "a failure".

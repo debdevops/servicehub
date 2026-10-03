@@ -65,6 +65,19 @@ public sealed class BackupRestoreService : IBackupRestore
         return Directory.Exists(dir) ? dir : null;
     }
 
+    /// <summary>
+    /// The snapshot file a manifest names, or null when the name is not a plain file name inside the bundle. A manifest sits in a folder
+    /// anyone with write access to the backup directory can edit, so its file name is never joined to a path unchecked: an absolute path or
+    /// a `..` would make the restore check read — and stage — some other SQLite file on the machine.
+    /// </summary>
+    private static string? SnapshotPath(string bundleDir, BackupManifest manifest)
+    {
+        var name = manifest.Sqlite.FileName;
+        return string.IsNullOrWhiteSpace(name) || name != Path.GetFileName(name) || name is "." or ".."
+            ? null
+            : Path.Combine(bundleDir, name);
+    }
+
     /// <inheritdoc />
     public async Task<RestoreCheck> CheckAsync(string backupId, CancellationToken cancellationToken = default)
     {
@@ -79,7 +92,13 @@ public sealed class BackupRestoreService : IBackupRestore
             return Done();
         }
 
-        var snapshot = Path.Combine(dir, manifest.Sqlite.FileName);
+        var snapshot = SnapshotPath(dir, manifest);
+        if (snapshot is null)
+        {
+            checks.Add(new("The backup is well-formed", false, "Its manifest names a database file outside the backup's own folder, so it is not trusted."));
+            return Done();
+        }
+
         var intact = File.Exists(snapshot) && string.Equals(Sha256(snapshot), manifest.Sqlite.Sha256, StringComparison.OrdinalIgnoreCase);
         checks.Add(new("The file is the one that was backed up", intact,
             intact ? "Its checksum matches the manifest." : "Its checksum does not match the manifest — it was changed or damaged after the backup."));
@@ -118,7 +137,7 @@ public sealed class BackupRestoreService : IBackupRestore
         var dir = BundlePath(backupId)!;
         var manifest = ReadManifest(dir)!;
         var temp = Path.Combine(DataDir, PendingFileName + ".tmp");
-        File.Copy(Path.Combine(dir, manifest.Sqlite.FileName), temp, overwrite: true);
+        File.Copy(SnapshotPath(dir, manifest) ?? throw new InvalidOperationException("The manifest names a file outside the backup folder."), temp, overwrite: true);
         File.Move(temp, Path.Combine(DataDir, PendingFileName), overwrite: true);
         await File.WriteAllTextAsync(Path.Combine(DataDir, PendingMarkerName),
             JsonSerializer.Serialize(new PendingRestore(backupId, _time.GetUtcNow()), Json), cancellationToken).ConfigureAwait(false);

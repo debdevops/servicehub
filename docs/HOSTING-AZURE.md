@@ -169,6 +169,7 @@ SSH access an Administrator. To give people different powers you need something 
 - **An authenticating reverse proxy** (for example one that signs people in with Microsoft Entra ID) on the VM or in front of it. If, and only if, that
   proxy strips any incoming `X-MS-CLIENT-PRINCIPAL-ID` header and sets it itself, enable `Security__EasyAuth__TrustClientPrincipalHeader=true`. Never
   enable it otherwise: anyone could then pretend to be anyone.
+- **A name of your own.** If people reach ServiceHub through a proxy or a host name rather than `localhost`, set `AllowedHosts` to that name (`;`-separated, `*.example.com` wildcards) in `docker-compose.yml`'s `environment:`. It is refused otherwise, deliberately: see SECURITY.md.
 - **OIDC bearer tokens** (`Security__Oidc__Enabled`, `Security__Oidc__Authority`, `Security__Oidc__Audience`) for automation and API users.
 - **API keys** (`Security:Authentication:ApiKeys`, sent as `X-API-KEY`).
 
@@ -259,6 +260,7 @@ az webapp config appsettings set --resource-group "$RG" --name "$APP" --settings
   WEBSITES_PORT=8080 \
   WEBSITES_ENABLE_APP_SERVICE_STORAGE=true \
   ServiceHub__DataDirectory=/home/data \
+  AllowedHosts="$APP.azurewebsites.net" \
   SECURITY__ENCRYPTIONKEY="$KEY"
 ```
 
@@ -267,6 +269,7 @@ az webapp config appsettings set --resource-group "$RG" --name "$APP" --settings
 | `WEBSITES_PORT=8080` | The image listens on 8080; App Service must be told |
 | `WEBSITES_ENABLE_APP_SERVICE_STORAGE=true` | Mounts the persistent `/home` |
 | `ServiceHub__DataDirectory=/home/data` | Puts the database there instead of the container's throw-away `/data` |
+| `AllowedHosts` | ServiceHub answers only to `localhost` unless told otherwise (so a web page on another site cannot drive it through a browser). App Service serves it as `<app>.azurewebsites.net`, so name that here — without it every page and API call is refused with *"This address is not one ServiceHub answers to"*. Add a custom domain with a `;`: `a.azurewebsites.net;servicehub.contoso.com`. The health endpoints answer on any host, so App Service's own probes still work |
 | `SECURITY__ENCRYPTIONKEY` | Production refuses to start without it. App settings are encrypted at rest and visible only to people with access to the app |
 
 Give it a minute, then check: `curl https://$APP.azurewebsites.net/health/ready` → `Healthy`. If it does not start, `az webapp log tail -g "$RG" -n "$APP"`.
@@ -361,10 +364,13 @@ KEY="$(openssl rand -hex 32)"; echo "SAVE THIS KEY: $KEY"
 az webapp config appsettings set --resource-group "$RG" --name "$APP" --settings \
   ASPNETCORE_ENVIRONMENT=Production \
   ServiceHub__DataDirectory=/home/data \
+  AllowedHosts="$APP.azurewebsites.net" \
   SECURITY__ENCRYPTIONKEY="$KEY"
 
 az webapp deploy --resource-group "$RG" --name "$APP" --src-path servicehub.zip --type zip
 ```
+
+`AllowedHosts` is the one name ServiceHub will answer to (see the table in §9.3); without it the site loads nothing but its health check.
 
 The data folder (`/home/data`) is created on first start. Check `curl https://$APP.azurewebsites.net/health/ready` → `Healthy`; logs:
 `az webapp log tail -g "$RG" -n "$APP"`.
@@ -405,5 +411,6 @@ endpoint.
 | Added the namespace but it is "unreachable" | The namespace firewall blocks the VM | See §5 |
 | Everything worked, then credentials stopped decrypting | The encryption key changed | Restore the original key into `.env` and `sudo docker compose up -d` |
 | **App Service:** "Application Error" or the site never starts | Missing `SECURITY__ENCRYPTIONKEY`, or (container) `WEBSITES_PORT` not `8080` | `az webapp log tail`; check the app settings in §9.3 / §10.3 |
+| **App Service:** the site answers *"This address is not one ServiceHub answers to"* (HTTP 400), but `/health/ready` works | `AllowedHosts` is missing or does not name the address you browse to | Set `AllowedHosts=<app>.azurewebsites.net` (plus any custom domain, `;`-separated) in the app settings and restart |
 | **App Service:** image will not pull | The app's identity lacks `AcrPull`, or `acrUseManagedIdentityCreds` is not set | Redo the identity, role and `config set` steps in §9.3 |
 | **App Service:** data gone after a redeploy | `WEBSITES_ENABLE_APP_SERVICE_STORAGE` is `false`, or `ServiceHub__DataDirectory` is not under `/home` | Fix the settings; anything stored elsewhere was in the container and is lost on replace |

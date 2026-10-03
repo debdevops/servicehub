@@ -82,6 +82,7 @@ await app.Services.InitializeServiceHubDatabaseAsync().ConfigureAwait(false);
 
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<SecurityHeadersMiddleware>();
+app.UseMiddleware<HostAllowListMiddleware>(); // refuse a Host that is not ours: DNS rebinding would otherwise make this no-login API reachable from any web page
 
 app.UseExceptionHandler(handler => handler.Run(async context =>
 {
