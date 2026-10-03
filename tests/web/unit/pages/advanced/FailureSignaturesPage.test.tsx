@@ -24,7 +24,7 @@ const page = (items: api.Signature[]): api.SignaturePage => ({ items, total: ite
 function renderPage(initial = '/advanced/signatures') {
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <MemoryRouter initialEntries={[initial]}><FailureSignaturesPage /></MemoryRouter>
+      <MemoryRouter initialEntries={[initial]}><main><FailureSignaturesPage /></main></MemoryRouter>
     </QueryClientProvider>,
   )
 }

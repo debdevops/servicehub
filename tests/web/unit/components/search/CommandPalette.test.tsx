@@ -37,7 +37,7 @@ describe('CommandPalette', () => {
     setup()
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'orders' } })
     await screen.findByRole('option', { name: /orders-dlq/ })
-    await expectNoAxeViolations(document.body)
+    await expectNoAxeViolations(document.body, { isolatedComponent: true })
   })
 
   it('says it never searches message contents', () => {

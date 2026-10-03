@@ -45,7 +45,7 @@ describe('Approve and Decline', () => {
   it('has no accessibility violations (6.6)', async () => {
     open()
     await new Promise((r) => setTimeout(r, 150))
-    await expectNoAxeViolations(document.body)
+    await expectNoAxeViolations(document.body, { isolatedComponent: true })
   })
 
   it('when the safety checks cannot be read it says so and offers Try again, instead of showing none (6.1)', async () => {

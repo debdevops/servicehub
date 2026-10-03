@@ -27,7 +27,7 @@ const agents = [
 
 function renderPage(url = '/advanced/agents') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[url]}><AgentsPage /></MemoryRouter></QueryClientProvider>)
+  return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[url]}><main><AgentsPage /></main></MemoryRouter></QueryClientProvider>)
 }
 
 describe('the Agents page', () => {

@@ -24,7 +24,7 @@ const states = (o: Partial<Record<recovery.EntryState, number>>) =>
 
 function wrap(url = '/advanced') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[url]}><AdvancedOverviewPage /></MemoryRouter></QueryClientProvider>)
+  return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[url]}><main><AdvancedOverviewPage /></main></MemoryRouter></QueryClientProvider>)
 }
 
 describe('Advanced Overview', () => {

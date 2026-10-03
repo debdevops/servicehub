@@ -34,7 +34,7 @@ describe('Bulk Replay modal', () => {
     vi.mocked(bulk.previewBulk).mockResolvedValue(preview())
     renderModal()
     await new Promise((r) => setTimeout(r, 150))
-    await expectNoAxeViolations(document.body)
+    await expectNoAxeViolations(document.body, { isolatedComponent: true })
   })
 
   it('shows the preview first, sends nothing, and lists each held-back message with its reason and remedy', async () => {
