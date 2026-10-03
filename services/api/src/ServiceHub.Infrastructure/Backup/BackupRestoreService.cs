@@ -92,7 +92,15 @@ public sealed class BackupRestoreService : IBackupRestore
     }
 
     /// <inheritdoc />
-    public async Task<RestoreCheck> CheckAsync(string backupId, CancellationToken cancellationToken = default)
+    public Task<RestoreCheck> CheckAsync(string backupId, CancellationToken cancellationToken = default) =>
+        CheckCoreAsync(backupId, stageTo: null, cancellationToken);
+
+    /// <summary>
+    /// Runs every restore check on one private, checksum-verified copy of the snapshot, using the one manifest read at the start. When
+    /// <paramref name="stageTo"/> is given and every check passes, that very copy is moved there, so what is staged is exactly the bytes
+    /// that were checked — nothing is re-read from the backup folder afterwards, where it could have been swapped.
+    /// </summary>
+    private async Task<RestoreCheck> CheckCoreAsync(string backupId, string? stageTo, CancellationToken cancellationToken)
     {
         var checks = new List<RestoreCheckItem>();
         RestoreCheck Done() => new(backupId, checks.Count > 0 && checks.All(c => c.Passed), checks);
@@ -156,7 +164,13 @@ public sealed class BackupRestoreService : IBackupRestore
             if (!schemaOk) return Done();
 
             checks.Add(await VerifyChainsAsync(snapshot, cancellationToken).ConfigureAwait(false));
-            return Done();
+            var result = Done();
+            if (stageTo is not null && result.CanRestore)
+            {
+                File.Move(work, stageTo, overwrite: true);
+            }
+
+            return result;
         }
         finally
         {
@@ -167,14 +181,10 @@ public sealed class BackupRestoreService : IBackupRestore
     /// <inheritdoc />
     public async Task<RestoreCheck> StageAsync(string backupId, CancellationToken cancellationToken = default)
     {
-        var check = await CheckAsync(backupId, cancellationToken).ConfigureAwait(false);
+        var temp = Path.Combine(DataDir, PendingFileName + ".tmp");
+        var check = await CheckCoreAsync(backupId, temp, cancellationToken).ConfigureAwait(false);
         if (!check.CanRestore) return check;
 
-        var dir = BundlePath(backupId)!;
-        var manifest = ReadManifest(dir)!;
-        var temp = Path.Combine(DataDir, PendingFileName + ".tmp");
-        var source = SnapshotPath(dir, manifest) ?? throw new InvalidOperationException("The manifest names a file outside the backup folder.");
-        CopyVerified(source, temp, manifest.Sqlite.Sha256);
         File.Move(temp, Path.Combine(DataDir, PendingFileName), overwrite: true);
         await File.WriteAllTextAsync(Path.Combine(DataDir, PendingMarkerName),
             JsonSerializer.Serialize(new PendingRestore(backupId, _time.GetUtcNow()), Json), cancellationToken).ConfigureAwait(false);
