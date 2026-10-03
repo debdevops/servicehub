@@ -1,5 +1,6 @@
 import { within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { expect } from 'vitest'
 
 /** Pick a row in the app's `Select` dropdown: open it, then click the option whose value (or visible name) matches. */
 export async function choose(trigger: HTMLElement, valueOrName: string | RegExp) {

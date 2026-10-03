@@ -71,12 +71,24 @@ public sealed class BackupRestoreService : IBackupRestore
     /// anyone with write access to the backup directory can edit, so its file name is never joined to a path unchecked: an absolute path or
     /// a `..` would make the restore check read — and stage — some other SQLite file on the machine.
     /// </summary>
-    private static string? SnapshotPath(string bundleDir, BackupManifest manifest)
+    internal static string? SnapshotPath(string bundleDir, BackupManifest manifest)
     {
         var name = manifest.Sqlite.FileName;
-        return string.IsNullOrWhiteSpace(name) || name != Path.GetFileName(name) || name is "." or ".."
-            ? null
-            : Path.Combine(bundleDir, name);
+        if (string.IsNullOrWhiteSpace(name) || name != Path.GetFileName(name) || name is "." or "..")
+        {
+            return null;
+        }
+
+        // A lexically plain name can still be a symlink (or other reparse point) to a database elsewhere; File.Exists, hashing and
+        // File.Copy would all follow it. Neither the snapshot nor the bundle folder may be one.
+        var path = Path.Combine(bundleDir, name);
+        return IsLink(path) || IsLink(bundleDir) ? null : path;
+    }
+
+    private static bool IsLink(string path)
+    {
+        FileSystemInfo info = Directory.Exists(path) ? new DirectoryInfo(path) : new FileInfo(path);
+        return info.LinkTarget is not null || (info.Exists && info.Attributes.HasFlag(FileAttributes.ReparsePoint));
     }
 
     /// <inheritdoc />

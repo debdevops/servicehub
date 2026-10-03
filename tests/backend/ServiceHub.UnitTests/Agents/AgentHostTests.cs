@@ -138,6 +138,24 @@ public sealed class AgentHostTests
     }
 
     [Fact]
+    public async Task A_pause_set_while_cycles_are_being_recorded_is_never_lost()
+    {
+        var agent = new StubAgent(Descriptor("racy"), () => AgentCycleResult.Idle());
+        var registry = new AgentRegistry([agent]);
+        var run = DateTimeOffset.UtcNow;
+
+        for (var i = 0; i < 500; i++)
+        {
+            registry.SetPaused("racy", false);
+            var record = Task.Run(() => registry.RecordSuccess("racy", AgentCycleResult.Idle(), run));
+            var pause = Task.Run(() => registry.SetPaused("racy", true));
+            await Task.WhenAll(record, pause);
+
+            registry.StateOf("racy")!.IsPaused.Should().BeTrue("a pause that finished must survive a cycle that was recording at the same moment");
+        }
+    }
+
+    [Fact]
     public void Two_agents_cannot_share_an_id()
     {
         var a = new StubAgent(Descriptor("duplicate"), () => AgentCycleResult.Idle());
