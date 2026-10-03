@@ -71,16 +71,36 @@ public sealed class BackupRestoreService : IBackupRestore
     /// anyone with write access to the backup directory can edit, so its file name is never joined to a path unchecked: an absolute path or
     /// a `..` would make the restore check read — and stage — some other SQLite file on the machine.
     /// </summary>
-    private static string? SnapshotPath(string bundleDir, BackupManifest manifest)
+    internal static string? SnapshotPath(string bundleDir, BackupManifest manifest)
     {
         var name = manifest.Sqlite.FileName;
-        return string.IsNullOrWhiteSpace(name) || name != Path.GetFileName(name) || name is "." or ".."
-            ? null
-            : Path.Combine(bundleDir, name);
+        if (string.IsNullOrWhiteSpace(name) || name != Path.GetFileName(name) || name is "." or "..")
+        {
+            return null;
+        }
+
+        // A lexically plain name can still be a symlink (or other reparse point) to a database elsewhere; File.Exists, hashing and
+        // File.Copy would all follow it. Neither the snapshot nor the bundle folder may be one.
+        var path = Path.Combine(bundleDir, name);
+        return IsLink(path) || IsLink(bundleDir) ? null : path;
+    }
+
+    private static bool IsLink(string path)
+    {
+        FileSystemInfo info = Directory.Exists(path) ? new DirectoryInfo(path) : new FileInfo(path);
+        return info.LinkTarget is not null || (info.Exists && info.Attributes.HasFlag(FileAttributes.ReparsePoint));
     }
 
     /// <inheritdoc />
-    public async Task<RestoreCheck> CheckAsync(string backupId, CancellationToken cancellationToken = default)
+    public Task<RestoreCheck> CheckAsync(string backupId, CancellationToken cancellationToken = default) =>
+        CheckCoreAsync(backupId, stageTo: null, cancellationToken);
+
+    /// <summary>
+    /// Runs every restore check on one private, checksum-verified copy of the snapshot, using the one manifest read at the start. When
+    /// <paramref name="stageTo"/> is given and every check passes, that very copy is moved there, so what is staged is exactly the bytes
+    /// that were checked — nothing is re-read from the backup folder afterwards, where it could have been swapped.
+    /// </summary>
+    private async Task<RestoreCheck> CheckCoreAsync(string backupId, string? stageTo, CancellationToken cancellationToken)
     {
         var checks = new List<RestoreCheckItem>();
         RestoreCheck Done() => new(backupId, checks.Count > 0 && checks.All(c => c.Passed), checks);
@@ -100,45 +120,71 @@ public sealed class BackupRestoreService : IBackupRestore
             return Done();
         }
 
-        var intact = File.Exists(snapshot) && string.Equals(Sha256(snapshot), manifest.Sqlite.Sha256, StringComparison.OrdinalIgnoreCase);
+        // Every check runs on a private copy that was verified against the manifest's checksum while it was being copied, never on the
+        // shared path: that path can be swapped (e.g. for a link) between any two reads, so checking it in place proves nothing about
+        // the file that is later staged.
+        var work = Path.Combine(DataDir, $"restore-check-{Guid.NewGuid():N}.tmp");
+        var intact = false;
+        try
+        {
+            CopyVerified(snapshot, work, manifest.Sqlite.Sha256);
+            intact = true;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException or UnauthorizedAccessException)
+        {
+            // fall through: reported below as not intact
+        }
+
         checks.Add(new("The file is the one that was backed up", intact,
             intact ? "Its checksum matches the manifest." : "Its checksum does not match the manifest — it was changed or damaged after the backup."));
         if (!intact) return Done();
 
-        var integrity = await ScalarAsync(snapshot, "PRAGMA integrity_check;", cancellationToken).ConfigureAwait(false);
-        var sound = string.Equals(integrity, "ok", StringComparison.OrdinalIgnoreCase);
-        checks.Add(new("The database inside is sound", sound, sound ? "SQLite's integrity check passed." : $"SQLite's integrity check found: {integrity}"));
-        if (!sound) return Done();
+        try
+        {
+            snapshot = work;
 
-        var sameKey = string.Equals(manifest.EncryptionKeyFingerprint, _protector.GetKeyFingerprint(), StringComparison.Ordinal);
-        checks.Add(new("It was made with this server's encryption key", sameKey, sameKey
-            ? "The key fingerprints match, so its saved connections will open."
-            : "It was made with a different encryption key, so its saved connections could not be opened here. Restore it on the server that holds that key, or bring that key here first."));
+            var integrity = await ScalarAsync(snapshot, "PRAGMA integrity_check;", cancellationToken).ConfigureAwait(false);
+            var sound = string.Equals(integrity, "ok", StringComparison.OrdinalIgnoreCase);
+            checks.Add(new("The database inside is sound", sound, sound ? "SQLite's integrity check passed." : $"SQLite's integrity check found: {integrity}"));
+            if (!sound) return Done();
 
-        var known = _db.Database.GetMigrations().ToHashSet(StringComparer.Ordinal);
-        var applied = await MigrationsAsync(snapshot, cancellationToken).ConfigureAwait(false);
-        var unknown = applied?.Where(m => !known.Contains(m)).ToList();
-        var schemaOk = applied is { Count: > 0 } && unknown is { Count: 0 };
-        checks.Add(new("Its schema is one this version knows", schemaOk,
-            applied is null or { Count: 0 } ? "It holds no ServiceHub 4.1.0 schema history — it is not a ServiceHub 4.1.0 database."
-            : schemaOk ? $"{applied.Count} of this build's {known.Count} schema steps; any missing ones are applied at start."
-            : $"It was made by a newer ServiceHub ({string.Join(", ", unknown!)}). Restore it with that version or later."));
-        if (!schemaOk) return Done();
+            var sameKey = string.Equals(manifest.EncryptionKeyFingerprint, _protector.GetKeyFingerprint(), StringComparison.Ordinal);
+            checks.Add(new("It was made with this server's encryption key", sameKey, sameKey
+                ? "The key fingerprints match, so its saved connections will open."
+                : "It was made with a different encryption key, so its saved connections could not be opened here. Restore it on the server that holds that key, or bring that key here first."));
 
-        checks.Add(await VerifyChainsAsync(snapshot, cancellationToken).ConfigureAwait(false));
-        return Done();
+            var known = _db.Database.GetMigrations().ToHashSet(StringComparer.Ordinal);
+            var applied = await MigrationsAsync(snapshot, cancellationToken).ConfigureAwait(false);
+            var unknown = applied?.Where(m => !known.Contains(m)).ToList();
+            var schemaOk = applied is { Count: > 0 } && unknown is { Count: 0 };
+            checks.Add(new("Its schema is one this version knows", schemaOk,
+                applied is null or { Count: 0 } ? "It holds no ServiceHub 4.1.0 schema history — it is not a ServiceHub 4.1.0 database."
+                : schemaOk ? $"{applied.Count} of this build's {known.Count} schema steps; any missing ones are applied at start."
+                : $"It was made by a newer ServiceHub ({string.Join(", ", unknown!)}). Restore it with that version or later."));
+            if (!schemaOk) return Done();
+
+            checks.Add(await VerifyChainsAsync(snapshot, cancellationToken).ConfigureAwait(false));
+            var result = Done();
+            if (stageTo is not null && result.CanRestore)
+            {
+                File.Move(work, stageTo, overwrite: true);
+            }
+
+            return result;
+        }
+        finally
+        {
+            File.Delete(work);
+        }
     }
 
     /// <inheritdoc />
     public async Task<RestoreCheck> StageAsync(string backupId, CancellationToken cancellationToken = default)
     {
-        var check = await CheckAsync(backupId, cancellationToken).ConfigureAwait(false);
+        var temp = Path.Combine(DataDir, PendingFileName + ".tmp");
+        var check = await CheckCoreAsync(backupId, temp, cancellationToken).ConfigureAwait(false);
         if (!check.CanRestore) return check;
 
-        var dir = BundlePath(backupId)!;
-        var manifest = ReadManifest(dir)!;
-        var temp = Path.Combine(DataDir, PendingFileName + ".tmp");
-        File.Copy(SnapshotPath(dir, manifest) ?? throw new InvalidOperationException("The manifest names a file outside the backup folder."), temp, overwrite: true);
         File.Move(temp, Path.Combine(DataDir, PendingFileName), overwrite: true);
         await File.WriteAllTextAsync(Path.Combine(DataDir, PendingMarkerName),
             JsonSerializer.Serialize(new PendingRestore(backupId, _time.GetUtcNow()), Json), cancellationToken).ConfigureAwait(false);
@@ -240,6 +286,43 @@ public sealed class BackupRestoreService : IBackupRestore
         catch (JsonException)
         {
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Copies the snapshot through ONE open handle, hashing the bytes as they are staged, and keeps the copy only if they are the bytes the
+    /// manifest checksummed. The link check and the earlier checksum read are path-based, so the file could be swapped for a link between
+    /// them and this copy; reading and hashing the same handle means whatever is staged is exactly what the manifest vouches for.
+    /// </summary>
+    internal static void CopyVerified(string source, string destination, string expectedSha256)
+    {
+        try
+        {
+            using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (var output = new FileStream(destination, FileMode.Create, FileAccess.Write, FileShare.None))
+            using (var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
+            {
+                // Re-check on the open handle's path: a link swapped in before the open is caught here, and the hash below catches the rest.
+                if (IsLink(source)) throw new InvalidOperationException("The backup's database file is a link, so it is not trusted.");
+
+                var buffer = new byte[81920];
+                int read;
+                while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    hash.AppendData(buffer, 0, read);
+                    output.Write(buffer, 0, read);
+                }
+
+                if (!string.Equals(Convert.ToHexStringLower(hash.GetHashAndReset()), expectedSha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException("The backup's database file changed while it was being staged, so nothing was restored.");
+                }
+            }
+        }
+        catch
+        {
+            File.Delete(destination);
+            throw;
         }
     }
 

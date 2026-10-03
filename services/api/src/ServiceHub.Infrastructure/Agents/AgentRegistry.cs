@@ -29,6 +29,10 @@ public sealed class AgentRegistry : IAgentRegistry
     private readonly ConcurrentDictionary<string, byte> _dormant = new(StringComparer.Ordinal);
     private readonly IReadOnlyList<string> _order;
 
+    // Every state change is read-modify-write on an immutable record. Without this gate a cycle finishing (RecordSuccess/Failure) could
+    // write back a stale copy and silently undo a pause set by the controller in between.
+    private readonly object _stateGate = new();
+
     /// <summary>Creates the registry from every agent registered in the container.</summary>
     /// <exception cref="InvalidOperationException">Two agents declare the same id.</exception>
     public AgentRegistry(IEnumerable<IAgent> agents)
@@ -96,26 +100,29 @@ public sealed class AgentRegistry : IAgentRegistry
     /// </summary>
     internal void SetDormant(string agentId, bool dormant)
     {
-        if (!_states.TryGetValue(agentId, out var current))
+        lock (_stateGate)
         {
-            return;
-        }
+            if (!_states.TryGetValue(agentId, out var current))
+            {
+                return;
+            }
 
-        if (!dormant)
-        {
-            _dormant.TryRemove(agentId, out _);
-            return;
-        }
+            if (!dormant)
+            {
+                _dormant.TryRemove(agentId, out _);
+                return;
+            }
 
-        _dormant[agentId] = 0;
-        _states[agentId] = current with
-        {
-            Health = current.IsPaused ? AgentHealth.Paused : AgentHealth.Unknown,
-            LastRunUtc = null,
-            LastResult = null,
-            LastFailure = null,
-            ConsecutiveFailures = 0,
-        };
+            _dormant[agentId] = 0;
+            _states[agentId] = current with
+            {
+                Health = current.IsPaused ? AgentHealth.Paused : AgentHealth.Unknown,
+                LastRunUtc = null,
+                LastResult = null,
+                LastFailure = null,
+                ConsecutiveFailures = 0,
+            };
+        }
     }
 
     /// <inheritdoc />
@@ -125,55 +132,64 @@ public sealed class AgentRegistry : IAgentRegistry
     /// <inheritdoc />
     public bool SetPaused(string agentId, bool paused)
     {
-        if (!_states.TryGetValue(agentId, out var current))
+        lock (_stateGate)
         {
-            return false;
+            if (!_states.TryGetValue(agentId, out var current))
+            {
+                return false;
+            }
+
+            // A paused agent is Paused; an unpaused one goes back to Unknown until its next cycle
+            // reports something real. Restoring a remembered "Healthy" would be claiming knowledge
+            // about a cycle that has not run.
+            var health = paused
+                ? AgentHealth.Paused
+                : current.LastResult is null ? AgentHealth.Unknown : HealthFrom(current.LastResult, current.ConsecutiveFailures);
+
+            _states[agentId] = current with { IsPaused = paused, Health = health };
+            return true;
         }
-
-        // A paused agent is Paused; an unpaused one goes back to Unknown until its next cycle
-        // reports something real. Restoring a remembered "Healthy" would be claiming knowledge
-        // about a cycle that has not run.
-        var health = paused
-            ? AgentHealth.Paused
-            : current.LastResult is null ? AgentHealth.Unknown : HealthFrom(current.LastResult, current.ConsecutiveFailures);
-
-        _states[agentId] = current with { IsPaused = paused, Health = health };
-        return true;
     }
 
     internal void RecordSuccess(string agentId, AgentCycleResult result, DateTimeOffset runUtc)
     {
-        if (!_states.TryGetValue(agentId, out var current))
+        lock (_stateGate)
         {
-            return;
-        }
+            if (!_states.TryGetValue(agentId, out var current))
+            {
+                return;
+            }
 
-        Remember(agentId, new AgentCycleRecord(runUtc, result, null));
-        _states[agentId] = current with
-        {
-            Health = current.IsPaused ? AgentHealth.Paused : HealthFrom(result, 0),
-            LastRunUtc = runUtc,
-            LastResult = result,
-            LastFailure = null,
-            ConsecutiveFailures = 0
-        };
+            Remember(agentId, new AgentCycleRecord(runUtc, result, null));
+            _states[agentId] = current with
+            {
+                Health = current.IsPaused ? AgentHealth.Paused : HealthFrom(result, 0),
+                LastRunUtc = runUtc,
+                LastResult = result,
+                LastFailure = null,
+                ConsecutiveFailures = 0
+            };
+        }
     }
 
     internal void RecordFailure(string agentId, string reason, DateTimeOffset runUtc)
     {
-        if (!_states.TryGetValue(agentId, out var current))
+        lock (_stateGate)
         {
-            return;
-        }
+            if (!_states.TryGetValue(agentId, out var current))
+            {
+                return;
+            }
 
-        Remember(agentId, new AgentCycleRecord(runUtc, null, reason));
-        _states[agentId] = current with
-        {
-            Health = current.IsPaused ? AgentHealth.Paused : AgentHealth.Failing,
-            LastRunUtc = runUtc,
-            LastFailure = reason,
-            ConsecutiveFailures = current.ConsecutiveFailures + 1
-        };
+            Remember(agentId, new AgentCycleRecord(runUtc, null, reason));
+            _states[agentId] = current with
+            {
+                Health = current.IsPaused ? AgentHealth.Paused : AgentHealth.Failing,
+                LastRunUtc = runUtc,
+                LastFailure = reason,
+                ConsecutiveFailures = current.ConsecutiveFailures + 1
+            };
+        }
     }
 
     private static AgentHealth HealthFrom(AgentCycleResult result, int consecutiveFailures) =>
