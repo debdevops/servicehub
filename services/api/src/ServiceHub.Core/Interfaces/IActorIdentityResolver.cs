@@ -37,6 +37,8 @@ public interface IActorIdentityResolver
 /// </param>
 /// <param name="ApiKeyName">The name of the API key presented, when one was.</param>
 /// <param name="Scopes">The scopes granted to that key at request time.</param>
+/// <param name="PrincipalId">The identity provider's stable principal id, when a validated one exists. Authorization uses it; the
+/// name above is display only.</param>
 /// <param name="SessionId">
 /// A stable-per-browser-session identifier, used only for the honest fallback: <i>"approved from
 /// this browser session"</i>.
@@ -45,4 +47,5 @@ public sealed record ActorContext(
     string? ClaimsName = null,
     string? ApiKeyName = null,
     string? Scopes = null,
-    string? SessionId = null);
+    string? SessionId = null,
+    string? PrincipalId = null);

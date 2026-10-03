@@ -265,7 +265,7 @@ export function ByCell({ actor, at }: { actor: LedgerEntry['actor']; at: string 
     : actor.kind === 'apiKey' ? 'API key' : 'User initiated'
   const Icon = autonomous ? Bot : actor.kind === 'apiKey' ? KeyRound : UserRound
   const name = autonomous
-    ? `ServiceHub · ${actor.identity.replace(/^System:/, '').replace(/^AutoReplay:/, 'AutoReplay:')}`
+    ? `ServiceHub · ${actor.identity.replace(/^System:/, '')}`
     : actor.kind === 'apiKey' ? actor.identity.replace(/^ApiKey:/, '') : actor.isSession ? 'This browser session' : actor.label
   return (
     <span className="flex items-start gap-2" data-actor-kind={actor.kind} title={`${name} · ${formatWhen(at, new Date())}`}>

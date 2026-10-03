@@ -45,6 +45,16 @@ public sealed class ActorIdentityResolverTests
     }
 
     [Fact]
+    public void Renaming_an_account_does_not_change_the_authorization_identity()
+    {
+        var before = _resolver.Resolve(new ActorContext(ClaimsName: "alice@example.com", PrincipalId: "oidc:sub-1"));
+        var after = _resolver.Resolve(new ActorContext(ClaimsName: "alice.new@example.com", PrincipalId: "oidc:sub-1"));
+
+        after.Identity.Should().NotBe(before.Identity); // the display label follows the provider
+        after.AuthorizationIdentity.Should().Be("oidc:sub-1").And.Be(before.AuthorizationIdentity);
+    }
+
+    [Fact]
     public void An_api_key_is_named_and_visibly_a_credential()
     {
         var actor = _resolver.Resolve(new ActorContext(ApiKeyName: "ops-bot", Scopes: "dlq:read"));

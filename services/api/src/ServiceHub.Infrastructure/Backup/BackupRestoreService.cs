@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Core.Models.Backup;
+using ServiceHub.Core.Security;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.RecoveryLedger;
 
@@ -141,7 +142,7 @@ public sealed class BackupRestoreService : IBackupRestore
         File.Move(temp, Path.Combine(DataDir, PendingFileName), overwrite: true);
         await File.WriteAllTextAsync(Path.Combine(DataDir, PendingMarkerName),
             JsonSerializer.Serialize(new PendingRestore(backupId, _time.GetUtcNow()), Json), cancellationToken).ConfigureAwait(false);
-        _logger.LogWarning("Backup {BackupId} staged for restore at the next start", backupId);
+        _logger.LogWarning("Backup {BackupId} staged for restore at the next start", LogRedactor.SanitiseForLog(backupId));
         return check;
     }
 
@@ -223,7 +224,7 @@ public sealed class BackupRestoreService : IBackupRestore
         }
         catch (Exception ex) when (ex is SqliteException or InvalidOperationException or FormatException)
         {
-            _logger.LogWarning(ex, "Could not read the ledger in backup {Snapshot}", snapshot);
+            _logger.LogWarning(ex, "Could not read the ledger in backup {Snapshot}", LogRedactor.SanitiseForLog(snapshot));
             return new(Name, false, "Its ledger could not be read, so it cannot be verified.");
         }
     }

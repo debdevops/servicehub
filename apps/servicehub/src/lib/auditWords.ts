@@ -20,4 +20,5 @@ export const auditActionWords: Readonly<Record<string, string>> = {
   'Rule.Toggle': 'Switched an Auto Replay rule',
   'Rule.Delete': 'Deleted an Auto Replay rule',
   'Rule.Generate': 'Generated Auto Replay rules',
+  'DlqObserver.Configure': 'Set up the dead-letter observer',
 }

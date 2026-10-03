@@ -79,7 +79,7 @@ public abstract class ApiControllerBase : ControllerBase
         GovernanceRole required, Guid? namespaceId, PillarKind? pillar, string whatFor, CancellationToken cancellationToken)
     {
         var evaluator = HttpContext.RequestServices.GetRequiredService<IGovernanceAccessEvaluator>();
-        var identity = Actor.Identity;
+        var identity = Actor.AuthorizationIdentity;
         var verdict = await evaluator.EvaluateAsync(OwnerId, identity, required, namespaceId, pillar, cancellationToken);
         if (verdict.IsSuccess)
         {

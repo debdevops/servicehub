@@ -40,7 +40,7 @@ public sealed class ActorIdentityResolver : IActorIdentityResolver
 
         if (!string.IsNullOrWhiteSpace(context.ClaimsName))
         {
-            return new RecoveryActor(context.ClaimsName.Trim(), RecoveryActorKind.User, context.Scopes);
+            return new RecoveryActor(context.ClaimsName.Trim(), RecoveryActorKind.User, context.Scopes, context.PrincipalId);
         }
 
         // Nothing configured — a valid, documented deployment, not an error. Say only what is known.

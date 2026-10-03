@@ -6,7 +6,7 @@ import { auditActionWords } from '@/lib/auditWords'
 const emitted = [
   'Namespace.Connect', 'Namespace.Remove', 'Replay.Message', 'DeadLetters.Look', 'Agent.Pause', 'Agent.Resume', 'Purge.Message',
   'Message.Send', 'Backup.Create', 'Backup.Restore', 'Rule.Create', 'Rule.Update', 'Rule.Toggle', 'Rule.Delete', 'Rule.Generate',
-  'Governance.Grant', 'Governance.Revoke',
+  'Governance.Grant', 'Governance.Revoke', 'DlqObserver.Configure',
 ]
 
 describe('auditActionWords', () => {

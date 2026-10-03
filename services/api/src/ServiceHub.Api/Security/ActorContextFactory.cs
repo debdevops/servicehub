@@ -22,8 +22,13 @@ public static partial class ActorContextFactory
             ClaimsName: Item(context, "ClaimsName") ?? context.User.Identity?.Name,
             ApiKeyName: Item(context, "ApiKeyName"),
             Scopes: Item(context, "ApiKeyScopes"),
-            SessionId: SessionId(context));
+            SessionId: SessionId(context),
+            PrincipalId: PrincipalId(context));
     }
+
+    /// <summary>The stable id the identity provider vouched for (OwnerId is built from it), never a name the user can change.</summary>
+    private static string? PrincipalId(HttpContext context) =>
+        Item(context, "AuthMethod") is "Oidc" or "EasyAuth" ? Item(context, "OwnerId") : null;
 
     private static string? Item(HttpContext context, string key) =>
         context.Items.TryGetValue(key, out var value) && value is string text && text.Length > 0 ? text : null;

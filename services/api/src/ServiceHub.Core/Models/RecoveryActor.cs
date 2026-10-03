@@ -11,7 +11,16 @@ namespace ServiceHub.Core.Models;
 /// <c>user@example.com</c>, or <c>Rule:42@drain-poison-queue</c>.</param>
 /// <param name="Kind">The category of actor.</param>
 /// <param name="Scopes">Granted scopes at decision time, for API key actors.</param>
-public sealed record RecoveryActor(string Identity, RecoveryActorKind Kind, string? Scopes = null);
+/// <param name="PrincipalId">The identity provider's stable, validated principal id (<c>oidc:{sub}</c>, <c>entra:{oid}</c>), when
+/// there is one. <see cref="Identity"/> is then only a display label the user can change at the provider.</param>
+public sealed record RecoveryActor(string Identity, RecoveryActorKind Kind, string? Scopes = null, string? PrincipalId = null)
+{
+    /// <summary>
+    /// What Governance grants are matched against. A signed-in person is their stable principal id, never their changeable name:
+    /// renaming an account must not shed a Viewer or revoked grant and land on the tenant's fallback Admin grant.
+    /// </summary>
+    public string AuthorizationIdentity => PrincipalId ?? Identity;
+}
 
 /// <summary>How an actor is described to a person.</summary>
 public static class RecoveryActorLabel
