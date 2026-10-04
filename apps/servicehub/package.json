@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "build:demo": "tsc -b && VITE_DEMO_ONLY=true VITE_BASE=${VITE_BASE:-/servicehub/} vite build --outDir dist-demo --emptyOutDir && cp dist-demo/index.html dist-demo/404.html",
     "lint": "eslint . && npm run lint:tests",
     "lint:tests": "cd ../../tests && eslint -c eslint.config.mjs web e2e",
     "typecheck": "tsc -b && tsc -b tsconfig.tests.json tsconfig.e2e.json",

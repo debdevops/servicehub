@@ -281,7 +281,7 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
   const test = useMutation({ mutationFn: () => testRule({ provider, reason: r.reason ?? undefined, entityName: r.entityName ?? undefined, signatureHash: r.signatureHash ?? undefined }) })
 
   return (
-    <li className={`rounded-xl border p-4 ${tripped ? 'border-[#fecaca] bg-[#fef2f2]' : 'border-[var(--color-border)] bg-[var(--color-surface)]'}`}>
+    <li className={`rounded-xl border p-4 ${tripped ? 'border-[#fecaca] bg-[#fff5f5]' : 'border-[var(--color-border)] bg-[var(--color-surface)]'}`}>
       <div className="flex items-start gap-3">
         <button
           type="button"

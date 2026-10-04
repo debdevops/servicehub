@@ -77,8 +77,11 @@ export const routes: RouteObject[] = [
     ],
   },
   // Published demo URLs (unit 6.5). Outside the layout: they only switch the session into demo mode and open Home.
+  { path: '/demo', element: <DemoEntry /> },
   { path: '/demo/:provider', element: <DemoEntry /> },
   { path: '/demo/:provider/*', element: <DemoEntry /> },
 ]
 
-export const router = createBrowserRouter(routes)
+// Served at the origin root (ADR-0014 D3). Only the public demo page is built for another path, and then the router follows it.
+const basename = import.meta.env.BASE_URL.replace(/\/$/, '')
+export const router = createBrowserRouter(routes, basename ? { basename } : undefined)

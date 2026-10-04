@@ -2,7 +2,23 @@
 
 ## [Unreleased]
 
-*(Nothing yet — changes after 4.1.0 go here.)*
+### Added
+
+- **A demo that works.** `/demo` now opens all three clouds together (`/demo/azure`, `/demo/aws` and `/demo/gcp` still open one). It is one made-up
+  world of three invented companies — six namespaces, about 750 dead letters, 14 days of history and 300+ ledger entries — telling the same five
+  failure stories on every cloud. **Actions now work on the made-up data**: replay, bulk replay, purge, approve and decline, Auto Replay rules,
+  pause, emergency stop, Look now. Each says *"Demo — nothing was sent"*, and a replay is checked after about 30 seconds instead of hours. Nothing
+  leaves the browser. **Reset demo** in the banner starts over.
+- **The demo stays honest.** Each cloud behaves as it really does: Azure replays end *verified* or *came back*; AWS and Google end *verification
+  required* and their rules ask a person. Every number is counted from the one world, so a tile, its list and the ledger always agree.
+- **A demo-only build** (`npm run build:demo -w apps/servicehub`) and a GitHub Pages workflow (`.github/workflows/demo-pages.yml`) for a public demo
+  page. It has no server and connects to nothing. Not switched on: Pages must be enabled by the repository owner.
+
+### Fixed
+
+- **Two low-contrast texts**, found once the demo filled screens that used to be empty: the count on the selected tab (Failure Signatures and
+  every pill tab bar), and the grey text on an Auto Replay rule that has stopped itself.
+- **The demo's "needs attention" list** let one busy cloud push another cloud's items off the first page.
 
 ## [4.1.0] — 2026-10-04
 

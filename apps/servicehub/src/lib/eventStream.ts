@@ -23,6 +23,8 @@ type Listener = (event: StreamEvent) => void
 const URL = '/api/v1/events/stream'
 
 let source: EventSource | null = null
+let demoWanted = false
+let stopDemo: (() => void) | null = null
 let status: StreamStatus = 'offline'
 const listeners = new Set<Listener>()
 const statusListeners = new Set<() => void>()
@@ -35,8 +37,17 @@ function setStatus(next: StreamStatus) {
 
 /** Opens the stream if it is not open. Safe to call again. Without EventSource (a test, an old browser) it stays offline. */
 export function startEventStream(): void {
-  // A demo has no server to stream from; its data does not change underneath anyone.
-  if (source || typeof EventSource === 'undefined' || isDemo()) return
+  // A demo has no server to stream from: its own clock raises the same events instead, so a screen updates as the real one does.
+  if (isDemo()) {
+    if (demoWanted) return
+    demoWanted = true
+    setStatus('live')
+    void import('./demo/world/clock').then((clock) => {
+      if (demoWanted && !stopDemo) stopDemo = clock.startDemoClock((event) => listeners.forEach((l) => l(event)))
+    })
+    return
+  }
+  if (source || typeof EventSource === 'undefined') return
   setStatus('connecting')
   source = new EventSource(URL)
   source.onopen = () => setStatus('live')
@@ -53,6 +64,9 @@ export function startEventStream(): void {
 }
 
 export function stopEventStream(): void {
+  demoWanted = false
+  stopDemo?.()
+  stopDemo = null
   source?.close()
   source = null
   setStatus('offline')
