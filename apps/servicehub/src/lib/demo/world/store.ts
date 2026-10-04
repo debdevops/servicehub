@@ -29,15 +29,21 @@ export function getWorld(): World {
 /** Writes the world to sessionStorage a moment later, so a burst of changes is one write. A full or blocked store only means a refresh starts over. */
 export function save(): void {
   if (saving) return
-  saving = setTimeout(() => {
-    saving = null
-    try {
-      if (world) window.sessionStorage.setItem(KEY, JSON.stringify(world))
-    } catch {
-      /* the demo still works in memory */
-    }
-  }, 250)
+  saving = setTimeout(flush, 250)
 }
+
+function flush(): void {
+  if (saving) clearTimeout(saving)
+  saving = null
+  try {
+    if (world) window.sessionStorage.setItem(KEY, JSON.stringify(world))
+  } catch {
+    /* the demo still works in memory */
+  }
+}
+
+// A change made just before the page is left (a reload, a link to another address) must not be lost to the short delay above.
+if (typeof window !== 'undefined') window.addEventListener('pagehide', () => { if (saving) flush() })
 
 /** Throws away everything the visitor did and starts from the seed again. */
 export function resetWorld(now: number = Date.now()): World {

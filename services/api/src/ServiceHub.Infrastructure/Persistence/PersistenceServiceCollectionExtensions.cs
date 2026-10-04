@@ -71,6 +71,7 @@ public static class PersistenceServiceCollectionExtensions
         services.TryAddScoped<IRecoveryEligibilityGate, RecoveryLedger.RecoveryEligibilityGate>();
         services.TryAddScoped<IRecoveryTrustScoringService, RecoveryLedger.RecoveryTrustScoringService>();
         services.TryAddScoped<IDlqObserverAttestationService, DlqObserver.DlqObserverAttestationService>();
+        services.TryAddSingleton<DlqObserver.DeadLetterViewTracker>();
         services.TryAddScoped<IFleetOverviewService, Fleet.FleetOverviewService>();
         services.TryAddScoped<IBulkOperationService, BulkOperations.BulkOperationService>();
         services.TryAddScoped<IRulesService, Rules.RulesService>();

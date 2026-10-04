@@ -14,6 +14,25 @@
 - **A demo-only build** (`npm run build:demo -w apps/servicehub`) and a GitHub Pages workflow (`.github/workflows/demo-pages.yml`) for a public demo
   page. It has no server and connects to nothing. Not switched on: Pages must be enabled by the repository owner.
 
+- **Show me around.** The demo has a six-stop guided tour that drives the real screens: a failed message, why it failed, replaying it, whether it
+  stayed fixed, and the Agent. It starts once on a first visit, can be skipped at any time, and is started again from the demo banner. What it says
+  about a cloud comes from that cloud's real capability.
+- **Open the trace.** A message that carries a trace ID (`traceparent`, Service Bus's `Diagnostic-Id`, AWS's X-Ray header) now shows it in its
+  details, with a link to your own tracing tool once you set its address in Settings → Preferences. The address is kept in your browser; nothing is
+  stored on the server and nothing is sent.
+- **Deploy in your own cloud** (`infra/`). One Terraform module each for Azure, AWS and Google Cloud, with `deploy.sh` (macOS, Linux) and
+  `deploy.ps1` (Windows): a private virtual machine, no port open to the internet, the encryption key made in the cloud's secret store, daily disk
+  snapshots, backups copied to private storage, and a destroy that keeps your data unless you ask for a purge. On AWS and Google Cloud ServiceHub
+  uses the machine's own identity, limited to the queues you name. **Not yet run against a real account** — see `infra/README.md`.
+
+- **Confirming a fix on AWS and Google Cloud (off until you switch it on; not yet run against a real cloud).** Where a cloud cannot prove a
+  replay stayed fixed, ServiceHub can now be given a complete view of that cloud's dead-letter queue: on Google Cloud a subscription of its own
+  on the dead-letter topic, on AWS a scan of the whole dead-letter queue when a replay's watch window ends. A view either saw everything or
+  the replay still reads *verification required* — there is no confidence score. A new agent, **Fix Confirmer**, keeps each view checked.
+  Switched on per namespace through `PUT /api/v1/namespaces/{id}/dlq-observer`; there is no screen for it yet.
+- **An MCP server** (`tools/mcp/`): a read-only way for an AI assistant to ask ServiceHub about dead letters, failures and replays. It can
+  only send a GET to ten fixed addresses; there is no tool that replays, purges or approves. One file, no dependencies.
+
 ### Fixed
 
 - **Two low-contrast texts**, found once the demo filled screens that used to be empty: the count on the selected tab (Failure Signatures and

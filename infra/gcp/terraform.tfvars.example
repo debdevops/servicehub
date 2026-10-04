@@ -1,0 +1,18 @@
+# Copy to terraform.tfvars and fill in. No secret belongs in this file.
+project_id = "your-project-id"
+region     = "europe-west1"
+zone       = "europe-west1-b"
+
+# The subscriptions ServiceHub may read: each subscription AND its dead-letter subscription.
+messaging_resources = ["orders-subscription", "orders-topic-dlq-subscription"]
+# The topics a replayed message is published back to.
+replay_topics = ["orders-topic"]
+
+# Optional
+# allow_replay            = true   # false = read-only
+# name                    = "servicehub"
+# servicehub_version      = "4.1.0"
+# vm_size                 = "e2-medium"
+# data_disk_gb            = 32
+# snapshot_retention_days = 7
+# backup_retention_days   = 30

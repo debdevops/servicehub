@@ -121,13 +121,18 @@ export function bodyOf(d: Pick<DemoDeadLetter, 'id' | 'story' | 'namespaceId' | 
 /** The short reading of a message shown in lists. Made on read, like the body, so the stored world stays small. */
 export function gistOf(d: DemoDeadLetter, provider: CloudProvider): MessageGist {
   const preview = bodyOf(d, provider).replace(/\s+/g, ' ')
-  return { preview: preview.length > 140 ? `${preview.slice(0, 140)}…` : preview, contentType: d.story === 'poison' ? 'text/html' : 'application/json', correlationId: d.correlationId, sessionId: null, properties: propertiesOf(d) }
+  // A list row shows the few properties worth a glance; the trace id is in the message's details.
+  const properties: Record<string, string> = { ...propertiesOf(d) }
+  delete properties.traceparent
+  return { preview: preview.length > 140 ? `${preview.slice(0, 140)}…` : preview, contentType: d.story === 'poison' ? 'text/html' : 'application/json', correlationId: d.correlationId, sessionId: null, properties }
 }
 
 /** The application properties a dead letter carries, as the API stores them. */
 export function propertiesOf(d: Pick<DemoDeadLetter, 'id' | 'story'>): Record<string, string> {
   const carried = stories[d.story].carried
-  return { source: ['checkout', 'mobile-app', 'partner-api'][d.id % 3], schemaVersion: d.story === 'schema' ? '3' : '2', ...(carried ? { errorType: carried } : {}) }
+  // Every message carries the W3C trace it belongs to, as an instrumented producer would stamp it.
+  const traceparent = `00-${hashOf(`trace-${d.id}`)}${hashOf(`trace-b-${d.id}`)}-${hashOf(`span-${d.id}`)}-01`
+  return { source: ['checkout', 'mobile-app', 'partner-api'][d.id % 3], schemaVersion: d.story === 'schema' ? '3' : '2', ...(carried ? { errorType: carried } : {}), traceparent }
 }
 
 function agents(now: number): Agent[] {

@@ -5,6 +5,7 @@ import { Navigate, useParams } from 'react-router-dom'
 import { storeProvider } from '../provider/providerScope'
 import { DEMO_ONLY, demoProviders, enterDemo, isDemo, leaveDemo, resetDemo } from '../../lib/demo/state'
 import type { CloudProvider } from '../../lib/api/namespaces'
+import { startTour } from '../demo/tour'
 
 /** Where "Get ServiceHub" goes on the public demo page, which has no real app behind it to leave to. */
 const REPOSITORY = 'https://github.com/debdevops/servicehub'
@@ -42,7 +43,8 @@ export function DemoBanner() {
       <span className="flex flex-wrap items-center gap-2 font-semibold">
         <a href={at('/demo')} className={link}>All clouds</a>
         {demoProviders.map((p) => <a key={p} href={at(`/demo/${p}`)} className={link}>{cloudNames[p]}</a>)}
-        <button type="button" onClick={() => { void resetDemo().then(() => client.invalidateQueries()) }} className={`ml-2 ${button}`}>Reset demo</button>
+        <button type="button" onClick={startTour} className={`ml-2 ${button}`}>Show me around</button>
+        <button type="button" onClick={() => { void resetDemo().then(() => client.invalidateQueries()) }} className={button}>Reset demo</button>
         {DEMO_ONLY
           ? <a href={REPOSITORY} className={button}>Get ServiceHub</a>
           : <button type="button" onClick={() => { leaveDemo(); window.location.assign(at('/')) }} className={button}>Leave the demo</button>}

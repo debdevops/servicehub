@@ -323,21 +323,34 @@ public sealed class NamespacesApiTests
 
         (await host.Client.SendAsync(PutObserver(id, new { enabled = true, observerReference = "t", dlqEntityName = "q" }, intent: null)))
             .StatusCode.Should().Be(HttpStatusCode.PreconditionRequired);
-        (await host.Client.SendAsync(PutObserver(id, new { enabled = true, dlqEntityName = "q" })))
-            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await host.Client.SendAsync(PutObserver(id, new { enabled = true, observerReference = "t", dlqEntityName = "q", stalenessBoundMinutes = 1 })))
             .StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
+        // ADR-0018: on this cloud ServiceHub reads the dead-letter queue itself, so nothing has to be named — and whatever is
+        // sent as "where the observer writes" is not kept, because nothing is deployed for it.
         var saved = await host.Client.SendAsync(PutObserver(id, new { enabled = true, observerReference = "obs-table", dlqEntityName = "orders-dlq" }));
         saved.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await host.Client.SendAsync(PutObserver(id, new { enabled = true }))).StatusCode.Should().Be(HttpStatusCode.OK);
         var after = await Json(await host.Client.GetAsync($"/api/v1/namespaces/{id}/dlq-observer"));
 
         after.GetProperty("enabled").GetBoolean().Should().BeTrue();
-        after.GetProperty("observerReference").GetString().Should().Be("obs-table");
-        after.GetProperty("dlqEntityName").GetString().Should().Be("orders-dlq");
-        after.GetProperty("live").GetBoolean().Should().BeFalse("only the observer's own log, seen by the canary, can make it live");
+        after.GetProperty("observerReference").GetString().Should().Be("whole-queue-scan");
+        after.GetProperty("live").GetBoolean().Should().BeFalse("turning it on confirms nothing: only a check that really saw the queue can");
         after.GetProperty("lastConfirmedAt").ValueKind.Should().Be(JsonValueKind.Null);
         after.GetProperty("status").GetString().Should().Contain("not confirming anything");
+    }
+
+    [Fact]
+    public async Task Checking_the_dead_letter_view_needs_the_intent_header_and_something_set_up()
+    {
+        using var host = Host();
+        var id = await ConnectAws(host, "orders-queue");
+
+        (await host.Client.PostAsync($"/api/v1/namespaces/{id}/dlq-observer/check", null)).StatusCode.Should().Be(HttpStatusCode.PreconditionRequired);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/namespaces/{id}/dlq-observer/check");
+        request.Headers.Add("X-ServiceHub-Intent", "configure-dlq-observer");
+        (await host.Client.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.Conflict, "nothing was switched on for this cloud, so there is nothing to check");
     }
 
     [Fact]

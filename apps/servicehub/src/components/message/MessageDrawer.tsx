@@ -1,4 +1,6 @@
 import { columnHelp, type ColumnHelp } from '../../content/columns'
+import { usePreferences } from '../../lib/preferences'
+import { findTrace, traceLink } from '../../lib/trace'
 import { describeEntity } from '../../lib/entities'
 import { InfoTip } from '../ui/InfoTip'
 import { sectionHelp } from '../../content/sections'
@@ -425,6 +427,9 @@ function Row({ label, help, children }: { label: string; help?: ColumnHelp; chil
 function Details({ detail, now }: { detail: DeadLetterDetail; now: Date }) {
   const m = detail.item
   const ownLooks = useCountIncludesOurLooks(m.namespaceId)
+  const trace = findTrace(detail.applicationPropertiesJson)
+  const { traceLink: template } = usePreferences()
+  const link = trace ? traceLink(template, trace.traceId) : null
   return (
     <section aria-label="Details">
       <h3 className="mb-1 flex items-center text-sm font-semibold">Details<InfoTip help={sectionHelp.message.details} /></h3>
@@ -436,6 +441,18 @@ function Details({ detail, now }: { detail: DeadLetterDetail; now: Date }) {
         <Row label="Queue or topic" help={columnHelp.drawer.where}><EntityCell size="sm" entityName={m.entityName} entityType={m.entityType} topicName={m.topicName} /></Row>
         <Row label="Enqueued" help={columnHelp.drawer.enqueued}>{formatWhen(m.enqueuedTimeUtc, now)}</Row>
         <Row label="Tries" help={columnHelp.drawer.tries}>{m.deliveryCount > 0 ? <>{m.deliveryCount}{ownLooks && <span className="text-[var(--color-text-muted)]"> ({OWN_LOOKS_NOTE})</span>}</> : '—'}</Row>
+        {trace && (
+          <Row label="Trace">
+            <span className="font-mono text-[13px]">{trace.traceId}</span>{' '}
+            <CopyIcon value={trace.traceId} label="Copy trace ID" />
+            <span className="mt-0.5 block break-normal">
+              {link
+                ? <a href={link} target="_blank" rel="noopener noreferrer" className="font-medium text-[var(--color-primary-700)] hover:underline">Open the trace ↗</a>
+                : <Link to="?modal=settings" className="text-[var(--color-primary-700)] hover:underline">Add your tracing tool in Settings to open it</Link>}
+              <span className="text-[var(--color-text-muted)]"> · read from “{trace.from}”</span>
+            </span>
+          </Row>
+        )}
       </dl>
     </section>
   )

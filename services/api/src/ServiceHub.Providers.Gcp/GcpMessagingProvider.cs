@@ -236,6 +236,12 @@ public sealed class GcpMessagingProvider : ICloudMessagingProvider
                 };
                 await foreach (var sub in subscriberClient.ListSubscriptionsAsync(subRequest).WithCancellation(token))
                 {
+                    // ServiceHub's own subscription on a dead-letter topic (ADR-0018) is plumbing, not one of the customer's queues.
+                    if (DlqObserver.PubSubObserverSubscriptionCheck.IsObserver(sub.SubscriptionName.SubscriptionId))
+                    {
+                        continue;
+                    }
+
                     collected.Add(new CloudEntity
                     {
                         // Mirrors the "{topicName}/{subscriptionName}" convention documented on

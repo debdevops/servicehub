@@ -1,0 +1,8 @@
+# Terraform's working files and state. State holds the encryption key — never commit it.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+# Your own answers (names of your subscription, project, queues).
+terraform.tfvars

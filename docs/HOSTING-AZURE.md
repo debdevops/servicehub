@@ -10,6 +10,9 @@
 
 If you only want to try ServiceHub, use the [local setup](LOCAL-SETUP.md) instead — it needs no Azure account.
 
+> **Prefer one command?** [`infra/`](../infra/README.md) does the virtual-machine option below for you — on Azure, AWS or
+> Google Cloud — and can remove it again. This page remains the step-by-step version, and covers App Service.
+
 ---
 
 ## 1. Choose how to host it

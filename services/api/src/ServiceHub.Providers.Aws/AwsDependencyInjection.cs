@@ -40,6 +40,10 @@ public static class AwsDependencyInjection
         // Reads the DLQ observer's log (DynamoDB) so a canary's arrival can be confirmed (unit 4.2, ADR-0011).
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IDlqObserverLogReader, DlqObserver.DynamoDbObserverLogReader>());
 
+        // ADR-0018: a whole view of the dead-letter queue. One scanner for the process, so scans of one queue never overlap.
+        services.TryAddSingleton<DlqObserver.SqsWholeQueueScanner>(_ => new DlqObserver.SqsWholeQueueScanner());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IDeadLetterReturnCheck, DlqObserver.SqsWholeQueueCheck>());
+
         // Register the AWS health check so the /health/dependencies endpoint validates SQS
         // connectivity. Tagged "dependencies", not "ready" — an unreachable AWS namespace is an
         // external broker outage and must never flip /health/ready to Unhealthy.

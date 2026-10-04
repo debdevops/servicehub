@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars and fill in. No secret belongs in this file.
+region = "eu-west-1"
+
+# The queues ServiceHub may read and replay: each queue AND its dead-letter queue.
+messaging_resources = [
+  "arn:aws:sqs:eu-west-1:111122223333:orders",
+  "arn:aws:sqs:eu-west-1:111122223333:orders-dlq",
+]
+
+# Optional
+# allow_replay            = true   # false = read-only
+# name                    = "servicehub"
+# servicehub_version      = "4.1.0"
+# vm_size                 = "t3.medium"
+# data_disk_gb            = 32
+# snapshot_retention_days = 7
+# backup_retention_days   = 30

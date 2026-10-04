@@ -853,7 +853,15 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
             .ListTopicSubscriptionsAsync(TopicName.Parse(deadLetterTopic))
             .WithCancellation(ct))
         {
-            return (SubscriptionName.Parse(subName).SubscriptionId, sourceTopicId);
+            // ServiceHub's own subscription on this topic (ADR-0018) is emptied as it is read: it must never be taken for
+            // the dead-letter subscription that replay and Look now read from.
+            var id = SubscriptionName.Parse(subName).SubscriptionId;
+            if (DlqObserver.PubSubObserverSubscriptionCheck.IsObserver(id))
+            {
+                continue;
+            }
+
+            return (id, sourceTopicId);
         }
 
         return (null, sourceTopicId);
