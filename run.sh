@@ -20,6 +20,9 @@ cd "$ROOT"
 # the default is tried first and the next free port is used when another program already has it.
 API_PORT="${SERVICEHUB_API_PORT:-5153}";  API_PORT_FIXED=0; [ -n "${SERVICEHUB_API_PORT:-}" ] && API_PORT_FIXED=1
 WEB_PORT="${SERVICEHUB_WEB_PORT:-3000}";  WEB_PORT_FIXED=0; [ -n "${SERVICEHUB_WEB_PORT:-}" ] && WEB_PORT_FIXED=1
+valid_port() { case "$1" in ""|*[!0-9]*) return 1 ;; esac; [ "${#1}" -le 5 ] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]; }
+valid_port "$API_PORT" || { echo "✖ SERVICEHUB_API_PORT='${API_PORT}' is not a valid port (use a number from 1 to 65535)." >&2; exit 1; }
+valid_port "$WEB_PORT" || { echo "✖ SERVICEHUB_WEB_PORT='${WEB_PORT}' is not a valid port (use a number from 1 to 65535)." >&2; exit 1; }
 READY_TIMEOUT="${SERVICEHUB_READY_TIMEOUT:-180}"   # seconds to wait for startup (after the build)
 AUTO_INSTALL="${SERVICEHUB_AUTO_INSTALL:-1}"       # 0 = never download anything, just report what is missing
 TOOLS_DIR="${SERVICEHUB_TOOLS_DIR:-${HOME:-$ROOT}/.servicehub/tools}"   # where a missing .NET / Node is installed
@@ -101,7 +104,8 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 
-scratch() { [ -n "$TMP_DIR" ] || TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/servicehub-run.XXXXXX")"; echo "$TMP_DIR"; }
+# Must be called directly (not inside $(...)): a subshell would set TMP_DIR where cleanup() never sees it.
+init_scratch() { [ -n "$TMP_DIR" ] || TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/servicehub-run.XXXXXX")" || die "Could not create a temporary folder."; }
 
 # ── Platform ────────────────────────────────────────────────────────────────────────────────────
 OS="$(uname -s 2>/dev/null || echo unknown)"
@@ -139,10 +143,16 @@ offline_help() {
       Node.js 22   https://nodejs.org
 EOF
 }
-sha256_of() {
-  if have sha256sum; then sha256sum "$1" | cut -d' ' -f1
-  elif have shasum; then shasum -a 256 "$1" | cut -d' ' -f1
-  else echo ""; fi
+hash_of() {   # hash_of 256|512 FILE — empty output when no hashing tool exists
+  local bits="$1" f="$2"
+  if have "sha${bits}sum"; then "sha${bits}sum" "$f" | cut -d' ' -f1
+  elif have shasum; then shasum -a "$bits" "$f" | cut -d' ' -f1
+  elif have openssl; then openssl dgst "-sha${bits}" "$f" | sed 's/.*= *//'
+  fi
+}
+need_hasher() {
+  [ -n "$(hash_of 256 /dev/null)" ] && [ -n "$(hash_of 512 /dev/null)" ] \
+    || die "Cannot verify downloads: none of sha256sum/sha512sum, shasum or openssl is installed. Install one (Debian/Ubuntu: sudo apt install coreutils openssl), or install .NET 10 and Node.js yourself and re-run."
 }
 check_disk() {   # check_disk DIR NEEDED_MB WHAT — warn (never block) when space is tight
   local dir="$1" need="$2" what="$3" free_kb
@@ -167,18 +177,27 @@ use_local_dotnet() {
   export PATH="$TOOLS_DIR/dotnet:$PATH"
 }
 install_dotnet() {
-  need_downloader
+  need_downloader; need_hasher
   have tar || die "tar is required to unpack the .NET SDK. Install it (e.g. sudo apt install tar) and re-run."
   [ "$ARCH" != "unsupported" ] || die "This CPU ($(uname -m)) has no official .NET 10 SDK download. Install .NET 10 yourself: https://dotnet.microsoft.com/download/dotnet/10.0"
   step "Installing the .NET 10 SDK into $TOOLS_DIR/dotnet (about 250 MB; your system is not touched)…"
   mkdir -p "$TOOLS_DIR"; check_disk "$TOOLS_DIR" 1500 "the .NET SDK"
-  local tmp; tmp="$(scratch)"
-  fetch "https://dot.net/v1/dotnet-install.sh" "$tmp/dotnet-install.sh" || { offline_help; die "Could not download the official .NET installer."; }
-  # Official installer from Microsoft; it verifies the download's checksum itself. Into a side folder first, so an
-  # interrupted install never leaves a half-built SDK behind.
-  rm -rf "$TOOLS_DIR/dotnet.partial"
-  bash "$tmp/dotnet-install.sh" --channel 10.0 --install-dir "$TOOLS_DIR/dotnet.partial" --no-path \
-    || { rm -rf "$TOOLS_DIR/dotnet.partial"; offline_help; die "The .NET SDK install failed (output above)."; }
+  init_scratch; local tmp="$TMP_DIR" rid="osx-$ARCH" meta line want file got
+  [ "$PLAT" = "linux" ] && { rid="linux-$ARCH"; [ "$IS_MUSL" = 1 ] && rid="linux-musl-$ARCH"; }
+  # No downloaded script is ever executed. Microsoft publishes the SHA-512 of the latest 10.0 SDK for each platform
+  # next to the archive (its first line names the exact file); we download that archive and unpack it only if it matches.
+  meta="https://aka.ms/dotnet/10.0/dotnet-sdk-${rid}.tar.gz"
+  fetch "${meta}.sha512" "$tmp/sdk.sha512" || { offline_help; die "Could not fetch the .NET SDK checksum from Microsoft."; }
+  line="$(head -1 "$tmp/sdk.sha512" | tr -d '\r')"; want="${line%% *}"; file="${line##* }"
+  case "$file" in dotnet-sdk-10.0.*-${rid}.tar.gz) ;; *) die "Unexpected .NET SDK checksum file from Microsoft ('${file}'). Nothing was installed.";; esac
+  case "$want" in *[!0-9a-f]*|"") die "Malformed .NET SDK checksum from Microsoft. Nothing was installed." ;; esac
+  local ver; ver="$(echo "$file" | sed -E 's/^dotnet-sdk-(10\.0\.[0-9]+)-.*/\1/')"
+  fetch "https://builds.dotnet.microsoft.com/dotnet/Sdk/${ver}/${file}" "$tmp/$file" || { offline_help; die "Could not download $file."; }
+  got="$(hash_of 512 "$tmp/$file")"
+  [ "$got" = "$want" ] || die "Checksum mismatch for $file (expected $want, got $got). The download is corrupt or tampered with; nothing was installed. Re-run to retry."
+  # Unpack into a side folder first, so an interrupted install never leaves a half-built SDK behind.
+  rm -rf "$TOOLS_DIR/dotnet.partial"; mkdir -p "$TOOLS_DIR/dotnet.partial"
+  tar -xzf "$tmp/$file" -C "$TOOLS_DIR/dotnet.partial" || { rm -rf "$TOOLS_DIR/dotnet.partial"; die "Could not unpack $file."; }
   rm -rf "$TOOLS_DIR/dotnet"; mv "$TOOLS_DIR/dotnet.partial" "$TOOLS_DIR/dotnet"
   use_local_dotnet
   dotnet_ok || die "The .NET SDK was installed but does not satisfy services/api/global.json (needs 10.0.x)."
@@ -229,22 +248,21 @@ use_local_node() {
   export PATH="$TOOLS_DIR/node/bin:$PATH"
 }
 install_node() {
-  need_downloader
+  need_downloader; need_hasher
   have tar || die "tar is required to unpack Node.js. Install it (e.g. sudo apt install tar) and re-run."
   [ "$ARCH" != "unsupported" ] || die "This CPU ($(uname -m)) has no official Node.js download. Install Node 22 LTS yourself: https://nodejs.org"
   [ "$IS_MUSL" = 0 ] || die "This Linux uses musl (Alpine). Official Node builds do not run on it. Install Node with: apk add nodejs npm"
   step "Installing Node.js ${NODE_LTS_LINE%.x} LTS into $TOOLS_DIR/node (about 40 MB; your system is not touched)…"
   mkdir -p "$TOOLS_DIR"; check_disk "$TOOLS_DIR" 600 "Node.js"
-  local tmp base line sum file got; tmp="$(scratch)"
+  init_scratch; local tmp="$TMP_DIR" base line sum file got
   base="https://nodejs.org/dist/latest-${NODE_LTS_LINE}"
   fetch "$base/SHASUMS256.txt" "$tmp/SHASUMS256.txt" || { offline_help; die "Could not reach nodejs.org."; }
   line="$(grep -E " node-v[0-9.]+-${PLAT}-${ARCH}\.tar\.gz\$" "$tmp/SHASUMS256.txt" | head -1 || true)"
   [ -n "$line" ] || die "nodejs.org lists no Node build for ${PLAT}-${ARCH}. Install Node 22 LTS yourself: https://nodejs.org"
   sum="${line%% *}"; file="${line##* }"
   fetch "$base/$file" "$tmp/$file" || { offline_help; die "Could not download $file."; }
-  got="$(sha256_of "$tmp/$file")"
-  if [ -z "$got" ]; then warn "No sha256sum/shasum on this machine; skipping checksum verification of the Node download."
-  elif [ "$got" != "$sum" ]; then die "Checksum mismatch for $file (expected $sum, got $got). The download is corrupt or tampered with; nothing was installed. Re-run to retry."; fi
+  got="$(hash_of 256 "$tmp/$file")"
+  if [ "$got" != "$sum" ]; then die "Checksum mismatch for $file (expected $sum, got $got). The download is corrupt or tampered with; nothing was installed. Re-run to retry."; fi
   mkdir -p "$tmp/nodex"
   tar -xzf "$tmp/$file" -C "$tmp/nodex" --strip-components=1 || die "Could not unpack $file."
   rm -rf "$TOOLS_DIR/node"; mv "$tmp/nodex" "$TOOLS_DIR/node"

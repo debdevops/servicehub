@@ -29,7 +29,7 @@ For track A install the tools *inside* WSL, not on the Windows side. For track B
 
 **Nothing installed in advance.** `./run.sh` looks for the tools below and downloads any that are missing or the wrong version into
 `~/.servicehub/tools` (override with `SERVICEHUB_TOOLS_DIR`). It needs no `sudo` and changes nothing system-wide; to undo it, delete that folder.
-Node.js is checksum-verified; the .NET SDK comes from Microsoft's official installer, which verifies its own download.
+Both downloads are verified before use: the Node archive against the SHA-256 published on nodejs.org, the .NET SDK against the SHA-512 Microsoft publishes for it. A mismatch installs nothing. No downloaded script is ever executed. (This needs `sha256sum`, `shasum` or `openssl`, and `sha512sum`, `shasum` or `openssl`; present on macOS and nearly every Linux.)
 
 | Tool | Version | Check with | If missing |
 |---|---|---|---|
@@ -82,7 +82,8 @@ Other modes:
 ```
 
 If a previous ServiceHub from this folder is still running on the port, `run.sh` stops *that* one and carries on. If something *else* holds the
-port it refuses and tells you which process — it never kills a program it does not recognise.
+port, it never kills it: with the default ports it moves to the next free port and tells you; if you pinned the port with `SERVICEHUB_API_PORT` /
+`SERVICEHUB_WEB_PORT` it refuses and tells you which process holds it. A port value that is not a number from 1 to 65535 is rejected up front.
 
 ## 3. Check it works
 
@@ -145,9 +146,10 @@ See [tests/README.md](../tests/README.md) and [CONTRIBUTING.md](../CONTRIBUTING.
 |---|---|---|
 | `✖ The .NET 10 SDK is not installed` / `does not satisfy …` (with `--no-install`) | No .NET 10 SDK and automatic install is off | Drop `--no-install`, or install .NET 10 (link above). `dotnet --list-sdks` shows what you have |
 | `If this is a network problem (offline, behind a proxy…)` | The tool, npm or NuGet download failed | Export `HTTPS_PROXY`, or install .NET and Node yourself and run `./run.sh --no-install` |
-| `Checksum mismatch for node-…` | A corrupt download; nothing was installed | Run `./run.sh` again |
+| `Checksum mismatch for node-…` / `dotnet-sdk-…` | A corrupt or tampered download; nothing was installed | Run `./run.sh` again |
 | `libicu is not installed … invariant-culture mode` (Linux) | .NET wants ICU for culture data | Harmless; to fix: `sudo apt install libicu-dev` (or `sudo dnf install libicu`) |
 | `The API did not build` | A compile error (only if you changed code) or a package problem | Read the error above it; otherwise open an issue with that output |
+| `Cannot verify downloads: none of sha256sum, shasum or openssl…` | Downloads are never used unverified | Install one of them, or install .NET and Node yourself |
 | `Neither curl nor wget is installed` | Minimal Linux image | `sudo apt install curl` (or `dnf` / `apk add curl`) |
 | `This is a Windows shell` | Git Bash / PowerShell | Use a WSL 2 Ubuntu terminal and run it there |
 | `✖ Port 5153 is held by something else (pid …)` | You pinned the port with `SERVICEHUB_API_PORT`, and another program, not a previous ServiceHub, uses it | Stop it, or pick another port (or unset the variable to let `run.sh` choose) |
