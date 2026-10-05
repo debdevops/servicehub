@@ -15,20 +15,21 @@ No cloud account is needed to look around: both options open a built-in demo wit
 
 For macOS, Linux, or a WSL 2 terminal on Windows.
 
-| You need | Version | Check with |
-|---|---|---|
-| [.NET SDK](https://dotnet.microsoft.com/download/dotnet/10.0) | 10.0.302 or a later 10.0.x (an 11.x-only machine will not work; `services/api/global.json` pins 10.0) | `dotnet --version` |
-| [Node.js](https://nodejs.org) (npm comes with it) | 22 LTS recommended, 20.19 minimum | `node --version` |
-| [git](https://git-scm.com), `curl`, `lsof` | any | `git --version` |
+**You do not need to install anything first.** `./run.sh` checks your machine and, if the .NET 10 SDK or Node.js is missing (or the wrong version),
+downloads it into `~/.servicehub/tools` for you: no `sudo`, nothing system-wide changes. All it needs is `bash`, `curl` (or `wget`), `tar` and an internet connection.
 
 ```bash
 git clone https://github.com/debdevops/servicehub.git
 cd servicehub
-./run.sh --check    # optional: checks your machine and the ports, starts nothing
-./run.sh            # installs the web dependencies the first time, then starts the API (:5153) and the web app (:3000)
+./run.sh --check    # optional: reports what is ready and what would be installed; starts and installs nothing
+./run.sh            # installs what is missing, builds, then starts the API (:5153) and the web app (:3000)
 ```
 
-The first start compiles the API and takes a minute or two. When you see **✔ ServiceHub is ready**, open **<http://localhost:3000>** and choose
+Already have the tools? It uses yours: [.NET SDK](https://dotnet.microsoft.com/download/dotnet/10.0) 10.0.302 or a later 10.0.x (`dotnet --version`; an 11.x-only
+machine will not do) and [Node.js](https://nodejs.org) 22.12+ or 20.19+ (`node --version`). Offline or locked down? Install those two yourself and run
+`./run.sh --no-install`.
+
+The first start downloads packages and compiles the API, which takes a few minutes (longer if it also installs the tools). When you see **✔ ServiceHub is ready**, open **<http://localhost:3000>** and choose
 **Try it with sample data** (or go straight to <http://localhost:3000/demo/azure>). Press **Ctrl-C** to stop. Then use **Add a cloud** (sidebar) to connect your own.
 
 This mode runs in `Development` with a throw-away encryption key, so it is for trying and developing. Your data lives in `services/api/src/ServiceHub.Api/data/`.
