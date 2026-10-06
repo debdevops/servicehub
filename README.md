@@ -1,11 +1,21 @@
 # ServiceHub
 
-**A self-hosted tool for recovering stuck messages in Azure Service Bus, AWS SQS/SNS and GCP Pub/Sub.**
+**Self-hosted dead-letter investigation and safe replay. Azure Service Bus first; AWS SQS/SNS and GCP Pub/Sub with limits.**
 
-Your queue says "4,218 dead-lettered messages". ServiceHub shows which ones, why each failed, and what a replay would do *before* anything is
-sent back — then keeps a local record you can export and verify offline. It runs as one process with one SQLite file. Message content never
-leaves your network: ServiceHub talks only to your clouds and, if you add one, to a notification channel (Slack, Teams or a webhook), which gets
-queue names and failure reasons, never message bodies.
+Your queue says "4,218 dead-lettered messages". A count alone does not explain the failure pattern or make a replay safe. ServiceHub shows which
+messages, why each failed, and what a replay would do *before* anything is sent back, then keeps a local record you can export and verify offline.
+It runs as one process with one SQLite file. Your clouds are the only place it connects, plus a notification channel (Slack, Teams or a webhook) if
+you add one, which gets queue names and failure reasons, never message bodies. Stored locally, though: the first 500 characters of each dead-letter
+body, its properties and a hash are kept **unencrypted** in the SQLite file ([SECURITY.md](SECURITY.md)), so treat the data folder like the queue.
+
+**Know the limits** before you try it:
+
+- **Production namespaces are read-only for replay.** Replay is refused on any namespace you mark as Production, and 4.1.0 has no way to override that. Investigate there; replay in dev and staging.
+- **Azure is the verified path.** Only Azure can confirm a replayed message stayed fixed. AWS and GCP read "verification required", and GCP often records no failure reason.
+- **Anyone who can reach its port is the admin.** Keep it on `localhost`.
+- **No upgrade from 4.0.0.** 4.1.0 is a from-scratch rewrite with a fresh database and cannot open a 4.0.0 file. Run it beside 4.0.0 and connect your clouds again. 4.0.0 lives, frozen, in [`archive/servicehub-4.0.0/`](archive/servicehub-4.0.0/). See the [changelog](CHANGELOG.md).
+
+Fastest look, no cloud account: pick an install option below and choose **Try it with sample data** (or open <http://localhost:3000/demo/azure>). A captioned walkthrough video per cloud is [further down](#watch-it-work--all-of-simple-mode-start-to-finish).
 
 ## Quick start
 
@@ -59,11 +69,6 @@ docker compose up --build                                       # → http://loc
 ServiceHub **refuses to start in Production without an encryption key**, because the key protects every cloud connection string it stores. Losing the
 key makes them unreadable, so back it up in a secret manager. If you reach it by any name other than `localhost`, it answers `400` until you list that name
 in `AllowedHosts` (only `/health` answers on any name); the setting replaces the default, so keep `localhost` in it: `-e "AllowedHosts=localhost;your.host.name"`.
-
-**Know the limits:** replay is refused on any namespace you mark as Production, and 4.1.0 has no way to override that · AWS and GCP cannot confirm a replay stayed fixed, so they read "verification required" · anyone who can reach its port is the admin, so keep it on `localhost`.
-
-> **Status:** this is **ServiceHub 4.1.0**, a from-scratch rewrite. **There is no upgrade path from 4.0.0** — it starts with a fresh database and cannot open a 4.0.0 file; run it beside 4.0.0 and connect your clouds again.
-> 4.0.0 lives, frozen, in [`archive/servicehub-4.0.0/`](archive/servicehub-4.0.0/). See the [changelog](CHANGELOG.md).
 
 ![Home: what needs you, how each cloud is doing, and the ServiceHub Agent](docs/screenshots/01-home.png)
 

@@ -655,7 +655,7 @@ export const awsGuide: Guide = {
         },
         {
          "n": 4,
-         "text": "Replay All Messages — opens a preview of everything shown. Nothing is sent until you confirm the preview."
+         "text": "Replay All Messages — opens a preview of every message still stuck in the cloud and namespace you are viewing. It ignores the filters, time window and search here. Nothing is sent until you confirm the preview."
         },
         {
          "n": 5,

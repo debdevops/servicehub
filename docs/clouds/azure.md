@@ -306,7 +306,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 1. Showing — Stuck now, or messages that have since left the queue.
 2. Time window — only messages set aside in this period.
 3. Search — by message ID, queue, reason or error text.
-4. Replay All Messages — opens a preview of everything shown. Nothing is sent until you confirm the preview.
+4. Replay All Messages — opens a preview of every message still stuck in the cloud and namespace you are viewing. It ignores the filters, time window and search here. Nothing is sent until you confirm the preview.
 5. Refresh — reads the queue again. On Azure this is free. The ⓘ beside it says when it was last read.
 6. Selection — tick rows to act on several; this line shows how many.
 7. Replay selected — opens the same preview for just the ticked messages.
