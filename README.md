@@ -17,9 +17,17 @@ body, its properties and a hash are kept **unencrypted** in the SQLite file ([SE
 
 Fastest look, no cloud account: pick an install option below and choose **Try it with sample data** (or open <http://localhost:3000/demo/azure>). A captioned walkthrough video per cloud is [further down](#watch-it-work--all-of-simple-mode-start-to-finish).
 
-## Quick start
+## Try it in your browser — nothing to install
 
-No cloud account is needed to look around: both options open a built-in demo with made-up data. Pick one.
+**<https://debdevops.github.io/servicehub/>** opens a live demo of ServiceHub with made-up data across Azure, AWS and GCP. Replay a failed message,
+see whether it stayed fixed, watch Auto Replay stop and ask a person. Take the six-stop **Show me around** tour, or click anywhere.
+
+It runs entirely in your browser: there is no server behind it, it connects to no cloud, and nothing you do leaves the page. Actions say
+*"Demo — nothing was sent"*. To use ServiceHub on your own queues, run it yourself (below); your data then stays on your machine.
+
+## Run it yourself
+
+No cloud account is needed to look around: both options open the same built-in demo with made-up data. Pick one.
 
 ### Option 1. Clone it and run it (no Docker)
 
