@@ -7,9 +7,17 @@ sent back — then keeps a local record you can export and verify offline. It ru
 leaves your network: ServiceHub talks only to your clouds and, if you add one, to a notification channel (Slack, Teams or a webhook), which gets
 queue names and failure reasons, never message bodies.
 
-## Quick start
+## Try it in your browser — nothing to install
 
-No cloud account is needed to look around: both options open a built-in demo with made-up data. Pick one.
+**<https://debdevops.github.io/servicehub/>** opens a live demo of ServiceHub with made-up data across Azure, AWS and GCP. Replay a failed message,
+see whether it stayed fixed, watch Auto Replay stop and ask a person. Take the six-stop **Show me around** tour, or click anywhere.
+
+It runs entirely in your browser: there is no server behind it, it connects to no cloud, and nothing you do leaves the page. Actions say
+*"Demo — nothing was sent"*. To use ServiceHub on your own queues, run it yourself (below); your data then stays on your machine.
+
+## Run it yourself
+
+No cloud account is needed to look around: both options open the same built-in demo with made-up data. Pick one.
 
 ### Option 1. Clone it and run it (no Docker)
 
