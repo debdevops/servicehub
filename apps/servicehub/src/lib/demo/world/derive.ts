@@ -138,9 +138,24 @@ export function matchesOf(w: World, rule: Pick<DemoRule, 'provider' | 'signature
   })
 }
 
-/** Whether Auto Replay may act on a rule by itself: the cloud must be able to prove a fix, and the failure must have earned it. */
+/** The real guard's numbers (RecentResultsGuardGate): look at the last 10 verified results; 2 bad ones hand the failure to a person. */
+export const RECENT = { window: 10, maxBad: 2 } as const
+
+/**
+ * Whether a failure's most recent verified replays are mixed — even a failure that earned replaying alone is handed back to a person
+ * then. Counted, like everything in the demo, from the ledger entries the world holds.
+ */
+export function recentlyMixed(w: World, signatureHash: string): boolean {
+  const latest = w.entries
+    .filter((e) => e.kind === 'Replay' && e.signatureHash === signatureHash && (e.state === 'Recovered' || e.state === 'Returned' || e.state === 'ExecutionFailed'))
+    .sort((a, b) => (b.closedAt ?? b.begunAt).localeCompare(a.closedAt ?? a.begunAt))
+    .slice(0, RECENT.window)
+  return latest.filter((e) => e.state !== 'Recovered').length >= RECENT.maxBad
+}
+
+/** Whether Auto Replay may act on a rule by itself: the cloud must be able to prove a fix, the failure must have earned it, and its latest results must hold. */
 export function mayActAlone(w: World, rule: DemoRule): boolean {
-  return rule.enabled && !!rule.signatureHash && trustOf(w, rule.signatureHash, rule.provider).level !== 'approve'
+  return rule.enabled && !!rule.signatureHash && trustOf(w, rule.signatureHash, rule.provider).level !== 'approve' && !recentlyMixed(w, rule.signatureHash)
 }
 
 /** The messages a rule is holding back and asking a person about — everything it matches that it may not replay alone. */
@@ -149,7 +164,10 @@ export function heldBy(w: World, rule: DemoRule): DemoDeadLetter[] {
   return matchesOf(w, rule).filter((d) => !w.declined.includes(d.id))
 }
 
-export function holdReason(rule: Pick<DemoRule, "provider">): { code: string; reason: string } {
+export function holdReason(w: World, rule: Pick<DemoRule, 'provider' | 'signatureHash'>): { code: string; reason: string } {
+  if (proves(rule.provider) && rule.signatureHash && trustOf(w, rule.signatureHash, rule.provider).level !== 'approve' && recentlyMixed(w, rule.signatureHash)) {
+    return { code: 'SIGNATURE_RECENT_RESULTS_MIXED', reason: 'The Agent stopped and asked: some of the latest replays of this kind of failure did not hold.' }
+  }
   return proves(rule.provider)
     ? { code: 'AUTONOMY_GRANT_INSUFFICIENT', reason: 'The Agent stopped and asked: this kind of failure has not yet earned replaying on its own.' }
     : { code: 'PROVIDER_CANNOT_VERIFY_ABSENCE', reason: `The Agent stopped and asked: ${{ azure: 'Azure', aws: 'AWS', gcp: 'Google Cloud' }[rule.provider]} can’t prove a replayed message stayed fixed, so a person decides.` }
@@ -163,7 +181,7 @@ export function toRule(w: World, rule: DemoRule): Rule {
   return {
     id: rule.id, name: rule.name, provider: rule.provider, reason: rule.reason, entityName: rule.entityName, signatureHash: rule.signatureHash, maxPerHour: rule.maxPerHour, waitSeconds: rule.waitSeconds, backOff: rule.backOff,
     enabled: rule.enabled, disabledReason: rule.disabledReason, disabledDetail: rule.disabledDetail, updatedAt: rule.updatedAt,
-    askedCount: held.length, askedIsLowerBound: false, lastAskedReason: held.length ? holdReason(rule).code : null,
+    askedCount: held.length, askedIsLowerBound: false, lastAskedReason: held.length ? holdReason(w, rule).code : null,
     replayed: mine.length, lastReplayedAt: lastReplayed, verifiedOutcomes: mine.filter((e) => e.state === 'Recovered' || e.state === 'Returned').length, stayedFixed,
     sampleSize: BREAKER.sample, successFloor: BREAKER.floor,
   }
@@ -174,7 +192,7 @@ export function pendingOf(w: World, scope: Scope & { reason?: string }): Pending
   const items: PendingWorkItem[] = []
   const seen = new Set<number>()
   for (const rule of w.rules) {
-    const { code, reason } = holdReason(rule)
+    const { code, reason } = holdReason(w, rule)
     for (const d of heldBy(w, rule)) {
       if (seen.has(d.id)) continue // two rules naming the same message still ask once
       seen.add(d.id)

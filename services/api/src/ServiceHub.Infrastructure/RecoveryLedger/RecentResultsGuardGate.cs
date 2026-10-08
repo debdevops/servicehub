@@ -68,8 +68,8 @@ public sealed class RecentResultsGuardGate : IRecoveryEligibilityGate
         try
         {
             var latest = await _db.RecoveryLedgerEntries.AsNoTracking()
-                .Where(e => e.OwnerId == request.OwnerId && e.SignatureHashSnapshot == request.SignatureHash
-                    && e.ClosedAt != null
+                .ForSignature(_db, request.OwnerId, request.SignatureHash)
+                .Where(e => e.ClosedAt != null
                     && (e.Disposition == RecoveryDisposition.Recovered || e.Disposition == RecoveryDisposition.Returned
                         || e.Disposition == RecoveryDisposition.Failed))
                 .Join(_db.RecoveryOperations.AsNoTracking().Where(o => o.Kind == request.ActionKind), e => e.OperationId, o => o.Id, (e, _) => e)

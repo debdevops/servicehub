@@ -13,7 +13,7 @@ export interface Rule {
   readonly backOff: boolean
   readonly enabled: boolean
   /** `CircuitBreaker` when it stopped itself, `Person` when someone turned it off. */
-  readonly disabledReason: 'CircuitBreaker' | 'Person' | null
+  readonly disabledReason: 'CircuitBreaker' | 'Person' | 'SignatureSplit' | null
   readonly disabledDetail: string | null
   readonly updatedAt: string | null
   /** How many matching messages the safety checks are holding for a person right now. */

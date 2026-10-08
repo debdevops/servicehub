@@ -33,7 +33,7 @@ export const helpAnswers: readonly HelpAnswer[] = [
   },
   {
     id: 'auto-replay', group: 'Everyday', question: 'Let ServiceHub retry something on its own',
-    answer: 'Open Auto Replay and create a rule for a kind of failure. A rule only acts once that failure has 10 fixes proven to have held at 95% or better, on a cloud that can prove it, and never in Production. Until then it asks you, in the bell. It switches itself off if fewer than half of its replays stay fixed.',
+    answer: 'Open Auto Replay and create a rule for a kind of failure. A rule only acts once that failure has 10 fixes proven to have held at 95% or better, on a cloud that can prove it, and never in Production. Until then it asks you, in the bell. It switches itself off if fewer than half of its replays stay fixed. Even after a failure has earned it, a rule stops and asks you if 2 of that failure\u2019s last 10 replays did not hold; it carries on by itself once newer replays hold.',
     link: { label: 'Open Auto Replay', href: '?panel=rules' },
   },
   {

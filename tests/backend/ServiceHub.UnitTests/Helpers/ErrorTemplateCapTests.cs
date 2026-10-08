@@ -50,4 +50,24 @@ public sealed class ErrorTemplateCapTests
     [Fact]
     public void The_default_is_twenty()
         => ErrorTemplateCap.DefaultMax.Should().Be(20);
+
+    [Fact]
+    public void AssignAll_gives_each_message_what_Apply_would_have_given_it_on_arrival()
+    {
+        var arrivals = new[] { "a", "b", "", "a", "c", "d", "b", "e", "d" };
+        var expected = new List<string>();
+        var known = new List<string>();
+        foreach (var t in arrivals)
+        {
+            var capped = ErrorTemplateCap.Apply(known, t, 3);
+            expected.Add(capped);
+            if (capped.Length > 0 && capped != ErrorTemplateCap.Other && !known.Contains(capped))
+            {
+                known.Add(capped);
+            }
+        }
+
+        ErrorTemplateCap.AssignAll(arrivals, 3).Should().Equal(expected);
+        expected.Should().Equal("a", "b", "", "a", "c", ErrorTemplateCap.Other, "b", ErrorTemplateCap.Other, ErrorTemplateCap.Other);
+    }
 }

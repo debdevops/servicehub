@@ -100,6 +100,7 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
     onSuccess: () => { setConfirmOn(false); void client.invalidateQueries({ queryKey: rulesKey(provider) }) },
   })
   const tripped = r.disabledReason === 'CircuitBreaker'
+  const split = r.disabledReason === 'SignatureSplit'
   const now = new Date()
 
   return (
@@ -110,7 +111,7 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
           role="switch"
           aria-checked={r.enabled}
           aria-label={`${r.name} is ${r.enabled ? 'on' : 'off'}`}
-          disabled={toggle.isPending || tripped || !mayToggle.allowed}
+          disabled={toggle.isPending || tripped || split || !mayToggle.allowed}
           title={mayToggle.reason ?? undefined}
           onClick={() => toggle.mutate(!r.enabled)}
           className={`mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-60 ${r.enabled ? 'bg-[var(--color-success)]' : 'bg-[#d1d5db]'}`}
@@ -162,6 +163,11 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
         </div>
       )}
       {r.disabledReason === 'Person' && <p className="mt-2 text-[12px] text-[var(--color-text-muted)]">Turned off by a person.</p>}
+      {r.disabledReason === 'SignatureSplit' && (
+        <p className="mt-2 text-[12px] text-[var(--color-text-muted)]">
+          {r.disabledDetail ?? 'ServiceHub now groups failures by their error message, so the group this rule was made for no longer exists and it was switched off.'}
+        </p>
+      )}
     </li>
   )
 }

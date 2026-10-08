@@ -58,7 +58,7 @@ export const rules: readonly Route[] = [
     const matched = w.deadLetters.filter((d) => nsOf(w, d.namespaceId).provider === provider && now - Date.parse(d.detectedAtUtc) <= days * DAY
       && (probe.signatureHash ? d.signatureHash === probe.signatureHash : (!probe.entityName || d.entityName === probe.entityName) && (!probe.reason || d.deadLetterReason === probe.reason))).length
     const alone = mayActAlone(w, probe)
-    const { code, reason } = holdReason(probe)
+    const { code, reason } = holdReason(w, probe)
     return { days, matched, stillWaiting: waiting.length, wouldRun: alone ? waiting.length : 0, heldBack: alone ? 0 : waiting.length, holds: alone || waiting.length === 0 ? [] : [{ reasonCode: code, remedy: reason, count: waiting.length }] }
   }],
   ['post', /^\/rules\/(\d+)\/enabled$/, (m, { w, body, now }) => {

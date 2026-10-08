@@ -5,6 +5,7 @@ using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.RecoveryLedger;
 
 namespace ServiceHub.Api.Controllers.V1;
 
@@ -57,7 +58,7 @@ public sealed class IncidentTraceController : ApiControllerBase
         }
 
         var entries = await _db.RecoveryLedgerEntries.AsNoTracking()
-            .Where(e => e.OwnerId == OwnerId && e.SignatureHashSnapshot == hash && e.NamespaceId != null && ids.Contains(e.NamespaceId.Value))
+            .ForSignature(_db, OwnerId, hash).Where(e => e.NamespaceId != null && ids.Contains(e.NamespaceId.Value))
             .ToListAsync(cancellationToken);
         var kinds = await _db.RecoveryOperations.AsNoTracking()
             .Where(o => entries.Select(e => e.OperationId).Contains(o.Id))

@@ -30,6 +30,14 @@
   on the dead-letter topic, on AWS a scan of the whole dead-letter queue when a replay's watch window ends. A view either saw everything or
   the replay still reads *verification required* — there is no confidence score. A new agent, **Fix Confirmer**, keeps each view checked.
   Switched on per namespace through `PUT /api/v1/namespaces/{id}/dlq-observer`; there is no screen for it yet.
+- **Auto Replay now stops when a failure's latest results turn bad.** A failure that has earned replaying on its own was judged on its whole
+  history, so a long good run hid a new problem starting. Now, if 2 of its last 10 verified replays did not stay fixed, ServiceHub hands it back to
+  a person ("some of the latest replays did not hold") and carries on by itself once newer replays hold. It can only make Auto Replay more careful;
+  a person is never held by it, and it stops rather than guesses if it cannot read the results.
+- **Groundwork for telling failures apart by their error message (built, switched off, not yet run on real data).** Today two different failures
+  on one queue with the same reason can share a group, and so share trust. The pieces to separate them exist — error-message shapes, a limit of 20
+  groups per queue, a re-grouping job with a dry run, past replays counted under the group their message now belongs to, and Auto Replay rules
+  tied to a group that no longer exists being switched off with a note on what to pick — but nothing turns them on yet.
 - **An MCP server** (`tools/mcp/`): a read-only way for an AI assistant to ask ServiceHub about dead letters, failures and replays. It can
   only send a GET to ten fixed addresses; there is no tool that replays, purges or approves. One file, no dependencies.
 

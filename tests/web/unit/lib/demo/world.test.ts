@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { L4, L5, signaturesOf, trustOf } from '@/lib/demo/world/derive'
+import { L4, L5, holdReason, mayActAlone, recentlyMixed, signaturesOf, trustOf } from '@/lib/demo/world/derive'
 import { buildWorld, capabilities, stories } from '@/lib/demo/world/seed'
 
 const NOW = Date.UTC(2026, 9, 4, 12)
@@ -57,5 +57,39 @@ describe('the demo world', () => {
   it('uses only invented names', () => {
     const text = JSON.stringify(buildWorld(NOW))
     for (const real of ['servicehub-dev', 'sb-servicehub', '502914', 'ap-south-1', 'debasis']) expect(text.toLowerCase()).not.toContain(real)
+  })
+
+  describe('the recent-results guard (RecentResultsGuardGate)', () => {
+    const earnedRule = (w: ReturnType<typeof buildWorld>) =>
+      w.rules.find((r) => r.enabled && r.signatureHash && trustOf(w, r.signatureHash, r.provider).level !== 'approve')
+
+    it('leaves the seeded rules that earned replaying alone as they were', () => {
+      const w = buildWorld(NOW)
+      const rule = earnedRule(w)
+      expect(rule, 'the seed has an Azure rule that earned replaying alone').toBeDefined()
+      expect(recentlyMixed(w, rule!.signatureHash!)).toBe(false)
+      expect(mayActAlone(w, rule!)).toBe(true)
+    })
+
+    it('hands a failure back to a person once 2 of its latest 10 verified replays did not hold, however good its history', () => {
+      const w = buildWorld(NOW)
+      const rule = earnedRule(w)!
+      const sig = rule.signatureHash!
+      const recent = w.entries.filter((e) => e.kind === 'Replay' && e.signatureHash === sig && (e.state === 'Recovered' || e.state === 'Returned' || e.state === 'ExecutionFailed'))
+        .sort((a, b) => (b.closedAt ?? b.begunAt).localeCompare(a.closedAt ?? a.begunAt))
+      recent[0].state = 'Returned'
+      expect(mayActAlone(w, rule), 'one bad result is tolerated').toBe(true)
+      recent[1].state = 'ExecutionFailed'
+      expect(trustOf(w, sig, rule.provider).level, 'the all-time score still looks fine').not.toBe('approve')
+      expect(recentlyMixed(w, sig)).toBe(true)
+      expect(mayActAlone(w, rule)).toBe(false)
+      expect(holdReason(w, rule).code).toBe('SIGNATURE_RECENT_RESULTS_MIXED')
+    })
+
+    it('does not change what a cloud that cannot prove a fix says', () => {
+      const w = buildWorld(NOW)
+      const aws = w.rules.find((r) => r.provider === 'aws')
+      if (aws) expect(holdReason(w, aws).code).toBe('PROVIDER_CANNOT_VERIFY_ABSENCE')
+    })
   })
 })

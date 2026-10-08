@@ -40,4 +40,42 @@ public static class ErrorTemplateCap
 
         return known.Count(t => t.Length > 0 && t != Other) < max ? template : Other;
     }
+
+    /// <summary>
+    /// Applies the cap to a whole queue's shapes at once. <paramref name="templatesOldestFirst"/> are the shapes of its messages in
+    /// the order they were detected; the result is the same length and gives each message what <see cref="Apply"/> would have
+    /// given it when it arrived — the first <paramref name="max"/> distinct shapes keep their own, every other new shape is
+    /// <see cref="Other"/>.
+    /// </summary>
+    public static IReadOnlyList<string> AssignAll(IReadOnlyList<string> templatesOldestFirst, int max = DefaultMax)
+    {
+        ArgumentNullException.ThrowIfNull(templatesOldestFirst);
+        ArgumentOutOfRangeException.ThrowIfLessThan(max, 1);
+
+        var known = new HashSet<string>(StringComparer.Ordinal);
+        var result = new string[templatesOldestFirst.Count];
+        for (var i = 0; i < result.Length; i++)
+        {
+            var t = templatesOldestFirst[i];
+            if (t.Length == 0 || t == Other)
+            {
+                result[i] = t;
+            }
+            else if (known.Contains(t))
+            {
+                result[i] = t;
+            }
+            else if (known.Count < max)
+            {
+                known.Add(t);
+                result[i] = t;
+            }
+            else
+            {
+                result[i] = Other;
+            }
+        }
+
+        return result;
+    }
 }
