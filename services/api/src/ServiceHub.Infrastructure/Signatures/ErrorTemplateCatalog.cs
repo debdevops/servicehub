@@ -8,6 +8,8 @@ namespace ServiceHub.Infrastructure.Signatures;
 /// <summary>
 /// Works out the capped error shape for one message (design 10 §5) from the dead letters already recorded for the same
 /// namespace, reason and queue. Nothing is stored: the shapes in use are recomputed from the recorded error text, oldest first.
+/// Only the cloud's own error description counts — never the message body, which is business data, not a reason (AWS and Google Cloud
+/// record no error text, so every message there has the empty shape and nothing is split).
 /// </summary>
 /// <remarks>
 /// Not used by anything yet — fingerprint v2 is not wired. Known limit: if the oldest messages of a queue are purged, the
@@ -25,7 +27,7 @@ public static class ErrorTemplateCatalog
         ArgumentNullException.ThrowIfNull(db);
         ArgumentNullException.ThrowIfNull(message);
 
-        var own = ErrorTemplate.Normalize(message.DeadLetterErrorDescription ?? message.BodyPreview);
+        var own = ErrorTemplate.Normalize(message.DeadLetterErrorDescription);
         if (own.Length == 0)
         {
             return own;
@@ -43,7 +45,7 @@ public static class ErrorTemplateCatalog
             .Where(m => m.OwnerId == message.OwnerId && m.NamespaceId == message.NamespaceId
                 && m.EntityName == message.EntityName && m.DeadLetterReason == reason && m.Id != message.Id)
             .OrderBy(m => m.DetectedAtUtc).ThenBy(m => m.Id)
-            .Select(m => new { m.DeadLetterErrorDescription, m.BodyPreview })
+            .Select(m => new { m.DeadLetterErrorDescription })
             .Take(MaxRowsRead)
             .ToListAsync(ct).ConfigureAwait(false);
 
@@ -52,12 +54,12 @@ public static class ErrorTemplateCatalog
             .Where(m => m != message && m.OwnerId == message.OwnerId && m.NamespaceId == message.NamespaceId
                 && m.EntityName == message.EntityName && m.DeadLetterReason == reason && m.Id == 0)
             .OrderBy(m => m.DetectedAtUtc)
-            .Select(m => new { m.DeadLetterErrorDescription, m.BodyPreview });
+            .Select(m => new { m.DeadLetterErrorDescription });
 
         var known = new List<string>();
         foreach (var row in rows.Concat(pending))
         {
-            var t = ErrorTemplate.Normalize(row.DeadLetterErrorDescription ?? row.BodyPreview);
+            var t = ErrorTemplate.Normalize(row.DeadLetterErrorDescription);
             if (t.Length == 0 || t == ErrorTemplateCap.Other || known.Contains(t))
             {
                 continue;

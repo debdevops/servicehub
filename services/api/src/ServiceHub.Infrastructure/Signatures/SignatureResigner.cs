@@ -2,13 +2,14 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Helpers;
+using ServiceHub.Core.Models;
 using ServiceHub.Infrastructure.Persistence;
 
 namespace ServiceHub.Infrastructure.Signatures;
 
 /// <summary>What a re-sign did (or, for a dry run, would do) to one namespace.</summary>
 /// <param name="Messages">Dead letters looked at.</param>
-/// <param name="MessagesChanged">Dead letters whose signature is different under fingerprint v2.</param>
+/// <param name="MessagesChanged">Dead letters whose signature changes — only those whose old signature really splits into more than one error message.</param>
 /// <param name="SignaturesBefore">Signature rows the namespace had.</param>
 /// <param name="SignaturesAfter">Signature rows it has (or would have) afterwards.</param>
 /// <param name="FoldedIntoOther">Dead letters that went to the <c>&lt;other&gt;</c> group because their queue had too many different error shapes.</param>
@@ -69,13 +70,26 @@ public static class SignatureResigner
                 .ToListAsync(ct).ConfigureAwait(false);
 
             var shapes = ErrorTemplateCap.AssignAll(
-                group.Select(m => ErrorTemplate.Normalize(m.DeadLetterErrorDescription ?? m.BodyPreview)).ToList(), maxTemplatesPerQueue);
+                group.Select(m => ErrorTemplate.Normalize(m.DeadLetterErrorDescription)).ToList(), maxTemplatesPerQueue);
+
+            var fingerprints = new FailureFingerprint[group.Count];
+            for (var i = 0; i < group.Count; i++)
+            {
+                var features = (await Extractor.ExtractAsync(group[i], ct).ConfigureAwait(false)).Value with { ErrorTemplate = shapes[i] };
+                fingerprints[i] = (await Builder.ComputeAsync(features, ct).ConfigureAwait(false)).Value;
+            }
+
+            // A signature that does not actually split keeps the identity it has — and with it its trust, its grant and the rules made
+            // from it. Only a signature whose messages fall into more than one shape gets new identities (all of them: none inherits).
+            var unsplit = group.Select((m, i) => (Old: m.SignatureHash, New: fingerprints[i].Hash))
+                .Where(x => x.Old is not null).GroupBy(x => x.Old!)
+                .Where(g => g.Select(x => x.New).Distinct().Count() == 1).Select(g => g.Key).ToHashSet(StringComparer.Ordinal);
 
             for (var i = 0; i < group.Count; i++)
             {
                 var message = group[i];
-                var features = (await Extractor.ExtractAsync(message, ct).ConfigureAwait(false)).Value with { ErrorTemplate = shapes[i] };
-                var fingerprint = (await Builder.ComputeAsync(features, ct).ConfigureAwait(false)).Value;
+                var fingerprint = fingerprints[i];
+                var finalHash = message.SignatureHash is { } current && unsplit.Contains(current) ? current : fingerprint.Hash;
 
                 total++;
                 if (shapes[i] == ErrorTemplateCap.Other)
@@ -83,7 +97,7 @@ public static class SignatureResigner
                     folded++;
                 }
 
-                if (message.SignatureHash != fingerprint.Hash)
+                if (message.SignatureHash != finalHash)
                 {
                     changed++;
                     if (message.SignatureHash is { } old)
@@ -91,10 +105,10 @@ public static class SignatureResigner
                         oldHashes.Add(old);
                     }
 
-                    message.SignatureHash = fingerprint.Hash;
+                    message.SignatureHash = finalHash;
                 }
 
-                if (tallies.TryGetValue(fingerprint.Hash, out var row))
+                if (tallies.TryGetValue(finalHash, out var row))
                 {
                     row.OccurrenceCount++;
                     if (message.DetectedAtUtc > row.LastSeenAt)
@@ -104,11 +118,11 @@ public static class SignatureResigner
                 }
                 else
                 {
-                    tallies[fingerprint.Hash] = new NamespaceSignature
+                    tallies[finalHash] = new NamespaceSignature
                     {
                         NamespaceId = namespaceId,
                         OwnerId = ownerId,
-                        SignatureHash = fingerprint.Hash,
+                        SignatureHash = finalHash,
                         FirstSeenAt = message.DetectedAtUtc,
                         LastSeenAt = message.DetectedAtUtc,
                         OccurrenceCount = 1,

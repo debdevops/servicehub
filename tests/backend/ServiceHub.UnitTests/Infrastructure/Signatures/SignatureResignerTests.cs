@@ -98,9 +98,12 @@ public sealed class SignatureResignerTests : IDisposable
     [Fact]
     public async Task A_run_that_stops_half_way_leaves_everything_as_it_was_and_a_rerun_reaches_the_same_end()
     {
-        await Seed("a failed", 0, entity: "q1");
-        await Seed("b failed", 1, entity: "q2");
-        await Seed("c failed", 2, entity: "q3");
+        foreach (var q in new[] { "q1", "q2", "q3" })
+        {
+            await Seed("alpha failed", 0, entity: q);
+            await Seed("beta failed", 1, entity: q);
+        }
+
         var original = await Snapshot();
 
         var crash = () => Run(progress: done => { if (done >= 2) throw new InvalidOperationException("killed"); });
@@ -113,9 +116,12 @@ public sealed class SignatureResignerTests : IDisposable
 
         // A clean run on an identical database ends in the same place.
         var other = Guid.NewGuid();
-        await Seed("a failed", 0, entity: "q1", ns: other);
-        await Seed("b failed", 1, entity: "q2", ns: other);
-        await Seed("c failed", 2, entity: "q3", ns: other);
+        foreach (var q in new[] { "q1", "q2", "q3" })
+        {
+            await Seed("alpha failed", 0, entity: q, ns: other);
+            await Seed("beta failed", 1, entity: q, ns: other);
+        }
+
         await Run(ns: other);
         (await Snapshot(other)).Tally.Select(t => t.Split(':')[1]).Should().Equal(finished.Tally.Select(t => t.Split(':')[1]));
     }
@@ -241,7 +247,9 @@ public sealed class SignatureResignerTests : IDisposable
     {
         var elsewhere = Guid.NewGuid();
         await Seed("Customer 42 does not exist", 0);
+        await Seed("Inventory service timed out", 1);
         await Seed("Customer 42 does not exist", 0, ns: elsewhere);
+        await Seed("Inventory service timed out", 1, ns: elsewhere);
         var oldHash = (await Snapshot()).Hashes[0]!;
         var rule = await RuleOn(oldHash);
 
@@ -273,6 +281,7 @@ public sealed class SignatureResignerTests : IDisposable
     public async Task A_dry_run_counts_the_rules_it_would_switch_off_without_touching_them()
     {
         await Seed("Customer 42 does not exist", 0);
+        await Seed("Inventory service timed out", 1);
         var rule = await RuleOn((await Snapshot()).Hashes[0]);
 
         (await Run(dryRun: true)).RulesDisabled.Should().Be(1);
@@ -284,6 +293,7 @@ public sealed class SignatureResignerTests : IDisposable
     public async Task A_second_run_does_not_switch_anything_off_again()
     {
         await Seed("Customer 42 does not exist", 0);
+        await Seed("Inventory service timed out", 1);
         await RuleOn((await Snapshot()).Hashes[0]);
         await Run();
 
@@ -294,6 +304,7 @@ public sealed class SignatureResignerTests : IDisposable
     public async Task A_person_cannot_turn_a_split_rule_back_on()
     {
         await Seed("Customer 42 does not exist", 0);
+        await Seed("Inventory service timed out", 1);
         var rule = await RuleOn((await Snapshot()).Hashes[0]);
         await Run();
         var service = new RulesService(_db, Mock.Of<INamespaceRepository>(), Mock.Of<IDlqReplayService>(), new ConfigurationBuilder().Build());
@@ -303,5 +314,61 @@ public sealed class SignatureResignerTests : IDisposable
         turnedOn.IsSuccess.Should().BeFalse();
         turnedOn.Error.Code.Should().Be("RULE_SIGNATURE_SPLIT");
         (await Reload(rule.Id)).Enabled.Should().BeFalse();
+    }
+
+    // ── A signature that does not split keeps its identity ───────────────────
+
+    [Fact]
+    public async Task A_signature_whose_messages_share_one_error_message_keeps_its_signature_trust_and_rules()
+    {
+        await Seed("Customer 1 does not exist", 0);
+        await Seed("Customer 2 does not exist", 1);
+        var before = await Snapshot();
+        var rule = await RuleOn(before.Hashes[0]);
+
+        var result = await Run();
+
+        result.MessagesChanged.Should().Be(0);
+        result.RulesDisabled.Should().Be(0);
+        (await Snapshot()).Hashes.Should().Equal(before.Hashes);
+        (await Reload(rule.Id)).Enabled.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Messages_with_no_error_text_are_never_split_so_nothing_changes_on_a_cloud_that_records_none()
+    {
+        // AWS and Google Cloud record no error description; the message body is business data and must never be read as a reason.
+        for (var i = 0; i < 5; i++)
+        {
+            var m = new DlqMessage
+            {
+                MessageId = Guid.NewGuid().ToString(), SequenceNumber = _seq++, BodyHash = Guid.NewGuid().ToString("N"), NamespaceId = _ns, OwnerId = Owner,
+                EntityName = "orders", EntityType = ServiceBusEntityType.Queue, CloudProvider = CloudProviderType.Gcp, EnqueuedTimeUtc = T0, DetectedAtUtc = T0.AddMinutes(i),
+                BodyPreview = $"{{\"orderId\":\"ORD-{i}\",\"customer\":\"customer-{i}\"}}",
+            };
+            m.SignatureHash = await SignatureRecorder.AssignAsync(_db, m, default);
+            _db.DlqMessages.Add(m);
+        }
+
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+        var before = await Snapshot();
+
+        var result = await Run();
+
+        result.MessagesChanged.Should().Be(0);
+        (await Snapshot()).Hashes.Should().Equal(before.Hashes);
+    }
+
+    [Fact]
+    public async Task When_a_signature_splits_none_of_the_new_ones_inherits_the_old_identity()
+    {
+        await Seed("Inventory service timed out", 0);
+        await Seed("Customer 42 does not exist", 1);
+        var old = (await Snapshot()).Hashes[0];
+
+        await Run();
+
+        (await Snapshot()).Hashes.Should().NotContain(old);
     }
 }

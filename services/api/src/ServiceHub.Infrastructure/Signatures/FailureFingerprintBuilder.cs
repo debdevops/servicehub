@@ -31,7 +31,7 @@ public sealed class FailureFingerprintBuilder : IFailureFingerprintBuilder
 
     /// <summary>
     /// <paramref name="includeErrorTemplate"/> <c>true</c> builds version-2 fingerprints, which also hash
-    /// <see cref="ErrorTemplate.Normalize"/> of the error text so two failures with different messages stop sharing a signature.
+    /// the failure's <see cref="FailureFeatures.ErrorTemplate"/> so two failures with different messages stop sharing a signature.
     /// Every v2 hash differs from its v1 hash, so switching it on changes the identity of every signature; it is not wired to
     /// anything and must not be until the owner has answered the open questions in design 10 §11.
     /// </summary>
@@ -159,7 +159,9 @@ public sealed class FailureFingerprintBuilder : IFailureFingerprintBuilder
         if (_includeErrorTemplate)
         {
             // Appended last, so a v1 canonical string is exactly the v2 one without this part.
-            var template = features.ErrorTemplate ?? ErrorTemplate.Normalize(features.ErrorTextNormalized);
+            // Only a template the caller derived from the cloud's error description counts: ErrorTextNormalized falls back to the message
+            // body, which is business data and would split one failure by customer or order.
+            var template = features.ErrorTemplate ?? string.Empty;
             parts.Add(template.Length == 0 ? "null" : template);
         }
 

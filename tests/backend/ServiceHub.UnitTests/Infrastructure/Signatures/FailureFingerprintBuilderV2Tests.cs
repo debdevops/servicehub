@@ -21,6 +21,7 @@ public sealed class FailureFingerprintBuilderV2Tests
         Provider = CloudProviderType.Azure,
         DeliveryCount = 1,
         ErrorTextNormalized = error,
+        ErrorTemplate = ServiceHub.Core.Helpers.ErrorTemplate.Normalize(error),
     };
 
     private static async Task<FailureFingerprint> Compute(FailureFingerprintBuilder b, FailureFeatures f) => (await b.ComputeAsync(f)).Value;
