@@ -68,7 +68,10 @@ public static class PersistenceServiceCollectionExtensions
         services.TryAddScoped<IDeadLetterLook, Dlq.DeadLetterLook>();
         services.TryAddScoped<IRecoveryLedger, RecoveryLedger.RecoveryLedgerService>();
         services.TryAddSingleton<Telemetry.ServiceHubMetrics>();
-        services.TryAddScoped<IRecoveryEligibilityGate, RecoveryLedger.RecoveryEligibilityGate>();
+        // The gate is copied code and stays unedited (autonomy spec R11); the guard wraps it and can only make a decision stricter.
+        services.TryAddScoped<RecoveryLedger.RecoveryEligibilityGate>();
+        services.TryAddScoped<IRecoveryEligibilityGate>(sp => ActivatorUtilities.CreateInstance<RecoveryLedger.RecentResultsGuardGate>(
+            sp, (IRecoveryEligibilityGate)sp.GetRequiredService<RecoveryLedger.RecoveryEligibilityGate>()));
         services.TryAddScoped<IRecoveryTrustScoringService, RecoveryLedger.RecoveryTrustScoringService>();
         services.TryAddScoped<IDlqObserverAttestationService, DlqObserver.DlqObserverAttestationService>();
         services.TryAddSingleton<DlqObserver.DeadLetterViewTracker>();

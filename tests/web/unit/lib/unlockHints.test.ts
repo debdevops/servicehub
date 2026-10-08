@@ -1,10 +1,11 @@
 import gate from '../../../../services/api/src/ServiceHub.Infrastructure/RecoveryLedger/RecoveryEligibilityGate.cs?raw'
+import guard from '../../../../services/api/src/ServiceHub.Infrastructure/RecoveryLedger/RecentResultsGuardGate.cs?raw'
 import { describe, expect, it } from 'vitest'
 import { GATE_REASON_CODES, hintFor, unlockHints } from '@/lib/unlockHints'
 
 describe('unlock hints', () => {
-  it('cover every reason code the gate can give — read from the gate itself', () => {
-    const codes = new Set([...gate.matchAll(/"([A-Z][A-Z_]{6,})"/g)].map((m) => m[1]))
+  it('cover every reason code the gate can give — read from the gate and its guard', () => {
+    const codes = new Set([...(gate + guard).matchAll(/"([A-Z][A-Z_]{6,})"/g)].map((m) => m[1]))
     expect(codes.size).toBeGreaterThan(10)
     for (const code of codes) expect(GATE_REASON_CODES, `no unlock hint for ${code}`).toContain(code)
   })

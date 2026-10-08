@@ -30,6 +30,12 @@ public sealed record FailureFeatures
     /// <summary>Normalized and sanitized error text for analysis.</summary>
     public string? ErrorTextNormalized { get; init; }
 
+    /// <summary>
+    /// The error message's shape after the per-queue cap was applied (design 10 §5). Only fingerprint v2 reads it: when set it is
+    /// hashed as given; when null v2 derives the shape from <see cref="ErrorTextNormalized"/> with no cap.
+    /// </summary>
+    public string? ErrorTemplate { get; init; }
+
     /// <summary>Size of the message body in bytes.</summary>
     public long MessageSize { get; init; }
 

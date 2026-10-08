@@ -33,6 +33,10 @@ public static class EscalationReasons
             "Several earlier replays look like this message, and ServiceHub can't tell which it is. A person decides.",
         "RECURRENCE_CAP_QUERY_ERROR" =>
             "ServiceHub couldn't check this message's replay history, so it stopped rather than guess. A person decides.",
+        "SIGNATURE_RECENT_RESULTS_MIXED" =>
+            "Some of the latest replays of this kind of failure did not hold, so it stopped replaying on its own. Check the cause, then approve the next ones yourself.",
+        "SIGNATURE_RECENT_RESULTS_QUERY_ERROR" =>
+            "ServiceHub couldn't read the latest results for this failure, so it stopped rather than guess. A person decides.",
         "RATE_LIMITED" or "FLEET_RATE_LIMITED" =>
             "The replay pace limit was reached. It can go now if a person says so, or wait for the next window.",
         "EMERGENCY_STOP_ACTIVE" =>

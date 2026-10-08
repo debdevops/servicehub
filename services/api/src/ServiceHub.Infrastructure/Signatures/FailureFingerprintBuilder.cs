@@ -13,13 +13,36 @@ namespace ServiceHub.Infrastructure.Signatures;
 /// </summary>
 public sealed class FailureFingerprintBuilder : IFailureFingerprintBuilder
 {
-    /// <summary>Current fingerprinting algorithm version.</summary>
+    /// <summary>Fingerprinting algorithm version 1: the one every existing signature was made with.</summary>
     private const int FingerprintVersion = 1;
+
+    /// <summary>Version 2 adds the error message's shape to the hash (design 10 §5). Off unless asked for; nothing asks yet.</summary>
+    private const int FingerprintVersionWithErrorTemplate = 2;
 
     /// <summary>Unit separator used in canonical fingerprint string.</summary>
     private const char CanonicalSeparator = '|';
 
-    public int CurrentVersion => FingerprintVersion;
+    private readonly bool _includeErrorTemplate;
+
+    /// <summary>Builds version-1 fingerprints — byte-for-byte what 4.1.0 produces.</summary>
+    public FailureFingerprintBuilder() : this(includeErrorTemplate: false)
+    {
+    }
+
+    /// <summary>
+    /// <paramref name="includeErrorTemplate"/> <c>true</c> builds version-2 fingerprints, which also hash
+    /// <see cref="ErrorTemplate.Normalize"/> of the error text so two failures with different messages stop sharing a signature.
+    /// Every v2 hash differs from its v1 hash, so switching it on changes the identity of every signature; it is not wired to
+    /// anything and must not be until the owner has answered the open questions in design 10 §11.
+    /// </summary>
+    public FailureFingerprintBuilder(bool includeErrorTemplate)
+    {
+        _includeErrorTemplate = includeErrorTemplate;
+    }
+
+    private int Version => _includeErrorTemplate ? FingerprintVersionWithErrorTemplate : FingerprintVersion;
+
+    public int CurrentVersion => Version;
 
     public async Task<Result<FailureFingerprint>> ComputeAsync(
         FailureFeatures features,
@@ -55,7 +78,7 @@ public sealed class FailureFingerprintBuilder : IFailureFingerprintBuilder
 
         return new FailureFingerprint
         {
-            Version = FingerprintVersion,
+            Version = Version,
             Hash = hash,
             Features = features,
             Confidence = confidence,
@@ -113,12 +136,12 @@ public sealed class FailureFingerprintBuilder : IFailureFingerprintBuilder
     /// Deterministic: same features always produce the same string.
     /// Sortable: term order doesn't affect the result.
     /// </summary>
-    private static string BuildCanonicalString(FailureFeatures features, IReadOnlyList<string> topTerms)
+    private string BuildCanonicalString(FailureFeatures features, IReadOnlyList<string> topTerms)
     {
         var parts = new List<string>
         {
             // Version prefix for forward compatibility
-            $"v{FingerprintVersion}",
+            $"v{Version}",
 
             // Core identifying fields (must be normalized)
             NormalizeForHash(features.DeadLetterReason),
@@ -132,6 +155,13 @@ public sealed class FailureFingerprintBuilder : IFailureFingerprintBuilder
             // Sorted terms for stability
             string.Join(",", topTerms.OrderBy(t => t, StringComparer.Ordinal)),
         };
+
+        if (_includeErrorTemplate)
+        {
+            // Appended last, so a v1 canonical string is exactly the v2 one without this part.
+            var template = features.ErrorTemplate ?? ErrorTemplate.Normalize(features.ErrorTextNormalized);
+            parts.Add(template.Length == 0 ? "null" : template);
+        }
 
         return string.Join(CanonicalSeparator, parts);
     }
