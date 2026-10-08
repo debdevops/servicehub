@@ -29,7 +29,7 @@ function holdWords(code: string | null, manual = false): string {
   if (code.startsWith('AUTONOMY')) return manual ? 'This cloud can’t confirm a replay fixed it, so each replay is your decision.' : "ServiceHub hasn't earned the right to replay this failure on its own yet, so it asks first."
   if (code === 'PRODUCTION_ELEVATION_REQUIRED') return "Rules never run in Production namespaces."
   if (code === 'EMERGENCY_STOP_ACTIVE') return "Emergency stop is on."
-  if (code.startsWith('RECURRENCE_CAP')) return "They have already been replayed and came back too often."
+  if (code.startsWith('RECURRENCE_CAP')) return "ServiceHub has already tried these several times, replayed or held for a person, so it won’t try again on its own."
   return `A safety check is holding them (${code}).`
 }
 
