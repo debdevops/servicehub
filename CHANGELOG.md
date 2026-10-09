@@ -75,6 +75,17 @@ The last planned release of ServiceHub. Development stops after 4.2.0.
 - **Two low-contrast texts**, found once the demo filled screens that used to be empty: the count on the selected tab (Failure Signatures and
   every pill tab bar), and the grey text on an Auto Replay rule that has stopped itself.
 - **The demo's "needs attention" list** let one busy cloud push another cloud's items off the first page.
+- **Auto Replay rules kept working only in the namespace they were made in.** A rule belongs to the owner and cloud and is bound to a failure's signature, which did not
+  depend on the namespace — until 4.2.0 grouped failures by error message. A message in a *newer* namespace (a second account, or a cloud removed and added again) got the
+  new signature while the rule still pointed at the old one, so the rule showed *enabled* and silently never fired. Found in a live run: five AWS rules had matched
+  nothing since the switch. A message now also joins an older, never-split signature of the same owner that sits in another namespace.
+- **A message body you could not scroll with the keyboard.** In the Approve window (and the message details, replay window and Active messages), a long message body or property list
+  scrolled with the mouse only — a keyboard user could not reach it. Found by an accessibility check on real held replays; the demo's short messages never overflowed. They are now focusable and named.
+- **The browser asked for `/favicon.ico` on every first load and got a 404.** The page now declares its own icon.
+- **A numbering mistake in the Google Cloud guide** (two callouts on the bulk-replay screenshot were both "7") made the Help panel log a duplicate-key warning on every cloud.
+  The second is now "8"; the screenshot's own badge is corrected the next time the guide screenshots are taken.
+- **Tests and tooling:** integration tests no longer close each other's database connections (one test's clean-up cleared every host's pool, so a parallel test sometimes failed
+  with *Cannot access a disposed object*); the walkthrough-video script finds the notifications button whether or not anything is waiting.
 
 ## [4.1.0] — 2026-10-04
 
@@ -532,7 +543,7 @@ hash chain intact, proven in CI rather than asserted.
   Container Apps recipes previously pointed at an Azure Files share without saying so; they now name
   the constraint, give the two workable alternatives, and say how to confirm the result
   (`/health/ready` must report `"JournalMode": "wal"`). Recorded as a consequence in
-  [ADR-0003](docs/adr/0003-single-instance-sqlite.md); no code change — the health check already
+  ADR-0003 (`docs/adr/0003-single-instance-sqlite.md`, no longer tracked); no code change — the health check already
   degraded on a non-WAL journal mode, and the instance lock already existed.
 - **`llms.txt` no longer describes AWS and GCP as Preview** — it had not been updated when the
   labels changed, so the file AI search assistants read was contradicting the README. It now also
@@ -755,8 +766,8 @@ followed it.
 > `docs/EXTENDING-PROVIDERS.md`, `docs/multi-platform/{aws,gcp}/README.md`,
 > `self-hosting/security-hardening/README.md`) were accurate at the time of this release. A later
 > docs-minimization pass consolidated or removed them from the public repository; for current
-> configuration/deployment/security guidance see [`self-hosting/README.md`](self-hosting/README.md),
-> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), and
+> configuration/deployment/security guidance see `self-hosting/README.md` (no longer tracked),
+> `docs/ARCHITECTURE.md` (no longer tracked), and
 > [`docs/extending/adding-a-provider.md`](docs/extending/adding-a-provider.md).
 
 ### Removed

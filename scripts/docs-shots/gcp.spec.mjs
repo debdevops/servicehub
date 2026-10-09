@@ -275,7 +275,7 @@ await scene('13', async () => {
     { n: 5, loc: dlg().getByRole('button', { name: /Replay \d+ messages/ }), all: true, t: 'Replay N messages — sends them one at a time, re-checking each. You can stop partway.' },
     { n: 6, loc: dlg().getByRole('button', { name: 'Cancel' }), all: true, t: 'Cancel — nothing is sent.' },
     { n: 7, loc: dlg().getByRole('button', { name: /^(How it will run|After they are sent back)/ }), all: true, t: 'How it will run and After they are sent back — fold open to show the pace and the automatic stop (five sends in a row that are not accepted), and what ServiceHub does next.' },
-    { n: 7, loc: dlg().getByRole('button', { name: /^(Previous page|Go to page|Next page)/ }), all: true, t: 'Page controls — move through the list when more messages are chosen than fit on one page.' },
+    { n: 8, loc: dlg().getByRole('button', { name: /^(Previous page|Go to page|Next page)/ }), all: true, t: 'Page controls — move through the list when more messages are chosen than fit on one page.' },
   ])
   await scrollDialog(99999); await settle(500)
   await shot(page, S('13b-bulk-replay-end'), [

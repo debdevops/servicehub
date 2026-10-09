@@ -312,7 +312,7 @@ function BodyBlock({ detail, field }: { detail: DeadLetterDetail; field: string 
           <CopyIcon value={text} label="Copy body" />
         </div>
       </div>
-      <pre className="max-h-[55vh] min-h-32 overflow-auto rounded-xl bg-slate-900 p-3 font-mono text-xs leading-5 text-slate-100">
+      <pre tabIndex={0} aria-label="Message body text" className="max-h-[55vh] min-h-32 overflow-auto rounded-xl bg-slate-900 p-3 font-mono text-xs leading-5 text-slate-100">
         {lines.map((line, i) => (
           <span key={i}>
             {i === insertAt && (

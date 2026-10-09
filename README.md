@@ -10,10 +10,10 @@ body, its properties and a hash are kept **unencrypted** in the SQLite file ([SE
 
 **Know the limits** before you try it:
 
-- **Production namespaces are read-only for replay.** Replay is refused on any namespace you mark as Production, and 4.1.0 has no way to override that. Investigate there; replay in dev and staging.
+- **Production namespaces are read-only for replay.** Replay is refused on any namespace you mark as Production, and ServiceHub has no way to override that. Investigate there; replay in dev and staging.
 - **Azure is the verified path.** Only Azure can confirm a replayed message stayed fixed. AWS and GCP read "verification required", and GCP often records no failure reason.
 - **Anyone who can reach its port is the admin.** Keep it on `localhost`.
-- **No upgrade from 4.0.0.** 4.1.0 is a from-scratch rewrite with a fresh database and cannot open a 4.0.0 file. Run it beside 4.0.0 and connect your clouds again. 4.0.0 lives, frozen, in [`archive/servicehub-4.0.0/`](archive/servicehub-4.0.0/). See the [changelog](CHANGELOG.md).
+- **No upgrade from 4.0.0.** 4.1.0 and later are a from-scratch rewrite with a fresh database and cannot open a 4.0.0 file. Run it beside 4.0.0 and connect your clouds again. 4.0.0 lives, frozen, in [`archive/servicehub-4.0.0/`](archive/servicehub-4.0.0/). See the [changelog](CHANGELOG.md).
 
 Fastest look, no cloud account: pick an install option below and choose **Try it with sample data** (or open <http://localhost:3000/demo>, or press **Demo** on Home). A captioned walkthrough video per cloud is [further down](#watch-it-work--all-of-simple-mode-start-to-finish).
 

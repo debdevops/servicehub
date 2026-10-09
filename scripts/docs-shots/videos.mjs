@@ -108,6 +108,8 @@ const uncap = () => page.evaluate(() => document.getElementById('__vcap')?.class
 const card = async (html) => { await page.evaluate((h) => { const c = document.getElementById('__vcard'); c.innerHTML = h; c.classList.add('on') }, html) }
 const uncard = () => page.evaluate(() => document.getElementById('__vcard')?.classList.remove('on'))
 const glide = async (loc) => {
+  // A long real list (hundreds of rows) can take a while to draw under load: wait for the control, don't time out on a measurement (one AWS run did, 2026-10-09).
+  await loc.waitFor({ state: 'visible', timeout: 25000 }).catch(() => {})
   await loc.scrollIntoViewIfNeeded({ timeout: 6000 }).catch(() => {})
   const b = await loc.boundingBox({ timeout: 8000 })
   if (!b) throw new Error('not visible')
@@ -279,7 +281,7 @@ try {
   await scene('approvals', async () => {
     if (only) await go(`/?provider=${CLOUD}`, 3000)
     await cap('Needs you', 'Needs your attention: when the Agent stops and asks', 'the bell and Home both show it, with the reason in plain words')
-    await hover(page.getByRole('button', { name: /Waiting for you|Notifications/ }).first(), 2600)
+    await hover(page.getByRole('button', { name: /waiting for you|Notifications/i }).first(), 2600)
     const review = page.getByRole('link', { name: /^Review/ }).first()
     if (await review.isVisible().catch(() => false)) {
       await click(review); await wait(3600)

@@ -47,6 +47,27 @@ public sealed class SignatureRecorder
             {
                 hash = legacy;
             }
+            else if (old is null)
+            {
+                // Not in this namespace. Auto-replay rules belong to the owner and cloud and are bound to the (namespace-independent) v1 hash, so a message
+                // in a newer namespace — a second account, or a cloud removed and added again — must also join an older unsplit signature of the same
+                // owner, or every rule made before the v2 switch silently stops matching it. Only when this namespace has not already started its own v2 row.
+                var startedHere = db.NamespaceSignatures.Local.Any(s => s.OwnerId == message.OwnerId && s.NamespaceId == message.NamespaceId && s.SignatureHash == hash)
+                    || await db.NamespaceSignatures.AsNoTracking().AnyAsync(s => s.OwnerId == message.OwnerId && s.NamespaceId == message.NamespaceId && s.SignatureHash == hash, ct).ConfigureAwait(false);
+                if (!startedHere)
+                {
+                    var elsewhere = db.NamespaceSignatures.Local.Where(s => s.OwnerId == message.OwnerId && s.SignatureHash == legacy).ToList();
+                    if (elsewhere.Count == 0)
+                    {
+                        elsewhere = await db.NamespaceSignatures.AsNoTracking().Where(s => s.OwnerId == message.OwnerId && s.SignatureHash == legacy).ToListAsync(ct).ConfigureAwait(false);
+                    }
+
+                    if (elsewhere.Any(s => ErrorTemplate.Normalize(s.ExampleError) == template))
+                    {
+                        hash = legacy;
+                    }
+                }
+            }
         }
 
         // Rows added earlier in this same scan are tracked but not yet saved, so look there first.

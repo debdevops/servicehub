@@ -359,12 +359,12 @@ function MessagePanel({ dlqMessageId }: { dlqMessageId: number | null }) {
           </div>
           {view === 'body' && (
             <>
-              <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[var(--color-surface-muted)] p-2 font-mono text-[11px] leading-snug">{d.bodyPreview ? prettyJson(d.bodyPreview) : 'ServiceHub has no stored body for this message.'}</pre>
+              <pre tabIndex={0} aria-label="Message body text" className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[var(--color-surface-muted)] p-2 font-mono text-[11px] leading-snug">{d.bodyPreview ? prettyJson(d.bodyPreview) : 'ServiceHub has no stored body for this message.'}</pre>
               {d.bodyIsPreview && <p className="text-xs text-[var(--color-text-muted)]">This is the start of the body; ServiceHub keeps only a preview.</p>}
             </>
           )}
           {view === 'properties' && (
-            <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[var(--color-surface-muted)] p-2 font-mono text-[11px] leading-snug">{d.applicationPropertiesJson ? prettyJson(d.applicationPropertiesJson) : 'The sender attached no properties.'}</pre>
+            <pre tabIndex={0} aria-label="Message properties text" className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[var(--color-surface-muted)] p-2 font-mono text-[11px] leading-snug">{d.applicationPropertiesJson ? prettyJson(d.applicationPropertiesJson) : 'The sender attached no properties.'}</pre>
           )}
           {view === 'delivery' && (
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">

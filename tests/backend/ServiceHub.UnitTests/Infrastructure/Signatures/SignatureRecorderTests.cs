@@ -81,6 +81,35 @@ public sealed class SignatureRecorderTests : IAsyncLifetime
         other.Should().NotBe(legacyHash);
     }
 
+    /// <summary>
+    /// Found live (2026-10-09 e2e loop 1): auto-replay rules belong to the owner and cloud and are bound to a signature hash, and a v1 hash does not
+    /// depend on the namespace. Joining an older signature only inside the SAME namespace left every message of a newer namespace (a second account,
+    /// or a cloud removed and added again) on a v2 hash that no earlier rule can match — rules stayed "enabled" and silently never fired.
+    /// </summary>
+    [Fact]
+    public async Task A_new_message_in_another_namespace_of_the_same_owner_joins_the_older_unsplit_signature()
+    {
+        var legacyMessage = Message(1, description: "inventory service timed out");
+        var features = (await new FailureFeatureExtractor().ExtractAsync(legacyMessage, default)).Value;
+        var legacyHash = (await new FailureFingerprintBuilder().ComputeAsync(features, default)).Value.Hash;
+        var otherNamespace = Guid.NewGuid();
+
+        await using var db = NewDb();
+        db.NamespaceSignatures.Add(new NamespaceSignature
+        {
+            NamespaceId = otherNamespace, OwnerId = "o1", SignatureHash = legacyHash, FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+            OccurrenceCount = 5, DominantDeadletterReason = "MaxDeliveryCountExceeded", EntityName = "orders", ExampleError = "inventory service timed out",
+            TopTermsJson = "[]",
+        });
+        await db.SaveChangesAsync();
+
+        var joined = await SignatureRecorder.AssignAsync(db, Message(2, description: "Inventory service timed out"), default); // NamespaceId differs from otherNamespace
+        var otherOwner = await SignatureRecorder.AssignAsync(db, Message(3, description: "Inventory service timed out", owner: "someone-else"), default);
+
+        joined.Should().Be(legacyHash, "a rule bound to the v1 hash must keep matching this cloud's failures in a newer namespace");
+        otherOwner.Should().NotBe(legacyHash, "another owner's signatures are never shared");
+    }
+
     [Fact]
     public async Task Messages_failing_differently_get_different_signatures()
     {

@@ -476,7 +476,7 @@ Tick messages (or use **Replay All Messages**) to get a preview: how many will b
 5. Replay N messages — sends them one at a time, re-checking each. You can stop partway.
 6. Cancel — nothing is sent.
 7. How it will run and After they are sent back — fold open to show the pace and the automatic stop (five sends in a row that are not accepted), and what ServiceHub does next.
-7. Page controls — move through the list when more messages are chosen than fit on one page.
+8. Page controls — move through the list when more messages are chosen than fit on one page.
 
 
 ![4.5 Replay several at once — 13b-bulk-replay-end](../screenshots/gcp/13b-bulk-replay-end.png)

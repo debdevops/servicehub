@@ -234,7 +234,7 @@ az acr create --resource-group "$RG" --name "$ACR" --sku Basic
 
 git clone https://github.com/debdevops/servicehub.git && cd servicehub
 git checkout <the tag or branch you want to run>
-az acr build --registry "$ACR" --image servicehub:4.1.0 .
+az acr build --registry "$ACR" --image servicehub:4.2.0 .
 ```
 
 ### 9.3 Create the app
@@ -244,7 +244,7 @@ az acr build --registry "$ACR" --image servicehub:4.1.0 .
 az appservice plan create --resource-group "$RG" --name "$PLAN" --is-linux --sku B1 --number-of-workers 1
 
 az webapp create --resource-group "$RG" --plan "$PLAN" --name "$APP" \
-  --container-image-name "$ACR.azurecr.io/servicehub:4.1.0"
+  --container-image-name "$ACR.azurecr.io/servicehub:4.2.0"
 
 # Let the app pull from the registry with its own identity (no passwords).
 PRINCIPAL="$(az webapp identity assign --resource-group "$RG" --name "$APP" --query principalId -o tsv)"

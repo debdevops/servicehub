@@ -31,7 +31,7 @@ If authentication is on (README → *Deploying it for real*), add your `X-API-KE
 {
   "backupId": "20260929-164649Z",
   "createdAtUtc": "2026-09-29T16:46:49.854615+00:00",
-  "serviceHubVersion": "4.1.0+ed4653ea552241e9eef5000e33e3b135e5c41c41",
+  "serviceHubVersion": "4.2.0+726f8fcc1b84979ce3ff244254bf12c375ac3878",
   "sqlite": { "fileName": "servicehub-dlq.db", "sizeBytes": 299008, "sha256": "a3c734c2…7802cc7" },
   "integrityCheck": "ok",
   "encryptionKeyFingerprint": "sha256:e2e86eb22f771121"
@@ -46,7 +46,7 @@ Each backup is one folder, `backups/<backupId>/`, under the data directory (or `
   automatically** — a broken backup is never left on disk looking like a good one.
 - **`encryptionKeyFingerprint`** — a one-way fingerprint of the key that was active. Compare it before restoring anywhere else.
 
-(A real manifest also carries `namespaceStore` — always `null` in 4.1.0 — and a `consistencyNote` that still mentions a "namespace JSON store". That wording is carried
+(A real manifest also carries `namespaceStore` — always `null` since 4.1.0 — and a `consistencyNote` that still mentions a "namespace JSON store". That wording is carried
 over from 4.0.0, which kept connections in a second file; 4.1.0 keeps everything in the one database, so there is nothing to be out of step with.)
 
 **Scheduled:** off by default. Set `Backup:ScheduledBackupIntervalHours` (env `Backup__ScheduledBackupIntervalHours`) above 0 and restart. `Backup:RetentionCount`

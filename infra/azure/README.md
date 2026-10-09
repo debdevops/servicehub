@@ -20,7 +20,7 @@ Prices change by region — check the [Azure pricing calculator](https://azure.m
 
 ## Connecting to Service Bus — read this
 
-**ServiceHub 4.1.0 connects to Azure Service Bus with a connection string**, pasted into *Add a cloud*. Its Azure adapter
+**ServiceHub connects to Azure Service Bus with a connection string**, pasted into *Add a cloud*. Its Azure adapter
 does not use a managed identity yet, so this module gives the VM's identity **no** access to your namespaces.
 Create a Shared Access Policy for ServiceHub in each namespace as [the Azure guide](../../docs/clouds/azure.md) describes.
 The connection string is encrypted with the key in your Key Vault and never leaves your subscription.

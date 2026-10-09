@@ -98,7 +98,7 @@ FAIL — 1 finding(s):
 
 **What PASS proves:** nothing in the file was altered, reordered, duplicated or dropped relative to itself and its manifest. **What it cannot prove:** that the file is the *whole* ledger
 (`partial: true` is a slice, and a slice cannot show what sat outside it), or that the database was not rewritten wholesale before export — the tamper-evident-not-tamper-proof limit above. The script also
-carries an `--archive-dir` option for 4.0.0's sealed-epoch archives; 4.1.0 does not seal epochs, so leave it unused. (A message it prints about a "per-operation export" is 4.0.0 wording; a 4.1.0 export is the whole chain unless `partial` is true.)
+carries an `--archive-dir` option for 4.0.0's sealed-epoch archives; ServiceHub 4.1.0 and later do not seal epochs, so leave it unused. (A message it prints about a "per-operation export" is 4.0.0 wording; an export is the whole chain unless `partial` is true.)
 
 ## 5. What ServiceHub can and cannot prove
 

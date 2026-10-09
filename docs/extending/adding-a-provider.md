@@ -1,6 +1,6 @@
 # Adding a messaging provider
 
-For an engineer adding the next cloud or broker (a fourth cloud, Kafka, RabbitMQ, …) to ServiceHub 4.1.0. It is code and configuration, not
+For an engineer adding the next cloud or broker (a fourth cloud, Kafka, RabbitMQ, …) to ServiceHub 4.2.0. It is code and configuration, not
 screenshots; to *use* a provider that already exists, see the [Azure](../clouds/azure.md), [AWS](../clouds/aws.md) or
 [Google Cloud](../clouds/gcp.md) guide.
 
@@ -79,7 +79,7 @@ If you cannot answer a capability truthfully, declare `false` and say why in `No
 - **No non-destructive peek** except on Azure. The others receive with a short visibility timeout and release at once.
 - **`ServiceBusEntityType` is a closed two-value enum** (`Queue`, `Subscription`). A broker with a different shape (consumer groups,
   exchange plus binding) means widening it — search every `switch` on it first.
-- **Schema changes are frozen.** 4.1.0 freezes database migrations 0001–0014 (the maintainers' ADR-0017). A provider that
+- **Schema changes are frozen.** ServiceHub freezes database migrations 0001–0015 (the maintainers' ADR-0017). A provider that
   needs a new column needs a dated maintainer sign-off first; ask in the issue or PR rather than adding a migration.
 
 ## Security
