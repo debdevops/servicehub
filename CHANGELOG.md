@@ -6,7 +6,7 @@ The last planned release of ServiceHub. Development stops after 4.2.0.
 
 ### Added
 
-- **A demo that works.** `/demo` now opens all three clouds together (`/demo/azure`, `/demo/aws` and `/demo/gcp` still open one). It is one made-up
+- **A demo that works.** `/demo` now opens all three clouds together (`/demo/azure`, `/demo/aws` and `/demo/gcp` still work and select that cloud). It is one made-up
   world of three invented companies — six namespaces, about 750 dead letters, 14 days of history and 300+ ledger entries — telling the same five
   failure stories on every cloud. **Actions now work on the made-up data**: replay, bulk replay, purge, approve and decline, Auto Replay rules,
   pause, emergency stop, Look now. Each says *"Demo — nothing was sent"*, and a replay is checked after about 30 seconds instead of hours. Nothing
@@ -16,9 +16,16 @@ The last planned release of ServiceHub. Development stops after 4.2.0.
 - **A demo-only build** (`npm run build:demo -w apps/servicehub`) and a GitHub Pages workflow (`.github/workflows/demo-pages.yml`) for a public demo
   page. It has no server and connects to nothing. Not switched on: Pages must be enabled by the repository owner.
 
-- **Show me around.** The demo has a six-stop guided tour that drives the real screens: a failed message, why it failed, replaying it, whether it
-  stayed fixed, and the Agent. It starts once on a first visit, can be skipped at any time, and is started again from the demo banner. What it says
-  about a cloud comes from that cloud's real capability.
+- **Show me around.** The demo has a 13-stop guided tour that drives the real screens: a failed message, why it failed, replaying it, whether it
+  stayed fixed, the Agent, then the Help and information icons, Auto Replay rules, the Advanced pages (overview, Recovery Ledger, Failure
+  Signatures, Agents) and Connections. It starts by itself once on a first visit to a plain Home, can be skipped at any time, and is started again
+  from the demo banner. What it says about a cloud comes from that cloud's real capability.
+- **A Demo button on Home.** Anyone who has not connected a cloud yet can press **Demo** in the Home header to walk through the whole product on
+  made-up data, with no connection string. It always starts the tour, even for someone who has seen it.
+- **The demo keeps its own addresses.** The demo now stays under `/demo` instead of redirecting to `/`: `/demo` is all three clouds and every
+  page sits beneath it (`/demo/advanced/ledger`, …). `/demo/azure`, `/demo/aws` and `/demo/gcp` open the same three-cloud demo with that cloud's
+  tab selected on Home. A link to a panel or page (`/demo/?panel=connections`) opens as written and is no longer taken over by the tour.
+
 - **Open the trace.** A message that carries a trace ID (`traceparent`, Service Bus's `Diagnostic-Id`, AWS's X-Ray header) now shows it in its
   details, with a link to your own tracing tool once you set its address in Settings → Preferences. The address is kept in your browser; nothing is
   stored on the server and nothing is sent.

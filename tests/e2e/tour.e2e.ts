@@ -10,13 +10,13 @@ test.use({ storageState: { cookies: [], origins: [] } })
 
 test.describe('Show me around', () => {
   for (const [cloud, entry, ending] of [['Azure', '/demo/azure', /Verified/], ['AWS', '/demo/aws', /verification required/]] as const) {
-    test(`${cloud}: six stops, on the real screens, ending with the truth about that cloud`, async ({ page }) => {
+    test(`${cloud}: the whole site in 13 stops, on the real screens, ending with the truth about that cloud`, async ({ page }) => {
       await page.goto(entry)
-      await expect(card(page)).toContainText('1 of 6')
+      await expect(card(page)).toContainText('1 of 13')
       await expect(card(page)).toContainText('Messages that failed')
 
       await next(page).click()
-      await expect(card(page)).toContainText('2 of 6')
+      await expect(card(page)).toContainText('2 of 13')
       await expect(page.getByRole('link', { name: /^Details of message/ }).first()).toBeVisible()
 
       await next(page).click()
@@ -35,8 +35,16 @@ test.describe('Show me around', () => {
       await expect(page.getByText(/Demo — nothing was sent/).first()).toBeVisible()
 
       await next(page).click()
-      await expect(card(page)).toContainText('6 of 6')
+      await expect(card(page)).toContainText('6 of 13')
       await expect(page.locator('#agent-bar')).toBeVisible()
+      await next(page).click()
+      await expect(card(page)).toContainText('Help and information')
+      await expect(page.getByRole('link', { name: 'Help for this page' }).first()).toBeVisible()
+      for (const title of ['Auto Replay rules', 'Advanced: the whole picture', 'Recovery Ledger', 'Failure Signatures', 'Agents', 'Connections']) {
+        await next(page).click()
+        await expect(card(page)).toContainText(title)
+      }
+      await expect(card(page)).toContainText('13 of 13')
       await next(page).click()
       await expect(card(page)).toHaveCount(0)
 
@@ -46,7 +54,7 @@ test.describe('Show me around', () => {
       await expect(card(page)).toHaveCount(0)
       // …but the banner brings it back.
       await page.getByRole('button', { name: 'Show me around' }).click()
-      await expect(card(page)).toContainText('1 of 6')
+      await expect(card(page)).toContainText('1 of 13')
     })
   }
 
@@ -63,7 +71,7 @@ test.describe('Show me around', () => {
   test('a stop passes the accessibility gate and does not make the page scroll sideways', async ({ page }) => {
     await page.goto('/demo/azure')
     await next(page).click()
-    await expect(card(page)).toContainText('2 of 6')
+    await expect(card(page)).toContainText('2 of 13')
     await page.waitForLoadState('networkidle')
     const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze()
     expect(result.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([])
@@ -73,6 +81,33 @@ test.describe('Show me around', () => {
   test('it never appears outside the demo', async ({ page }) => {
     await page.goto('/')
     await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible()
+    await expect(card(page)).toHaveCount(0)
+  })
+})
+
+test.describe('demo addresses', () => {
+  test('the Demo button on Home always walks through, even after the tour was seen', async ({ page }) => {
+    await page.goto('/demo/azure')
+    await expect(card(page)).toContainText('1 of 13')
+    await page.getByRole('button', { name: 'Skip' }).click()
+    await page.goto('/demo?tour=1')
+    await expect(card(page)).toContainText('1 of 13')
+  })
+
+  test('the demo stays under /demo and each cloud under its own address', async ({ page }) => {
+    await page.goto('/demo')
+    await expect(page).toHaveURL(/\/demo\/?$/)
+    await page.goto('/demo/aws')
+    await expect(page).toHaveURL(/\/demo\/aws(\/|\?|$)/)
+    await expect(page.getByText(/Everything here is made up/)).toBeVisible()
+  })
+})
+
+test.describe('demo deep links', () => {
+  test('a link to a panel is not taken over by the first-visit tour', async ({ page }) => {
+    await page.goto('/demo/?panel=connections')
+    await expect(page.getByText('Contoso Orders (dev)')).toBeVisible()
+    await expect(page).toHaveURL(/panel=connections/)
     await expect(card(page)).toHaveCount(0)
   })
 })

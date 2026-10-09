@@ -66,14 +66,14 @@ test.describe('the demo is solid', () => {
   })
 
   test('a message opens with its body and why it failed', async ({ page }) => {
-    await enter(page, '/demo/azure')
+    await enter(page, '/demo/azure/?tab=dlq')
     await page.getByRole('link', { name: /^Details of message/ }).first().click()
     await check(page, 'message drawer')
     await expect(page.locator('body')).toContainText(/orderId|ORD-/)
   })
 
   test('Reset demo puts back what the visitor changed', async ({ page }) => {
-    await enter(page, '/demo/azure')
+    await enter(page, '/demo/azure/?tab=dlq')
     const replayLinks = page.getByRole('link', { name: /^Replay message/ })
     const firstName = await replayLinks.first().getAttribute('aria-label')
     await replayLinks.first().click()

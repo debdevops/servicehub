@@ -15,12 +15,12 @@ body, its properties and a hash are kept **unencrypted** in the SQLite file ([SE
 - **Anyone who can reach its port is the admin.** Keep it on `localhost`.
 - **No upgrade from 4.0.0.** 4.1.0 is a from-scratch rewrite with a fresh database and cannot open a 4.0.0 file. Run it beside 4.0.0 and connect your clouds again. 4.0.0 lives, frozen, in [`archive/servicehub-4.0.0/`](archive/servicehub-4.0.0/). See the [changelog](CHANGELOG.md).
 
-Fastest look, no cloud account: pick an install option below and choose **Try it with sample data** (or open <http://localhost:3000/demo/azure>). A captioned walkthrough video per cloud is [further down](#watch-it-work--all-of-simple-mode-start-to-finish).
+Fastest look, no cloud account: pick an install option below and choose **Try it with sample data** (or open <http://localhost:3000/demo>, or press **Demo** on Home). A captioned walkthrough video per cloud is [further down](#watch-it-work--all-of-simple-mode-start-to-finish).
 
 ## Try it in your browser — nothing to install
 
 **<https://debdevops.github.io/servicehub/>** opens a live demo of ServiceHub with made-up data across Azure, AWS and GCP. Replay a failed message,
-see whether it stayed fixed, watch Auto Replay stop and ask a person. Take the six-stop **Show me around** tour, or click anywhere.
+see whether it stayed fixed, watch Auto Replay stop and ask a person. Take the 13-stop **Show me around** tour, or click anywhere.
 
 It runs entirely in your browser: there is no server behind it, it connects to no cloud, and nothing you do leaves the page. Actions say
 *"Demo — nothing was sent"*. To use ServiceHub on your own queues, run it yourself (below); your data then stays on your machine.
@@ -48,7 +48,7 @@ machine will not do) and [Node.js](https://nodejs.org) 22.12+ or 20.19+ (`node -
 `./run.sh --no-install`.
 
 The first start downloads packages and compiles the API, which takes a few minutes (longer if it also installs the tools). When you see **✔ ServiceHub is ready**, open **<http://localhost:3000>** and choose
-**Try it with sample data** (or go straight to <http://localhost:3000/demo/azure>). Press **Ctrl-C** to stop. Then use **Add a cloud** (sidebar) to connect your own.
+**Try it with sample data** (or go straight to <http://localhost:3000/demo>). Press **Ctrl-C** to stop. Then use **Add a cloud** (sidebar) to connect your own.
 
 This mode runs in `Development` with a throw-away encryption key, so it is for trying and developing. Your data lives in `services/api/src/ServiceHub.Api/data/`.
 Something did not start? The **[Local setup guide](docs/LOCAL-SETUP.md)** covers prerequisites, what `./run.sh` does, and a troubleshooting table.
@@ -80,7 +80,7 @@ in `AllowedHosts` (only `/health` answers on any name); the setting replaces the
 
 ![Home: what needs you, how each cloud is doing, and the ServiceHub Agent](docs/screenshots/01-home.png)
 
-*Screenshots are the built-in demo (`/demo/azure`): made-up data, nothing is sent anywhere.*
+*Screenshots are the built-in demo (`/demo`): made-up data, nothing is sent anywhere.*
 
 ## What you get
 

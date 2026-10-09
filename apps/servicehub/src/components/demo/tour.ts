@@ -86,4 +86,46 @@ export const stops: readonly TourStop[] = [
     path: () => '/',
     target: () => one('#agent-bar'),
   },
+  {
+    title: 'Help and information, on every page',
+    text: () => 'The small book beside a page title opens Help on that page, in the same guide the real app has. The “What am I looking at?” card explains the numbers on the page; you can hide it and bring it back.',
+    path: () => '/',
+    target: () => one('a[aria-label="Help for this page"]'),
+  },
+  {
+    title: 'Auto Replay rules',
+    text: () => 'Here you decide what ServiceHub may retry on its own — by failure, queue and limit. Rules are off until you switch them on, and every rule says what it would do.',
+    path: (provider) => `/?panel=rules&provider=${provider}`,
+    target: () => one('main section'),
+  },
+  {
+    title: 'Advanced: the whole picture',
+    text: () => 'Advanced is read-only. The overview shows what needs you, the recovery state of every message, what each Agent may do, and what changed.',
+    path: () => '/advanced',
+    target: () => one('main h1'),
+  },
+  {
+    title: 'Recovery Ledger',
+    text: () => 'Every replay is written down: what was sent back, by whom, and whether it stayed fixed.',
+    path: () => '/advanced/ledger',
+    target: () => one('main h1'),
+  },
+  {
+    title: 'Failure Signatures',
+    text: () => 'Messages that fail for the same reason are grouped into one signature, so you decide once instead of per message.',
+    path: () => '/advanced/signatures',
+    target: () => one('main h1'),
+  },
+  {
+    title: 'Agents',
+    text: () => 'Who is watching, what each Agent may do, and what it never does — with its recent activity.',
+    path: () => '/advanced/agents',
+    target: () => one('main h1'),
+  },
+  {
+    title: 'Connections',
+    text: () => 'In the real app this is where you connect a cloud with its connection string, and see whether each one is reachable. Here, three made-up clouds are connected. Now try anything — nothing is sent.',
+    path: () => '/?panel=connections',
+    target: () => one('main section'),
+  },
 ]

@@ -1,4 +1,5 @@
-import { TriangleAlert } from 'lucide-react'
+import { FlaskConical, TriangleAlert } from 'lucide-react'
+import { isDemo } from '../lib/demo/state'
 import { toProblem } from '../lib/api/client'
 import { useSearchParams } from 'react-router-dom'
 import { AgentBar } from '../components/agent/AgentBar'
@@ -125,10 +126,21 @@ function HomeBody({ connected, allNamespaces, homeScope }: {
             What needs you, how every cloud you’ve connected is doing, and the detail for the one you pick.
           </p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+        {!isDemo() && (
+          <a
+            href={`${import.meta.env.BASE_URL}demo?tour=1`}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[#c4b5fd] bg-[#f5f3ff] px-3 py-2 text-[13px] font-semibold text-[#4c1d95] hover:bg-[#ede9fe]"
+            title="Walk through the whole product with made-up data — no connection string needed"
+          >
+            <FlaskConical className="h-4 w-4" aria-hidden="true" /> Demo
+          </a>
+        )}
         <Select variant="card" label="Window" ariaLabel="Window" value={homeScope.window} onChange={(v) => homeScope.setWindow(v === '7d' ? '7d' : '24h')}>
           <option value="24h">{windowLabel['24h']}</option>
           <option value="7d">{windowLabel['7d']}</option>
         </Select>
+        </div>
       </header>
 
       {explainer.shown && <ExplainerCard id="home" onDismiss={explainer.dismiss} />}

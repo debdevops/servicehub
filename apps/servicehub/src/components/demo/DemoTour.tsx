@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useNamespaces } from '../../hooks/useNamespaces'
 import { useProviderScope } from '../provider/providerScope'
 import { TOUR_EVENT, rememberTourSeen, stops, tourSeen } from './tour'
@@ -7,7 +7,7 @@ import { TOUR_EVENT, rememberTourSeen, stops, tourSeen } from './tour'
 interface Box { top: number; left: number; width: number; height: number }
 
 /**
- * "Show me around" (4.2.0): six stops through the product's one idea — a message failed, see why, put it back, see whether it
+ * "Show me around" (4.2.0): a walk through the product's one idea — a message failed, see why, put it back, see whether it
  * stayed fixed — on the REAL screens, not pictures of them. Demo only. It starts by itself once, and again from the banner.
  */
 export default function DemoTour() {
@@ -15,6 +15,7 @@ export default function DemoTour() {
   const [box, setBox] = useState<Box | null>(null)
   const navigate = useNavigate()
   const location = useLocation()
+  const [search, setSearch] = useSearchParams()
   const { selected } = useProviderScope()
   const namespaces = useNamespaces()
   const heading = useRef<HTMLHeadingElement>(null)
@@ -39,10 +40,15 @@ export default function DemoTour() {
   }, [begin])
   const offered = useRef(false)
   useEffect(() => {
-    if (offered.current || tourSeen() || location.pathname !== '/' || !namespaces.data?.length) return
+    // `?tour=1` is the Home page's Demo button: it always walks through, even for someone who has seen the tour before.
+    const asked = search.get('tour') === '1'
+    // By itself it starts only on a plain Home: a link to a panel or page (`/demo/?panel=connections`) is where the visitor meant to go.
+    const plainHome = location.search === '' || asked
+    if (offered.current || (tourSeen() && !asked) || location.pathname !== '/' || !plainHome || !namespaces.data?.length) return
     offered.current = true
+    if (asked) setSearch((p) => { const n = new URLSearchParams(p); n.delete('tour'); return n }, { replace: true })
     begin()
-  }, [begin, location.pathname, namespaces.data])
+  }, [begin, location.pathname, location.search, namespaces.data, search, setSearch])
 
   const stop = index === null ? null : stops[index]
 
