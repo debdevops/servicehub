@@ -609,7 +609,7 @@ export const azureGuide: Guide = {
         },
         {
          "n": 4,
-         "text": "Replay All Messages — opens a preview of everything shown. Nothing is sent until you confirm the preview."
+         "text": "Replay All Messages — opens a preview of every message still stuck in the cloud and namespace you are viewing. It ignores the filters, time window and search here. Nothing is sent until you confirm the preview."
         },
         {
          "n": 5,
@@ -1372,7 +1372,7 @@ export const azureGuide: Guide = {
     },
     {
      "title": "7.3 The Advanced pages (read-only)",
-     "text": "Advanced never changes anything. **Overview** summarises recovery, authority and agents; the **Recovery Ledger** is the tamper-evident record of every action; **Failure Signatures** groups failures and shows what each has earned; **Agents** lists what is acting and what is only watching.",
+     "text": "Advanced never changes anything. **Overview** summarises recovery, authority and agents; the **Recovery Ledger** is the tamper-evident record of every action; **Failure Signatures** groups failures — by cloud, queue, reason and, where the cloud records one, the shape of the error message — and shows what each has earned (if some of a group’s latest replays did not hold, ServiceHub stops replaying it on its own until newer ones do); **Agents** lists what is acting and what is only watching.",
      "shots": [
       {
        "image": "/help/azure/17-advanced-overview.png",

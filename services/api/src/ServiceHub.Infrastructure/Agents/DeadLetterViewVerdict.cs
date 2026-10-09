@@ -82,7 +82,7 @@ internal static class DeadLetterViewVerdict
         DeadLetterReturnVerdict verdict;
         try
         {
-            verdict = await check.CheckAsync(ns, attestation, entry, tracker?.LiveSince(entry.OwnerId, namespaceId), ct).ConfigureAwait(false);
+            verdict = await check.CheckAsync(ns, attestation, entry, tracker?.LiveSince(entry.OwnerId, namespaceId) ?? attestation.LiveSince, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

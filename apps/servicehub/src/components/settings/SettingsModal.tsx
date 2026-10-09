@@ -19,6 +19,7 @@ import { providerLabel } from '../../lib/providers'
 import { environmentMeta } from '../provider/scopeChoice'
 import { NotAllowed } from '../ui/NotAllowed'
 import { BackupSection } from './BackupSection'
+import { FixConfirmation } from './FixConfirmation'
 import { Skeleton } from '../ui/Skeleton'
 import { Select } from '../ui/Select'
 
@@ -119,6 +120,7 @@ function ConnectionRow({ ns, admin }: { ns: Namespace; admin: { allowed: boolean
         <button type="button" className={btn} disabled={!admin.allowed} aria-label={`Remove ${ns.displayName ?? ns.name}`} onClick={() => setConfirming(true)}><Trash2 className="h-4 w-4" aria-hidden="true" /></button>
       )}
       {remove.isError && <p role="alert" className="w-full text-xs text-[#b91c1c]">{toProblem(remove.error).message}</p>}
+      <FixConfirmation ns={ns} admin={admin} />
     </li>
   )
 }

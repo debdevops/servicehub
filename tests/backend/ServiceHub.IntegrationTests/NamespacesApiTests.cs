@@ -354,6 +354,43 @@ public sealed class NamespacesApiTests
     }
 
     [Fact]
+    public async Task The_observer_tells_the_screen_whether_anything_has_to_be_named_without_the_screen_knowing_the_cloud()
+    {
+        using var host = Host();
+        var aws = await ConnectAws(host, "orders-queue");
+        var azure = await Connect(host, "acme-bus");
+
+        var scanned = await Json(await host.Client.GetAsync($"/api/v1/namespaces/{aws}/dlq-observer"));
+        var own = await Json(await host.Client.GetAsync($"/api/v1/namespaces/{azure}/dlq-observer"));
+
+        scanned.TryGetProperty("needsReference", out _).Should().BeTrue();
+        own.GetProperty("needsReference").GetBoolean().Should().BeFalse();
+        own.GetProperty("referenceHint").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task Regrouping_failures_by_error_message_needs_the_intent_header_and_defaults_to_a_dry_run()
+    {
+        using var host = Host();
+        var id = await Connect(host, "acme-bus");
+
+        (await host.Client.PostAsync($"/api/v1/namespaces/{id}/signatures/resign", null)).StatusCode.Should().Be(HttpStatusCode.PreconditionRequired);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/namespaces/{id}/signatures/resign");
+        request.Headers.Add("X-ServiceHub-Intent", "resign-signatures");
+        var response = await host.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await Json(response);
+        result.GetProperty("saved").GetBoolean().Should().BeFalse("nothing is written unless dryRun=false is asked for");
+        result.GetProperty("messagesChanged").GetInt32().Should().Be(0);
+
+        var unknown = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/namespaces/{Guid.NewGuid()}/signatures/resign");
+        unknown.Headers.Add("X-ServiceHub-Intent", "resign-signatures");
+        (await host.Client.SendAsync(unknown)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task Removing_a_namespace_needs_the_intent_header_and_then_it_is_gone()
     {
         using var host = Host();

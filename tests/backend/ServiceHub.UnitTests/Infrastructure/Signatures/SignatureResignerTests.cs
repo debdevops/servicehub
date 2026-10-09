@@ -46,7 +46,7 @@ public sealed class SignatureResignerTests : IDisposable
             CloudProvider = CloudProviderType.Azure, EnqueuedTimeUtc = T0.AddMinutes(minute), DetectedAtUtc = T0.AddMinutes(minute),
             DeadLetterReason = Reason, DeadLetterErrorDescription = error,
         };
-        m.SignatureHash = await SignatureRecorder.AssignAsync(_db, m, default);
+        m.SignatureHash = await LegacySigner.AssignAsync(_db, m, default);
         _db.DlqMessages.Add(m);
         await _db.SaveChangesAsync();
         _db.ChangeTracker.Clear();
@@ -346,7 +346,7 @@ public sealed class SignatureResignerTests : IDisposable
                 EntityName = "orders", EntityType = ServiceBusEntityType.Queue, CloudProvider = CloudProviderType.Gcp, EnqueuedTimeUtc = T0, DetectedAtUtc = T0.AddMinutes(i),
                 BodyPreview = $"{{\"orderId\":\"ORD-{i}\",\"customer\":\"customer-{i}\"}}",
             };
-            m.SignatureHash = await SignatureRecorder.AssignAsync(_db, m, default);
+            m.SignatureHash = await LegacySigner.AssignAsync(_db, m, default);
             _db.DlqMessages.Add(m);
         }
 

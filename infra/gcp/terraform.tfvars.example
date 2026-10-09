@@ -11,7 +11,7 @@ replay_topics = ["orders-topic"]
 # Optional
 # allow_replay            = true   # false = read-only
 # name                    = "servicehub"
-# servicehub_version      = "4.1.0"
+# servicehub_version      = "4.2.0"
 # vm_size                 = "e2-medium"
 # data_disk_gb            = 32
 # snapshot_retention_days = 7

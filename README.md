@@ -1,11 +1,21 @@
 # ServiceHub
 
-**A self-hosted tool for recovering stuck messages in Azure Service Bus, AWS SQS/SNS and GCP Pub/Sub.**
+**Self-hosted dead-letter investigation and safe replay. Azure Service Bus first; AWS SQS/SNS and GCP Pub/Sub with limits.**
 
-Your queue says "4,218 dead-lettered messages". ServiceHub shows which ones, why each failed, and what a replay would do *before* anything is
-sent back — then keeps a local record you can export and verify offline. It runs as one process with one SQLite file. Message content never
-leaves your network: ServiceHub talks only to your clouds and, if you add one, to a notification channel (Slack, Teams or a webhook), which gets
-queue names and failure reasons, never message bodies.
+Your queue says "4,218 dead-lettered messages". A count alone does not explain the failure pattern or make a replay safe. ServiceHub shows which
+messages, why each failed, and what a replay would do *before* anything is sent back, then keeps a local record you can export and verify offline.
+It runs as one process with one SQLite file. Your clouds are the only place it connects, plus a notification channel (Slack, Teams or a webhook) if
+you add one, which gets queue names and failure reasons, never message bodies. Stored locally, though: the first 500 characters of each dead-letter
+body, its properties and a hash are kept **unencrypted** in the SQLite file ([SECURITY.md](SECURITY.md)), so treat the data folder like the queue.
+
+**Know the limits** before you try it:
+
+- **Production namespaces are read-only for replay.** Replay is refused on any namespace you mark as Production, and 4.1.0 has no way to override that. Investigate there; replay in dev and staging.
+- **Azure is the verified path.** Only Azure can confirm a replayed message stayed fixed. AWS and GCP read "verification required", and GCP often records no failure reason.
+- **Anyone who can reach its port is the admin.** Keep it on `localhost`.
+- **No upgrade from 4.0.0.** 4.1.0 is a from-scratch rewrite with a fresh database and cannot open a 4.0.0 file. Run it beside 4.0.0 and connect your clouds again. 4.0.0 lives, frozen, in [`archive/servicehub-4.0.0/`](archive/servicehub-4.0.0/). See the [changelog](CHANGELOG.md).
+
+Fastest look, no cloud account: pick an install option below and choose **Try it with sample data** (or open <http://localhost:3000/demo/azure>). A captioned walkthrough video per cloud is [further down](#watch-it-work--all-of-simple-mode-start-to-finish).
 
 ## Try it in your browser — nothing to install
 
@@ -23,20 +33,21 @@ No cloud account is needed to look around: both options open the same built-in d
 
 For macOS, Linux, or a WSL 2 terminal on Windows.
 
-| You need | Version | Check with |
-|---|---|---|
-| [.NET SDK](https://dotnet.microsoft.com/download/dotnet/10.0) | 10.0.302 or a later 10.0.x (an 11.x-only machine will not work; `services/api/global.json` pins 10.0) | `dotnet --version` |
-| [Node.js](https://nodejs.org) (npm comes with it) | 22 LTS recommended, 20.19 minimum | `node --version` |
-| [git](https://git-scm.com), `curl`, `lsof` | any | `git --version` |
+**You do not need to install anything first.** `./run.sh` checks your machine and, if the .NET 10 SDK or Node.js is missing (or the wrong version),
+downloads it into `~/.servicehub/tools` for you: no `sudo`, nothing system-wide changes. All it needs is `bash`, `curl` (or `wget`), `tar` and an internet connection.
 
 ```bash
 git clone https://github.com/debdevops/servicehub.git
 cd servicehub
-./run.sh --check    # optional: checks your machine and the ports, starts nothing
-./run.sh            # installs the web dependencies the first time, then starts the API (:5153) and the web app (:3000)
+./run.sh --check    # optional: reports what is ready and what would be installed; starts and installs nothing
+./run.sh            # installs what is missing, builds, then starts the API (:5153) and the web app (:3000)
 ```
 
-The first start compiles the API and takes a minute or two. When you see **✔ ServiceHub is ready**, open **<http://localhost:3000>** and choose
+Already have the tools? It uses yours: [.NET SDK](https://dotnet.microsoft.com/download/dotnet/10.0) 10.0.302 or a later 10.0.x (`dotnet --version`; an 11.x-only
+machine will not do) and [Node.js](https://nodejs.org) 22.12+ or 20.19+ (`node --version`). Offline or locked down? Install those two yourself and run
+`./run.sh --no-install`.
+
+The first start downloads packages and compiles the API, which takes a few minutes (longer if it also installs the tools). When you see **✔ ServiceHub is ready**, open **<http://localhost:3000>** and choose
 **Try it with sample data** (or go straight to <http://localhost:3000/demo/azure>). Press **Ctrl-C** to stop. Then use **Add a cloud** (sidebar) to connect your own.
 
 This mode runs in `Development` with a throw-away encryption key, so it is for trying and developing. Your data lives in `services/api/src/ServiceHub.Api/data/`.
@@ -49,11 +60,11 @@ Needs [Docker](https://docs.docker.com/get-docker/), a bash shell (macOS, Linux,
 ```bash
 export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"      # keep this key; it protects stored cloud credentials
 docker run -d --name servicehub -p 127.0.0.1:8080:8080 -v servicehub-data:/data \
-  -e SECURITY__ENCRYPTIONKEY="$SERVICEHUB_ENCRYPTION_KEY" ghcr.io/debdevops/servicehub:4.1.0
+  -e SECURITY__ENCRYPTIONKEY="$SERVICEHUB_ENCRYPTION_KEY" ghcr.io/debdevops/servicehub:4.2.0
 ```
 
 Open **<http://localhost:8080>** and choose **Try it with sample data**. The image is public (`linux/amd64` and `linux/arm64`, no sign-in to pull);
-`docker run` downloads it, or fetch it first with `docker pull ghcr.io/debdevops/servicehub:4.1.0`. This is the mode to run it for real: it uses `Production`
+`docker run` downloads it, or fetch it first with `docker pull ghcr.io/debdevops/servicehub:4.2.0`. This is the mode to run it for real: it uses `Production`
 settings and your own encryption key.
 
 Full guide, with update, back up, stop, remove and troubleshooting: **[Run ServiceHub with Docker](docs/DOCKER.md)**. To build the image from a clone instead (needs git, and Docker with the Compose v2 plugin: `docker compose version`):
@@ -66,11 +77,6 @@ docker compose up --build                                       # → http://loc
 ServiceHub **refuses to start in Production without an encryption key**, because the key protects every cloud connection string it stores. Losing the
 key makes them unreadable, so back it up in a secret manager. If you reach it by any name other than `localhost`, it answers `400` until you list that name
 in `AllowedHosts` (only `/health` answers on any name); the setting replaces the default, so keep `localhost` in it: `-e "AllowedHosts=localhost;your.host.name"`.
-
-**Know the limits:** replay is refused on any namespace you mark as Production, and 4.1.0 has no way to override that · AWS and GCP cannot confirm a replay stayed fixed, so they read "verification required" · anyone who can reach its port is the admin, so keep it on `localhost`.
-
-> **Status:** this is **ServiceHub 4.1.0**, a from-scratch rewrite. **There is no upgrade path from 4.0.0** — it starts with a fresh database and cannot open a 4.0.0 file; run it beside 4.0.0 and connect your clouds again.
-> 4.0.0 lives, frozen, in [`archive/servicehub-4.0.0/`](archive/servicehub-4.0.0/). See the [changelog](CHANGELOG.md).
 
 ![Home: what needs you, how each cloud is doing, and the ServiceHub Agent](docs/screenshots/01-home.png)
 

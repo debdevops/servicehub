@@ -28,7 +28,7 @@ public static class EscalationReasons
         "PROVIDER_CANNOT_VERIFY_ABSENCE" =>
             "This cloud can't prove a replayed message stayed fixed, so ServiceHub never replays here on its own. A person decides.",
         "RECURRENCE_CAP_EXCEEDED" or "RECURRENCE_CAP_EXCEEDED_HEURISTIC" =>
-            "This message has come back after replaying before. Replaying it again may fail the same way — check the cause first.",
+            "ServiceHub has already tried this message several times, replayed or held for a person. Trying again may fail the same way — check the cause first.",
         "RECURRENCE_CAP_AMBIGUOUS_COLLISION" =>
             "Several earlier replays look like this message, and ServiceHub can't tell which it is. A person decides.",
         "RECURRENCE_CAP_QUERY_ERROR" =>

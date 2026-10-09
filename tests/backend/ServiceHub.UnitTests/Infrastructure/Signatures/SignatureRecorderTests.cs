@@ -47,6 +47,41 @@ public sealed class SignatureRecorderTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Same_reason_and_queue_but_a_different_error_message_is_a_different_signature()
+    {
+        await using var db = NewDb();
+        var a = await SignatureRecorder.AssignAsync(db, Message(1, description: "inventory service timed out"), default);
+        var b = await SignatureRecorder.AssignAsync(db, Message(2, description: "customer 42 does not exist"), default);
+        var c = await SignatureRecorder.AssignAsync(db, Message(3, description: "customer 97 does not exist"), default);
+
+        a.Should().NotBe(b);
+        b.Should().Be(c, "only the order number differs");
+    }
+
+    [Fact]
+    public async Task A_new_message_joins_an_older_unsplit_signature_instead_of_starting_a_second_one()
+    {
+        var legacyMessage = Message(1, description: "inventory service timed out");
+        var features = (await new FailureFeatureExtractor().ExtractAsync(legacyMessage, default)).Value;
+        var legacyHash = (await new FailureFingerprintBuilder().ComputeAsync(features, default)).Value.Hash;
+
+        await using var db = NewDb();
+        db.NamespaceSignatures.Add(new NamespaceSignature
+        {
+            NamespaceId = NamespaceId, OwnerId = "o1", SignatureHash = legacyHash, FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+            OccurrenceCount = 5, DominantDeadletterReason = "MaxDeliveryCountExceeded", EntityName = "orders", ExampleError = "inventory service timed out",
+            TopTermsJson = "[]",
+        });
+        await db.SaveChangesAsync();
+
+        var same = await SignatureRecorder.AssignAsync(db, Message(2, description: "Inventory service timed out"), default);
+        var other = await SignatureRecorder.AssignAsync(db, Message(3, description: "customer 42 does not exist"), default);
+
+        same.Should().Be(legacyHash);
+        other.Should().NotBe(legacyHash);
+    }
+
+    [Fact]
     public async Task Messages_failing_differently_get_different_signatures()
     {
         await using var db = NewDb();

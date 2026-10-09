@@ -1,6 +1,8 @@
 # ServiceHub Changelog
 
-## [Unreleased]
+## [4.2.0] — 2026-10-09
+
+The last planned release of ServiceHub. Development stops after 4.2.0.
 
 ### Added
 
@@ -25,24 +27,44 @@
   snapshots, backups copied to private storage, and a destroy that keeps your data unless you ask for a purge. On AWS and Google Cloud ServiceHub
   uses the machine's own identity, limited to the queues you name. **Not yet run against a real account** — see `infra/README.md`.
 
-- **Confirming a fix on AWS and Google Cloud (off until you switch it on; not yet run against a real cloud).** Where a cloud cannot prove a
+- **Confirming a fix on AWS and Google Cloud (off until you switch it on).** Run against real AWS and Google Cloud on 2026-10-09: on AWS a replay that failed again read *came back* and a cured one read *recovered* (confirmed by the whole-queue scan); a scan killed halfway gave its messages back within five minutes; on Google Cloud the recovery marker survives dead-lettering and a replay that failed again read *came back*. **Not observed:** a cured replay on Google Cloud, 1,000+ and 5,000-message queues, a second reader on AWS. Where a cloud cannot prove a
   replay stayed fixed, ServiceHub can now be given a complete view of that cloud's dead-letter queue: on Google Cloud a subscription of its own
   on the dead-letter topic, on AWS a scan of the whole dead-letter queue when a replay's watch window ends. A view either saw everything or
   the replay still reads *verification required* — there is no confidence score. A new agent, **Fix Confirmer**, keeps each view checked.
-  Switched on per namespace through `PUT /api/v1/namespaces/{id}/dlq-observer`; there is no screen for it yet.
+  Switched on per namespace in Settings → Connections (or `PUT /api/v1/namespaces/{id}/dlq-observer`).
 - **Auto Replay now stops when a failure's latest results turn bad.** A failure that has earned replaying on its own was judged on its whole
   history, so a long good run hid a new problem starting. Now, if 2 of its last 10 verified replays did not stay fixed, ServiceHub hands it back to
   a person ("some of the latest replays did not hold") and carries on by itself once newer replays hold. It can only make Auto Replay more careful;
   a person is never held by it, and it stops rather than guesses if it cannot read the results.
-- **Groundwork for telling failures apart by their error message (built, switched off, not yet run on real data).** Today two different failures
-  on one queue with the same reason can share a group, and so share trust. The pieces to separate them exist — error-message shapes, a limit of 20
-  groups per queue, a re-grouping job with a dry run, past replays counted under the group their message now belongs to, and Auto Replay rules
-  tied to a group that no longer exists being switched off with a note on what to pick — but nothing turns them on yet.
+- **Failures are now told apart by their error message.** Two different failures on one queue with the same reason used to share a group,
+  and so share trust. A group now also depends on the *shape* of the error message the cloud recorded (ids, numbers, times and quoted values are
+  ignored: "customer 42 does not exist" and "customer 97 does not exist" stay together, "inventory service timed out" is separate), with a
+  limit of 20 shapes per queue. A group made before this release that does not actually split keeps its identity, trust and rules. To regroup
+  what is already recorded, an Admin calls `POST /api/v1/namespaces/{id}/signatures/resign` (a dry run unless `dryRun=false`, one
+  transaction, safe to repeat); past replays count under the group their message now belongs to, and an Auto Replay rule tied to a group that
+  no longer exists is switched off with a note on which new group to pick. **Limit, seen on real Azure:** when Azure gives up after too many
+  attempts it records the same fixed sentence for every cause, so those failures cannot be told apart by their message — the newest-results
+  check above is what protects them.
+- **A screen for confirming fixes** (Settings → Connections, Admin). For a cloud that cannot tell whether a replayed message came back, each
+  connection shows whether confirming is on and working, a **Switch on / Switch off** button and **Check now**. Switching it on confirms
+  nothing by itself; the line says so until ServiceHub has actually been able to see the cloud's dead letters.
 - **An MCP server** (`tools/mcp/`): a read-only way for an AI assistant to ask ServiceHub about dead letters, failures and replays. It can
   only send a GET to ten fixed addresses; there is no tool that replays, purges or approves. One file, no dependencies.
 
+### Changed
+
+- **One migration (`0015_A_DlqObserverLiveSince`, owner-signed 2026-10-09):** a nullable `LiveSince` column on the dead-letter view's set-up, so a
+  restart no longer makes earlier replays on Google Cloud read *cannot tell*. A view that went stale or was lost still starts its clock again.
+
 ### Fixed
 
+- **A stuck agent no longer stays stuck.** A cycle that never came back (a network connection that died while the machine slept) froze its agent
+  until the next restart — the Dead-letter Monitor and Recovery Verification both stopped for good in a live run. A cycle is now abandoned after
+  10 minutes, recorded as a failure, and the agent runs again.
+- **AWS: the whole-queue check never worked on a real queue.** It asked SQS for an attribute (`FifoQueue`) that SQS refuses on a standard queue, so
+  every check ended *unreadable*. Found by running it against a real SQS queue; the unit-test stand-in now refuses the same way. After the fix,
+  8 of 10 scans of a 653-message dead-letter queue reported *complete* with exactly 653, and 2 reported *incomplete* (the queue's own counts had
+  not caught up) — none claimed a view that was not complete.
 - **Two low-contrast texts**, found once the demo filled screens that used to be empty: the count on the selected tab (Failure Signatures and
   every pill tab bar), and the grey text on an Auto Replay rule that has stopped itself.
 - **The demo's "needs attention" list** let one busy cloud push another cloud's items off the first page.

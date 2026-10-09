@@ -222,7 +222,9 @@ public sealed class SqsWholeQueueScanner
         var names = new List<string> { "ApproximateNumberOfMessages", "ApproximateNumberOfMessagesNotVisible" };
         if (withShape)
         {
-            names.AddRange(["FifoQueue", "RedrivePolicy"]);
+            // "All", not a named FifoQueue: SQS refuses that name on a standard queue (InvalidAttributeName — seen live, 2026-10-09) and
+            // returns FifoQueue itself only for a FIFO queue.
+            names = ["All"];
         }
 
         var response = await sqs.GetQueueAttributesAsync(new GetQueueAttributesRequest { QueueUrl = dlqUrl, AttributeNames = names }, ct).ConfigureAwait(false);

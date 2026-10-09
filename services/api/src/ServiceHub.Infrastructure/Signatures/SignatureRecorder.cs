@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using ServiceHub.Core.Entities;
+using ServiceHub.Core.Helpers;
 using ServiceHub.Infrastructure.Persistence;
 
 namespace ServiceHub.Infrastructure.Signatures;
@@ -16,7 +17,8 @@ namespace ServiceHub.Infrastructure.Signatures;
 public sealed class SignatureRecorder
 {
     private static readonly FailureFeatureExtractor Extractor = new();
-    private static readonly FailureFingerprintBuilder Builder = new();
+    private static readonly FailureFingerprintBuilder BuilderV1 = new();
+    private static readonly FailureFingerprintBuilder BuilderV2 = new(includeErrorTemplate: true);
 
     /// <summary>
     /// Computes <paramref name="message"/>'s fingerprint, adds or updates its <see cref="NamespaceSignature"/> row in
@@ -28,8 +30,24 @@ public sealed class SignatureRecorder
         ArgumentNullException.ThrowIfNull(message);
 
         var features = (await Extractor.ExtractAsync(message, ct).ConfigureAwait(false)).Value;
-        var fingerprint = (await Builder.ComputeAsync(features, ct).ConfigureAwait(false)).Value;
+        var template = await ErrorTemplateCatalog.TemplateForAsync(db, message, ErrorTemplateCap.DefaultMax, ct).ConfigureAwait(false);
+        var fingerprint = (await BuilderV2.ComputeAsync(features with { ErrorTemplate = template }, ct).ConfigureAwait(false)).Value;
         var hash = fingerprint.Hash;
+
+        // A signature made before failures were grouped by error message, and never split by a re-sign, keeps its identity (and the
+        // trust, grant and rules that go with it). A new message with the same shape joins it instead of starting a second signature.
+        var legacy = (await BuilderV1.ComputeAsync(features, ct).ConfigureAwait(false)).Value.Hash;
+        if (legacy != hash)
+        {
+            var old = db.NamespaceSignatures.Local.FirstOrDefault(s =>
+                    s.OwnerId == message.OwnerId && s.NamespaceId == message.NamespaceId && s.SignatureHash == legacy)
+                ?? await db.NamespaceSignatures.AsNoTracking().FirstOrDefaultAsync(s =>
+                    s.OwnerId == message.OwnerId && s.NamespaceId == message.NamespaceId && s.SignatureHash == legacy, ct).ConfigureAwait(false);
+            if (old is not null && ErrorTemplate.Normalize(old.ExampleError) == template)
+            {
+                hash = legacy;
+            }
+        }
 
         // Rows added earlier in this same scan are tracked but not yet saved, so look there first.
         var row = db.NamespaceSignatures.Local.FirstOrDefault(s =>

@@ -1,4 +1,4 @@
-import type { DeadLetterLook, EntityKind, EntityList, NamespaceStats } from '../../api/namespaces'
+import type { DeadLetterLook, DlqObserver, EntityKind, EntityList, NamespaceStats } from '../../api/namespaces'
 import { look } from '../world/actions'
 import { activeIn, nsOf } from '../world/derive'
 import { people } from '../world/seed'
@@ -6,7 +6,19 @@ import { notFound, refuse, type Route } from './http'
 
 const kinds: readonly EntityKind[] = ['queue', 'topic', 'subscription']
 
+/** The demo clouds that cannot confirm a fix by themselves say so, and the controls refuse: nothing is set up in a demo (R4/R5 — only Azure shows verified). */
 export const namespaces: readonly Route[] = [
+  ['get', /^\/namespaces\/([^/]+)\/dlq-observer$/, (m, { w }): DlqObserver => {
+    const ns = w.namespaces.find((n) => n.id === m[1]) ?? notFound('namespace')
+    const needed = !ns.capabilities!.canProveDlqAbsence
+    return {
+      needed, enabled: false, live: false, observerReference: null, dlqEntityName: null, stalenessBoundMinutes: 30, lastCanarySentAt: null, lastConfirmedAt: null,
+      status: needed ? 'No observer is set up, so a replay here can be sent back but not confirmed as fixed.' : 'This cloud can confirm a replay stayed fixed on its own — no observer needed.',
+      needsReference: false, referenceHint: null,
+    }
+  }],
+  ['put', /^\/namespaces\/([^/]+)\/dlq-observer$/, () => refuse(409, 'demo_cannot_set_up', 'This is a demo — nothing is connected to a real cloud, so there is nothing to switch on.')],
+  ['post', /^\/namespaces\/([^/]+)\/dlq-observer\/check$/, () => refuse(409, 'demo_cannot_set_up', 'This is a demo — nothing is connected to a real cloud, so there is nothing to check.')],
   ['get', /^\/namespaces$/, (_m, { w }) => w.namespaces],
   ['get', /^\/namespaces\/([^/]+)$/, (m, { w }) => w.namespaces.find((n) => n.id === m[1]) ?? notFound('namespace')],
   ['post', /^\/namespaces$/, () => refuse(409, 'demo_cannot_connect', 'This is a demo — it cannot connect to a real cloud. Leave the demo to connect your own.')],

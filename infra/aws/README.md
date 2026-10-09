@@ -50,7 +50,7 @@ The exact command is printed at the end. Then open <http://localhost:8080>.
 | `messaging_resources` | `[]` | Queue (and topic) ARNs ServiceHub may use |
 | `allow_replay` | `true` | `false` = read-only |
 | `name` | `servicehub` | Prefix for names |
-| `servicehub_version` | `4.1.0` | |
+| `servicehub_version` | `4.2.0` | |
 | `vm_size` | `t3.medium` | |
 | `data_disk_gb` | `32` | |
 | `snapshot_retention_days` | `7` | |

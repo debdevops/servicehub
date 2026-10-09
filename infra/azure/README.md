@@ -44,7 +44,7 @@ Then open <http://localhost:8080>. If your own IP address changes, set `allowed_
 | `ssh_public_key` | — | Required: the text of your public key |
 | `allowed_ssh_cidr` | — | Required: your address, e.g. `203.0.113.7/32`. `0.0.0.0/0` is refused |
 | `name` | `servicehub` | Prefix for names |
-| `servicehub_version` | `4.1.0` | |
+| `servicehub_version` | `4.2.0` | |
 | `vm_size` | `Standard_B2s` | |
 | `data_disk_gb` | `32` | |
 | `snapshot_retention_days` | `7` | |

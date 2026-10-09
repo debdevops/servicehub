@@ -9,6 +9,8 @@ using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Core.Security;
 using ServiceHub.Core.Validation;
+using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.Signatures;
 
 namespace ServiceHub.Api.Controllers.V1;
 
@@ -235,9 +237,11 @@ public sealed class NamespacesController : ApiControllerBase
     [HttpGet("{id:guid}/dlq-observer")]
     [ProducesResponseType(typeof(DlqObserverResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetDlqObserver(Guid id, [FromServices] IDlqObserverAttestationService attestations, CancellationToken cancellationToken)
+    public async Task<IActionResult> GetDlqObserver(
+        Guid id, [FromServices] IDlqObserverAttestationService attestations, [FromServices] IEnumerable<IDeadLetterReturnCheck> checks, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(attestations);
+        ArgumentNullException.ThrowIfNull(checks);
         var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
         if (found.IsFailure)
         {
@@ -246,7 +250,7 @@ public sealed class NamespacesController : ApiControllerBase
 
         var ns = found.Value;
         var needed = _router.IsRegistered(ns.Provider) && !_router.Resolve(ns.Provider).Capabilities.CanProveDlqAbsence;
-        return Ok(ToObserverResponse(needed, await attestations.GetAsync(OwnerId, id, cancellationToken)));
+        return Ok(ToObserverResponse(needed, await attestations.GetAsync(OwnerId, id, cancellationToken), checks.FirstOrDefault(c => c.Provider == ns.Provider)));
     }
 
     /// <summary>
@@ -340,7 +344,38 @@ public sealed class NamespacesController : ApiControllerBase
         }
 
         await RecordAsync(AuditActions.DlqObserverConfigure, AuditActions.Success, ns, null, cancellationToken);
-        return Ok(ToObserverResponse(true, saved.Value));
+        return Ok(ToObserverResponse(true, saved.Value, checks.FirstOrDefault(c => c.Provider == ns.Provider)));
+    }
+
+    /// <summary>
+    /// Regroups a namespace's dead letters by error message (design 10). <c>dryRun</c> (the default) writes nothing and says what would
+    /// change. A real run is one transaction, safe to repeat, and switches off rules whose signature was split. Requires the
+    /// <c>resign-signatures</c> intent header and the Admin role for this namespace.
+    /// </summary>
+    [HttpPost("{id:guid}/signatures/resign")]
+    [ProducesResponseType(typeof(ResignResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
+    public async Task<IActionResult> ResignSignatures(
+        Guid id, [FromServices] ServiceHubDbContext db, CancellationToken cancellationToken, [FromQuery] bool dryRun = true)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        if (!IntentHeaders.Declares(Request, IntentHeaders.ResignSignatures))
+        {
+            return Problem(StatusCodes.Status428PreconditionRequired, ErrorCodes.IntentRequired, IntentHeaders.MissingDetail("regroup failures by error message", IntentHeaders.ResignSignatures));
+        }
+
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        if (await DeniedUnlessAsync(GovernanceRole.Admin, id, null, "regroup failures by error message", cancellationToken) is { } denied) return denied;
+
+        var result = await SignatureResigner.ResignNamespaceAsync(db, OwnerId, id, dryRun, ct: cancellationToken);
+        _logger.LogInformation("Re-sign of namespace {NamespaceId} (dryRun={DryRun}): {Changed} of {Messages} changed", id, dryRun, result.MessagesChanged, result.Messages);
+        return Ok(result);
     }
 
     /// <summary>
@@ -395,7 +430,14 @@ public sealed class NamespacesController : ApiControllerBase
     /// <param name="Count">How many messages were seen in that queue.</param>
     public sealed record DlqObserverCheckResponse(bool Healthy, string? Reason, bool? Complete, string? IncompleteReason, int? Count);
 
-    private static DlqObserverResponse ToObserverResponse(bool needed, DlqObserverAttestation? a)
+    private static DlqObserverResponse ToObserverResponse(bool needed, DlqObserverAttestation? a, IDeadLetterReturnCheck? check = null)
+    {
+        var needsReference = needed && check is { NeedsObserverReference: true };
+        var hint = needsReference ? check!.ValidateObserverReference(null) : null;
+        return Describe(needed, a) with { NeedsReference = needsReference, ReferenceHint = hint };
+    }
+
+    private static DlqObserverResponse Describe(bool needed, DlqObserverAttestation? a)
     {
         if (!needed)
         {

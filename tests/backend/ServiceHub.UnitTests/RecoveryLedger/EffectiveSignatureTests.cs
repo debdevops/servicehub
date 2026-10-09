@@ -48,7 +48,7 @@ public sealed class EffectiveSignatureTests : IDisposable
             CloudProvider = CloudProviderType.Azure, EnqueuedTimeUtc = at, DetectedAtUtc = at,
             DeadLetterReason = "MaxDeliveryCountExceeded", DeadLetterErrorDescription = error,
         };
-        m.SignatureHash = await SignatureRecorder.AssignAsync(_db, m, default);
+        m.SignatureHash = await Infrastructure.Signatures.LegacySigner.AssignAsync(_db, m, default);
         _db.DlqMessages.Add(m);
         await _db.SaveChangesAsync();
 

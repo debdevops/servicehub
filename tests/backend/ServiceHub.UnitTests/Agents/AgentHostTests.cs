@@ -84,6 +84,40 @@ public sealed class AgentHostTests
             "one agent's failure must never take down the host or its siblings");
     }
 
+    private sealed class HangingAgent(AgentDescriptor descriptor) : IAgent
+    {
+        public AgentDescriptor Descriptor { get; } = descriptor;
+        public int Cycles;
+
+        // Never returns and ignores its token — a connection that died while the machine slept.
+        public Task<AgentCycleResult> ExecuteCycleAsync(CancellationToken ct)
+        {
+            Interlocked.Increment(ref Cycles);
+            return new TaskCompletionSource<AgentCycleResult>().Task;
+        }
+    }
+
+    [Fact]
+    public async Task A_cycle_that_never_returns_is_given_up_on_and_the_agent_runs_again()
+    {
+        var hanging = new HangingAgent(Descriptor("hangs"));
+        var registry = new AgentRegistry([hanging]);
+        var time = new FakeTimeProvider();
+        var host = new AgentHost([hanging], registry, NullLogger<AgentHost>.Instance, time);
+
+        await host.StartAsync(CancellationToken.None);
+        await WaitUntilAsync(() => hanging.Cycles >= 1);
+        time.Advance(TimeSpan.FromMinutes(11)); // past the cycle timeout
+        await WaitUntilAsync(() => registry.StateOf("hangs")!.LastFailure is not null);
+        registry.StateOf("hangs")!.LastFailure.Should().Contain("given up on");
+
+        time.Advance(TimeSpan.FromMinutes(2)); // past the cadence: the next cycle starts
+        await WaitUntilAsync(() => hanging.Cycles >= 2);
+        await host.StopAsync(CancellationToken.None);
+
+        hanging.Cycles.Should().BeGreaterThanOrEqualTo(2, "a hung cycle must not freeze the agent for good");
+    }
+
     [Fact]
     public async Task An_agent_that_reports_a_change_it_has_no_authority_to_make_is_a_contract_violation()
     {

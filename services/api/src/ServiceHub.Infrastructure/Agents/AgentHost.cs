@@ -37,6 +37,13 @@ public sealed class AgentHost : BackgroundService
     internal static readonly TimeSpan ReconcileEvery = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// The longest one cycle may take before it is given up on (the slowest legitimate cycle, an AWS whole-queue scan, is bounded at about
+    /// five minutes). Without it a call that never returns — a network connection that died while the machine slept — froze its agent
+    /// until the next restart, seen live on 2026-10-09: the Dead-letter Monitor and Recovery Verification stopped for good.
+    /// </summary>
+    internal static readonly TimeSpan CycleTimeout = TimeSpan.FromMinutes(10);
+
+    /// <summary>
     /// Creates the host over every agent registered in the container. Without <paramref name="scopes"/> there is no way to read
     /// which clouds are connected, so every agent runs.
     /// </summary>
@@ -192,7 +199,21 @@ public sealed class AgentHost : BackgroundService
 
         try
         {
-            var result = await agent.ExecuteCycleAsync(ct).ConfigureAwait(false);
+            using var cycleCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            AgentCycleResult result;
+            try
+            {
+                result = await agent.ExecuteCycleAsync(cycleCts.Token).WaitAsync(CycleTimeout, _time, ct).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                // Abandoned, not waited for: the call may never come back. Its token is cancelled in case it listens.
+                await cycleCts.CancelAsync().ConfigureAwait(false);
+                var message = $"A cycle took longer than {CycleTimeout.TotalMinutes:0} minutes and was given up on; the next one starts as usual.";
+                _logger.LogWarning("Agent {AgentId}: {Message}", descriptor.Id, message);
+                _registry.RecordFailure(descriptor.Id, message, startedUtc);
+                return;
+            }
 
             if (result.Changed > 0 && !descriptor.CanAct)
             {

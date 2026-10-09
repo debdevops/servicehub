@@ -142,7 +142,7 @@ await scene('07', async () => {
     { n: 1, loc: page.getByText('Stuck now', { exact: true }), t: 'Showing — Stuck now, or messages that have since left the queue.' },
     { n: 2, loc: page.getByText('All time', { exact: true }), t: 'Time window — only messages set aside in this period.' },
     { n: 3, loc: page.getByPlaceholder(/Search ID/), t: 'Search — by message ID, queue, reason or error text.' },
-    { n: 4, loc: btn('Replay All Messages'), t: 'Replay All Messages — opens a preview of everything shown. Nothing is sent until you confirm the preview.' },
+    { n: 4, loc: btn('Replay All Messages'), t: 'Replay All Messages — opens a preview of every message still stuck in the cloud and namespace you are viewing. It ignores the filters, time window and search here. Nothing is sent until you confirm the preview.' },
     { n: 5, loc: [btn('Refresh'), btn('About Refresh')], t: 'Refresh — reads the queue again. On Azure this is free. The ⓘ beside it says when it was last read.' },
     { n: 6, loc: page.getByText('No messages selected'), t: 'Selection — tick rows to act on several; this line shows how many.' },
     { n: 7, loc: page.getByText('Replay selected…').first(), t: 'Replay selected — opens the same preview for just the ticked messages.' },

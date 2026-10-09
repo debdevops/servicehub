@@ -64,6 +64,9 @@ public static class IntentHeaders
     /// <summary>Intent for turning a cloud's DLQ observer on or off, or changing where its log lives.</summary>
     public const string ConfigureDlqObserver = "configure-dlq-observer";
 
+    /// <summary>Intent for re-signing a namespace's dead letters by error message — it rewrites signature identity, so it must be meant.</summary>
+    public const string ResignSignatures = "resign-signatures";
+
     /// <summary>Intent for taking a backup.</summary>
     public const string CreateBackup = "create-backup";
 

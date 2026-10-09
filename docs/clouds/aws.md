@@ -341,7 +341,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 1. Showing — Stuck now, or messages that have since left the queue.
 2. Time window — only messages set aside in this period.
 3. Search — by message ID, queue, reason or error text.
-4. Replay All Messages — opens a preview of everything shown. Nothing is sent until you confirm the preview.
+4. Replay All Messages — opens a preview of every message still stuck in the cloud and namespace you are viewing. It ignores the filters, time window and search here. Nothing is sent until you confirm the preview.
 5. Refresh — reads the queue again. It re-reads what ServiceHub has already recorded; it does not look at AWS (only Look now does). The ⓘ beside it says when it was last updated.
 6. Selection — tick rows to act on several; this line shows how many.
 7. Replay selected — opens the same preview for just the ticked messages.
@@ -690,7 +690,7 @@ Help is a panel over whatever you are doing. Search (⌘K) jumps anywhere. The b
 
 ### 7.3 The Advanced pages (read-only)
 
-Advanced never changes anything. **Overview** summarises recovery, authority and agents, and says why AWS cannot verify; the **Recovery Ledger** is the tamper-evident record of every action; **Failure Signatures** groups failures and shows what each has earned; **Agents** lists what is acting and what is only watching.
+Advanced never changes anything. **Overview** summarises recovery, authority and agents, and says why AWS cannot verify; the **Recovery Ledger** is the tamper-evident record of every action; **Failure Signatures** groups failures — by cloud, queue, reason and, where the cloud records one, the shape of the error message — and shows what each has earned (if some of a group’s latest replays did not hold, ServiceHub stops replaying it on its own until newer ones do); **Agents** lists what is acting and what is only watching.
 
 
 ![7.3 The Advanced pages (read-only) — 17-advanced-overview](../screenshots/aws/17-advanced-overview.png)

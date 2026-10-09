@@ -51,8 +51,14 @@ public sealed class SqsWholeQueueScanTests
         {
             var sqs = new Mock<IAmazonSQS>();
             sqs.Setup(s => s.GetQueueAttributesAsync(It.Is<GetQueueAttributesRequest>(r => r.QueueUrl == Dlq), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(() =>
+                .ReturnsAsync((GetQueueAttributesRequest request, CancellationToken _) =>
                 {
+                    // Real SQS refuses to be asked for FifoQueue by name on a standard queue (seen live, 2026-10-09).
+                    if (!Fifo && request.AttributeNames.Contains("FifoQueue"))
+                    {
+                        throw new AmazonSQSException("Unknown Attribute FifoQueue.") { ErrorCode = "InvalidAttributeName" };
+                    }
+
                     var attributes = new Dictionary<string, string>
                     {
                         ["ApproximateNumberOfMessages"] = (Messages.Count - Held.Count).ToString(),

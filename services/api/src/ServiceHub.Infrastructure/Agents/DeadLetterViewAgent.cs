@@ -76,6 +76,7 @@ public sealed class DeadLetterViewAgent : IAgent
                 if (found.IsFailure || found.Value.OwnerId != attestation.OwnerId || check is null)
                 {
                     tracker.Lost(attestation.OwnerId, attestation.NamespaceId);
+                    await attestations.SetLiveSinceAsync(attestation.OwnerId, attestation.NamespaceId, null, ct).ConfigureAwait(false);
                     unusable++;
                     continue;
                 }
@@ -86,6 +87,7 @@ public sealed class DeadLetterViewAgent : IAgent
                     if (health.Lost)
                     {
                         tracker.Lost(attestation.OwnerId, attestation.NamespaceId);
+                        await attestations.SetLiveSinceAsync(attestation.OwnerId, attestation.NamespaceId, null, ct).ConfigureAwait(false);
                     }
 
                     unusable++;
@@ -98,12 +100,18 @@ public sealed class DeadLetterViewAgent : IAgent
                 if (!attestation.IsLiveAt(now))
                 {
                     tracker.Lost(attestation.OwnerId, attestation.NamespaceId);
+                    await attestations.SetLiveSinceAsync(attestation.OwnerId, attestation.NamespaceId, null, ct).ConfigureAwait(false);
+                }
+                else if (attestation.LiveSince is { } stored)
+                {
+                    tracker.Seed(attestation.OwnerId, attestation.NamespaceId, stored); // after a restart, carry on from the stored clock
                 }
 
                 var saved = await attestations.RecordCanaryConfirmedAsync(attestation.OwnerId, attestation.NamespaceId, ct).ConfigureAwait(false);
                 if (saved.IsSuccess)
                 {
-                    tracker.Confirmed(attestation.OwnerId, attestation.NamespaceId, now);
+                    var since = tracker.Confirmed(attestation.OwnerId, attestation.NamespaceId, now);
+                    await attestations.SetLiveSinceAsync(attestation.OwnerId, attestation.NamespaceId, since, ct).ConfigureAwait(false);
                     confirmed++;
                 }
                 else

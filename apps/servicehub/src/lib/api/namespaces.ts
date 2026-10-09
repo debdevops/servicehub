@@ -153,3 +153,50 @@ export interface DeadLetterLook {
 export async function lookAtDeadLetters(id: string): Promise<DeadLetterLook> {
   return (await api.post<DeadLetterLook>(`/namespaces/${id}/dead-letters/look`, undefined, { headers: withIntent(Intent.LookAtDeadLetters), timeout: 180_000 })).data
 }
+
+/**
+ * Where "confirming fixes" stands for a cloud that cannot confirm one by itself (AWS, Google Cloud). `needed` is false for a cloud that
+ * can (Azure): there is nothing to set up. `live` is true only while ServiceHub has recently been able to see the cloud's whole dead-letter
+ * queue — never assumed. `needsReference` and `referenceHint` come from the cloud's own check, never from its name (R4).
+ */
+export interface DlqObserver {
+  readonly needed: boolean
+  readonly enabled: boolean
+  readonly live: boolean
+  readonly observerReference: string | null
+  readonly dlqEntityName: string | null
+  readonly stalenessBoundMinutes: number
+  readonly lastCanarySentAt: string | null
+  readonly lastConfirmedAt: string | null
+  readonly status: string
+  readonly needsReference: boolean
+  readonly referenceHint: string | null
+}
+
+export interface ConfigureDlqObserverInput {
+  readonly enabled: boolean
+  readonly observerReference?: string
+  readonly dlqEntityName?: string
+}
+
+/** What "check now" found. `complete` is only present when a queue was named and the cloud's check can list it to the end. */
+export interface DlqObserverCheck {
+  readonly healthy: boolean
+  readonly reason: string | null
+  readonly complete: boolean | null
+  readonly incompleteReason: string | null
+  readonly count: number | null
+}
+
+export async function fetchDlqObserver(id: string): Promise<DlqObserver> {
+  return (await api.get<DlqObserver>(`/namespaces/${id}/dlq-observer`)).data
+}
+
+export async function configureDlqObserver(id: string, input: ConfigureDlqObserverInput): Promise<DlqObserver> {
+  return (await api.put<DlqObserver>(`/namespaces/${id}/dlq-observer`, input, { headers: withIntent(Intent.ConfigureDlqObserver) })).data
+}
+
+/** Reads the cloud's dead-letter queue the way a fix check would, changing nothing. An AWS scan can take up to a few minutes. */
+export async function checkDlqObserver(id: string): Promise<DlqObserverCheck> {
+  return (await api.post<DlqObserverCheck>(`/namespaces/${id}/dlq-observer/check`, undefined, { headers: withIntent(Intent.ConfigureDlqObserver), timeout: 300_000 })).data
+}

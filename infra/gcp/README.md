@@ -51,7 +51,7 @@ The exact command is printed at the end. Then open <http://localhost:8080>. You 
 | `replay_topics` | `[]` | Topic IDs a replay publishes to |
 | `allow_replay` | `true` | `false` = read-only |
 | `name` | `servicehub` | Prefix for names |
-| `servicehub_version` | `4.1.0` | |
+| `servicehub_version` | `4.2.0` | |
 | `vm_size` | `e2-medium` | |
 | `data_disk_gb` | `32` | |
 | `snapshot_retention_days` | `7` | |
