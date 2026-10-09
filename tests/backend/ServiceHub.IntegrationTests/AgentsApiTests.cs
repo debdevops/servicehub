@@ -102,7 +102,7 @@ public sealed class AgentsApiTests
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
+            ServiceHubApiFactory.ClearPoolFor(directory);
             if (Directory.Exists(directory))
             {
                 Directory.Delete(directory, recursive: true);

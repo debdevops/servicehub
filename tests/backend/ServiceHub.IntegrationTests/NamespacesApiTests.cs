@@ -129,7 +129,7 @@ public sealed class NamespacesApiTests
         using var host = Host();
         await host.Client.SendAsync(Post("/api/v1/namespaces", AzureBody("acme-bus")));
 
-        SqliteConnection.ClearAllPools();
+        ServiceHubApiFactory.ClearPoolFor(host.Root.DataDirectory);
         using var connection = new SqliteConnection(
             $"Data Source={Path.Combine(host.Root.DataDirectory, ServiceHubDataDirectory.DatabaseFileName)};Pooling=False");
         connection.Open();
@@ -219,7 +219,7 @@ public sealed class NamespacesApiTests
         }
         finally
         {
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            ServiceHubApiFactory.ClearPoolFor(dataDirectory);
             if (Directory.Exists(dataDirectory))
             {
                 Directory.Delete(dataDirectory, recursive: true);

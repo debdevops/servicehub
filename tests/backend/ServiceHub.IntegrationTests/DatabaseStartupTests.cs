@@ -48,7 +48,7 @@ public sealed class DatabaseStartupTests
         // Remove the file behind the running host: readiness must notice, liveness must not.
         // (Readiness is Unhealthy -> 503; the process is still alive -> 200.)
         var dbPath = Path.Combine(factory.DataDirectory, ServiceHubDataDirectory.DatabaseFileName);
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        ServiceHubApiFactory.ClearPoolFor(factory.DataDirectory);
         foreach (var suffix in new[] { string.Empty, "-wal", "-shm" })
         {
             File.Delete(dbPath + suffix);
