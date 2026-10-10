@@ -16,6 +16,12 @@ public static class EscalationReasons
     /// <summary>A rule's circuit breaker switched it off (unit 3.6); it waits until a person looks.</summary>
     public const string RuleStoppedItself = "RULE_CIRCUIT_BREAKER";
 
+    /// <summary>
+    /// An earlier attempt to recover this message has no recorded answer (ServiceHub stopped, or lost contact with the cloud, before it
+    /// could tell whether the message was sent). Nothing tries again until a person checks and says what happened.
+    /// </summary>
+    public const string ReplayOutcomeUnknown = "REPLAY_OUTCOME_UNKNOWN";
+
     /// <summary>The sentence for a code. An unknown code still gets an honest sentence, never a blank.</summary>
     public static string Describe(string? code) => code switch
     {
@@ -43,6 +49,8 @@ public static class EscalationReasons
             "Emergency stop is on, so nothing replays on its own. A person decides.",
         "EMERGENCY_STOP_QUERY_ERROR" =>
             "ServiceHub couldn't check whether emergency stop is on, so it stopped rather than guess. A person decides.",
+        ReplayOutcomeUnknown =>
+            "ServiceHub stopped before it could record whether an earlier attempt put this message back. It may or may not have been sent, so it will not try again on its own. Check the queue, then say what you found.",
         AgentStale =>
             "This agent has stopped reporting. What it does is not happening — check the ServiceHub server.",
         AgentFailing =>

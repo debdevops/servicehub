@@ -1,5 +1,15 @@
 # ServiceHub Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **A replay that was interrupted could be sent again.** If ServiceHub stopped after the cloud accepted a replay but before the answer was recorded, the entry stayed `Executing` for ever
+  and nothing stopped the same message being replayed again — by a person, an approval or a rule — which could put a duplicate on the queue. Now:
+  at startup such an attempt becomes *outcome unknown* (neither success nor failure); while any attempt on a message has no answer, no other attempt on it can begin (the gate refuses it with
+  `REPLAY_OUTCOME_UNKNOWN`, and the ledger refuses a second claim); it shows up in the bell and **Needs your attention** as *An earlier attempt has no recorded answer*; and a person
+  with the Approver role records what they found in the queue, which closes it as written off in their words. Nothing is retried on its own. No database migration.
+
 ## [4.2.0] — 2026-10-09
 
 The last planned release of ServiceHub. Development stops after 4.2.0.

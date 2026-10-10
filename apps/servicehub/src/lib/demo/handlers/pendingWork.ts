@@ -39,6 +39,8 @@ export const pendingWork: readonly Route[] = [
     return { items: firstPage(items), total: items.length, byProvider: [...byProvider].map(([provider, count]) => ({ provider, count })), agents: items.filter((i) => i.kind === 'agent').length }
   }],
   ['post', /^\/pending-work\/([^/]+)\/approve$/, (m, { w, now }) => replay(w, held(w, m[1]), people.you, now)],
+  // The demo never stops mid-attempt, so it never holds an attempt with no recorded answer: there is nothing to settle.
+  ['post', /^\/pending-work\/([^/]+)\/resolve$/, () => refuse(404, 'NOT_FOUND', 'Nothing unresolved is waiting in the demo — a simulated replay always records its answer.')],
   ['post', /^\/pending-work\/([^/]+)\/decline$/, (m, { w, body }) => {
     const row = held(w, m[1])
     if (!String(body.reason ?? '').trim()) refuse(400, 'VALIDATION_FAILED', 'Say why, so the next person knows.')

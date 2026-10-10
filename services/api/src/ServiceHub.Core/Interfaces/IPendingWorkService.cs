@@ -27,8 +27,8 @@ public sealed record PendingWorkScope(
     Guid? EntryId = null);
 
 /// <summary>One thing waiting for a person.</summary>
-/// <param name="Kind"><c>approval</c> — a replay waits for yes or no · <c>rule</c> — a rule switched itself off · <c>agent</c> — an agent has stopped working.</param>
-/// <param name="Id">Stable: the entry id for an approval, <c>rule:{id}</c> for a rule, <c>agent:{id}</c> for an agent.</param>
+/// <param name="Kind"><c>approval</c> — a replay waits for yes or no · <c>rule</c> — a rule switched itself off · <c>agent</c> — an agent has stopped working · <c>unresolved</c> — an attempt to put a message back has no recorded answer, so nothing may try again until a person says what happened.</param>
+/// <param name="Id">Stable: the entry id for an approval, <c>rule:{id}</c> for a rule, <c>agent:{id}</c> for an agent, the entry id for an unresolved attempt.</param>
 /// <param name="EntryId">The Declined ledger entry (approvals).</param>
 /// <param name="AgentId">The agent (agent items).</param>
 /// <param name="DlqMessageId">The dead letter it is about (approvals) — what Approve replays.</param>

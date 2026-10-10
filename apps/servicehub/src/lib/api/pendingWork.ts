@@ -5,7 +5,7 @@ import type { ReplayOutcome } from './replay'
 
 /** One thing waiting for a person. `reason` is the plain sentence; `reasonCode` travels beside it, never flattened. */
 export interface PendingWorkItem {
-  readonly kind: 'approval' | 'rule' | 'agent'
+  readonly kind: 'approval' | 'rule' | 'agent' | 'unresolved'
   readonly id: string
   readonly entryId: string | null
   readonly agentId: string | null
@@ -47,6 +47,15 @@ export async function fetchPendingWork(scope: PendingWorkScope = {}): Promise<Pe
 /** Yes: replays through the one gated route, as you. */
 export async function approvePending(entryId: string): Promise<ReplayOutcome> {
   return (await api.post<ReplayOutcome>(`/pending-work/${entryId}/approve`, undefined, { headers: withIntent(Intent.ApproveEscalation) })).data
+}
+
+/**
+ * Says what happened to an attempt whose answer was lost (ServiceHub stopped, or lost contact with the cloud, before it could record
+ * whether the message was put back). Recorded with your name; it closes the entry as written off and invents neither a success nor a
+ * failure. Only then may a fresh, gated attempt be made.
+ */
+export async function resolvePending(entryId: string, reason: string): Promise<void> {
+  await api.post(`/pending-work/${entryId}/resolve`, { reason }, { headers: withIntent(Intent.ResolveUnknownOutcome) })
 }
 
 /** No: recorded with your name and reason. Deletes nothing. */

@@ -24,6 +24,7 @@ import type { OverlayBodyProps } from '../overlays/registry'
 import { RetryLink } from '../ui/RetryLink'
 import { Skeleton } from '../ui/Skeleton'
 import { Select } from '../ui/Select'
+import ResolveUnknownBody from './ResolveUnknownModal'
 
 /**
  * Approve and Decline (5.10) — `?modal=approve&group=<cloud>:<namespace>` or `&entry=<id>`. One modal, five doors: the bell,
@@ -60,6 +61,9 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
   const namespaces = useNamespaces()
   const record = useTrackRecord(head)
 
+  // An attempt whose answer was lost is answered here too — one door for "the Agent stopped and asked" — but it is a different
+  // question: nothing to approve, only what the person found in the queue.
+  if (entry && pending.data?.items.some((i) => i.kind === 'unresolved' && i.entryId === entry)) return <ResolveUnknownBody close={close} />
   if (approve.isPending) return <Sending done={progress} total={approve.variables?.entryIds.length ?? 0} />
   if (approve.data) return <Approved results={approve.data} close={close} stillWaiting={pending.isFetching ? null : (entry ? waiting.length : (pending.data?.total ?? null))} />
   if (decline.isSuccess) {

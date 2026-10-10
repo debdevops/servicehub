@@ -67,6 +67,9 @@ public static class PersistenceServiceCollectionExtensions
         services.TryAddScoped<IDlqMessageReader, Dlq.DlqMessageReader>();
         services.TryAddScoped<IDeadLetterLook, Dlq.DeadLetterLook>();
         services.TryAddScoped<IRecoveryLedger, RecoveryLedger.RecoveryLedgerService>();
+        // Settles recovery attempts a restart interrupted (the cutoff is this process's own start, before any call can run).
+        services.TryAddSingleton(new RecoveryLedger.RecoverySweepCutoff(DateTimeOffset.UtcNow));
+        services.AddHostedService<RecoveryLedger.InterruptedRecoverySweeper>();
         services.TryAddSingleton<Telemetry.ServiceHubMetrics>();
         // The gate is copied code and stays unedited (autonomy spec R11); the guard wraps it and can only make a decision stricter.
         services.TryAddScoped<RecoveryLedger.RecoveryEligibilityGate>();

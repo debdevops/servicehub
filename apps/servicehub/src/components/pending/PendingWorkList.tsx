@@ -1,4 +1,4 @@
-import { Bot, Clock, Zap } from 'lucide-react'
+import { Bot, CircleHelp, Clock, Zap } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import type { PendingRow } from '../../lib/pendingRows'
 import { formatAge } from '../../lib/format'
@@ -8,6 +8,7 @@ const icons = {
   approval: { Icon: Clock, box: 'bg-[#fffbeb] text-[#d97706]' },
   rule: { Icon: Zap, box: 'bg-[var(--color-error-light)] text-[#dc2626]' },
   agent: { Icon: Bot, box: 'bg-[var(--color-error-light)] text-[#dc2626]' },
+  unresolved: { Icon: CircleHelp, box: 'bg-[#fffbeb] text-[#d97706]' },
 } as const
 
 /** "?modal=approve&group=…" keeps the page you are on and its filters; "/advanced/…" is a page of its own. */

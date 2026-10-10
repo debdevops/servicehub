@@ -40,6 +40,12 @@ public static class IntentHeaders
     /// <summary>Intent for declining what an agent asked — recorded with the person's name and reason.</summary>
     public const string DeclineEscalation = "decline-escalation";
 
+    /// <summary>
+    /// Intent for saying what happened to an attempt whose answer was lost. It lifts the block that stops the same message being
+    /// sent again, so a person must have checked the queue and mean it.
+    /// </summary>
+    public const string ResolveUnknownOutcome = "resolve-unknown-outcome";
+
     /// <summary>Intent for granting a governance role.</summary>
     public const string GrantRole = "grant-role";
 

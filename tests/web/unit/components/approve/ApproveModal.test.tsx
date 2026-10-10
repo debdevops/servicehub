@@ -13,7 +13,7 @@ import type { PendingWorkItem } from '@/lib/api/pendingWork'
 import ApproveModal from '@/components/approve/ApproveModal'
 import { expectNoAxeViolations } from '@tests/support/axe'
 
-vi.mock('@/lib/api/pendingWork', async (original) => ({ ...(await original<typeof api>()), fetchPendingWork: vi.fn(), approvePending: vi.fn(), declinePending: vi.fn() }))
+vi.mock('@/lib/api/pendingWork', async (original) => ({ ...(await original<typeof api>()), fetchPendingWork: vi.fn(), approvePending: vi.fn(), declinePending: vi.fn(), resolvePending: vi.fn() }))
 vi.mock('@/lib/api/replay', async (original) => ({ ...(await original<typeof replay>()), fetchReplayProposal: vi.fn() }))
 vi.mock('@/lib/api/signatures', async (original) => ({ ...(await original<typeof signatures>()), fetchSignatures: vi.fn() }))
 vi.mock('@/lib/api/deadLetters', async (original) => ({ ...(await original<typeof deadLetters>()), fetchDeadLetter: vi.fn() }))
@@ -30,6 +30,45 @@ function open() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/?modal=approve&group=aws%3An1']}><ApproveModal entry={{} as never} close={close} /></MemoryRouter></QueryClientProvider>)
 }
+
+describe('An attempt whose answer was lost', () => {
+  const unresolved: PendingWorkItem = {
+    ...item('u1', 'orders'), kind: 'unresolved', ruleId: null, ruleName: null, provider: 'azure', reasonCode: 'REPLAY_OUTCOME_UNKNOWN',
+    reason: 'ServiceHub stopped before it could record whether an earlier attempt put this message back. Check the queue, then say what you found.',
+  }
+  function openUnresolved() {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/?modal=approve&entry=u1']}><ApproveModal entry={{} as never} close={close} /></MemoryRouter></QueryClientProvider>)
+  }
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(api.fetchPendingWork).mockResolvedValue({ items: [unresolved], total: 1, byProvider: [], agents: 0 })
+    vi.mocked(api.resolvePending).mockResolvedValue(undefined)
+    vi.mocked(identity.fetchMe).mockResolvedValue({ ownerId: 'o', authMethod: 'session', actor: { identity: 'session', kind: 'user', label: 'from this browser session', isSession: true }, governanceActive: false } as never)
+  })
+
+  it('asks what the person found, never offers to approve a replay, and records the answer in their words', async () => {
+    openUnresolved()
+    expect(await screen.findByText(/Check the queue/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Approve/ })).not.toBeInTheDocument()
+
+    const record = screen.getByRole('button', { name: 'Record what I found' })
+    expect(record).toBeDisabled() // a reason is required: ServiceHub does not know the outcome, so it will not make one up
+    await userEvent.type(screen.getByLabelText(/What did you find/), 'the main queue holds one copy')
+    await userEvent.click(record)
+
+    await waitFor(() => expect(api.resolvePending).toHaveBeenCalledWith('u1', 'the main queue holds one copy'))
+    expect(await screen.findByText(/closed without a verdict/)).toBeInTheDocument()
+  })
+
+  it('says so, and records nothing, when the answer cannot be saved', async () => {
+    vi.mocked(api.resolvePending).mockRejectedValueOnce(new Error('down'))
+    openUnresolved()
+    await userEvent.type(await screen.findByLabelText(/What did you find/), 'nothing was sent')
+    await userEvent.click(screen.getByRole('button', { name: 'Record what I found' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Nothing was recorded/)
+  })
+})
 
 describe('Approve and Decline', () => {
   beforeEach(() => {

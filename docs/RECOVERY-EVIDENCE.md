@@ -29,11 +29,23 @@ Executing → Observing → Recovered        did not come back, with full scan c
                       → Returned         came back within the window
                       → Unverified       window closed without adequate coverage — NOT a failure: the replay may have worked
           → ExecutionFailed              the cloud rejected the call
-          → ExecutionUnknown             the process died mid-call — outcome genuinely unknown
+          → ExecutionUnknown             the process stopped mid-call, or lost contact before the answer was recorded — outcome genuinely unknown
 Executing → Discarded                    a purge was accepted (deliberate destruction)
 (before any cloud call) → Declined       the eligibility gate stopped it; nothing was sent
 (any open state) → WrittenOff / Expired  an operator declared it unrecoverable (a reason is required) / it aged out
 ```
+
+**An attempt with no recorded answer.** A replay writes its entry as `Executing` *before* it calls the cloud, then records the answer. If ServiceHub stops in between, the
+cloud may or may not have put the message back, and the dead letter can still look active. So:
+
+- At startup, every `Executing` entry that began **before this process started** becomes `ExecutionUnknown`. One instance runs at a time (the instance lock), so such an entry cannot belong to a
+  live call. It is neither a success nor a failure, it stays open, and a restart never changes it again.
+- While any attempt on a message is `Executing` or `ExecutionUnknown`, **no other attempt on that message may begin** — manual, approved, bulk or automatic. The eligibility gate refuses it
+  (`REPLAY_OUTCOME_UNKNOWN`) and the ledger refuses to open a second entry, so two attempts racing past the gate cannot both start.
+- It appears as pending work ("An earlier attempt has no recorded answer"). A person with the Approver role looks at the queue and records what they found; the entry then closes as
+  **written off** in their words — never `Recovered`, never `Failed`. Only after that can a fresh, checked attempt be made.
+- ServiceHub does not retry an ambiguous send, and it cannot tell from the cloud whether it happened: the three clouds add the new copy before they remove the original, so the
+  window in which both exist is real.
 
 `Recovered` means *"a replayed message did not reappear in the dead-letter queue for the whole observation window, and ServiceHub had continuous, uncapped scan coverage of
 it."* It never means the downstream business transaction succeeded — ServiceHub cannot see past the queue.

@@ -21,6 +21,7 @@ export const Intent = {
   ResumeAgent: 'resume-agent',
   ApproveEscalation: 'approve-escalation',
   DeclineEscalation: 'decline-escalation',
+  ResolveUnknownOutcome: 'resolve-unknown-outcome',
   AddChannel: 'add-channel',
   RemoveChannel: 'remove-channel',
   EmergencyStop: 'emergency-stop',

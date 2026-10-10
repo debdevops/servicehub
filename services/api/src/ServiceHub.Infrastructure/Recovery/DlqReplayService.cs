@@ -18,8 +18,9 @@ namespace ServiceHub.Infrastructure.Recovery;
 /// </summary>
 /// <remarks>
 /// The order is the safety: <b>gate → open a ledger entry → touch the cloud → record what the cloud said</b>.
-/// The entry exists before the cloud is called, so a crash mid-call leaves an <c>Executing</c> entry to be
-/// reconciled, never a replay with no record. What the cloud said is recorded with
+/// The entry exists before the cloud is called, so a crash mid-call leaves an <c>Executing</c> entry, never a replay
+/// with no record. The next start settles it as <c>ExecutionUnknown</c> (<c>InterruptedRecoverySweeper</c>), and while it is
+/// unresolved nothing may attempt that message again (the gate, and the ledger's claim) — a second send could duplicate it. What the cloud said is recorded with
 /// <see cref="CancellationToken.None"/>: a caller who hangs up must not lose the evidence of something
 /// that already happened. A replay is never retried, and no provider is named here (R4).
 /// </remarks>
@@ -127,6 +128,12 @@ public sealed class DlqReplayService : IDlqReplayService
         {
             await AuditAsync(ns, actor, message, "refused", decision.ReasonCode, correlationId, cancellationToken);
             var refusal = $"Replay is not allowed here ({decision.ReasonCode}).";
+            if (decision.ReasonCode == EscalationReasons.ReplayOutcomeUnknown)
+            {
+                // Not a permission problem: an earlier attempt has no answer, and a person has to say what happened to it.
+                return Result<ReplayOutcome>.Failure(Error.Conflict(EscalationReasons.ReplayOutcomeUnknown, EscalationReasons.Describe(EscalationReasons.ReplayOutcomeUnknown)));
+            }
+
             return Result<ReplayOutcome>.Failure(decision.Verdict == EligibilityVerdict.Deny
                 ? Error.Forbidden(decision.ReasonCode ?? "DENIED", refusal)
                 : Error.Conflict(decision.ReasonCode ?? "ESCALATED", refusal + " A person with approval rights has to decide."));
@@ -302,6 +309,11 @@ public sealed class DlqReplayService : IDlqReplayService
         {
             await AuditAsync(ns, actor, message, "refused", decision.ReasonCode, correlationId, cancellationToken, AuditActions.PurgeMessage);
             var refusal = $"Purge is not allowed here ({decision.ReasonCode}).";
+            if (decision.ReasonCode == EscalationReasons.ReplayOutcomeUnknown)
+            {
+                return Result<ReplayOutcome>.Failure(Error.Conflict(EscalationReasons.ReplayOutcomeUnknown, EscalationReasons.Describe(EscalationReasons.ReplayOutcomeUnknown)));
+            }
+
             return Result<ReplayOutcome>.Failure(decision.Verdict == EligibilityVerdict.Deny
                 ? Error.Forbidden(decision.ReasonCode ?? "DENIED", refusal)
                 : Error.Conflict(decision.ReasonCode ?? "ESCALATED", refusal + " A person with approval rights has to decide."));
@@ -566,7 +578,7 @@ public sealed class DlqReplayService : IDlqReplayService
                 ns.OwnerId, kind, actor.Kind, actor.Kind == RecoveryActorKind.Automation ? RecoveryTrigger.AutoRule : RecoveryTrigger.Manual,
                 ns.Id, message.EntityName, message.BodyHash, SignatureHash: message.SignatureHash, ns.Environment,
                 // The namespace's own cloud: whether absence can be proven is that cloud's capability.
-                Provider: ns.Provider),
+                Provider: ns.Provider, DlqMessageId: message.Id, SourceMessageId: message.MessageId),
             cancellationToken);
 
     /// <summary>
