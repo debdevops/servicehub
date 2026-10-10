@@ -108,7 +108,7 @@ SECTIONS = [
    [("app", "16-help"), ("app", "16b-help-end"), ("app", "18-search"), ("app", "18-bell")]),
   ("7.3 The Advanced pages (read-only)",
    "Advanced never changes anything. **Overview** summarises recovery, authority and agents; the **Recovery Ledger** is the tamper-evident record of every action; **Failure Signatures** groups failures — by cloud, queue, reason and, where the cloud records one, the shape of the error message — and shows what each has earned (if some of a group’s latest replays did not hold, ServiceHub stops replaying it on its own until newer ones do); **Agents** lists what is acting and what is only watching.",
-   [("app", "17-advanced-overview"), ("app", "17-advanced-ledger"), ("app", "17-advanced-signatures"), ("app", "17-advanced-agents"), ("app", "17a-advanced-agents-middle"), ("app", "17c-advanced-agents-rows"), ("app", "17b-advanced-agents-more")]),
+   [("app", "17-advanced-overview"), ("app", "17-advanced-ledger"), ("app", "17-advanced-signatures"), ("app", "17d-advanced-signatures-end"), ("app", "17-advanced-agents"), ("app", "17a-advanced-agents-middle"), ("app", "17c-advanced-agents-rows"), ("app", "17b-advanced-agents-more")]),
  ]),
 ]
 TROUBLESHOOTING = [

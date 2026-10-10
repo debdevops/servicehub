@@ -222,6 +222,10 @@ export const azureGuide: Guide = {
         {
          "n": 5,
          "text": "Connect AWS / Connect Google — the same Add a cloud window, on the AWS or Google Cloud tab. You do not need them for Azure."
+        },
+        {
+         "n": 6,
+         "text": "Try it with sample data — opens a demo with made-up data and no cloud connected, so you can look around first. Nothing in it is real and nothing is sent anywhere."
         }
        ]
       }
@@ -405,6 +409,10 @@ export const azureGuide: Guide = {
         {
          "n": 11,
          "text": "Help for this page (the book beside the title) — opens Help on this very page, over it. Every page has one."
+        },
+        {
+         "n": 12,
+         "text": "Demo — a guided walk through the whole product with made-up data. No connection string is needed and nothing real is touched."
         }
        ]
       },
@@ -900,6 +908,10 @@ export const azureGuide: Guide = {
         {
          "n": 8,
          "text": "How it will run — folds open to show the pace and the automatic stop (five failures in a row)."
+        },
+        {
+         "n": 9,
+         "text": "After they are sent back — what ServiceHub does next: it records each replay and watches for 24 hours."
         }
        ]
       },
@@ -930,6 +942,10 @@ export const azureGuide: Guide = {
         {
          "n": 6,
          "text": "Page controls — move through the list when more messages are chosen than fit on one page."
+        },
+        {
+         "n": 7,
+         "text": "Where each one goes — folds open to list the queue each message will be sent back to, grouped by why it failed."
         }
        ]
       }
@@ -1015,6 +1031,10 @@ export const azureGuide: Guide = {
         {
          "n": 10,
          "text": "The three tabs — Dead letters, Active and Replayed. They switch the list below without leaving the page."
+        },
+        {
+         "n": 11,
+         "text": "Paging — rows per page, previous, the page numbers and next."
         }
        ]
       },
@@ -1259,6 +1279,10 @@ export const azureGuide: Guide = {
         {
          "n": 3,
          "text": "Open on — start in Simple every time (Simple), or where you last were (Last used). Kept in this browser only."
+        },
+        {
+         "n": 4,
+         "text": "Your tracing tool — optional. Paste a link with {traceId} in it, and ServiceHub shows a link from each message to that trace in your own tool. It is kept in this browser only."
         }
        ]
       },
@@ -1501,6 +1525,16 @@ export const azureGuide: Guide = {
         {
          "n": 11,
          "text": "About buttons (ⓘ) on the column headings — each explains that column in a sentence. They change nothing."
+        }
+       ]
+      },
+      {
+       "image": "/help/azure/17d-advanced-signatures-end.png",
+       "alt": "7.3 The Advanced pages (read-only) (17d-advanced-signatures-end)",
+       "keys": [
+        {
+         "n": 1,
+         "text": "Paging — rows per page, previous, the page numbers and next."
         }
        ]
       },

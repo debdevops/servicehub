@@ -33,6 +33,7 @@ await scene('01', async () => {
     { n: 3, loc: page.getByRole('link', { name: 'Advanced' }), t: 'Simple | Advanced — Simple is where you act. Advanced is read-only pages (ledger, signatures, agents); it never changes anything.' },
     { n: 4, loc: link('Help'), t: 'Help — opens the Help panel with task-shaped answers and the keyboard shortcuts.' },
     { n: 5, loc: [page.getByRole('link', { name: 'Connect Azure' }), page.getByRole('link', { name: 'Connect Google' })], t: 'Connect Azure / Connect Google — the same Add a cloud window, on the Azure or Google Cloud tab. You do not need them for AWS.' },
+    { n: 6, loc: page.getByRole('link', { name: 'Try it with sample data' }), t: 'Try it with sample data — opens a demo with made-up data and no cloud connected, so you can look around first. Nothing in it is real and nothing is sent anywhere.' },
   ])
 })
 await scene('02', async () => {
@@ -104,6 +105,7 @@ await scene('05', async () => {
     { n: 9, loc: btn('Got it'), t: 'Got it — hides this explanation. It does not affect your data.' },
     { n: 10, loc: link('See all dead letters in AWS →'), t: 'See all dead letters in AWS — opens the Dead letters list for this cloud.' },
     { n: 11, loc: page.getByRole('link', { name: 'Help for this page' }), t: 'Help for this page (the book beside the title) — opens Help on this very page, over it. Every page has one.' },
+    { n: 12, loc: page.getByRole('link', { name: 'Demo', exact: true }), t: 'Demo — a guided walk through the whole product with made-up data. No connection string is needed and nothing real is touched.' }
   ])
 })
 await scene('05b', async () => {
@@ -367,6 +369,7 @@ await scene('15', async () => {
     { n: 2, loc: dlg().getByText('+ Add a cloud'), t: 'Add a cloud — connect another cloud.' },
     { n: 3, loc: btn('Test'), t: 'Test — checks the connection now and shows the result. Reads only.' },
     { n: 4, loc: dlg().getByRole('button', { name: /Remove AWS Dev/ }), t: 'Remove — forgets this connection and its stored credential. It does not delete anything in AWS.' },
+    { n: 5, loc: dlg().getByRole('button', { name: 'Switch on' }), t: 'Confirm fixes on this cloud — Off until you switch it on. Without it, a replay here is sent back but cannot be confirmed as fixed. Switch on sets up the observer that lets ServiceHub see this cloud’s whole dead-letter queue.' }
   ], page.locator('#settings-connections'))
   const sect = async (k, f, calls) => { await dlg().getByRole('navigation').getByRole('link', { name: k }).first().click(); await settle(900); await shot(page, S(`15-settings-${f}`), calls, page.locator(`#settings-${f}`)) }
   await sect('Notifications', 'notifications', [
@@ -379,6 +382,7 @@ await scene('15', async () => {
     { n: 1, loc: page.getByText('Theme', { exact: true }), t: 'Theme — Light today; Dark is marked soon.' },
     { n: 2, loc: [page.getByText('Times shown in', { exact: true }), btn('Times shown in')], t: 'Times shown in — your browser’s time zone, or UTC. It changes how times are displayed, never the data.' },
     { n: 3, loc: [page.getByText('Open on', { exact: true }), dlg().locator('button[role=radio]').filter({ hasText: /^(Simple|Last used)$/ })], all: true, t: 'Open on — start in Simple every time (Simple), or where you last were (Last used). Kept in this browser only.' },
+    { n: 4, loc: page.getByPlaceholder(/tracing\.example\.com/), t: 'Your tracing tool — optional. Paste a link with {traceId} in it, and ServiceHub shows a link from each message to that trace in your own tool. It is kept in this browser only.' }
   ])
   await sect('Access & security', 'access', [
     { n: 1, loc: page.getByText(/You are/).first(), t: 'Who you are — shown from this browser session until roles are switched on. The credential key fingerprint shows what encrypts stored credentials.' },
@@ -462,7 +466,7 @@ await scene('17', async () => {
   await scrollMain(99999); await settle(600)
   await shot(page, S('17b-advanced-agents-more'), [
     { n: 1, loc: page.getByText('Watching Agents').first().locator('..').locator('..'), t: 'Watching agents — they only look and record; they cannot change anything.' },
-    { n: 2, loc: page.getByRole('button', { name: /^(Replay Verifier|Auto Replay|Bulk Replay|Open |Pause )/ }), all: true, t: 'Each agent row opens to show what it may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting.' },
+    { n: 2, loc: page.getByRole('button', { name: /^(Fix Confirmer|Replay Verifier|Auto Replay|Bulk Replay|Open |Pause )/ }), all: true, t: 'Each agent row opens to show what it may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting.' },
     { n: 3, loc: page.getByText(/Learn more/).first(), t: 'Learn more — a short explanation of how agents work.' },
   ])
 })
@@ -477,13 +481,6 @@ await scene('18', async () => {
     { n: 1, loc: page.getByRole('dialog', { name: /Waiting for you/ }), t: 'The bell — the only place the Agent asks you something. It lists what is waiting for you and clears when it is resolved, not when you look.' },
     { n: 2, loc: page.getByRole('link', { name: /See all waiting/ }), t: 'See all waiting — opens the full list of what needs a person.' },
   ])
-  await page.keyboard.press('Escape'); await go('/'); await dismiss()
-  await page.getByText('This browser').first().click(); await settle(800)
-  await shot(page, S('18-user-menu'), [
-    { n: 1, loc: page.getByRole('menuitem', { name: 'Settings' }), t: 'Settings — opens Settings (connections, notifications, preferences, access, backup).' },
-    { n: 2, loc: page.getByRole('menuitem', { name: /Help and shortcuts/ }), t: 'Help and shortcuts — opens Help.' },
-    { n: 3, loc: page.getByRole('menu'), t: 'You — who ServiceHub records your actions as, and whether this server has sign-in turned on.' },
-  ], page.getByRole('menu'))
 })
 
 import fs2 from 'node:fs'

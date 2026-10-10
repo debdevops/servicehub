@@ -111,7 +111,7 @@ Connections, Settings, Help, then Advanced and back. No sound needed. Click a pr
 | Azure Service Bus | AWS SQS / SNS | Google Pub/Sub |
 |:---:|:---:|:---:|
 | [![Azure Service Bus walkthrough — click to play](docs/media/azure-preview.gif)](docs/media/azure.mp4) | [![AWS SQS / SNS walkthrough — click to play](docs/media/aws-preview.gif)](docs/media/aws.mp4) | [![Google Pub/Sub walkthrough — click to play](docs/media/gcp-preview.gif)](docs/media/gcp.mp4) |
-| [▶ Azure, 5:12](docs/media/azure.mp4) | [▶ AWS, 5:07](docs/media/aws.mp4) | [▶ Google, 6:03](docs/media/gcp.mp4) |
+| [▶ Azure, 5:01](docs/media/azure.mp4) | [▶ AWS, 5:03](docs/media/aws.mp4) | [▶ Google, 5:35](docs/media/gcp.mp4) |
 
 <details><summary><b>Chapters</b> (Azure; AWS and Google are within a few seconds of these)</summary>
 

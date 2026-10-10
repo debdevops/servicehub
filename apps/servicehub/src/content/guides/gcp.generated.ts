@@ -192,6 +192,10 @@ export const gcpGuide: Guide = {
         {
          "n": 5,
          "text": "Connect Azure / Connect AWS — the same Add a cloud window, on the Azure or AWS tab. You do not need them for Google Cloud."
+        },
+        {
+         "n": 6,
+         "text": "Try it with sample data — opens a demo with made-up data and no cloud connected, so you can look around first. Nothing in it is real and nothing is sent anywhere."
         }
        ]
       }
@@ -387,6 +391,10 @@ export const gcpGuide: Guide = {
         {
          "n": 11,
          "text": "Help for this page (the book beside the title) — opens Help on this very page, over it. Every page has one."
+        },
+        {
+         "n": 12,
+         "text": "Demo — a guided walk through the whole product with made-up data. No connection string is needed and nothing real is touched."
         }
        ]
       },
@@ -1281,6 +1289,14 @@ export const gcpGuide: Guide = {
         {
          "n": 4,
          "text": "Remove — forgets this connection and its stored credential. It does not delete anything in Google Cloud."
+        },
+        {
+         "n": 5,
+         "text": "Confirm fixes on this cloud — Off until you switch it on. Without it, a replay here is sent back but cannot be confirmed as fixed. Switch on sets up the observer that lets ServiceHub see this cloud’s whole dead-letter queue."
+        },
+        {
+         "n": 6,
+         "text": "Subscription and dead-letter topic — the two names ServiceHub needs before it can switch the observer on: the subscription it reads, and the dead-letter topic that subscription belongs to."
         }
        ]
       },
@@ -1321,6 +1337,10 @@ export const gcpGuide: Guide = {
         {
          "n": 3,
          "text": "Open on — start in Simple every time (Simple), or where you last were (Last used). Kept in this browser only."
+        },
+        {
+         "n": 4,
+         "text": "Your tracing tool — optional. Paste a link with {traceId} in it, and ServiceHub shows a link from each message to that trace in your own tool. It is kept in this browser only."
         }
        ]
       },

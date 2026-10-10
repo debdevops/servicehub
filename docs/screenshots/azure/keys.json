@@ -2,71 +2,75 @@
  "01-welcome.png": [
   {
    "n": 1,
-   "t": "Connect Azure — opens the Add a cloud window on the Azure tab. It only asks for a connection string; nothing is read until you press Connect there."
+   "t": "Connect Azure \u2014 opens the Add a cloud window on the Azure tab. It only asks for a connection string; nothing is read until you press Connect there."
   },
   {
    "n": 2,
-   "t": "Add a cloud — the same window, from anywhere in the app. Use it later to connect AWS or Google Cloud as well."
+   "t": "Add a cloud \u2014 the same window, from anywhere in the app. Use it later to connect AWS or Google Cloud as well."
   },
   {
    "n": 3,
-   "t": "Simple | Advanced — Simple is where you act. Advanced is read-only pages (ledger, signatures, agents); it never changes anything."
+   "t": "Simple | Advanced \u2014 Simple is where you act. Advanced is read-only pages (ledger, signatures, agents); it never changes anything."
   },
   {
    "n": 4,
-   "t": "Help — opens the Help panel with task-shaped answers and the keyboard shortcuts."
+   "t": "Help \u2014 opens the Help panel with task-shaped answers and the keyboard shortcuts."
   },
   {
    "n": 5,
-   "t": "Connect AWS / Connect Google — the same Add a cloud window, on the AWS or Google Cloud tab. You do not need them for Azure."
+   "t": "Connect AWS / Connect Google \u2014 the same Add a cloud window, on the AWS or Google Cloud tab. You do not need them for Azure."
+  },
+  {
+   "n": 6,
+   "t": "Try it with sample data \u2014 opens a demo with made-up data and no cloud connected, so you can look around first. Nothing in it is real and nothing is sent anywhere."
   }
  ],
  "02-add-cloud.png": [
   {
    "n": 1,
-   "t": "Cloud tabs — Azure Service Bus is selected. The AWS and Google tabs ask for different credentials."
+   "t": "Cloud tabs \u2014 Azure Service Bus is selected. The AWS and Google tabs ask for different credentials."
   },
   {
    "n": 2,
-   "t": "Where do I get the connection string? — expands the portal steps, with the permissions to give."
+   "t": "Where do I get the connection string? \u2014 expands the portal steps, with the permissions to give."
   },
   {
    "n": 3,
-   "t": "Name — what you will see in ServiceHub. It is a label only; it does not change anything in Azure."
+   "t": "Name \u2014 what you will see in ServiceHub. It is a label only; it does not change anything in Azure."
   },
   {
    "n": 4,
-   "t": "Environment — Development, UAT or Production. Start with Development; Auto Replay never acts in Production."
+   "t": "Environment \u2014 Development, UAT or Production. Start with Development; Auto Replay never acts in Production."
   },
   {
    "n": 5,
-   "t": "Connection string — paste the Primary connection string of a Shared access policy (Manage, Send, Listen). It is encrypted on this server and never shown again."
+   "t": "Connection string \u2014 paste the Primary connection string of a Shared access policy (Manage, Send, Listen). It is encrypted on this server and never shown again."
   },
   {
    "n": 6,
-   "t": "Show value — reveals what you typed so you can check it. It cannot reveal a stored string."
+   "t": "Show value \u2014 reveals what you typed so you can check it. It cannot reveal a stored string."
   },
   {
    "n": 7,
-   "t": "Cancel — closes the window; nothing is saved."
+   "t": "Cancel \u2014 closes the window; nothing is saved."
   },
   {
    "n": 8,
-   "t": "Connect — tests the string, then saves it. It only reads queues; it never sends or deletes anything by itself."
+   "t": "Connect \u2014 tests the string, then saves it. It only reads queues; it never sends or deletes anything by itself."
   },
   {
    "n": 9,
-   "t": "(?) — opens Help on this very screen. Every window has one."
+   "t": "(?) \u2014 opens Help on this very screen. Every window has one."
   },
   {
    "n": 10,
-   "t": "✕ — closes the window without saving (Esc does the same)."
+   "t": "\u2715 \u2014 closes the window without saving (Esc does the same)."
   }
  ],
  "02-add-cloud-help.png": [
   {
    "n": 1,
-   "t": "Settings → Shared access policies — in the Azure portal, on your Service Bus namespace."
+   "t": "Settings \u2192 Shared access policies \u2014 in the Azure portal, on your Service Bus namespace."
   },
   {
    "n": 2,
@@ -74,11 +78,11 @@
   },
   {
    "n": 3,
-   "t": "Copy the Primary connection string — it starts with Endpoint=sb://."
+   "t": "Copy the Primary connection string \u2014 it starts with Endpoint=sb://."
   },
   {
    "n": 4,
-   "t": "The form underneath — the cloud tabs, Name, Environment, Connection string and Show value, exactly as in the previous screenshot."
+   "t": "The form underneath \u2014 the cloud tabs, Name, Environment, Connection string and Show value, exactly as in the previous screenshot."
   }
  ],
  "03-add-cloud-filled.png": [
@@ -92,11 +96,11 @@
   },
   {
    "n": 3,
-   "t": "Connect — tests the connection, then saves it."
+   "t": "Connect \u2014 tests the connection, then saves it."
   },
   {
    "n": 4,
-   "t": "The rest of the form — cloud tabs, Environment, Show value and Cancel, as described on the previous screenshot."
+   "t": "The rest of the form \u2014 cloud tabs, Environment, Show value and Cancel, as described on the previous screenshot."
   }
  ],
  "04-connected.png": [
@@ -106,245 +110,249 @@
   },
   {
    "n": 2,
-   "t": "Open Home — closes the window and shows Home."
+   "t": "Open Home \u2014 closes the window and shows Home."
   }
  ],
  "05-home.png": [
   {
    "n": 1,
-   "t": "Window — the period Home counts over (24 hours, 7 or 30 days). It changes what you see, never what happens."
+   "t": "Window \u2014 the period Home counts over (24 hours, 7 or 30 days). It changes what you see, never what happens."
   },
   {
    "n": 2,
-   "t": "The Agent bar — what the Agent is doing, how many replays it verified, and how many it is still watching."
+   "t": "The Agent bar \u2014 what the Agent is doing, how many replays it verified, and how many it is still watching."
   },
   {
    "n": 3,
-   "t": "Pause — stops the Agent acting until someone resumes it. It keeps watching and recording. Your own replays still work."
+   "t": "Pause \u2014 stops the Agent acting until someone resumes it. It keeps watching and recording. Your own replays still work."
   },
   {
    "n": 4,
-   "t": "What this cloud can do — ticks show what Azure lets ServiceHub do safely (count, watch, browse, prove a fix held, scheduled messages)."
+   "t": "What this cloud can do \u2014 ticks show what Azure lets ServiceHub do safely (count, watch, browse, prove a fix held, scheduled messages)."
   },
   {
    "n": 5,
-   "t": "Dead letters — opens the list of messages that failed and were set aside."
+   "t": "Dead letters \u2014 opens the list of messages that failed and were set aside."
   },
   {
    "n": 6,
-   "t": "Active messages — browse what is waiting. On Azure, looking is not a delivery."
+   "t": "Active messages \u2014 browse what is waiting. On Azure, looking is not a delivery."
   },
   {
    "n": 7,
-   "t": "Replayed — everything put back, by whom, and how it went."
+   "t": "Replayed \u2014 everything put back, by whom, and how it went."
   },
   {
    "n": 8,
-   "t": "Auto Replay rules — opens the rules panel. A rule only acts once a failure has earned it."
+   "t": "Auto Replay rules \u2014 opens the rules panel. A rule only acts once a failure has earned it."
   },
   {
    "n": 9,
-   "t": "Got it — hides this explanation. It does not affect your data."
+   "t": "Got it \u2014 hides this explanation. It does not affect your data."
   },
   {
    "n": 10,
-   "t": "See all dead letters in Azure — opens the Dead letters list for this cloud."
+   "t": "See all dead letters in Azure \u2014 opens the Dead letters list for this cloud."
   },
   {
    "n": 11,
-   "t": "Help for this page (the book beside the title) — opens Help on this very page, over it. Every page has one."
+   "t": "Help for this page (the book beside the title) \u2014 opens Help on this very page, over it. Every page has one."
+  },
+  {
+   "n": 12,
+   "t": "Demo \u2014 a guided walk through the whole product with made-up data. No connection string is needed and nothing real is touched."
   }
  ],
  "05b-navigation.png": [
   {
    "n": 1,
-   "t": "Back — returns to the previous place in the app."
+   "t": "Back \u2014 returns to the previous place in the app."
   },
   {
    "n": 2,
-   "t": "Forward — goes to the place you came back from."
+   "t": "Forward \u2014 goes to the place you came back from."
   },
   {
    "n": 3,
-   "t": "Search (⌘K) — jump to a cloud, queue or page. Searching never changes anything."
+   "t": "Search (\u2318K) \u2014 jump to a cloud, queue or page. Searching never changes anything."
   },
   {
    "n": 4,
-   "t": "The bell — the only place the Agent asks you something. A number appears when it needs you."
+   "t": "The bell \u2014 the only place the Agent asks you something. A number appears when it needs you."
   },
   {
    "n": 5,
-   "t": "Simple — the two pages where you do the work."
+   "t": "Simple \u2014 the two pages where you do the work."
   },
   {
    "n": 6,
-   "t": "Advanced — four read-only pages."
+   "t": "Advanced \u2014 four read-only pages."
   },
   {
    "n": 7,
-   "t": "You — who ServiceHub records actions as, with your role."
+   "t": "You \u2014 who ServiceHub records actions as, with your role."
   },
   {
    "n": 8,
-   "t": "Dead letters — messages that failed, with the reason and a Replay button."
+   "t": "Dead letters \u2014 messages that failed, with the reason and a Replay button."
   },
   {
    "n": 9,
-   "t": "Active messages — what is waiting now."
+   "t": "Active messages \u2014 what is waiting now."
   },
   {
    "n": 10,
-   "t": "Replayed — what was put back and whether it stayed fixed."
+   "t": "Replayed \u2014 what was put back and whether it stayed fixed."
   },
   {
    "n": 11,
-   "t": "Auto Replay — rules for retries ServiceHub may do on its own."
+   "t": "Auto Replay \u2014 rules for retries ServiceHub may do on its own."
   },
   {
    "n": 12,
-   "t": "Your cloud — pick it to see only that cloud. The dot shows the connection is healthy."
+   "t": "Your cloud \u2014 pick it to see only that cloud. The dot shows the connection is healthy."
   },
   {
    "n": 13,
-   "t": "Connections — your connected clouds, to test or remove."
+   "t": "Connections \u2014 your connected clouds, to test or remove."
   },
   {
    "n": 14,
-   "t": "Add a cloud — connect another cloud."
+   "t": "Add a cloud \u2014 connect another cloud."
   },
   {
    "n": 15,
-   "t": "Settings — connections, notifications, preferences, access and backup."
+   "t": "Settings \u2014 connections, notifications, preferences, access and backup."
   },
   {
    "n": 16,
-   "t": "Help — answers and shortcuts."
+   "t": "Help \u2014 answers and shortcuts."
   },
   {
    "n": 17,
-   "t": "Home — the overview: what needs attention, what the Agent is doing, and how replays ended."
+   "t": "Home \u2014 the overview: what needs attention, what the Agent is doing, and how replays ended."
   }
  ],
  "06-dead-letters.png": [
   {
    "n": 1,
-   "t": "Namespace picker — all of Azure, or one namespace."
+   "t": "Namespace picker \u2014 all of Azure, or one namespace."
   },
   {
    "n": 2,
-   "t": "Why they failed — the biggest reasons, counted. The reason comes from what your sender wrote when it dead-lettered the message."
+   "t": "Why they failed \u2014 the biggest reasons, counted. The reason comes from what your sender wrote when it dead-lettered the message."
   },
   {
    "n": 3,
-   "t": "Dead letters tab — messages set aside. The number is how many are stuck now."
+   "t": "Dead letters tab \u2014 messages set aside. The number is how many are stuck now."
   },
   {
    "n": 4,
-   "t": "Active tab — what is waiting in the queue."
+   "t": "Active tab \u2014 what is waiting in the queue."
   },
   {
    "n": 5,
-   "t": "Replayed tab — what has been put back."
+   "t": "Replayed tab \u2014 what has been put back."
   },
   {
    "n": 6,
-   "t": "Reason chips — click one to show only that reason."
+   "t": "Reason chips \u2014 click one to show only that reason."
   },
   {
    "n": 7,
-   "t": "Help for this page — opens Help on this page’s step of the guide. The (?) beside it only re-shows the short explanation."
+   "t": "Help for this page \u2014 opens Help on this page\u2019s step of the guide. The (?) beside it only re-shows the short explanation."
   }
  ],
  "07-filters-and-table.png": [
   {
    "n": 1,
-   "t": "Showing — Stuck now, or messages that have since left the queue."
+   "t": "Showing \u2014 Stuck now, or messages that have since left the queue."
   },
   {
    "n": 2,
-   "t": "Time window — only messages set aside in this period."
+   "t": "Time window \u2014 only messages set aside in this period."
   },
   {
    "n": 3,
-   "t": "Search — by message ID, queue, reason or error text."
+   "t": "Search \u2014 by message ID, queue, reason or error text."
   },
   {
    "n": 4,
-   "t": "Replay All Messages — opens a preview of every message still stuck in the cloud and namespace you are viewing. It ignores the filters, time window and search here. Nothing is sent until you confirm the preview."
+   "t": "Replay All Messages \u2014 opens a preview of every message still stuck in the cloud and namespace you are viewing. It ignores the filters, time window and search here. Nothing is sent until you confirm the preview."
   },
   {
    "n": 5,
-   "t": "Refresh — reads the queue again. On Azure this is free. The ⓘ beside it says when it was last read."
+   "t": "Refresh \u2014 reads the queue again. On Azure this is free. The \u24d8 beside it says when it was last read."
   },
   {
    "n": 6,
-   "t": "Selection — tick rows to act on several; this line shows how many."
+   "t": "Selection \u2014 tick rows to act on several; this line shows how many."
   },
   {
    "n": 7,
-   "t": "Replay selected — opens the same preview for just the ticked messages."
+   "t": "Replay selected \u2014 opens the same preview for just the ticked messages."
   },
   {
    "n": 8,
-   "t": "Details — opens the message: why it failed, its body, properties and delivery history."
+   "t": "Details \u2014 opens the message: why it failed, its body, properties and delivery history."
   },
   {
    "n": 9,
-   "t": "Replay — opens the proposal for this one message. It does not send anything yet."
+   "t": "Replay \u2014 opens the proposal for this one message. It does not send anything yet."
   },
   {
    "n": 10,
-   "t": "The table — a tick on every row (the one in the heading ticks the whole page), Details and Replay on every row, and an ⓘ About button on each column heading that explains that column in a sentence. “View details” in the heading chooses which columns show."
+   "t": "The table \u2014 a tick on every row (the one in the heading ticks the whole page), Details and Replay on every row, and an \u24d8 About button on each column heading that explains that column in a sentence. \u201cView details\u201d in the heading chooses which columns show."
   },
   {
    "n": 11,
-   "t": "Reason chips — each shows a reason and how many messages have it. Click one to show only those; click it again to show all."
+   "t": "Reason chips \u2014 each shows a reason and how many messages have it. Click one to show only those; click it again to show all."
   },
   {
    "n": 12,
-   "t": "All queues & topics — limit the list to one queue or topic."
+   "t": "All queues & topics \u2014 limit the list to one queue or topic."
   },
   {
    "n": 13,
-   "t": "The selection bar — the tick selects every row on this page; View details chooses which columns show; Replay selected stays dimmed until something is ticked."
+   "t": "The selection bar \u2014 the tick selects every row on this page; View details chooses which columns show; Replay selected stays dimmed until something is ticked."
   }
  ],
  "08-message-details.png": [
   {
    "n": 1,
-   "t": "Expand — widens the panel for long messages."
+   "t": "Expand \u2014 widens the panel for long messages."
   },
   {
    "n": 2,
-   "t": "Overview — reason, why it failed, the body with the bad field marked."
+   "t": "Overview \u2014 reason, why it failed, the body with the bad field marked."
   },
   {
    "n": 3,
-   "t": "Delivery — the delivery history Azure recorded."
+   "t": "Delivery \u2014 the delivery history Azure recorded."
   },
   {
    "n": 4,
-   "t": "Why it failed — a plain-words reading of the recorded reason. Marked Suggestion: it is a reading, not something Azure reported."
+   "t": "Why it failed \u2014 a plain-words reading of the recorded reason. Marked Suggestion: it is a reading, not something Azure reported."
   },
   {
    "n": 5,
-   "t": "Formatted / Raw — switch the body view."
+   "t": "Formatted / Raw \u2014 switch the body view."
   },
   {
    "n": 6,
-   "t": "Replay this message — opens the proposal. Nothing is sent from here."
+   "t": "Replay this message \u2014 opens the proposal. Nothing is sent from here."
   },
   {
    "n": 7,
-   "t": "Body, Properties and Headers — the other tabs; each is shown below."
+   "t": "Body, Properties and Headers \u2014 the other tabs; each is shown below."
   },
   {
    "n": 8,
-   "t": "Formatted and Copy body — pretty-print the body, or copy it to your clipboard. The copy stays in your browser."
+   "t": "Formatted and Copy body \u2014 pretty-print the body, or copy it to your clipboard. The copy stays in your browser."
   },
   {
    "n": 9,
-   "t": "Copy message ID — copies the ID so you can search for it elsewhere."
+   "t": "Copy message ID \u2014 copies the ID so you can search for it elsewhere."
   }
  ],
  "08-message-details-body.png": [
@@ -394,37 +402,37 @@
  "09-replay-proposal.png": [
   {
    "n": 1,
-   "t": "The message — what is about to be replayed: ID, where it is stuck, when and why it was set aside, and its body."
+   "t": "The message \u2014 what is about to be replayed: ID, where it is stuck, when and why it was set aside, and its body."
   },
   {
    "n": 2,
-   "t": "Replay 1 message — sends it back. It is only sent when you press this."
+   "t": "Replay 1 message \u2014 sends it back. It is only sent when you press this."
   },
   {
    "n": 3,
-   "t": "What will happen, Safety checks, After it runs — fold open or closed; the next screenshot shows them open."
+   "t": "What will happen, Safety checks, After it runs \u2014 fold open or closed; the next screenshot shows them open."
   },
   {
    "n": 4,
-   "t": "Cancel — closes without sending."
+   "t": "Cancel \u2014 closes without sending."
   }
  ],
  "09-replay-proposal-checks.png": [
   {
    "n": 1,
-   "t": "What will happen — where it goes and what happens to the dead-letter copy (it is removed once Azure accepts the new one)."
+   "t": "What will happen \u2014 where it goes and what happens to the dead-letter copy (it is removed once Azure accepts the new one)."
   },
   {
    "n": 2,
-   "t": "Safety checks — every check that must pass; a failing one blocks the replay and says why."
+   "t": "Safety checks \u2014 every check that must pass; a failing one blocks the replay and says why."
   },
   {
    "n": 3,
-   "t": "After it runs — ServiceHub records it and watches for 24 hours; if it comes back, nothing retries it."
+   "t": "After it runs \u2014 ServiceHub records it and watches for 24 hours; if it comes back, nothing retries it."
   },
   {
    "n": 4,
-   "t": "Cancel — closes without sending."
+   "t": "Cancel \u2014 closes without sending."
   },
   {
    "n": 5,
@@ -434,65 +442,69 @@
  "07b-selection.png": [
   {
    "n": 1,
-   "t": "Row tick — choose which messages to act on. The header tick chooses every row on the page."
+   "t": "Row tick \u2014 choose which messages to act on. The header tick chooses every row on the page."
   },
   {
    "n": 2,
-   "t": "Selection count — how many messages are ticked."
+   "t": "Selection count \u2014 how many messages are ticked."
   },
   {
    "n": 3,
-   "t": "Clear — unticks everything. Nothing else changes."
+   "t": "Clear \u2014 unticks everything. Nothing else changes."
   },
   {
    "n": 4,
-   "t": "Replay selected — opens the bulk preview for just these messages. Nothing is sent yet."
+   "t": "Replay selected \u2014 opens the bulk preview for just these messages. Nothing is sent yet."
   },
   {
    "n": 5,
-   "t": "The filter row — reason chips, Showing, Time window, queue, search, Replay All Messages and Refresh, each explained on the previous screenshot."
+   "t": "The filter row \u2014 reason chips, Showing, Time window, queue, search, Replay All Messages and Refresh, each explained on the previous screenshot."
   },
   {
    "n": 6,
-   "t": "The table — the ticks, Details and Replay on every row, and the whole-page tick in the heading."
+   "t": "The table \u2014 the ticks, Details and Replay on every row, and the whole-page tick in the heading."
   },
   {
    "n": 7,
-   "t": "The selection bar — the whole-page tick and View details (which columns show)."
+   "t": "The selection bar \u2014 the whole-page tick and View details (which columns show)."
   }
  ],
  "13-bulk-replay.png": [
   {
    "n": 1,
-   "t": "Preview — nothing has run yet. Step 1 of Preview → Run → Watch."
+   "t": "Preview \u2014 nothing has run yet. Step 1 of Preview \u2192 Run \u2192 Watch."
   },
   {
    "n": 2,
-   "t": "Held back — messages that fail a safety check stay in dead letters; they are never forced."
+   "t": "Held back \u2014 messages that fail a safety check stay in dead letters; they are never forced."
   },
   {
    "n": 3,
-   "t": "Grouped by how they failed — so you can see whether you are fixing one problem or several."
+   "t": "Grouped by how they failed \u2014 so you can see whether you are fixing one problem or several."
   },
   {
    "n": 4,
-   "t": "Where each one goes — the queue each message will be sent back to."
+   "t": "Where each one goes \u2014 the queue each message will be sent back to."
   },
   {
    "n": 5,
-   "t": "Replay N messages — sends them one at a time, re-checking each. You can stop partway."
+   "t": "Replay N messages \u2014 sends them one at a time, re-checking each. You can stop partway."
   },
   {
    "n": 6,
-   "t": "Cancel — nothing is sent."
+   "t": "Cancel \u2014 nothing is sent."
   },
   {
    "n": 7,
-   "t": "Page controls — move through the list when more messages are chosen than fit on one page."
+   "t": "Page controls \u2014 move through the list when more messages are chosen than fit on one page."
   },
   {
    "n": 8,
-   "t": "How it will run — folds open to show the pace and the automatic stop (five failures in a row)."
+   "t": "How it will run \u2014 folds open to show the pace and the automatic stop (five failures in a row)."
+  },
+  {
+   "n": 9,
+   "t": "After they are sent back \u2014 what ServiceHub does next: it records each replay and watches for 24 hours."
   }
  ],
  "10-replay-result.png": [
@@ -502,143 +514,147 @@
   },
   {
    "n": 2,
-   "t": "It is recorded, with who did it, and shows under Replayed (and in Advanced → Recovery Ledger)."
+   "t": "It is recorded, with who did it, and shows under Replayed (and in Advanced \u2192 Recovery Ledger)."
   },
   {
    "n": 3,
-   "t": "Done — closes the window."
+   "t": "Done \u2014 closes the window."
   },
   {
    "n": 4,
-   "t": "Active messages / Replayed — jump to where you can watch this message."
+   "t": "Active messages / Replayed \u2014 jump to where you can watch this message."
   }
  ],
  "11-replayed.png": [
   {
    "n": 1,
-   "t": "Messages replayed — how many were put back in the window."
+   "t": "Messages replayed \u2014 how many were put back in the window."
   },
   {
    "n": 2,
-   "t": "Being watched — replays still inside their watch window. Azure can prove whether each stayed fixed."
+   "t": "Being watched \u2014 replays still inside their watch window. Azure can prove whether each stayed fixed."
   },
   {
    "n": 3,
-   "t": "Came back — messages that failed the same way again. Nothing retries them on its own."
+   "t": "Came back \u2014 messages that failed the same way again. Nothing retries them on its own."
   },
   {
    "n": 4,
-   "t": "Result filter — stayed fixed, being watched, came back."
+   "t": "Result filter \u2014 stayed fixed, being watched, came back."
   },
   {
    "n": 5,
-   "t": "Download — saves this list as a file. It does not change anything."
+   "t": "Download \u2014 saves this list as a file. It does not change anything."
   },
   {
    "n": 6,
-   "t": "Details — the full record of this replay."
+   "t": "Details \u2014 the full record of this replay."
   },
   {
    "n": 7,
-   "t": "Filters — namespace, queue or topic, result, time window and search; Refresh reads the list again. They change what is listed, never what happened."
+   "t": "Filters \u2014 namespace, queue or topic, result, time window and search; Refresh reads the list again. They change what is listed, never what happened."
   },
   {
    "n": 8,
-   "t": "The table — a tick per replay (the heading tick ticks the page) and Details on each row."
+   "t": "The table \u2014 a tick per replay (the heading tick ticks the page) and Details on each row."
   },
   {
    "n": 9,
-   "t": "What am I looking at? — a short reading guide. Auto Replay rules — opens the rules page. All and Last 24 hours — the result and time filters."
+   "t": "What am I looking at? \u2014 a short reading guide. Auto Replay rules \u2014 opens the rules page. All and Last 24 hours \u2014 the result and time filters."
   },
   {
    "n": 10,
-   "t": "The three tabs — Dead letters, Active and Replayed. They switch the list below without leaving the page."
+   "t": "The three tabs \u2014 Dead letters, Active and Replayed. They switch the list below without leaving the page."
+  },
+  {
+   "n": 11,
+   "t": "Paging \u2014 rows per page, previous, the page numbers and next."
   }
  ],
  "12-active.png": [
   {
    "n": 1,
-   "t": "Send a message — puts a test message on the queue. This does change the queue, so use a dev queue."
+   "t": "Send a message \u2014 puts a test message on the queue. This does change the queue, so use a dev queue."
   },
   {
    "n": 2,
-   "t": "Counts — waiting, oldest, delivered before, dead-lettered."
+   "t": "Counts \u2014 waiting, oldest, delivered before, dead-lettered."
   },
   {
    "n": 3,
-   "t": "Filters — queue or topic, message state, time window and search."
+   "t": "Filters \u2014 queue or topic, message state, time window and search."
   },
   {
    "n": 4,
-   "t": "Follow live — shows new messages as they arrive. On Azure, looking does not count as a delivery."
+   "t": "Follow live \u2014 shows new messages as they arrive. On Azure, looking does not count as a delivery."
   },
   {
    "n": 5,
-   "t": "Auto-refresh — re-reads the queue every 15 seconds."
+   "t": "Auto-refresh \u2014 re-reads the queue every 15 seconds."
   },
   {
    "n": 6,
-   "t": "Scheduled — messages set to arrive later."
+   "t": "Scheduled \u2014 messages set to arrive later."
   },
   {
    "n": 7,
-   "t": "Peek message — opens one message to read it. Peeking does not remove or lock it."
+   "t": "Peek message \u2014 opens one message to read it. Peeking does not remove or lock it."
   },
   {
    "n": 8,
-   "t": "Filters and tools — namespace, queue, time window, search, how often the list refreshes, Refresh now, and Download body (saves the shown messages’ bodies as a file; changes nothing)."
+   "t": "Filters and tools \u2014 namespace, queue, time window, search, how often the list refreshes, Refresh now, and Download body (saves the shown messages\u2019 bodies as a file; changes nothing)."
   },
   {
    "n": 9,
-   "t": "Dead-lettered — jumps to the dead letters in this queue."
+   "t": "Dead-lettered \u2014 jumps to the dead letters in this queue."
   },
   {
    "n": 10,
-   "t": "The table — a tick per message (the heading tick ticks the page) and Details on each row."
+   "t": "The table \u2014 a tick per message (the heading tick ticks the page) and Details on each row."
   },
   {
    "n": 11,
-   "t": "What am I looking at? — a short reading guide. The queue and time-window pickers narrow what is listed."
+   "t": "What am I looking at? \u2014 a short reading guide. The queue and time-window pickers narrow what is listed."
   },
   {
    "n": 12,
-   "t": "The three tabs — Dead letters, Active and Replayed. They switch the list below without leaving the page."
+   "t": "The three tabs \u2014 Dead letters, Active and Replayed. They switch the list below without leaving the page."
   }
  ],
  "14-auto-replay.png": [
   {
    "n": 1,
-   "t": "Auto Generate Rules — proposes rules from failures already seen. It only proposes; you decide what to turn on."
+   "t": "Auto Generate Rules \u2014 proposes rules from failures already seen. It only proposes; you decide what to turn on."
   },
   {
    "n": 2,
-   "t": "Create rule — start a rule from a failure you have already seen."
+   "t": "Create rule \u2014 start a rule from a failure you have already seen."
   },
   {
    "n": 3,
-   "t": "How it works — you name a failure, safety checks decide, it replays gently, it proves it worked and stops itself if it does not."
+   "t": "How it works \u2014 you name a failure, safety checks decide, it replays gently, it proves it worked and stops itself if it does not."
   },
   {
    "n": 4,
-   "t": "Totals — rules on, replayed by rules, waiting for a person, stopped themselves."
+   "t": "Totals \u2014 rules on, replayed by rules, waiting for a person, stopped themselves."
   },
   {
    "n": 5,
-   "t": "Namespace — Auto Replay rules apply to every Azure namespace; this picks which one the page shows."
+   "t": "Namespace \u2014 Auto Replay rules apply to every Azure namespace; this picks which one the page shows."
   },
   {
    "n": 6,
-   "t": "Refresh rules — reads the rules again."
+   "t": "Refresh rules \u2014 reads the rules again."
   },
   {
    "n": 7,
-   "t": "Create your first rule — the same as Create rule, shown while there are none."
+   "t": "Create your first rule \u2014 the same as Create rule, shown while there are none."
   }
  ],
  "14-auto-replay-create.png": [
   {
    "n": 1,
-   "t": "Based on — pick a failure ServiceHub has already seen. A rule can only be made from a seen failure."
+   "t": "Based on \u2014 pick a failure ServiceHub has already seen. A rule can only be made from a seen failure."
   },
   {
    "n": 2,
@@ -646,417 +662,411 @@
   },
   {
    "n": 3,
-   "t": "Create and turn on — enabled once you choose a failure."
+   "t": "Create and turn on \u2014 enabled once you choose a failure."
   },
   {
    "n": 4,
-   "t": "Cancel — nothing is created."
+   "t": "Cancel \u2014 nothing is created."
   },
   {
    "n": 5,
-   "t": "The page header — namespace, Refresh rules, Auto Generate Rules (proposes only) and the “How Auto Replay works” fold, as on the previous screenshot."
+   "t": "The page header \u2014 namespace, Refresh rules, Auto Generate Rules (proposes only) and the \u201cHow Auto Replay works\u201d fold, as on the previous screenshot."
   }
  ],
  "15-settings-connections.png": [
   {
    "n": 1,
-   "t": "Sections — Connections, Notifications, Preferences, Access & security and Backup. Each jumps to that part of this window."
+   "t": "Sections \u2014 Connections, Notifications, Preferences, Access & security and Backup. Each jumps to that part of this window."
   },
   {
    "n": 2,
-   "t": "Add a cloud — connect another cloud."
+   "t": "Add a cloud \u2014 connect another cloud."
   },
   {
    "n": 3,
-   "t": "Test — checks the connection now and shows the result. Reads only."
+   "t": "Test \u2014 checks the connection now and shows the result. Reads only."
   },
   {
    "n": 4,
-   "t": "Remove — forgets this connection and its stored credential. It does not delete anything in Azure."
+   "t": "Remove \u2014 forgets this connection and its stored credential. It does not delete anything in Azure."
   }
  ],
  "15-settings-notifications.png": [
   {
    "n": 1,
-   "t": "In-app bell and pop-up — always on. It cannot be switched off, so it can never be switched off by mistake."
+   "t": "In-app bell and pop-up \u2014 always on. It cannot be switched off, so it can never be switched off by mistake."
   },
   {
    "n": 2,
-   "t": "Add webhook (Slack) — paste a Slack incoming-webhook URL to also get the message there."
+   "t": "Add webhook (Slack) \u2014 paste a Slack incoming-webhook URL to also get the message there."
   },
   {
    "n": 3,
-   "t": "Add webhook (Microsoft Teams) — the same for a Teams channel."
+   "t": "Add webhook (Microsoft Teams) \u2014 the same for a Teams channel."
   },
   {
    "n": 4,
-   "t": "Add webhook (any other system) — JSON to a URL you choose. Private and internal addresses are refused."
+   "t": "Add webhook (any other system) \u2014 JSON to a URL you choose. Private and internal addresses are refused."
   }
  ],
  "15-settings-preferences.png": [
   {
    "n": 1,
-   "t": "Theme — Light today; Dark is marked soon."
+   "t": "Theme \u2014 Light today; Dark is marked soon."
   },
   {
    "n": 2,
-   "t": "Times shown in — your browser’s time zone, or UTC. It changes how times are displayed, never the data."
+   "t": "Times shown in \u2014 your browser\u2019s time zone, or UTC. It changes how times are displayed, never the data."
   },
   {
    "n": 3,
-   "t": "Open on — start in Simple every time (Simple), or where you last were (Last used). Kept in this browser only."
+   "t": "Open on \u2014 start in Simple every time (Simple), or where you last were (Last used). Kept in this browser only."
+  },
+  {
+   "n": 4,
+   "t": "Your tracing tool \u2014 optional. Paste a link with {traceId} in it, and ServiceHub shows a link from each message to that trace in your own tool. It is kept in this browser only."
   }
  ],
  "15-settings-access.png": [
   {
    "n": 1,
-   "t": "Who you are — shown from this browser session until roles are switched on. The credential key fingerprint shows what encrypts stored credentials."
+   "t": "Who you are \u2014 shown from this browser session until roles are switched on. The credential key fingerprint shows what encrypts stored credentials."
   },
   {
    "n": 2,
-   "t": "Roles — Viewer sees, Operator replays, Approver answers the Agent, Admin connects clouds. Giving the first role switches roles on."
+   "t": "Roles \u2014 Viewer sees, Operator replays, Approver answers the Agent, Admin connects clouds. Giving the first role switches roles on."
   },
   {
    "n": 3,
-   "t": "Who — the API key name or signed-in user the role is for."
+   "t": "Who \u2014 the API key name or signed-in user the role is for."
   },
   {
    "n": 4,
-   "t": "Kind, Role, Where and Grant — choose whether it is a key or a person, the role, whether it applies everywhere or to one namespace, then Grant. Granting the first role switches roles on for everyone."
+   "t": "Kind, Role, Where and Grant \u2014 choose whether it is a key or a person, the role, whether it applies everywhere or to one namespace, then Grant. Granting the first role switches roles on for everyone."
   },
   {
    "n": 5,
-   "t": "Emergency stop — type STOP, say why, and switch it on to halt every automatic action at once. Nothing already done is undone; switch it off to resume."
+   "t": "Emergency stop \u2014 type STOP, say why, and switch it on to halt every automatic action at once. Nothing already done is undone; switch it off to resume."
   }
  ],
  "15-settings-backup.png": [
   {
    "n": 1,
-   "t": "Take a backup now — saves a consistent copy of ServiceHub’s own database (not of your clouds)."
+   "t": "Take a backup now \u2014 saves a consistent copy of ServiceHub\u2019s own database (not of your clouds)."
   }
  ],
  "16-help.png": [
   {
    "n": 1,
-   "t": "Search — type what you are trying to do."
+   "t": "Search \u2014 type what you are trying to do."
   },
   {
    "n": 2,
-   "t": "An answer — click to open it in place; each links to the screen it is about."
+   "t": "An answer \u2014 click to open it in place; each links to the screen it is about."
   },
   {
    "n": 3,
-   "t": "Setting up answers — connecting, alerts and who may replay."
+   "t": "Setting up answers \u2014 connecting, alerts and who may replay."
   },
   {
    "n": 4,
-   "t": "Keyboard shortcuts — only ones that work are listed."
+   "t": "Keyboard shortcuts \u2014 only ones that work are listed."
   },
   {
    "n": 5,
-   "t": "Step by step — one guide per cloud, each with every screen as a real screenshot and a numbered key for every button and link. Yours (Azure) is listed first. The same guides are the articles in docs/clouds."
+   "t": "Step by step \u2014 one guide per cloud, each with every screen as a real screenshot and a numbered key for every button and link. Yours (Azure) is listed first. The same guides are the articles in docs/clouds."
   }
  ],
  "17-advanced-overview.png": [
   {
    "n": 1,
-   "t": "Scope — all clouds, or one."
+   "t": "Scope \u2014 all clouds, or one."
   },
   {
    "n": 2,
-   "t": "Window — the period the page counts over."
+   "t": "Window \u2014 the period the page counts over."
   },
   {
    "n": 3,
-   "t": "Insights — patterns ServiceHub noticed across your failures."
+   "t": "Insights \u2014 patterns ServiceHub noticed across your failures."
   },
   {
    "n": 4,
-   "t": "Recovery — how replays ended. “Recovered” means it did not come back, not that the business transaction completed."
+   "t": "Recovery \u2014 how replays ended. \u201cRecovered\u201d means it did not come back, not that the business transaction completed."
   },
   {
    "n": 5,
-   "t": "Authority — what each failure may do on its own, and what holds it there."
+   "t": "Authority \u2014 what each failure may do on its own, and what holds it there."
   },
   {
    "n": 6,
-   "t": "Capability — what each cloud can prove."
+   "t": "Capability \u2014 what each cloud can prove."
   },
   {
    "n": 7,
-   "t": "Being watched, All agents → and Recovery Ledger → — jump to the Agents page and the Recovery Ledger. They only open pages; nothing changes."
+   "t": "Being watched, All agents \u2192 and Recovery Ledger \u2192 \u2014 jump to the Agents page and the Recovery Ledger. They only open pages; nothing changes."
   },
   {
    "n": 8,
-   "t": "Overview — the page you are on; the other three Advanced pages are in the bar at the top."
+   "t": "Overview \u2014 the page you are on; the other three Advanced pages are in the bar at the top."
   }
  ],
  "18-search.png": [
   {
    "n": 1,
-   "t": "Search box — type part of a cloud, queue or page name. Enter opens the first result. Esc closes. Searching never changes anything."
+   "t": "Search box \u2014 type part of a cloud, queue or page name. Enter opens the first result. Esc closes. Searching never changes anything."
   }
  ],
  "18-bell.png": [
   {
    "n": 1,
-   "t": "The bell — the only place the Agent asks you something. It lists what is waiting for you and clears when it is resolved, not when you look."
+   "t": "The bell \u2014 the only place the Agent asks you something. It lists what is waiting for you and clears when it is resolved, not when you look."
   },
   {
    "n": 2,
-   "t": "See all waiting — opens the full list of what needs a person."
-  }
- ],
- "18-user-menu.png": [
-  {
-   "n": 1,
-   "t": "Settings — opens Settings (connections, notifications, preferences, access, backup)."
-  },
-  {
-   "n": 2,
-   "t": "Help and shortcuts — opens Help."
-  },
-  {
-   "n": 3,
-   "t": "You — who ServiceHub records your actions as, and whether this server has sign-in turned on."
+   "t": "See all waiting \u2014 opens the full list of what needs a person."
   }
  ],
  "17-advanced-ledger.png": [
   {
    "n": 1,
-   "t": "Export evidence — downloads the ledger so it can be verified offline. It changes nothing."
+   "t": "Export evidence \u2014 downloads the ledger so it can be verified offline. It changes nothing."
   },
   {
    "n": 2,
-   "t": "Outcome chips — Waiting, Watching, Recovered, Unverified, Returned, Failed, Unknown, Declined. Recovered and Unverified are never counted together."
+   "t": "Outcome chips \u2014 Waiting, Watching, Recovered, Unverified, Returned, Failed, Unknown, Declined. Recovered and Unverified are never counted together."
   },
   {
    "n": 3,
-   "t": "Filters — cloud, namespace, queue or topic, who did it, and search."
+   "t": "Filters \u2014 cloud, namespace, queue or topic, who did it, and search."
   },
   {
    "n": 4,
-   "t": "Details — who took the action, what happened and its evidence. Each entry carries a fingerprint of the one before it."
+   "t": "Details \u2014 who took the action, what happened and its evidence. Each entry carries a fingerprint of the one before it."
   },
   {
    "n": 5,
-   "t": "Filters and entries — namespace, queue or topic, who, and search narrow the list; each entry opens to show its evidence."
+   "t": "Filters and entries \u2014 namespace, queue or topic, who, and search narrow the list; each entry opens to show its evidence."
   },
   {
    "n": 6,
-   "t": "What am I looking at? — a short reading guide for this page. Window — the period it counts over."
+   "t": "What am I looking at? \u2014 a short reading guide for this page. Window \u2014 the period it counts over."
   },
   {
    "n": 7,
-   "t": "Outcome chips with counts — click one to list only those entries; All shows everything again."
+   "t": "Outcome chips with counts \u2014 click one to list only those entries; All shows everything again."
   },
   {
    "n": 8,
-   "t": "Paging — how many rows per page, previous, the page number and next."
+   "t": "Paging \u2014 how many rows per page, previous, the page number and next."
   },
   {
    "n": 9,
-   "t": "About buttons (ⓘ) on the column headings — each explains that column in a sentence. They change nothing."
+   "t": "About buttons (\u24d8) on the column headings \u2014 each explains that column in a sentence. They change nothing."
   }
  ],
  "17-advanced-signatures.png": [
   {
    "n": 1,
-   "t": "Trace a message — follow one message across clouds by its ID."
+   "t": "Trace a message \u2014 follow one message across clouds by its ID."
   },
   {
    "n": 2,
-   "t": "Growing — signatures whose recent days hold at least twice what earlier days did."
+   "t": "Growing \u2014 signatures whose recent days hold at least twice what earlier days did."
   },
   {
    "n": 3,
-   "t": "Sort — most messages, or others."
+   "t": "Sort \u2014 most messages, or others."
   },
   {
    "n": 4,
-   "t": "A signature — one way of failing: the same queue and the same kind of error, so many messages become one thing to reason about."
+   "t": "A signature \u2014 one way of failing: the same queue and the same kind of error, so many messages become one thing to reason about."
   },
   {
    "n": 5,
-   "t": "Replays — how many of these were replayed and how many were verified to have held."
+   "t": "Replays \u2014 how many of these were replayed and how many were verified to have held."
   },
   {
    "n": 6,
-   "t": "Filters — cloud, namespace, queue or topic, who, and search."
+   "t": "Filters \u2014 cloud, namespace, queue or topic, who, and search."
   },
   {
    "n": 7,
-   "t": "Each signature row — opens to show the failures grouped under it and what each replay did."
+   "t": "Each signature row \u2014 opens to show the failures grouped under it and what each replay did."
   },
   {
    "n": 8,
-   "t": "What am I looking at? — a short reading guide. Window — the period counted."
+   "t": "What am I looking at? \u2014 a short reading guide. Window \u2014 the period counted."
   },
   {
    "n": 9,
-   "t": "Chips — Signatures, All, Replay helps, Replay doesn’t help. Click one to list only those."
+   "t": "Chips \u2014 Signatures, All, Replay helps, Replay doesn\u2019t help. Click one to list only those."
   },
   {
    "n": 10,
-   "t": "Paging — rows per page, previous, the page number and next."
+   "t": "Paging \u2014 rows per page, previous, the page number and next."
   },
   {
    "n": 11,
-   "t": "About buttons (ⓘ) on the column headings — each explains that column in a sentence. They change nothing."
+   "t": "About buttons (\u24d8) on the column headings \u2014 each explains that column in a sentence. They change nothing."
   }
  ],
  "17-advanced-agents.png": [
   {
    "n": 1,
-   "t": "Acting agents — the only ones that can change anything, and only after the same safety checks you get."
+   "t": "Acting agents \u2014 the only ones that can change anything, and only after the same safety checks you get."
   },
   {
    "n": 2,
-   "t": "Watching agents — they only look and record."
+   "t": "Watching agents \u2014 they only look and record."
   },
   {
    "n": 3,
-   "t": "Pause — stops that agent acting. It is the one thing Advanced can do, because it only removes authority. Nothing it already did is undone."
+   "t": "Pause \u2014 stops that agent acting. It is the one thing Advanced can do, because it only removes authority. Nothing it already did is undone."
   },
   {
    "n": 4,
-   "t": "Learn more — a short explanation of how agents work."
+   "t": "Learn more \u2014 a short explanation of how agents work."
   },
   {
    "n": 5,
-   "t": "Health summary, agent rows and Open — the summary says whether every agent is running normally; a row opens that agent’s details; Open goes to the screen the agent works through."
+   "t": "Health summary, agent rows and Open \u2014 the summary says whether every agent is running normally; a row opens that agent\u2019s details; Open goes to the screen the agent works through."
   },
   {
    "n": 6,
-   "t": "What am I looking at? — a short reading guide for this page."
+   "t": "What am I looking at? \u2014 a short reading guide for this page."
   }
  ],
  "05c-home-middle.png": [
   {
    "n": 1,
-   "t": "Why messages failed — the reasons among the dead letters, biggest first, with how many each has. The window buttons (24 hours, 7 days, 30 days) set the period; Show as table swaps the chart for a table."
+   "t": "Why messages failed \u2014 the reasons among the dead letters, biggest first, with how many each has. The window buttons (24 hours, 7 days, 30 days) set the period; Show as table swaps the chart for a table."
   },
   {
    "n": 2,
-   "t": "How replays ended — what happened to the replays in this window."
+   "t": "How replays ended \u2014 what happened to the replays in this window."
   },
   {
    "n": 3,
-   "t": "7, 14, 30 days and Show as table — change the period Home counts over, or show the numbers as a table. They never change what happens."
+   "t": "7, 14, 30 days and Show as table \u2014 change the period Home counts over, or show the numbers as a table. They never change what happens."
   },
   {
    "n": 4,
-   "t": "Latest dead letters and Recent activity — shown in full on the next screenshot."
+   "t": "Latest dead letters and Recent activity \u2014 shown in full on the next screenshot."
   },
   {
    "n": 5,
-   "t": "Window buttons (7, 14, 30 days) and Open → — change the period, or open that item’s page. They never change what happens."
+   "t": "Window buttons (7, 14, 30 days) and Open \u2192 \u2014 change the period, or open that item\u2019s page. They never change what happens."
   }
  ],
  "05d-home-end.png": [
   {
    "n": 1,
-   "t": "The latest dead letters, each with Details → — the same message view as on the Dead letters tab. “See all →” opens the full list."
+   "t": "The latest dead letters, each with Details \u2192 \u2014 the same message view as on the Dead letters tab. \u201cSee all \u2192\u201d opens the full list."
   },
   {
    "n": 2,
-   "t": "Recent activity — what ServiceHub and people did, newest first. Each line opens to show its detail; nothing here changes anything."
+   "t": "Recent activity \u2014 what ServiceHub and people did, newest first. Each line opens to show its detail; nothing here changes anything."
   },
   {
    "n": 3,
-   "t": "Open → — opens that item’s page. It only navigates."
+   "t": "Open \u2192 \u2014 opens that item\u2019s page. It only navigates."
   },
   {
    "n": 4,
-   "t": "Connected — a note that a namespace was connected, with when and by whom. Opens to show the detail."
+   "t": "Connected \u2014 a note that a namespace was connected, with when and by whom. Opens to show the detail."
   },
   {
    "n": 5,
-   "t": "Window buttons, Show as table, and the reasons — each reason opens the dead letters with that reason. They only change what is shown."
+   "t": "Window buttons, Show as table, and the reasons \u2014 each reason opens the dead letters with that reason. They only change what is shown."
   }
  ],
  "07c-table-end.png": [
   {
    "n": 1,
-   "t": "The foot of the table — the same ticks, Details and Replay on every row."
+   "t": "The foot of the table \u2014 the same ticks, Details and Replay on every row."
   },
   {
    "n": 2,
-   "t": "Paging — rows per page, previous, the page numbers and next."
+   "t": "Paging \u2014 rows per page, previous, the page numbers and next."
   }
  ],
  "13b-bulk-replay-end.png": [
   {
    "n": 1,
-   "t": "How it will run — the pace (a few messages a second, gentle on your consumer) and the automatic stop: five failures in a row."
+   "t": "How it will run \u2014 the pace (a few messages a second, gentle on your consumer) and the automatic stop: five failures in a row."
   },
   {
    "n": 2,
-   "t": "After they are sent back — what ServiceHub does next: it records each replay and watches for 24 hours."
+   "t": "After they are sent back \u2014 what ServiceHub does next: it records each replay and watches for 24 hours."
   },
   {
    "n": 3,
-   "t": "No purge on Azure — this cloud cannot delete one message on its own, so ServiceHub does not offer “Purge instead…” here (AWS and Google Cloud do)."
+   "t": "No purge on Azure \u2014 this cloud cannot delete one message on its own, so ServiceHub does not offer \u201cPurge instead\u2026\u201d here (AWS and Google Cloud do)."
   },
   {
    "n": 4,
-   "t": "Replay N messages — sends them one at a time, re-checking each. You can stop partway."
+   "t": "Replay N messages \u2014 sends them one at a time, re-checking each. You can stop partway."
   },
   {
    "n": 5,
-   "t": "Cancel — nothing is sent."
+   "t": "Cancel \u2014 nothing is sent."
   },
   {
    "n": 6,
-   "t": "Page controls — move through the list when more messages are chosen than fit on one page."
+   "t": "Page controls \u2014 move through the list when more messages are chosen than fit on one page."
+  },
+  {
+   "n": 7,
+   "t": "Where each one goes \u2014 folds open to list the queue each message will be sent back to, grouped by why it failed."
   }
  ],
  "11b-replayed-end.png": [
   {
    "n": 1,
-   "t": "The replays, newest first — each with a tick and Details."
+   "t": "The replays, newest first \u2014 each with a tick and Details."
   },
   {
    "n": 2,
-   "t": "Paging — rows per page, previous, the page numbers and next."
+   "t": "Paging \u2014 rows per page, previous, the page numbers and next."
   },
   {
    "n": 3,
-   "t": "The three tabs, the Auto Replay rules button, and the table headings with their ⓘ About buttons — as on the previous screenshot."
+   "t": "The three tabs, the Auto Replay rules button, and the table headings with their \u24d8 About buttons \u2014 as on the previous screenshot."
   },
   {
    "n": 4,
-   "t": "Filters — result, queue or topic, time window and search; Refresh re-reads the list and Download as CSV saves it as a file. They change what is listed, never what happened."
+   "t": "Filters \u2014 result, queue or topic, time window and search; Refresh re-reads the list and Download as CSV saves it as a file. They change what is listed, never what happened."
   }
  ],
  "12b-active-end.png": [
   {
    "n": 1,
-   "t": "A message row — a tick to choose it, and Details to open it (body, properties, delivery). Looking at an Azure message is not a delivery."
+   "t": "A message row \u2014 a tick to choose it, and Details to open it (body, properties, delivery). Looking at an Azure message is not a delivery."
   },
   {
    "n": 2,
-   "t": "Paging — rows per page, previous, the page numbers and next."
+   "t": "Paging \u2014 rows per page, previous, the page numbers and next."
   },
   {
    "n": 3,
-   "t": "The controls above the table — the same filters, search, auto-refresh, Refresh, Scheduled, and the ⓘ About buttons on the column headings, as on the previous screenshot."
+   "t": "The controls above the table \u2014 the same filters, search, auto-refresh, Refresh, Scheduled, and the \u24d8 About buttons on the column headings, as on the previous screenshot."
   }
  ],
  "16b-help-end.png": [
   {
    "n": 1,
-   "t": "Step by step — one guide per cloud, each with every screen as a real screenshot and a numbered key for every button and link."
+   "t": "Step by step \u2014 one guide per cloud, each with every screen as a real screenshot and a numbered key for every button and link."
   },
   {
    "n": 2,
-   "t": "Answers — click one to open it in place; each links to the screen it is about."
+   "t": "Answers \u2014 click one to open it in place; each links to the screen it is about."
   }
  ],
  "17b-advanced-agents-more.png": [
   {
    "n": 1,
-   "t": "Watching agents — they only look and record; they cannot change anything."
+   "t": "Watching agents \u2014 they only look and record; they cannot change anything."
   },
   {
    "n": 2,
@@ -1066,17 +1076,23 @@
  "17a-advanced-agents-middle.png": [
   {
    "n": 1,
-   "t": "Agent rows — click a row to see what that agent may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting."
+   "t": "Agent rows \u2014 click a row to see what that agent may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting."
   },
   {
    "n": 2,
-   "t": "More agent rows — the acting agents (Bulk Replay, Auto Replay) and the rest; each opens to show what it may do."
+   "t": "More agent rows \u2014 the acting agents (Bulk Replay, Auto Replay) and the rest; each opens to show what it may do."
   }
  ],
  "17c-advanced-agents-rows.png": [
   {
    "n": 1,
-   "t": "Agent rows — click a row to see what that agent may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting."
+   "t": "Agent rows \u2014 click a row to see what that agent may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting."
+  }
+ ],
+ "17d-advanced-signatures-end.png": [
+  {
+   "n": 1,
+   "t": "Paging \u2014 rows per page, previous, the page numbers and next."
   }
  ]
 }
