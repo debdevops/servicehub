@@ -80,6 +80,9 @@ export const routes: RouteObject[] = [
     ],
   },
   // Published demo URLs (unit 6.5). Outside the layout: they only switch the session into demo mode and open Home.
+  // These match only when the router has NO demo basename — i.e. an address that names no cloud (`/demo/other`). When the address
+  // is `/demo`, `/demo/aws`… the prefix is the basename (below), react-router strips it, and the page routes above match instead
+  // (tests/web/unit/router.basename.test.tsx).
   { path: '/demo', element: <DemoEntry /> },
   { path: '/demo/:provider', element: <DemoEntry /> },
   { path: '/demo/:provider/*', element: <DemoEntry /> },

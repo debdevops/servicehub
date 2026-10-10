@@ -30,6 +30,9 @@ public sealed class PubSubObserverSubscriptionCheck : IDeadLetterReturnCheck
     internal const int PullSize = 100;
     internal const int EmptyPullsToStop = 3;
     internal const int MaxPerDrain = 5000;
+
+    /// <summary>One gate per observer subscription, shared by every instance of this check in the process.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> Gates = new(StringComparer.Ordinal);
     internal static readonly TimeSpan LongestFloor = TimeSpan.FromHours(24);
 
     private static readonly RecoveryActor Actor = new("System:DeadLetterViewAgent", RecoveryActorKind.System);
@@ -154,6 +157,14 @@ public sealed class PubSubObserverSubscriptionCheck : IDeadLetterReturnCheck
                 return DeadLetterReturnVerdict.Returned;
             }
 
+            // Another drain (the health check's) may have read this replay's dead letter first and recorded it. It is then no
+            // longer in the subscription, but it did come back — the ledger is the record, so ask it.
+            var recorded = await _ledger.GetEntryAsync(entry.Id, ns.OwnerId, cancellationToken).ConfigureAwait(false);
+            if (recorded?.State == RecoveryEntryState.Returned)
+            {
+                return DeadLetterReturnVerdict.Returned;
+            }
+
             // The drain stopped at its cap with more waiting: this replay may be in the part not yet read. "Not seen" is
             // not "did not come back" then, so it is never answered as fixed. The next look reads the rest.
             return complete ? DeadLetterReturnVerdict.NotReturned : DeadLetterReturnVerdict.CannotTell("OBSERVER_BACKLOG_NOT_FULLY_READ");
@@ -179,6 +190,23 @@ public sealed class PubSubObserverSubscriptionCheck : IDeadLetterReturnCheck
     internal async Task<(IReadOnlySet<string> Returned, bool Complete)> DrainWithCompletenessAsync(Namespace ns, SubscriberServiceApiClient subscriber, string observerId, CancellationToken ct)
     {
         var name = NameOf(ns, observerId);
+
+        // One drain of a subscription at a time, for the whole process. Health checks and replay verification both read it; if
+        // they overlapped, one could hold a returned dead letter while the other saw an empty subscription and answered "absent".
+        var gate = Gates.GetOrAdd(name, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            return await DrainLockedAsync(ns, subscriber, name, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task<(IReadOnlySet<string> Returned, bool Complete)> DrainLockedAsync(Namespace ns, SubscriberServiceApiClient subscriber, string name, CancellationToken ct)
+    {
         var returned = new HashSet<string>(StringComparer.Ordinal);
         var read = 0;
         var empty = 0;

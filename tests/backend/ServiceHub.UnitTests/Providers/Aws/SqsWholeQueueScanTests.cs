@@ -232,6 +232,34 @@ public sealed class SqsWholeQueueScanTests
         return check.CheckAsync(ns, Attestation(ns), entry, liveSince: null);
     }
 
+    private static Task<DeadLetterViewHealth> Health(SqsWholeQueueCheck check, string dlqName)
+    {
+        var ns = Ns();
+        var attestation = Attestation(ns);
+        attestation.DlqEntityName = dlqName;
+        return check.CheckHealthAsync(ns, attestation);
+    }
+
+    [Fact]
+    public async Task A_named_dead_letter_queue_that_can_be_scanned_to_the_end_is_live()
+    {
+        (await Health(Check(new FakeQueue(5)), "orders-dlq")).Healthy.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_named_dead_letter_queue_that_cannot_be_scanned_completely_is_not_live()
+    {
+        var health = await Health(Check(new FakeQueue(SqsWholeQueueScanner.MaxMessages + 1)), "orders-dlq");
+        health.Healthy.Should().BeFalse("listing queues is not seeing a dead-letter queue to its end");
+        health.Reason.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task With_no_queue_named_health_only_needs_the_account_to_answer()
+    {
+        (await Health(Check(new FakeQueue(SqsWholeQueueScanner.MaxMessages + 1)), "*")).Healthy.Should().BeTrue();
+    }
+
     [Fact]
     public async Task A_replay_that_is_not_in_the_whole_queue_did_not_come_back()
     {

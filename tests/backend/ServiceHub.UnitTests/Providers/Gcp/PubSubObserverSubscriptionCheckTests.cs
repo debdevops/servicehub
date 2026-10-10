@@ -118,6 +118,42 @@ public sealed class PubSubObserverSubscriptionCheckTests
     }
 
     [Fact]
+    public async Task A_replay_already_recorded_as_returned_by_another_drain_is_still_returned()
+    {
+        var ns = Ns();
+        var entry = Entry(LongAgo);
+        var fake = new Fake(entry); // nothing waiting: a health drain already took it
+        fake.Ledger.Setup(l => l.GetEntryAsync(entry.Id, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => { entry.State = RecoveryEntryState.Returned; return entry; });
+
+        var verdict = await fake.Check().CheckAsync(ns, Attestation(ns), entry, liveSince: Now.AddDays(-1));
+
+        verdict.Should().Be(DeadLetterReturnVerdict.Returned);
+    }
+
+    [Fact]
+    public async Task Drains_of_one_subscription_never_overlap()
+    {
+        var ns = Ns();
+        var fake = new Fake(Entry(LongAgo));
+        var inside = 0;
+        var overlapped = false;
+        fake.Subscriber.Setup(s => s.PullAsync(It.IsAny<PullRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                if (Interlocked.Increment(ref inside) > 1) overlapped = true;
+                await Task.Delay(20);
+                Interlocked.Decrement(ref inside);
+                return new PullResponse();
+            });
+        var check = fake.Check();
+
+        await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => check.DrainAsync(ns, fake.Subscriber.Object, "observer-sub", CancellationToken.None)));
+
+        overlapped.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task A_backlog_larger_than_one_drain_is_never_answered_as_not_returned()
     {
         var ns = Ns();

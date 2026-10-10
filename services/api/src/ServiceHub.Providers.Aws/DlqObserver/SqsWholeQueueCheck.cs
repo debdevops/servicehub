@@ -47,9 +47,28 @@ public sealed class SqsWholeQueueCheck : IDeadLetterReturnCheck, IDeadLetterWhol
         ArgumentNullException.ThrowIfNull(ns);
         try
         {
-            // Reading only: can ServiceHub still talk to this account's queues at all? No queue is scanned here.
-            await _clients.GetSqsClient(ns).ListQueuesAsync(new ListQueuesRequest { MaxResults = 1 }, cancellationToken).ConfigureAwait(false);
+            // Can ServiceHub still talk to this account's queues at all?
+            var sqs = _clients.GetSqsClient(ns);
+            await sqs.ListQueuesAsync(new ListQueuesRequest { MaxResults = 1 }, cancellationToken).ConfigureAwait(false);
+
+            // Being able to list queues is not being able to see a dead-letter queue to its end, and "live" is what lets this
+            // cloud's replays be judged absent. So when the person named a dead-letter queue, it must have been scanned completely.
+            // ("*" is "no queue named": each replay's own queue is scanned when its window closes, and that answer is never "fixed" if incomplete.)
+            if (!string.IsNullOrWhiteSpace(attestation?.DlqEntityName) && attestation.DlqEntityName != "*")
+            {
+                var dlqUrl = (await sqs.GetQueueUrlAsync(new GetQueueUrlRequest { QueueName = attestation.DlqEntityName }, cancellationToken).ConfigureAwait(false)).QueueUrl;
+                var scan = await _scanner.ScanAsync(sqs, dlqUrl, cancellationToken).ConfigureAwait(false);
+                if (!scan.Complete)
+                {
+                    return new DeadLetterViewHealth(false, scan.Reason ?? "SCAN_INCOMPLETE");
+                }
+            }
+
             return new DeadLetterViewHealth(true);
+        }
+        catch (QueueDoesNotExistException)
+        {
+            return new DeadLetterViewHealth(false, "QUEUE_NOT_FOUND");
         }
         catch (AmazonSQSException ex)
         {
