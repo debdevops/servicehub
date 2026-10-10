@@ -106,7 +106,9 @@ test.describe('demo addresses', () => {
 test.describe('demo deep links', () => {
   test('a link to a panel is not taken over by the first-visit tour', async ({ page }) => {
     await page.goto('/demo/?panel=connections')
-    await expect(page.getByText('Contoso Orders (dev)')).toBeVisible()
+    // Scoped to the Connections list: Home's own Azure section names the same namespace once it has loaded, and an unscoped
+    // getByText matched both on a busy machine (a strict-mode violation, not a product fault).
+    await expect(page.getByRole('rowgroup', { name: 'Azure' }).getByText('Contoso Orders (dev)')).toBeVisible()
     await expect(page).toHaveURL(/panel=connections/)
     await expect(card(page)).toHaveCount(0)
   })
