@@ -70,6 +70,21 @@ describe('An attempt whose answer was lost', () => {
     expect(retitle).toHaveBeenCalledWith(expect.objectContaining({ title: 'Say what happened' }))
   })
 
+  it('still says it was recorded when the list refreshes and the item is gone (found in a live run)', async () => {
+    // The real list drops the item the moment the answer is recorded; the confirmation must not vanish with it.
+    let recorded = false
+    vi.mocked(api.fetchPendingWork).mockImplementation(async () => (recorded ? { items: [], total: 0, byProvider: [], agents: 0 } : { items: [unresolved], total: 1, byProvider: [], agents: 0 }))
+    vi.mocked(api.resolvePending).mockImplementation(async () => { recorded = true })
+    openUnresolved()
+    await userEvent.type(await screen.findByLabelText(/What did you find/), 'nothing was sent')
+    await userEvent.click(screen.getByRole('button', { name: 'Record what I found' }))
+
+    expect(await screen.findByText(/Recorded with your name/)).toBeInTheDocument()
+    await waitFor(() => expect(vi.mocked(api.fetchPendingWork).mock.calls.length).toBeGreaterThan(1)) // the list was refreshed after the answer
+    expect(screen.getByText(/Recorded with your name/)).toBeInTheDocument()
+    expect(screen.queryByText(/Nothing here is waiting any more/)).not.toBeInTheDocument()
+  })
+
   it('says so, and records nothing, when the answer cannot be saved', async () => {
     vi.mocked(api.resolvePending).mockRejectedValueOnce(new Error('down'))
     openUnresolved()

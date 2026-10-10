@@ -50,7 +50,7 @@ public static class EscalationReasons
         "EMERGENCY_STOP_QUERY_ERROR" =>
             "ServiceHub couldn't check whether emergency stop is on, so it stopped rather than guess. A person decides.",
         ReplayOutcomeUnknown =>
-            "ServiceHub stopped before it could record whether an earlier attempt put this message back. It may or may not have been sent, so it will not try again on its own. Check the queue, then say what you found.",
+            "ServiceHub lost contact with the cloud, or stopped, before it could record whether an earlier attempt put this message back. It may or may not have been sent, so it will not try again on its own. Check the queue, then say what you found.",
         AgentStale =>
             "This agent has stopped reporting. What it does is not happening — check the ServiceHub server.",
         AgentFailing =>

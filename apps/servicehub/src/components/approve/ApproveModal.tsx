@@ -4,7 +4,7 @@ import { useMe } from '../../hooks/useIdentity'
 import { permission } from '../../lib/permissions'
 import { UnlockHint } from '../UnlockHint'
 import { NotAllowed } from '../ui/NotAllowed'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useApprovePending, useDeclinePending, usePendingWork } from '../../hooks/usePendingWork'
 import { useReplayProposal } from '../../hooks/useReplay'
@@ -44,6 +44,9 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
   const waiting = (pending.data?.items ?? []).filter((i) =>
     i.kind === 'approval' && (entry ? i.entryId === entry : group ? `${i.provider ?? '?'}:${i.namespaceId ?? '?'}` === group : true))
 
+  const unresolvedNow = !!entry && !!pending.data?.items.some((i) => i.kind === 'unresolved' && i.entryId === entry)
+  const [wasUnresolved, setWasUnresolved] = useState(false)
+  useEffect(() => { if (unresolvedNow) setWasUnresolved(true) }, [unresolvedNow])
   const [unticked, setUnticked] = useState<ReadonlySet<string>>(new Set())
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE)
@@ -62,8 +65,9 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
   const record = useTrackRecord(head)
 
   // An attempt whose answer was lost is answered here too — one door for "the Agent stopped and asked" — but it is a different
-  // question: nothing to approve, only what the person found in the queue.
-  if (entry && pending.data?.items.some((i) => i.kind === 'unresolved' && i.entryId === entry)) return <ResolveUnknownBody close={close} />
+  // question: nothing to approve, only what the person found in the queue. Once seen it stays this screen: recording the answer
+  // removes the item from the list, and without this the person would never see that it was recorded (found in a live run).
+  if (entry && (unresolvedNow || wasUnresolved)) return <ResolveUnknownBody close={close} />
   if (approve.isPending) return <Sending done={progress} total={approve.variables?.entryIds.length ?? 0} />
   if (approve.data) return <Approved results={approve.data} close={close} stillWaiting={pending.isFetching ? null : (entry ? waiting.length : (pending.data?.total ?? null))} />
   if (decline.isSuccess) {
