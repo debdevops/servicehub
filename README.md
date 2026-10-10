@@ -142,7 +142,7 @@ Connections, Settings, Help, then Advanced and back. No sound needed. Click a pr
 ## Deploying it for real
 
 - **One instance.** One process, one SQLite file; a second instance on the same data directory exits. Keep the file on local block storage, not a network share.
-- **Where to run it.** Step by step on a small Azure VM: **[Host ServiceHub on Azure](docs/HOSTING-AZURE.md)**. Terraform for Azure, AWS and Google Cloud (a private VM, no open port, daily snapshots) is in [`infra/`](infra/README.md); it has not yet been run against a real account.
+- **Where to run it.** Step by step on a small Azure VM: **[CLI guide](docs/HOSTING-AZURE-CLI.md)** or **[Portal guide](docs/HOSTING-AZURE-PORTAL.md)** (the full runbook is [Host ServiceHub on Azure](docs/HOSTING-AZURE.md)). Considering Azure App Service instead? Read **[App Service: should you?](docs/HOSTING-AZURE-APP-SERVICE.md)** first; it is less safe for ServiceHub than a VM. Terraform for Azure, AWS and Google Cloud (a private VM, no open port, daily snapshots) is in [`infra/`](infra/README.md); it has not yet been run against a real account.
 - **Data and backups.** Set `ServiceHub__DataDirectory` (the Docker image uses `/data`). Back up from Settings → Backup: [Backup & restore](docs/BACKUP-RESTORE.md).
 - **Who is asking.** ServiceHub does not log the browser in. Keep it on `localhost` or put it behind a private network or an authenticating reverse proxy. It can give other people and automation *limited* access with API keys (`X-API-KEY`), OIDC or Azure Easy Auth, plus Viewer, Operator and Admin roles. It answers only to `localhost`, `127.0.0.1` and `[::1]`; reaching it by another name needs `AllowedHosts` set (keep `localhost` in it). See [SECURITY.md](SECURITY.md).
 - **Cloud permissions.** Read/receive on the queues you want watched; send and delete only if you want to replay and purge. Prefer identity-based auth (managed identity, IAM role, workload identity) over long-lived secrets.
@@ -154,7 +154,10 @@ Connections, Settings, Help, then Advanced and back. No sound needed. Click a pr
 | [Local setup](docs/LOCAL-SETUP.md) | Install, run, check and troubleshoot on your own machine, with or without Docker |
 | [Run with Docker](docs/DOCKER.md) | Run the public image, update it, back it up, fix problems |
 | [Azure](docs/clouds/azure.md) · [AWS](docs/clouds/aws.md) · [Google Cloud](docs/clouds/gcp.md) | Step-by-step setup and use, with annotated screenshots (also in the app under **Help**) |
-| [Hosting on Azure](docs/HOSTING-AZURE.md) | Run it always-on on an Azure VM, safely |
+| [Hosting on Azure](docs/HOSTING-AZURE.md) | Run it always-on on an Azure VM, safely (the full runbook) |
+| [Azure VM, CLI](docs/HOSTING-AZURE-CLI.md) | The short version, in a terminal |
+| [Azure VM, Portal](docs/HOSTING-AZURE-PORTAL.md) | The short version, by clicking |
+| [Azure App Service](docs/HOSTING-AZURE-APP-SERVICE.md) | Whether to use it, and the hardened setup if you do |
 | [Backup & restore](docs/BACKUP-RESTORE.md) | Take, verify and restore a backup |
 | [Encryption key rotation](docs/ENCRYPTION-KEY-ROTATION.md) | Rotate the key that protects stored credentials, and what to do if it leaks |
 | [Recovery Evidence](docs/RECOVERY-EVIDENCE.md) | The hash-chained ledger and how an auditor verifies an export |
