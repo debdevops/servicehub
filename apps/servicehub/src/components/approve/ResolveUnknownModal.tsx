@@ -7,6 +7,7 @@ import { toProblem } from '../../lib/api/client'
 import { formatAge } from '../../lib/format'
 import { permission } from '../../lib/permissions'
 import { providerLabel } from '../../lib/providers'
+import { useOverlayTitle } from '../overlays/overlayTitle'
 import { NotAllowed } from '../ui/NotAllowed'
 import { Skeleton } from '../ui/Skeleton'
 
@@ -25,6 +26,7 @@ export default function ResolveUnknownModal({ close }: { readonly close: () => v
   const me = useMe()
   const resolve = useResolvePending()
   const [found, setFound] = useState('')
+  useOverlayTitle('Say what happened', 'An attempt to put a message back has no recorded answer. Nothing is replayed here.')
 
   if (resolve.isSuccess) {
     return (

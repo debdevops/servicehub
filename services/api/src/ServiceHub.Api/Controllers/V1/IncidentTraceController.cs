@@ -163,6 +163,7 @@ public sealed class IncidentTraceController : ApiControllerBase
         RecoveryEntryState.ExecutionFailed => "the cloud refused it",
         RecoveryEntryState.ExecutionUnknown => "outcome not known",
         RecoveryEntryState.Discarded => "deleted for good",
+        RecoveryEntryState.WrittenOff => "closed by a person, with a note",
         _ => state.ToString(),
     };
 }

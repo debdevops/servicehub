@@ -11,6 +11,7 @@ import * as signatures from '@/lib/api/signatures'
 import * as deadLetters from '@/lib/api/deadLetters'
 import type { PendingWorkItem } from '@/lib/api/pendingWork'
 import ApproveModal from '@/components/approve/ApproveModal'
+import { OverlayTitleContext } from '@/components/overlays/overlayTitle'
 import { expectNoAxeViolations } from '@tests/support/axe'
 
 vi.mock('@/lib/api/pendingWork', async (original) => ({ ...(await original<typeof api>()), fetchPendingWork: vi.fn(), approvePending: vi.fn(), declinePending: vi.fn(), resolvePending: vi.fn() }))
@@ -59,6 +60,14 @@ describe('An attempt whose answer was lost', () => {
 
     await waitFor(() => expect(api.resolvePending).toHaveBeenCalledWith('u1', 'the main queue holds one copy'))
     expect(await screen.findByText(/closed without a verdict/)).toBeInTheDocument()
+  })
+
+  it('retitles its own frame, so a question with nothing to approve is never headed "Approve"', async () => {
+    const retitle = vi.fn()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/?modal=approve&entry=u1']}><OverlayTitleContext.Provider value={retitle}><ApproveModal entry={{} as never} close={close} /></OverlayTitleContext.Provider></MemoryRouter></QueryClientProvider>)
+    await screen.findByText(/Check the queue/)
+    expect(retitle).toHaveBeenCalledWith(expect.objectContaining({ title: 'Say what happened' }))
   })
 
   it('says so, and records nothing, when the answer cannot be saved', async () => {
