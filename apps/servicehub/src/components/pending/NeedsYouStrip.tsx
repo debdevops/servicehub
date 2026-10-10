@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Bot, CheckCircle2, Clock, Maximize2, Minimize2, Zap } from 'lucide-react'
+import { Bot, CheckCircle2, CircleHelp, Clock, Maximize2, Minimize2, Zap } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { usePendingWork } from '../../hooks/usePendingWork'
 import { useMinimizable } from '../../hooks/useMinimizable'
@@ -15,6 +15,7 @@ const icons = {
   approval: { Icon: Clock, box: 'bg-[#fffbeb] text-[#d97706]' },
   rule: { Icon: Zap, box: 'bg-[var(--color-error-light)] text-[#dc2626]' },
   agent: { Icon: Bot, box: 'bg-[var(--color-error-light)] text-[#dc2626]' },
+  unresolved: { Icon: CircleHelp, box: 'bg-[#fffbeb] text-[#d97706]' },
 } as const
 
 /**

@@ -114,8 +114,11 @@ public sealed class PendingWorkApiTests
         await RunAutoReplay(host);
 
         var page = await Json(await host.Client.GetAsync("/api/v1/pending-work?limit=500"));
-        page.GetProperty("total").GetInt32().Should().Be(505);
-        page.GetProperty("items").GetArrayLength().Should().Be(500);
+        // A stopped agent is pending work too (sorted first), and on a loaded machine seeding 505 rows can take long enough
+        // for an agent to count as late — so count the approvals, not everything that is waiting.
+        var items = page.GetProperty("items").EnumerateArray().ToList();
+        page.GetProperty("total").GetInt32().Should().Be(505 + items.Count(i => i.GetProperty("kind").GetString() != "approval"));
+        items.Count.Should().Be(500);
         var shown = page.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("entryId").GetGuid()).ToHashSet();
 
         using var scope = host.Services.CreateScope();

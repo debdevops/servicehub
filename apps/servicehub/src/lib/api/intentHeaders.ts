@@ -21,6 +21,7 @@ export const Intent = {
   ResumeAgent: 'resume-agent',
   ApproveEscalation: 'approve-escalation',
   DeclineEscalation: 'decline-escalation',
+  ResolveUnknownOutcome: 'resolve-unknown-outcome',
   AddChannel: 'add-channel',
   RemoveChannel: 'remove-channel',
   EmergencyStop: 'emergency-stop',
@@ -31,6 +32,11 @@ export const Intent = {
   GrantRole: 'grant-role',
   RevokeRole: 'revoke-role',
   ConfigureDlqObserver: 'configure-dlq-observer',
+  CreateRule: 'create-rule',
+  GenerateRules: 'generate-rules',
+  SwitchRule: 'switch-rule',
+  UpdateRule: 'update-rule',
+  DeleteRule: 'delete-rule',
 } as const
 
 export type IntentValue = (typeof Intent)[keyof typeof Intent]

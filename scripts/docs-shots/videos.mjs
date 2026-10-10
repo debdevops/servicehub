@@ -18,6 +18,7 @@ import path from 'node:path'
 
 const BASE = process.env.DOCS_BASE || 'http://localhost:3000'
 const CLOUD = process.env.CLOUD || 'azure'
+const VERSION = fs.readFileSync(new URL('../../.version', import.meta.url), 'utf-8').trim() // the title card must never name a stale release
 const RAW = process.env.VIDEO_RAW || fs.mkdtempSync(path.join(os.tmpdir(), 'servicehub-video-'))
 const C = {
   azure: { name: 'Azure Service Bus', label: 'Azure', tab: /^Azure Service Bus/, look: null, confirms: true },
@@ -108,6 +109,8 @@ const uncap = () => page.evaluate(() => document.getElementById('__vcap')?.class
 const card = async (html) => { await page.evaluate((h) => { const c = document.getElementById('__vcard'); c.innerHTML = h; c.classList.add('on') }, html) }
 const uncard = () => page.evaluate(() => document.getElementById('__vcard')?.classList.remove('on'))
 const glide = async (loc) => {
+  // A long real list (hundreds of rows) can take a while to draw under load: wait for the control, don't time out on a measurement (one AWS run did, 2026-10-09).
+  await loc.waitFor({ state: 'visible', timeout: 25000 }).catch(() => {})
   await loc.scrollIntoViewIfNeeded({ timeout: 6000 }).catch(() => {})
   const b = await loc.boundingBox({ timeout: 8000 })
   if (!b) throw new Error('not visible')
@@ -158,7 +161,7 @@ try {
   // ============ 0 — title ============
   await go(`/?provider=${CLOUD}`, 2000)
   await page.mouse.move(683, 384)
-  await card(`<div class="tag">ServiceHub 4.1.0 · Simple mode</div><h1>${C.name}</h1><p>Everything you do day to day, start to finish: find stuck messages, understand them, and put them back — one or many — with every step checked and recorded.</p>`)
+  await card(`<div class="tag">ServiceHub ${VERSION} · Simple mode</div><h1>${C.name}</h1><p>Everything you do day to day, start to finish: find stuck messages, understand them, and put them back — one or many — with every step checked and recorded.</p>`)
   await wait(4600); await uncard(); await wait(300)
 
   // ============ 1 — connect (shown, never filled in) ============
@@ -279,7 +282,7 @@ try {
   await scene('approvals', async () => {
     if (only) await go(`/?provider=${CLOUD}`, 3000)
     await cap('Needs you', 'Needs your attention: when the Agent stops and asks', 'the bell and Home both show it, with the reason in plain words')
-    await hover(page.getByRole('button', { name: /Waiting for you|Notifications/ }).first(), 2600)
+    await hover(page.getByRole('button', { name: /waiting for you|Notifications/i }).first(), 2600)
     const review = page.getByRole('link', { name: /^Review/ }).first()
     if (await review.isVisible().catch(() => false)) {
       await click(review); await wait(3600)

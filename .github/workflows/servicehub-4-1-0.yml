@@ -125,6 +125,10 @@ jobs:
       - name: Test with coverage
         run: npm run test:coverage -w apps/servicehub
 
+      - name: MCP server tests
+        # tools/mcp is a dependency-free, read-only server; its tests use node's built-in runner.
+        run: node --test tools/mcp/servicehub-mcp.test.mjs
+
       - name: Build
         run: npm run build -w apps/servicehub
 

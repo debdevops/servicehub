@@ -25,6 +25,7 @@ await scene('01', async () => {
     { n: 3, loc: page.getByRole('link', { name: 'Advanced' }), t: 'Simple | Advanced — Simple is where you act. Advanced is read-only pages (ledger, signatures, agents); it never changes anything.' },
     { n: 4, loc: link('Help'), t: 'Help — opens the Help panel with task-shaped answers and the keyboard shortcuts.' },
     { n: 5, loc: [page.getByRole('link', { name: 'Connect AWS' }), page.getByRole('link', { name: 'Connect Google' })], t: 'Connect AWS / Connect Google — the same Add a cloud window, on the AWS or Google Cloud tab. You do not need them for Azure.' },
+    { n: 6, loc: page.getByRole('link', { name: 'Try it with sample data' }), t: 'Try it with sample data — opens a demo with made-up data and no cloud connected, so you can look around first. Nothing in it is real and nothing is sent anywhere.' },
   ])
 })
 await scene('02', async () => {
@@ -81,6 +82,7 @@ await scene('05', async () => {
     { n: 9, loc: btn('Got it'), t: 'Got it — hides this explanation. It does not affect your data.' },
     { n: 10, loc: link('See all dead letters in Azure →'), t: 'See all dead letters in Azure — opens the Dead letters list for this cloud.' },
     { n: 11, loc: page.getByRole('link', { name: 'Help for this page' }), t: 'Help for this page (the book beside the title) — opens Help on this very page, over it. Every page has one.' },
+    { n: 12, loc: page.getByRole('link', { name: 'Demo', exact: true }), t: 'Demo — a guided walk through the whole product with made-up data. No connection string is needed and nothing real is touched.' }
   ])
 })
 await scene('05b', async () => {
@@ -107,6 +109,7 @@ await scene('05b', async () => {
 })
 await scene('05c', async () => {
   await go('/'); await dismiss()
+  await page.getByRole('link', { name: /^[A-Z][a-z]+[A-Z][A-Za-z]+\s*\d/ }).first().waitFor({ timeout: 20000 }).catch(() => {}) // the reasons arrive after the page; a shot taken before them shows an empty Home
   await scrollMain(520); await settle(600)
   await shot(page, S('05c-home-middle'), [
     { n: 1, loc: region('Why messages failed'), t: 'Why messages failed — the reasons among the dead letters, biggest first, with how many each has. The window buttons (24 hours, 7 days, 30 days) set the period; Show as table swaps the chart for a table.' },
@@ -121,7 +124,7 @@ await scene('05c', async () => {
     { n: 2, loc: region('Recent activity'), t: 'Recent activity — what ServiceHub and people did, newest first. Each line opens to show its detail; nothing here changes anything.' },
     { n: 3, loc: page.getByRole('link', { name: /^Open\s*→/ }), all: true, t: 'Open → — opens that item’s page. It only navigates.' },
     { n: 4, loc: page.getByRole('button', { name: /^Connected a namespace/ }), t: 'Connected — a note that a namespace was connected, with when and by whom. Opens to show the detail.' },
-    { n: 5, loc: [page.getByRole('radio', { name: /^(7|14|30) days$/ }), btn('Show as table'), page.getByRole('link', { name: /^(PaymentDeclined|InventoryUnavailable|ValidationFailed)/ })], all: true, t: 'Window buttons, Show as table, and the reasons — each reason opens the dead letters with that reason. They only change what is shown.' },
+    { n: 5, loc: [page.getByRole('radio', { name: /^(7|14|30) days$/ }), btn('Show as table'), page.getByRole('link', { name: /^(PaymentDeclined|InventoryUnavailable|ValidationFailed|[A-Z][a-z]+[A-Z][A-Za-z]+\s*\d)/ })], all: true, t: 'Window buttons, Show as table, and the reasons — each reason opens the dead letters with that reason. They only change what is shown.' },
   ])
 })
 await scene('06', async () => {
@@ -142,7 +145,7 @@ await scene('07', async () => {
     { n: 1, loc: page.getByText('Stuck now', { exact: true }), t: 'Showing — Stuck now, or messages that have since left the queue.' },
     { n: 2, loc: page.getByText('All time', { exact: true }), t: 'Time window — only messages set aside in this period.' },
     { n: 3, loc: page.getByPlaceholder(/Search ID/), t: 'Search — by message ID, queue, reason or error text.' },
-    { n: 4, loc: btn('Replay All Messages'), t: 'Replay All Messages — opens a preview of everything shown. Nothing is sent until you confirm the preview.' },
+    { n: 4, loc: btn('Replay All Messages'), t: 'Replay All Messages — opens a preview of every message still stuck in the cloud and namespace you are viewing. It ignores the filters, time window and search here. Nothing is sent until you confirm the preview.' },
     { n: 5, loc: [btn('Refresh'), btn('About Refresh')], t: 'Refresh — reads the queue again. On Azure this is free. The ⓘ beside it says when it was last read.' },
     { n: 6, loc: page.getByText('No messages selected'), t: 'Selection — tick rows to act on several; this line shows how many.' },
     { n: 7, loc: page.getByText('Replay selected…').first(), t: 'Replay selected — opens the same preview for just the ticked messages.' },
@@ -223,6 +226,7 @@ await scene('13', async () => {
     { n: 6, loc: dlg().getByRole('button', { name: 'Cancel' }), all: true, t: 'Cancel — nothing is sent.' },
     { n: 7, loc: dlg().getByRole('button', { name: /(page|Previous|Next)/i }), all: true, t: 'Page controls — move through the list when more messages are chosen than fit on one page.' },
     { n: 8, loc: dlg().getByRole('button', { name: 'How it will run' }), t: 'How it will run — folds open to show the pace and the automatic stop (five failures in a row).' },
+    { n: 9, loc: dlg().getByRole('button', { name: /After they are sent back/ }), t: 'After they are sent back — what ServiceHub does next: it records each replay and watches for 24 hours.' },
   ])
   await scrollDialog(99999); await settle(500)
   await shot(page, S('13b-bulk-replay-end'), [
@@ -232,6 +236,7 @@ await scene('13', async () => {
     { n: 4, loc: dlg().getByRole('button', { name: /Replay \d+ messages/ }), all: true, t: 'Replay N messages — sends them one at a time, re-checking each. You can stop partway.' },
     { n: 5, loc: dlg().getByRole('button', { name: 'Cancel' }), all: true, t: 'Cancel — nothing is sent.' },
     { n: 6, loc: dlg().getByRole('button', { name: /^(Previous page|Go to page \d+|Next page)$/ }), all: true, t: 'Page controls — move through the list when more messages are chosen than fit on one page.' },
+    { n: 7, loc: dlg().getByRole('button', { name: /Where each one goes/ }), t: 'Where each one goes — folds open to list the queue each message will be sent back to, grouped by why it failed.' },
   ])
   await page.keyboard.press('Escape'); await settle(500)
 })
@@ -257,6 +262,7 @@ await scene('11', async () => {
     { n: 7, loc: [page.getByRole('button', { name: /Azure · Namespace/ }), btn('All queues & topics'), btn('All', ), btn('Last 24 hours'), page.getByPlaceholder(/Message ID, queue, who/), btn('Refresh')], t: 'Filters — namespace, queue or topic, result, time window and search; Refresh reads the list again. They change what is listed, never what happened.' },
     { n: 9, loc: page.locator('main button').filter({ hasText: /^(Auto Replay rules|All|Last 24 hours)$/ }).or(page.getByRole('button', { name: /Auto Replay rules/ })).or(page.getByRole('button', { name: 'What am I looking at?' })), all: true, t: 'What am I looking at? — a short reading guide. Auto Replay rules — opens the rules page. All and Last 24 hours — the result and time filters.' },
     { n: 10, loc: [page.locator('main').getByRole('link', { name: /^(Dead letters|Active|Replayed)/ }), page.locator('main').getByRole('button', { name: /^About (Dead letters|Active|Replayed)$/ })], all: true, t: 'The three tabs — Dead letters, Active and Replayed. They switch the list below without leaving the page.' },
+    { n: 11, loc: page.getByRole('button', { name: /^(Rows per page|Previous page|Go to page \d+|Next page)$/ }), all: true, t: 'Paging — rows per page, previous, the page numbers and next.' },
     { n: 8, loc: [page.locator('table thead'), page.locator('table tbody tr')], all: true, t: 'The table — a tick per replay (the heading tick ticks the page) and Details on each row.' },
   ])
   await scrollMain(99999); await settle(600)
@@ -264,7 +270,7 @@ await scene('11', async () => {
     { n: 1, loc: page.locator('table tbody tr'), all: true, t: 'The replays, newest first — each with a tick and Details.' },
     { n: 2, loc: page.getByRole('button', { name: /^(Rows per page|Previous page|Go to page \d+|Next page)$/ }), all: true, t: 'Paging — rows per page, previous, the page numbers and next.' },
     { n: 3, loc: [page.locator('main').getByRole('link', { name: /^(Dead letters|Active|Replayed)/ }), btn('Auto Replay rules'), page.locator('table thead'), page.getByRole('button', { name: /^About (Replayed|From|Message|By|Result|Details)$/ })], all: true, t: 'The three tabs, the Auto Replay rules button, and the table headings with their ⓘ About buttons — as on the previous screenshot.' },
-    { n: 4, loc: [page.locator('main button').filter({ hasText: /^(Any result|All queues & topics|All|Last 24 hours)$/ }), page.getByPlaceholder(/Message ID, queue, who/), btn('Refresh'), btn('Download as CSV')], all: true, t: 'Filters — result, queue or topic, time window and search; Refresh re-reads the list and Download as CSV saves it as a file. They change what is listed, never what happened.' },
+    { n: 4, loc: [page.getByRole('button', { name: /Azure · Namespace/ }), page.locator('main button').filter({ hasText: /^(Any result|All queues & topics|All|Last 24 hours)$/ }), page.getByPlaceholder(/Message ID, queue, who/), btn('Refresh'), btn('Download as CSV')], all: true, t: 'Filters — result, queue or topic, time window and search; Refresh re-reads the list and Download as CSV saves it as a file. They change what is listed, never what happened.' },
   ])
 })
 await scene('12', async () => {
@@ -329,6 +335,7 @@ await scene('15', async () => {
     { n: 1, loc: page.getByText('Theme', { exact: true }), t: 'Theme — Light today; Dark is marked soon.' },
     { n: 2, loc: [page.getByText('Times shown in', { exact: true }), btn('Times shown in')], t: 'Times shown in — your browser’s time zone, or UTC. It changes how times are displayed, never the data.' },
     { n: 3, loc: [page.getByText('Open on', { exact: true }), dlg().locator('button[role=radio]').filter({ hasText: /^(Simple|Last used)$/ })], all: true, t: 'Open on — start in Simple every time (Simple), or where you last were (Last used). Kept in this browser only.' },
+    { n: 4, loc: page.getByPlaceholder(/tracing\.example\.com/), t: 'Your tracing tool — optional. Paste a link with {traceId} in it, and ServiceHub shows a link from each message to that trace in your own tool. It is kept in this browser only.' }
   ])
   await sect('Access & security', 'access', [
     { n: 1, loc: page.getByText(/You are/).first(), t: 'Who you are — shown from this browser session until roles are switched on. The credential key fingerprint shows what encrypts stored credentials.' },
@@ -388,12 +395,16 @@ await scene('17', async () => {
     { n: 4, loc: page.getByText('PaymentDeclined').first(), t: 'A signature — one way of failing: the same queue and the same kind of error, so many messages become one thing to reason about.' },
     { n: 5, loc: page.getByText(/replayed/).first(), t: 'Replays — how many of these were replayed and how many were verified to have held.' },
     { n: 6, loc: [btn('Cloud'), btn('Namespace'), btn('All queues & topics'), btn('By'), page.getByRole('textbox', { name: 'Search' }).or(page.getByPlaceholder('Search'))], all: true, t: 'Filters — cloud, namespace, queue or topic, who, and search.' },
-    { n: 7, loc: page.getByRole('button', { name: /(declined|out of stock|is required)/ }), all: true, t: 'Each signature row — opens to show the failures grouped under it and what each replay did.' },
+    { n: 7, loc: page.getByRole('button', { name: /(declined|out of stock|is required|could not be consumed|not valid JSON)/ }), all: true, t: 'Each signature row — opens to show the failures grouped under it and what each replay did.' },
     { n: 8, loc: [btn('What am I looking at?'), btn('Window')], t: 'What am I looking at? — a short reading guide. Window — the period counted.' },
     { n: 9, loc: page.locator('button').filter({ hasText: /^(Signatures|All\s*\d|Replay helps|Replay doesn’t help)/ }), all: true, t: 'Chips — Signatures, All, Replay helps, Replay doesn’t help. Click one to list only those.' },
     { n: 10, loc: [btn('Rows per page'), btn('Previous page'), btn('Go to page 1'), btn('Next page')], t: 'Paging — rows per page, previous, the page number and next.' },
     { n: 11, loc: page.getByRole('button', { name: /^About (Signature|Messages|Days|Replays)$/ }), all: true, t: 'About buttons (ⓘ) on the column headings — each explains that column in a sentence. They change nothing.' },
   ])
+  await scrollMain(99999); await settle(600)
+  await shot(page, S('17d-advanced-signatures-end'), [
+    { n: 1, loc: page.getByRole('button', { name: /^(Rows per page|Previous page|Go to page \d+|Next page)$/ }), all: true, t: 'Paging — rows per page, previous, the page numbers and next.' },
+  ], page.locator('xpath=//button[@aria-label="Next page"]/ancestor::*[.//*[@aria-label="Rows per page"]][1]'))
   await go('/advanced/agents', 3500); await dismiss()
   await shot(page, S('17-advanced-agents'), [
     { n: 1, loc: page.getByText('Acting Agents').first().locator('..').locator('..'), t: 'Acting agents — the only ones that can change anything, and only after the same safety checks you get.' },
@@ -405,17 +416,17 @@ await scene('17', async () => {
   ])
   await scrollMain(380); await settle(600)
   await shot(page, S('17a-advanced-agents-middle'), [
-    { n: 1, loc: page.getByRole('button', { name: /^(Dead-letter Monitor|Replay Verifier|Trust Evaluator|Spike Watcher|Open |Pause )/ }), all: true, t: 'Agent rows — click a row to see what that agent may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting.' },
+    { n: 1, loc: page.getByRole('button', { name: /^(Fix Confirmer|Dead-letter Monitor|Replay Verifier|Trust Evaluator|Spike Watcher|Open |Pause )/ }), all: true, t: 'Agent rows — click a row to see what that agent may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting.' },
     { n: 2, loc: page.getByRole('button', { name: /^(Bulk Replay|Auto Replay|Trust Evaluator|Open Trust|Pause Trust)/ }), all: true, t: 'More agent rows — the acting agents (Bulk Replay, Auto Replay) and the rest; each opens to show what it may do.' },
   ])
   await page.getByRole('button', { name: 'Pause Trust Evaluator' }).scrollIntoViewIfNeeded().catch(() => {}); await settle(600)
   await shot(page, S('17c-advanced-agents-rows'), [
-    { n: 1, loc: page.getByRole('button', { name: /^(Dead-letter Monitor|Replay Verifier|Trust Evaluator|Spike Watcher|Backlog Forecaster|Bulk Replay|Auto Replay|Open |Pause )/ }), all: true, t: 'Agent rows — click a row to see what that agent may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting.' },
+    { n: 1, loc: page.getByRole('button', { name: /^(Fix Confirmer|Dead-letter Monitor|Replay Verifier|Trust Evaluator|Spike Watcher|Backlog Forecaster|Bulk Replay|Auto Replay|Open |Pause )/ }), all: true, t: 'Agent rows — click a row to see what that agent may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting.' },
   ])
   await scrollMain(99999); await settle(600)
   await shot(page, S('17b-advanced-agents-more'), [
     { n: 1, loc: page.getByText('Watching Agents').first().locator('..').locator('..'), t: 'Watching agents — they only look and record; they cannot change anything.' },
-    { n: 2, loc: page.getByRole('button', { name: /^(Dead-letter Monitor|Replay Verifier|Trust Evaluator|Spike Watcher|Backlog Forecaster|Pattern Linker|Narrator|Open |Pause )/ }), all: true, t: 'Each agent row opens to show what it may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting.' },
+    { n: 2, loc: page.getByRole('button', { name: /^(Fix Confirmer|Dead-letter Monitor|Replay Verifier|Trust Evaluator|Spike Watcher|Backlog Forecaster|Pattern Linker|Narrator|Open |Pause )/ }), all: true, t: 'Each agent row opens to show what it may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting.' },
   ])
 })
 await scene('18', async () => {
@@ -429,13 +440,6 @@ await scene('18', async () => {
     { n: 1, loc: page.getByRole('dialog', { name: /Waiting for you/ }), t: 'The bell — the only place the Agent asks you something. It lists what is waiting for you and clears when it is resolved, not when you look.' },
     { n: 2, loc: page.getByRole('link', { name: /See all waiting/ }), t: 'See all waiting — opens the full list of what needs a person.' },
   ])
-  await page.keyboard.press('Escape'); await go('/'); await dismiss()
-  await page.getByText('This browser').first().click(); await settle(800)
-  await shot(page, S('18-user-menu'), [
-    { n: 1, loc: page.getByRole('menuitem', { name: 'Settings' }), t: 'Settings — opens Settings (connections, notifications, preferences, access, backup).' },
-    { n: 2, loc: page.getByRole('menuitem', { name: /Help and shortcuts/ }), t: 'Help and shortcuts — opens Help.' },
-    { n: 3, loc: page.getByRole('menu'), t: 'You — who ServiceHub records your actions as, and whether this server has sign-in turned on.' },
-  ], page.getByRole('menu'))
 })
 import fs from 'node:fs'
 const gaps = JSON.parse(fs.readFileSync(`${OUT}/uncovered.json`, 'utf8'))

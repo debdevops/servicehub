@@ -89,7 +89,7 @@ public sealed class AzureLiveConformanceTests
         }
         finally
         {
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            ServiceHubApiFactory.ClearPoolFor(dataDir);
             if (Directory.Exists(dataDir))
             {
                 Directory.Delete(dataDir, recursive: true);

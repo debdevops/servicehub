@@ -22,9 +22,9 @@ fi
 TAG_VERSION="${REF_NAME#v}"
 case "${TAG_VERSION}" in
   4.0.*) CONTEXT="archive/servicehub-4.0.0" ;;
-  4.1.*) CONTEXT="." ;;
+  4.1.*|4.2.*) CONTEXT="." ;;
   *)
-    echo "❌ Tag '${REF_NAME}' is not a release line this workflow knows (v4.0.x → archive, v4.1.x → root)."
+    echo "❌ Tag '${REF_NAME}' is not a release line this workflow knows (v4.0.x → archive, v4.1.x and v4.2.x → root)."
     echo "   A new release line needs its own build path (ADR-0013 D6)."
     exit 1
     ;;

@@ -40,6 +40,12 @@ public static class IntentHeaders
     /// <summary>Intent for declining what an agent asked — recorded with the person's name and reason.</summary>
     public const string DeclineEscalation = "decline-escalation";
 
+    /// <summary>
+    /// Intent for saying what happened to an attempt whose answer was lost. It lifts the block that stops the same message being
+    /// sent again, so a person must have checked the queue and mean it.
+    /// </summary>
+    public const string ResolveUnknownOutcome = "resolve-unknown-outcome";
+
     /// <summary>Intent for granting a governance role.</summary>
     public const string GrantRole = "grant-role";
 
@@ -64,11 +70,29 @@ public static class IntentHeaders
     /// <summary>Intent for turning a cloud's DLQ observer on or off, or changing where its log lives.</summary>
     public const string ConfigureDlqObserver = "configure-dlq-observer";
 
+    /// <summary>Intent for re-signing a namespace's dead letters by error message — it rewrites signature identity, so it must be meant.</summary>
+    public const string ResignSignatures = "resign-signatures";
+
     /// <summary>Intent for taking a backup.</summary>
     public const string CreateBackup = "create-backup";
 
     /// <summary>Intent for staging a backup to be restored at the next start.</summary>
     public const string RestoreBackup = "restore-backup";
+
+    /// <summary>Intent for making an Auto Replay rule — it starts on, so it hands a machine the right to replay.</summary>
+    public const string CreateRule = "create-rule";
+
+    /// <summary>Intent for making Auto Replay rules for the most common failures, each starting on.</summary>
+    public const string GenerateRules = "generate-rules";
+
+    /// <summary>Intent for switching an Auto Replay rule on or off.</summary>
+    public const string SwitchRule = "switch-rule";
+
+    /// <summary>Intent for changing an Auto Replay rule's name and pace.</summary>
+    public const string UpdateRule = "update-rule";
+
+    /// <summary>Intent for deleting an Auto Replay rule.</summary>
+    public const string DeleteRule = "delete-rule";
 
     /// <summary>Whether the request declared exactly <paramref name="expected"/>.</summary>
     public static bool Declares(HttpRequest request, string expected)

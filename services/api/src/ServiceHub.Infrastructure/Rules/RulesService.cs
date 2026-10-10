@@ -229,6 +229,12 @@ public sealed class RulesService : IRulesService
             return Result<RuleView>.Failure(Error.NotFound("RULE_NOT_FOUND", $"Rule '{id}' was not found."));
         }
 
+        if (enabled && rule.DisabledReason == Signatures.SignatureResigner.StaleRuleReason)
+        {
+            return Result<RuleView>.Failure(Error.Validation("RULE_SIGNATURE_SPLIT",
+                "This rule was made for a group of failures that no longer exists, so turning it on would match nothing. Make a new rule from a current group instead."));
+        }
+
         rule.Enabled = enabled;
         rule.DisabledReason = enabled ? null : "Person";
         rule.DisabledDetail = enabled ? null : "Turned off by a person.";

@@ -325,7 +325,7 @@ function ActiveDrawer({ message, entity, now, onClose }: { message: Message; ent
         </p>
         <div>
           <div className="text-[10.5px] font-bold uppercase tracking-wide text-[var(--color-text-muted)]">Message body</div>
-          <pre className="mt-1.5 max-h-[50vh] min-h-24 overflow-auto whitespace-pre-wrap rounded-lg bg-[#0f172a] p-3 text-[12px] leading-relaxed text-[#e2e8f0]">{message.body ?? '(no body)'}</pre>
+          <pre tabIndex={0} aria-label="Message body text" className="mt-1.5 max-h-[50vh] min-h-24 overflow-auto whitespace-pre-wrap rounded-lg bg-[#0f172a] p-3 text-[12px] leading-relaxed text-[#e2e8f0]">{message.body ?? '(no body)'}</pre>
         </div>
         <dl className="space-y-1 text-[12.5px]">
           <Kv k="Message ID" v={message.messageId} />

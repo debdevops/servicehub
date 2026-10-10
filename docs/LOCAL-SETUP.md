@@ -65,7 +65,7 @@ cd servicehub
 
 ```
 ✔ ServiceHub is ready
-   Open http://localhost:3000      (try /demo/azure first: made-up data, nothing is sent anywhere)
+   Open http://localhost:3000      (try /demo first: made-up data, nothing is sent anywhere)
    Ctrl-C to stop.
 ```
 
@@ -89,7 +89,7 @@ port, it never kills it: with the default ports it moves to the next free port a
 
 1. **Health.** <http://localhost:3000/health/ready> should say `Healthy`. (`/health` only says the process is up; `/health/ready` also proves the
    database answers.) From a terminal: `curl http://localhost:3000/health/ready`.
-2. **Demo.** Open <http://localhost:3000/demo/azure>. Everything works on made-up data; nothing is sent anywhere.
+2. **Demo.** Open <http://localhost:3000/demo> (or press **Demo** on Home). All three clouds are connected with made-up data, a tour walks through every page, and nothing is sent anywhere.
 3. **Your own cloud.** See [Connect a cloud](#connect-a-cloud) below.
 
 ## 4. Stop it, and where your data lives
@@ -210,7 +210,7 @@ curl http://localhost:8080/health/ready      # → Healthy
 docker compose ps                            # → servicehub is "healthy" after about a minute
 ```
 
-Then open <http://localhost:8080/demo/azure> for made-up data, and see [Connect a cloud](#connect-a-cloud) below.
+Then open <http://localhost:8080/demo> for made-up data, and see [Connect a cloud](#connect-a-cloud) below.
 
 ## B5. Stop, restart, update, and where your data lives
 

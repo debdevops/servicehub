@@ -35,7 +35,7 @@ export function EscalationToast() {
   }, [pending.data])
 
   if (!fresh) return null
-  const heading = fresh.kind === 'approval' ? 'The Agent stopped and asked you' : fresh.kind === 'rule' ? 'A rule stopped itself' : 'An agent stopped working'
+  const heading = fresh.kind === 'approval' ? 'The Agent stopped and asked you' : fresh.kind === 'rule' ? 'A rule stopped itself' : fresh.kind === 'unresolved' ? 'An attempt has no recorded answer' : 'An agent stopped working'
 
   return (
     <div role="status" aria-live="polite" className="fixed bottom-5 right-5 z-50 w-[440px] max-w-[calc(100vw-24px)] rounded-2xl bg-[#0f172a] p-4 text-white shadow-2xl">

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toProblem } from '../lib/api/client'
-import { approvePending, declinePending, fetchPendingWork, type PendingWorkScope } from '../lib/api/pendingWork'
+import { approvePending, declinePending, fetchPendingWork, resolvePending, type PendingWorkScope } from '../lib/api/pendingWork'
 import { deadLetterKeys } from './useDeadLetters'
 import { recoveryKeys } from './useRecoverySummary'
 import { replayKeys } from './useReplay'
@@ -45,6 +45,15 @@ export function useApprovePending() {
       }
       return results
     },
+    onSettled: refresh,
+  })
+}
+
+/** Settles an attempt whose answer was lost — what the person found in the queue, in their words. */
+export function useResolvePending() {
+  const refresh = useInvalidateAfterAnswer()
+  return useMutation({
+    mutationFn: ({ entryId, reason }: { entryId: string; reason: string }) => resolvePending(entryId, reason),
     onSettled: refresh,
   })
 }

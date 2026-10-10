@@ -43,6 +43,23 @@ public interface IRecoveryLedger
     /// </summary>
     Task<Result<RecoveryLedgerEntry>> CloseAsync(Guid entryId, string ownerId, RecoveryActor actor, string reason, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// True while an earlier attempt on this source message has no answer yet: still <c>Executing</c>, or
+    /// <c>ExecutionUnknown</c>. Such an attempt may or may not have reached the cloud, so another attempt could duplicate the
+    /// message. A source message is matched by its dead-letter row, or by namespace, entity and the cloud's own message id.
+    /// </summary>
+    Task<bool> HasUnresolvedAttemptAsync(
+        string ownerId, long? dlqMessageId, Guid? namespaceId, string? entityName, string? sourceMessageId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Settles the entries a restart left behind. An entry still <c>Executing</c> that began before
+    /// <paramref name="processStartedAt"/> cannot belong to a live call (one instance runs at a time, and nothing from
+    /// before this process started is still running), so it becomes <c>ExecutionUnknown</c> — never success, never failure —
+    /// and stays open until a person resolves it. Entries begun at or after the cutoff are left alone. Returns how many.
+    /// </summary>
+    Task<int> ReconcileInterruptedAsync(DateTimeOffset processStartedAt, CancellationToken cancellationToken = default);
+
     /// <summary>Recomputes one owner's hash chain and reports the first place it diverges, if any.</summary>
     Task<ChainVerificationResult> VerifyChainAsync(string ownerId, CancellationToken cancellationToken = default);
 

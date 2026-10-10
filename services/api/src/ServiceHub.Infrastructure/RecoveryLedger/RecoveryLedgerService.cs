@@ -2,12 +2,14 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Core.Results;
 using ServiceHub.Core.Security;
+using ServiceHub.Infrastructure.Identity;
 using ServiceHub.Infrastructure.Persistence;
 
 namespace ServiceHub.Infrastructure.RecoveryLedger;
@@ -125,6 +127,17 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
                 "RecoveryLedger.OperationNotFound", "Recovery operation not found."));
         }
 
+        // The claim is where "at most one open attempt per source message" is enforced, inside the owner lock, so two
+        // attempts racing past the gate cannot both begin. An earlier attempt with no answer (Executing, or ExecutionUnknown
+        // after a restart or a lost reply) may already have put the message back; a second send could duplicate it.
+        if (await HasUnresolvedAttemptCoreAsync(
+                request.OwnerId, request.DlqMessageId, request.NamespaceId, request.EntityNameSnapshot,
+                request.SourceMessageIdSnapshot, cancellationToken))
+        {
+            return Result<RecoveryLedgerEntry>.Failure(Error.Conflict(
+                EscalationReasons.ReplayOutcomeUnknown, EscalationReasons.Describe(EscalationReasons.ReplayOutcomeUnknown)));
+        }
+
         var entry = new RecoveryLedgerEntry
         {
             OperationId = request.OperationId,
@@ -155,6 +168,72 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
 
         await _db.SaveChangesAsync(cancellationToken);
         return Result<RecoveryLedgerEntry>.Success(entry);
+    }
+
+    /// <inheritdoc />
+    public Task<bool> HasUnresolvedAttemptAsync(
+        string ownerId, long? dlqMessageId, Guid? namespaceId, string? entityName, string? sourceMessageId,
+        CancellationToken cancellationToken = default) =>
+        HasUnresolvedAttemptCoreAsync(ownerId, dlqMessageId, namespaceId, entityName, sourceMessageId, cancellationToken);
+
+    private Task<bool> HasUnresolvedAttemptCoreAsync(
+        string ownerId, long? dlqMessageId, Guid? namespaceId, string? entityName, string? sourceMessageId,
+        CancellationToken cancellationToken)
+    {
+        var bySource = namespaceId is not null && !string.IsNullOrEmpty(entityName) && !string.IsNullOrEmpty(sourceMessageId);
+        if (dlqMessageId is null && !bySource)
+        {
+            return Task.FromResult(false); // nothing to recognise the message by, so nothing can be said to be unresolved
+        }
+
+        return _db.RecoveryLedgerEntries.AsNoTracking().AnyAsync(
+            e => e.OwnerId == ownerId
+                && (e.State == RecoveryEntryState.Executing || e.State == RecoveryEntryState.ExecutionUnknown)
+                && ((dlqMessageId != null && e.DlqMessageId == dlqMessageId)
+                    || (bySource && e.NamespaceId == namespaceId && e.EntityNameSnapshot == entityName
+                        && e.SourceMessageIdSnapshot == sourceMessageId)),
+            cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<int> ReconcileInterruptedAsync(DateTimeOffset processStartedAt, CancellationToken cancellationToken = default)
+    {
+        // Few rows are ever Executing (a call is seconds long), so the cutoff is compared in memory: BegunAt is sortable text.
+        var executing = await _db.RecoveryLedgerEntries.Where(e => e.State == RecoveryEntryState.Executing).ToListAsync(cancellationToken);
+        var stale = executing.Where(e => e.BegunAt < processStartedAt).GroupBy(e => e.OwnerId, StringComparer.Ordinal).ToList();
+        if (stale.Count == 0)
+        {
+            return 0;
+        }
+
+        var actor = ActorIdentityResolver.ResolveSystemActor("RecoveryReconciler");
+        var detail = JsonSerializer.Serialize(new
+        {
+            reasonCode = EscalationReasons.ReplayOutcomeUnknown,
+            cause = "ServiceHub stopped before the cloud's answer was recorded",
+        });
+
+        var settled = 0;
+        foreach (var owner in stale)
+        {
+            using var _ = await AcquireOwnerLockAsync(owner.Key, cancellationToken);
+            foreach (var entry in owner)
+            {
+                await _db.Entry(entry).ReloadAsync(cancellationToken);
+                if (entry.State != RecoveryEntryState.Executing)
+                {
+                    continue; // answered in the meantime
+                }
+
+                entry.State = RecoveryEntryState.ExecutionUnknown; // open, no disposition: neither success nor failure
+                var evt = await AppendEventAsync(entry.OwnerId, entry.Id, entry.OperationId, RecoveryEventType.ExecutionUnknown, actor, detail, cancellationToken);
+                entry.LastEventSeq = evt.Seq;
+                await _db.SaveChangesAsync(cancellationToken);
+                settled++;
+            }
+        }
+
+        return settled;
     }
 
     /// <inheritdoc />
@@ -426,7 +505,7 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
         string ownerId, string signatureHash, RecoveryOperationKind actionKind, CancellationToken cancellationToken = default)
     {
         var counts = await _db.RecoveryLedgerEntries.AsNoTracking()
-            .Where(e => e.OwnerId == ownerId && e.SignatureHashSnapshot == signatureHash && e.Disposition != null)
+            .ForSignature(_db, ownerId, signatureHash).Where(e => e.Disposition != null)
             .Join(_db.RecoveryOperations.AsNoTracking().Where(o => o.Kind == actionKind), e => e.OperationId, o => o.Id, (e, _) => e.Disposition!.Value)
             .GroupBy(d => d)
             .Select(g => new { Disposition = g.Key, Count = g.Count() })
@@ -437,9 +516,14 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     /// <inheritdoc />
     public async Task<IReadOnlyList<string>> GetDistinctSignatureHashesAsync(
         string ownerId, RecoveryOperationKind actionKind, int limit = int.MaxValue, CancellationToken cancellationToken = default) =>
-        await _db.RecoveryLedgerEntries.AsNoTracking()
-            .Where(e => e.OwnerId == ownerId && e.SignatureHashSnapshot != null)
-            .Join(_db.RecoveryOperations.AsNoTracking().Where(o => o.Kind == actionKind), e => e.OperationId, o => o.Id, (e, _) => e.SignatureHashSnapshot!)
+        // The effective signature (see EffectiveSignature): the message's own hash when it still exists and is signed, else the snapshot.
+        await (from e in _db.RecoveryLedgerEntries.AsNoTracking()
+               join o in _db.RecoveryOperations.AsNoTracking().Where(o => o.Kind == actionKind) on e.OperationId equals o.Id
+               join m in _db.DlqMessages.AsNoTracking() on e.DlqMessageId equals (long?)m.Id into messages
+               from m in messages.DefaultIfEmpty()
+               where e.OwnerId == ownerId
+               select m.SignatureHash ?? e.SignatureHashSnapshot)
+            .Where(h => h != null).Select(h => h!)
             .Distinct()
             .OrderBy(h => h)
             .Take(limit)
@@ -448,7 +532,7 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     /// <inheritdoc />
     public async Task<CloudProviderType?> GetSignatureProviderAsync(string ownerId, string signatureHash, CancellationToken cancellationToken = default) =>
         await _db.RecoveryLedgerEntries.AsNoTracking()
-            .Where(e => e.OwnerId == ownerId && e.SignatureHashSnapshot == signatureHash && e.ProviderSnapshot != null)
+            .ForSignature(_db, ownerId, signatureHash).Where(e => e.ProviderSnapshot != null)
             .Select(e => e.ProviderSnapshot)
             .FirstOrDefaultAsync(cancellationToken)
         ?? (await LastSeenNamespaceAsync(ownerId, signatureHash, cancellationToken))?.Provider;
@@ -456,7 +540,7 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     /// <inheritdoc />
     public async Task<EnvironmentType?> GetSignatureEnvironmentAsync(string ownerId, string signatureHash, CancellationToken cancellationToken = default) =>
         await _db.RecoveryLedgerEntries.AsNoTracking()
-            .Where(e => e.OwnerId == ownerId && e.SignatureHashSnapshot == signatureHash && e.EnvironmentSnapshot != null)
+            .ForSignature(_db, ownerId, signatureHash).Where(e => e.EnvironmentSnapshot != null)
             .Select(e => e.EnvironmentSnapshot)
             .FirstOrDefaultAsync(cancellationToken)
         ?? (await LastSeenNamespaceAsync(ownerId, signatureHash, cancellationToken))?.Environment;
@@ -464,7 +548,7 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     /// <inheritdoc />
     public async Task<Guid?> GetSignatureNamespaceIdAsync(string ownerId, string signatureHash, CancellationToken cancellationToken = default) =>
         await _db.RecoveryLedgerEntries.AsNoTracking()
-            .Where(e => e.OwnerId == ownerId && e.SignatureHashSnapshot == signatureHash && e.NamespaceId != null)
+            .ForSignature(_db, ownerId, signatureHash).Where(e => e.NamespaceId != null)
             .Select(e => e.NamespaceId)
             .FirstOrDefaultAsync(cancellationToken)
         ?? await LastSeenNamespaceIdAsync(ownerId, signatureHash, cancellationToken);
@@ -499,7 +583,7 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     {
         var details = await _db.RecoveryEvents.AsNoTracking()
             .Where(e => e.OwnerId == ownerId && e.EventType == RecoveryEventType.OutcomeFlagged && e.EntryId != null)
-            .Join(_db.RecoveryLedgerEntries.AsNoTracking().Where(x => x.SignatureHashSnapshot == signatureHash), e => e.EntryId, x => x.Id, (e, _) => e.DetailJson)
+            .Join(_db.RecoveryLedgerEntries.AsNoTracking().ForSignature(_db, ownerId, signatureHash), e => e.EntryId, x => x.Id, (e, _) => e.DetailJson)
             .ToListAsync(cancellationToken);
         return details.Any(json => TryParseFlagKind(json) == RecoveryOutcomeFlagKind.DuplicateBusinessEffect);
     }

@@ -5,6 +5,7 @@ import { INTENT_HEADER } from '@/lib/api/intentHeaders'
 import * as agents from '@/lib/api/agents'
 import * as backup from '@/lib/api/backup'
 import * as insights from '@/lib/api/insights'
+import * as namespaces from '@/lib/api/namespaces'
 import * as pending from '@/lib/api/pendingWork'
 import * as recovery from '@/lib/api/recovery'
 import * as replay from '@/lib/api/replay'
@@ -58,6 +59,7 @@ describe('reads', () => {
     ['incident', () => signatures.fetchIncident('h', 'aws'), '/signatures/h/incident', { provider: 'Aws' }],
     ['trace', () => signatures.fetchTrace('c-1'), '/trace', { correlationId: 'c-1' }],
     ['agents', () => agents.fetchAgents(), '/agents'],
+    ['fix confirmation', () => namespaces.fetchDlqObserver('n1'), '/namespaces/n1/dlq-observer'],
     ['agent activity', () => agents.fetchAgentActivity('a b'), '/agents/a%20b/activity'],
     ['ledger entry', () => recovery.fetchLedgerEntry('e1'), '/recovery/entries/e1'],
     ['chain', () => recovery.verifyChain(), '/recovery/chain'],
@@ -111,6 +113,13 @@ describe('changes carry the intent header the API demands', () => {
     ['decline', () => pending.declinePending('p1', 'no'), 'POST', '/pending-work/p1/decline'],
     ['replay', () => replay.replayMessage(5), 'POST', '/dead-letters/5/replay'],
     ['purge', () => replay.purgeMessage(5, 'dup'), 'POST', '/dead-letters/5/purge'],
+    ['switch on fix confirmation', () => namespaces.configureDlqObserver('n1', { enabled: true }), 'PUT', '/namespaces/n1/dlq-observer'],
+    ['check fix confirmation', () => namespaces.checkDlqObserver('n1'), 'POST', '/namespaces/n1/dlq-observer/check'],
+    ['make rule', () => rules.createRule({ provider: 'azure', name: 'r' } as never), 'POST', '/rules'],
+    ['switch rule', () => rules.setRuleEnabled(3, false), 'POST', '/rules/3/enabled'],
+    ['change rule', () => rules.updateRule(3, { name: 'n', maxPerHour: 5, waitSeconds: 60, backOff: true }), 'PUT', '/rules/3'],
+    ['delete rule', () => rules.deleteRule(3), 'DELETE', '/rules/3'],
+    ['make rules', () => rules.generateRules('gcp'), 'POST', '/rules/generate'],
   ]
   it.each(changes)('%s → %s with an intent', async (_name, call, method, url) => {
     await call()

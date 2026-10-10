@@ -9,11 +9,13 @@ export interface Preferences {
   /** 'browser' or an IANA zone such as 'Europe/London'. */
   readonly timeZone: string
   readonly openOn: 'simple' | 'last'
+  /** Where this person's tracing tool shows one trace, with `{traceId}` where the id goes. Empty = not set up. */
+  readonly traceLink: string
 }
 
 const key = 'servicehub.preferences'
 const lastKey = 'servicehub.last-page'
-const defaults: Preferences = { timeZone: 'browser', openOn: 'simple' }
+const defaults: Preferences = { timeZone: 'browser', openOn: 'simple', traceLink: '' }
 const listeners = new Set<() => void>()
 let cache: Preferences | null = null
 
@@ -25,6 +27,7 @@ export function readPreferences(): Preferences {
     cache = {
       timeZone: typeof parsed.timeZone === 'string' && isZone(parsed.timeZone) ? parsed.timeZone : defaults.timeZone,
       openOn: parsed.openOn === 'last' ? 'last' : 'simple',
+      traceLink: typeof parsed.traceLink === 'string' ? parsed.traceLink : '',
     }
   } catch {
     cache = defaults

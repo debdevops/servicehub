@@ -13,6 +13,8 @@ namespace ServiceHub.Core.DTOs.Responses;
 /// <param name="LastCanarySentAt">When the last test message was sent.</param>
 /// <param name="LastConfirmedAt">When the observer's log last showed a test message.</param>
 /// <param name="Status">One plain sentence saying where this stands.</param>
+/// <param name="NeedsReference">Whether a person must name something (a subscription ServiceHub owns) to turn it on; asked of the cloud's own check, never decided by its name.</param>
+/// <param name="ReferenceHint">What to name, in the check's own words. Null when nothing needs naming.</param>
 public sealed record DlqObserverResponse(
     bool Needed,
     bool Enabled,
@@ -22,4 +24,6 @@ public sealed record DlqObserverResponse(
     int StalenessBoundMinutes,
     DateTimeOffset? LastCanarySentAt,
     DateTimeOffset? LastConfirmedAt,
-    string Status);
+    string Status,
+    bool NeedsReference = false,
+    string? ReferenceHint = null);

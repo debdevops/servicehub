@@ -6,10 +6,10 @@ import { Welcome } from '@/components/connect/Welcome'
 const renderWelcome = () => render(<MemoryRouter><Welcome /></MemoryRouter>)
 
 describe('Welcome (Home before anything is connected)', () => {
-  it('offers the fake-data demo first, as a link to /demo/azure', () => {
+  it('offers the fake-data demo first, as a link to /demo', () => {
     renderWelcome()
     const demo = screen.getByRole('link', { name: 'Try it with sample data' })
-    expect(demo).toHaveAttribute('href', '/demo/azure')
+    expect(demo).toHaveAttribute('href', '/demo')
     expect(screen.getByText(/Nothing is connected and nothing is sent anywhere/)).toBeInTheDocument()
   })
 

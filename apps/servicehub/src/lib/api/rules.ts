@@ -1,4 +1,5 @@
 import { api } from './client'
+import { Intent, withIntent } from './intentHeaders'
 import type { CloudProvider } from './namespaces'
 
 export interface Rule {
@@ -13,7 +14,7 @@ export interface Rule {
   readonly backOff: boolean
   readonly enabled: boolean
   /** `CircuitBreaker` when it stopped itself, `Person` when someone turned it off. */
-  readonly disabledReason: 'CircuitBreaker' | 'Person' | null
+  readonly disabledReason: 'CircuitBreaker' | 'Person' | 'SignatureSplit' | null
   readonly disabledDetail: string | null
   readonly updatedAt: string | null
   /** How many matching messages the safety checks are holding for a person right now. */
@@ -78,11 +79,11 @@ export async function fetchRuleSources(provider: CloudProvider): Promise<RuleSou
 }
 
 export async function createRule(rule: NewRule): Promise<Rule> {
-  return (await api.post<Rule>('/rules', rule)).data
+  return (await api.post<Rule>('/rules', rule, { headers: withIntent(Intent.CreateRule) })).data
 }
 
 export async function setRuleEnabled(id: number, enabled: boolean): Promise<Rule> {
-  return (await api.post<Rule>(`/rules/${id}/enabled`, { enabled })).data
+  return (await api.post<Rule>(`/rules/${id}/enabled`, { enabled }, { headers: withIntent(Intent.SwitchRule) })).data
 }
 
 export async function testRule(rule: Pick<NewRule, 'provider' | 'reason' | 'entityName' | 'signatureHash'>): Promise<RuleTest> {
@@ -91,12 +92,12 @@ export async function testRule(rule: Pick<NewRule, 'provider' | 'reason' | 'enti
 
 /** Name and pace only — what a rule matches never changes; a different failure is a new rule. */
 export async function updateRule(id: number, rule: Pick<NewRule, 'name' | 'maxPerHour' | 'waitSeconds' | 'backOff'>): Promise<Rule> {
-  return (await api.put<Rule>(`/rules/${id}`, rule)).data
+  return (await api.put<Rule>(`/rules/${id}`, rule, { headers: withIntent(Intent.UpdateRule) })).data
 }
 
 /** Deletes the rule. What it replayed stays in the ledger and the replay history. */
 export async function deleteRule(id: number): Promise<void> {
-  await api.delete(`/rules/${id}`)
+  await api.delete(`/rules/${id}`, { headers: withIntent(Intent.DeleteRule) })
 }
 
 /** The dead letters the rule matches right now and that are still waiting. Sends nothing. */
@@ -106,5 +107,5 @@ export async function fetchRuleMatches(id: number): Promise<number[]> {
 
 /** Makes rules for the most common failures no rule covers yet. Returns the rules it made. */
 export async function generateRules(provider: CloudProvider, max = 5): Promise<Rule[]> {
-  return (await api.post<Rule[]>('/rules/generate', { provider, max })).data
+  return (await api.post<Rule[]>('/rules/generate', { provider, max }, { headers: withIntent(Intent.GenerateRules) })).data
 }

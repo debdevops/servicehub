@@ -38,7 +38,7 @@ export function TabBar({ label, tabs, active, onSelect, variant = 'folder' }: { 
             <div key={t.id} className={`flex items-center rounded-lg border pl-3 pr-0.5 ${on ? tone.on : tone.off}`}>
               <button type="button" aria-current={on ? 'page' : undefined} onClick={() => onSelect(t.id)} className={`py-1.5 text-sm ${on ? 'font-semibold' : 'font-medium'}`}>
                 {t.label}
-                {t.count !== 'none' && <span className={`ml-2 rounded-full px-2 py-0.5 text-xs font-semibold ${on ? 'bg-white/25' : 'bg-white/70'}`}>{t.count ?? '…'}</span>}
+                {t.count !== 'none' && <span className={`ml-2 rounded-full px-2 py-0.5 text-xs font-semibold ${on ? 'bg-black/20' : 'bg-white/70'}`}>{t.count ?? '…'}</span>}
               </button>
               <InfoTip help={t.help} className={on ? '!text-white/80 hover:!text-white' : ''} />
             </div>

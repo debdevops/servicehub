@@ -18,9 +18,25 @@ public sealed class RulesApiTests : IDisposable
 
     public void Dispose() => Environment.SetEnvironmentVariable("RecoveryEvidence__CircuitBreakerSampleSize", null);
 
+    /// <summary>The intent header each rule write must carry (the route says which).</summary>
+    private static string? IntentFor(HttpMethod method, string url)
+    {
+        if (url.EndsWith("/test", StringComparison.Ordinal)) return null;
+        if (url.EndsWith("/generate", StringComparison.Ordinal)) return "generate-rules";
+        if (url.EndsWith("/enabled", StringComparison.Ordinal)) return "switch-rule";
+        return method.Method switch { "POST" => "create-rule", "PUT" => "update-rule", "DELETE" => "delete-rule", _ => null };
+    }
+
+    private static Task<HttpResponseMessage> Call(HttpClient client, HttpMethod method, string url, object? body = null)
+    {
+        var request = new HttpRequestMessage(method, url) { Content = body is null ? null : JsonContent.Create(body) };
+        if (IntentFor(method, url) is { } intent) request.Headers.Add("X-ServiceHub-Intent", intent);
+        return client.SendAsync(request);
+    }
+
     private static async Task<JsonElement> Send(HttpClient client, string url, object body, HttpStatusCode expected = HttpStatusCode.OK)
     {
-        var response = await client.PostAsJsonAsync(url, body);
+        var response = await Call(client, HttpMethod.Post, url, body);
         response.StatusCode.Should().Be(expected, await response.Content.ReadAsStringAsync());
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
     }
@@ -68,7 +84,7 @@ public sealed class RulesApiTests : IDisposable
         var made = await Send(host.Client, "/api/v1/rules", new { provider = "azure", name = "Audit me", reason = "Timeout" }, HttpStatusCode.Created);
         var id = made.GetProperty("id").GetInt64();
         await Send(host.Client, $"/api/v1/rules/{id}/enabled", new { enabled = false });
-        (await host.Client.DeleteAsync($"/api/v1/rules/{id}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await Call(host.Client, HttpMethod.Delete, $"/api/v1/rules/{id}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         var audit = JsonDocument.Parse(await host.Client.GetStringAsync("/api/v1/audit?pageSize=50")).RootElement.GetProperty("items")
             .EnumerateArray().Where(e => e.GetProperty("action").GetString()!.StartsWith("Rule.", StringComparison.Ordinal)).ToList();
@@ -318,7 +334,7 @@ public sealed class RulesApiTests : IDisposable
         var made = await Send(host.Client, "/api/v1/rules", new { provider = "azure", name = "Timeouts", reason = "Timeout", entityName = "orders" }, HttpStatusCode.Created);
         var id = made.GetProperty("id").GetInt64();
 
-        var response = await host.Client.PutAsJsonAsync($"/api/v1/rules/{id}", new { name = "Order timeouts", maxPerHour = 3, waitSeconds = 600, backOff = false });
+        var response = await Call(host.Client, HttpMethod.Put, $"/api/v1/rules/{id}", new { name = "Order timeouts", maxPerHour = 3, waitSeconds = 600, backOff = false });
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var rule = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
         rule.GetProperty("name").GetString().Should().Be("Order timeouts");
@@ -328,9 +344,9 @@ public sealed class RulesApiTests : IDisposable
         rule.GetProperty("reason").GetString().Should().Be("Timeout");
         rule.GetProperty("entityName").GetString().Should().Be("orders");
 
-        (await host.Client.PutAsJsonAsync($"/api/v1/rules/{id}", new { name = "", maxPerHour = 3 })).StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await host.Client.PutAsJsonAsync($"/api/v1/rules/{id}", new { name = "x", maxPerHour = 0 })).StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await host.Client.PutAsJsonAsync("/api/v1/rules/999", new { name = "x" })).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await Call(host.Client, HttpMethod.Put, $"/api/v1/rules/{id}", new { name = "", maxPerHour = 3 })).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await Call(host.Client, HttpMethod.Put, $"/api/v1/rules/{id}", new { name = "x", maxPerHour = 0 })).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await Call(host.Client, HttpMethod.Put, "/api/v1/rules/999", new { name = "x" })).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]
@@ -340,9 +356,9 @@ public sealed class RulesApiTests : IDisposable
         var made = await Send(host.Client, "/api/v1/rules", new { provider = "azure", name = "Timeouts", reason = "Timeout" }, HttpStatusCode.Created);
         var id = made.GetProperty("id").GetInt64();
 
-        (await host.Client.DeleteAsync($"/api/v1/rules/{id}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await Call(host.Client, HttpMethod.Delete, $"/api/v1/rules/{id}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
         (await ListRules(host.Client)).GetArrayLength().Should().Be(0);
-        (await host.Client.DeleteAsync($"/api/v1/rules/{id}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await Call(host.Client, HttpMethod.Delete, $"/api/v1/rules/{id}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]
@@ -370,5 +386,32 @@ public sealed class RulesApiTests : IDisposable
         await Send(host.Client, "/api/v1/rules/generate", new { }, HttpStatusCode.BadRequest);
         var made = await Send(host.Client, "/api/v1/rules/generate", new { provider = "azure" });
         made.GetArrayLength().Should().Be(0);
+    }
+
+    /// <summary>
+    /// Found live 2026-10-10: a bare <c>DELETE /api/v1/rules/1</c> (no header) deleted a rule — every other state-changing route asks for
+    /// <c>X-ServiceHub-Intent</c>, and these were the only ones that did not. Each rule write now refuses a request that did not say it meant it.
+    /// </summary>
+    [Fact]
+    public async Task A_rule_cannot_be_made_switched_changed_or_deleted_without_saying_so()
+    {
+        using var host = DeadLettersApiTests.Host(new PeekLog(), new PeekLog());
+        await DeadLettersApiTests.Connect(host.Client, "azure");
+        var made = await Send(host.Client, "/api/v1/rules", new { provider = "azure", name = "Keep me", reason = "Timeout" }, HttpStatusCode.Created);
+        var id = made.GetProperty("id").GetInt64();
+
+        async Task<HttpStatusCode> Bare(HttpMethod method, string url, object? body = null) =>
+            (await host.Client.SendAsync(new HttpRequestMessage(method, url) { Content = body is null ? null : JsonContent.Create(body) })).StatusCode;
+
+        (await Bare(HttpMethod.Delete, $"/api/v1/rules/{id}")).Should().Be(HttpStatusCode.PreconditionRequired);
+        (await Bare(HttpMethod.Post, $"/api/v1/rules/{id}/enabled", new { enabled = false })).Should().Be(HttpStatusCode.PreconditionRequired);
+        (await Bare(HttpMethod.Put, $"/api/v1/rules/{id}", new { name = "Renamed", maxPerHour = 3 })).Should().Be(HttpStatusCode.PreconditionRequired);
+        (await Bare(HttpMethod.Post, "/api/v1/rules", new { provider = "azure", name = "Another", reason = "Timeout" })).Should().Be(HttpStatusCode.PreconditionRequired);
+        (await Bare(HttpMethod.Post, "/api/v1/rules/generate", new { provider = "azure" })).Should().Be(HttpStatusCode.PreconditionRequired);
+
+        var rules = await ListRules(host.Client);
+        rules.GetArrayLength().Should().Be(1, "nothing was made or deleted");
+        rules[0].GetProperty("name").GetString().Should().Be("Keep me");
+        rules[0].GetProperty("enabled").GetBoolean().Should().BeTrue();
     }
 }

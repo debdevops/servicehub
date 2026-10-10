@@ -32,20 +32,23 @@ public sealed class DatabaseStartupTests
         // this test red under load. Let that first cycle finish, then keep the monitor quiet.
         var registry = factory.Services.GetRequiredService<ServiceHub.Core.Interfaces.IAgentRegistry>();
         // (With no cloud connected the host leaves the monitor off, which is just as quiet: wait for it to decide either way.)
-        bool Settled() => registry.StateOf("dlq-monitor")?.LastRunUtc is not null || registry.Dormant().Any(d => d.Id == "dlq-monitor");
+        // Every agent, not only the monitor: each one that runs opens the database on its first cycle, and any of those landing
+        // after the delete would put the file back. (Found when a tenth agent was registered and shifted the start-up timing.)
+        var everyAgent = factory.Services.GetServices<ServiceHub.Core.Interfaces.IAgent>().Select(a => a.Descriptor.Id).ToList();
+        bool Settled() => everyAgent.All(id => registry.StateOf(id)?.LastRunUtc is not null || registry.Dormant().Any(d => d.Id == id));
         var deadline = DateTime.UtcNow.AddSeconds(15);
         while (!Settled() && DateTime.UtcNow < deadline)
         {
             await Task.Delay(20);
         }
 
-        Settled().Should().BeTrue("the monitor's first cycle (or the host's decision to leave it off) must be over before the file is removed");
-        registry.SetPaused("dlq-monitor", true);
+        Settled().Should().BeTrue("every agent's first cycle (or the host's decision to leave it off) must be over before the file is removed");
+        everyAgent.ForEach(id => registry.SetPaused(id, true));
 
         // Remove the file behind the running host: readiness must notice, liveness must not.
         // (Readiness is Unhealthy -> 503; the process is still alive -> 200.)
         var dbPath = Path.Combine(factory.DataDirectory, ServiceHubDataDirectory.DatabaseFileName);
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        ServiceHubApiFactory.ClearPoolFor(factory.DataDirectory);
         foreach (var suffix in new[] { string.Empty, "-wal", "-shm" })
         {
             File.Delete(dbPath + suffix);

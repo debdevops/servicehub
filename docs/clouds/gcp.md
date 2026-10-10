@@ -144,6 +144,7 @@ With no cloud connected, ServiceHub opens on a welcome page. Choose **Connect Go
 3. Simple | Advanced — Simple is where you act. Advanced is read-only pages (ledger, signatures, agents); it never changes anything.
 4. Help — opens the Help panel with task-shaped answers and the keyboard shortcuts.
 5. Connect Azure / Connect AWS — the same Add a cloud window, on the Azure or AWS tab. You do not need them for Google Cloud.
+6. Try it with sample data — opens a demo with made-up data and no cloud connected, so you can look around first. Nothing in it is real and nothing is sent anywhere.
 
 
 ### 2.2 Add a cloud
@@ -228,6 +229,7 @@ Home answers: *what needs me* and *how is each cloud doing*. For Google Cloud it
 9. Got it — hides this explanation. It does not affect your data.
 10. See all dead letters in Google Cloud — opens the Dead letters list for this cloud.
 11. Help for this page (the book beside the title) — opens Help on this very page, over it. Every page has one.
+12. Demo — a guided walk through the whole product with made-up data. No connection string is needed and nothing real is touched.
 
 
 ![3.1 Home — 05c-home-middle](../screenshots/gcp/05c-home-middle.png)
@@ -324,7 +326,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 1. Showing — Stuck now, or messages that have since left the queue.
 2. Time window — only messages set aside in this period.
 3. Search — by message ID, queue, reason or error text.
-4. Replay All Messages — opens a preview of everything shown. Nothing is sent until you confirm the preview.
+4. Replay All Messages — opens a preview of every message still stuck in the cloud and namespace you are viewing. It ignores the filters, time window and search here. Nothing is sent until you confirm the preview.
 5. Refresh — reads the queue again. It re-reads what ServiceHub has already recorded; it does not look at Google Cloud (only Look now does). The ⓘ beside it says when it was last updated.
 6. Selection — tick rows to act on several; this line shows how many.
 7. Replay selected — opens the same preview for just the ticked messages.
@@ -476,7 +478,7 @@ Tick messages (or use **Replay All Messages**) to get a preview: how many will b
 5. Replay N messages — sends them one at a time, re-checking each. You can stop partway.
 6. Cancel — nothing is sent.
 7. How it will run and After they are sent back — fold open to show the pace and the automatic stop (five sends in a row that are not accepted), and what ServiceHub does next.
-7. Page controls — move through the list when more messages are chosen than fit on one page.
+8. Page controls — move through the list when more messages are chosen than fit on one page.
 
 
 ![4.5 Replay several at once — 13b-bulk-replay-end](../screenshots/gcp/13b-bulk-replay-end.png)
@@ -603,6 +605,8 @@ Connections, Notifications (Slack, Teams, any webhook — sent only when the Age
 2. Add a cloud — connect another cloud.
 3. Test — checks the connection now and shows the result. Reads only.
 4. Remove — forgets this connection and its stored credential. It does not delete anything in Google Cloud.
+5. Confirm fixes on this cloud — Off until you switch it on. Without it, a replay here is sent back but cannot be confirmed as fixed. Switch on sets up the observer that lets ServiceHub see this cloud’s whole dead-letter queue.
+6. Subscription and dead-letter topic — the two names ServiceHub needs before it can switch the observer on: the subscription it reads, and the dead-letter topic that subscription belongs to.
 
 
 ![7.1 Settings — 15-settings-notifications](../screenshots/gcp/15-settings-notifications.png)
@@ -620,6 +624,7 @@ Connections, Notifications (Slack, Teams, any webhook — sent only when the Age
 1. Theme — Light today; Dark is marked soon.
 2. Times shown in — your browser’s time zone, or UTC. It changes how times are displayed, never the data.
 3. Open on — start in Simple every time (Simple), or where you last were (Last used). Kept in this browser only.
+4. Your tracing tool — optional. Paste a link with {traceId} in it, and ServiceHub shows a link from each message to that trace in your own tool. It is kept in this browser only.
 
 
 ![7.1 Settings — 15-settings-access](../screenshots/gcp/15-settings-access.png)

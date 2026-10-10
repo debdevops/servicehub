@@ -508,6 +508,9 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                     b.Property<string>("LastConfirmedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("LiveSince")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid>("NamespaceId")
                         .HasColumnType("TEXT");
 

@@ -20,8 +20,9 @@ We aim to respond within 48 hours.
 
 | Version | Status |
 |---|---|
-| **4.1.x** | Current. Security reports are handled against this line. |
-| 4.0.x | Frozen in `archive/servicehub-4.0.0/` and still published from `v4.0.x` tags. It receives no new work, and **there is no upgrade path from 4.0.0 to 4.1.0** (see the [changelog](CHANGELOG.md)). |
+| **4.2.x** | Current — 4.2.0 is the last planned release. Security reports are handled against this line. |
+| 4.1.x | Superseded by 4.2.x (same database format; the move applies one migration on start-up). |
+| 4.0.x | Frozen in `archive/servicehub-4.0.0/` and still published from `v4.0.x` tags. It receives no new work, and **there is no upgrade path from 4.0.0 to 4.1.0 or later** (see the [changelog](CHANGELOG.md)). |
 | 3.x and older | Not supported. |
 
 ## Security Scanning
@@ -33,8 +34,8 @@ This repository uses the following automated security tools:
 | **CodeQL** | C# and TypeScript source code (SAST) | Every push, weekly full scan |
 | **Dependabot security alerts** | Known-vulnerable NuGet and npm dependencies, from the repository's manifests (a repository setting). Automated version-update pull requests are switched off in `.github/dependabot.yml` | Continuously |
 | **Secret Scanning** | Accidentally committed credentials | Every push (real-time) |
-| **npm audit** | npm production packages (fails on High/Critical) | Every 4.1.0 CI run |
-| **NuGet audit** | NuGet packages, including transitive (fails on High/Critical) | Every 4.1.0 CI run |
+| **npm audit** | npm production packages (fails on High/Critical) | Every CI run |
+| **NuGet audit** | NuGet packages, including transitive (fails on High/Critical) | Every CI run |
 
 ## Enabling Secret Scanning (repository owners)
 

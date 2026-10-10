@@ -243,6 +243,8 @@ public sealed class BulkOperationService : IBulkOperationService
         "PRODUCTION_ELEVATION_REQUIRED" => "This is a production namespace. A person with production approval has to allow it.",
         "RECURRENCE_CAP_EXCEEDED" or "RECURRENCE_CAP_EXCEEDED_HEURISTIC" or "RECURRENCE_CAP_AMBIGUOUS_COLLISION" =>
             "It has already been replayed and came back too many times. Fix the cause first, then replay it.",
+        "SIGNATURE_RECENT_RESULTS_MIXED" => "Some of the latest replays of this kind of failure did not hold. Check the cause, then replay it yourself.",
+        "SIGNATURE_RECENT_RESULTS_QUERY_ERROR" => "ServiceHub couldn't read the latest results, so it asks a person first.",
         "RATE_LIMITED" or "FLEET_RATE_LIMITED" => "Too many replays have happened recently. Try again in a few minutes.",
         "EMERGENCY_STOP_ACTIVE" => "Emergency stop is on. Nothing is sent until it is lifted.",
         "PROVIDER_CANNOT_VERIFY_ABSENCE" => "This cloud can't prove a fix held, so ServiceHub asks a person first.",

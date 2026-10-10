@@ -1,5 +1,5 @@
 # Publishes a ServiceHub Docker image to GitHub Container Registry on every version tag push.
-# v4.0.x builds the ARCHIVED 4.0.0 codebase (archive/servicehub-4.0.0/); v4.1.x builds the repo root. The
+# v4.0.x builds the ARCHIVED 4.0.0 codebase (archive/servicehub-4.0.0/); v4.1.x and v4.2.x build the repo root. The
 # tag must equal the selected codebase's own .version (verify-release-tag.sh, ADR-0013 D6), so one
 # generation can never be published as the other's release. Main CI only builds and smoke-tests the image.
 #
@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Select the codebase for this tag (refuses a tag that does not match it)
-        # ADR-0013 D6. v4.0.x → archive/servicehub-4.0.0, v4.1.x → repo root; the tag must equal that .version.
+        # ADR-0013 D6. v4.0.x → archive/servicehub-4.0.0, v4.1.x, v4.2.x → repo root; the tag must equal that .version.
         id: codebase
         run: .github/scripts/verify-release-tag.sh "${{ github.ref_type }}" "${{ github.ref_name }}"
 

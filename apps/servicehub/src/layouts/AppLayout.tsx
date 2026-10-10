@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, Menu, Search } from 'lucide-react'
 import { CommandPalette } from '../components/search/CommandPalette'
@@ -10,6 +10,7 @@ import { Bell } from '../components/pending/Bell'
 import { AccountMenu } from '../components/AccountMenu'
 import { SafetyBanners } from '../components/banners/SafetyBanners'
 import { DemoBanner } from '../components/banners/DemoEntry'
+import { isDemo } from '../lib/demo/state'
 import { usePendingWork } from '../hooks/usePendingWork'
 import { rememberPage } from '../lib/preferences'
 import { EscalationToast } from '../components/pending/EscalationToast'
@@ -33,6 +34,9 @@ import { LandingRedirect } from './LandingRedirect'
  * is connected makes it meaningful. The Clouds section is derived from the connected namespaces —
  * there is nothing to configure and nothing greyed out.
  */
+// The tour loads with the demo, never with the real app.
+const DemoTour = lazy(() => import('../components/demo/DemoTour'))
+
 export function AppLayout() {
   useEventStream()
   const namespaces = useNamespaces()
@@ -193,6 +197,7 @@ export function AppLayout() {
         <CommandPalette open={searchOpen} onClose={() => setSearchOpen(false)} connectedCloudCount={cloudCount} />
       </div>
       {loaded && cloudCount > 0 && <EscalationToast />}
+      {isDemo() && <Suspense fallback={null}><DemoTour /></Suspense>}
       <ActionNotice />
       <ReplayAllDock />
     </ProviderScopeProvider>

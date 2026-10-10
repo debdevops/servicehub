@@ -67,16 +67,15 @@ test.describe('Simple: from a dead letter to a recovery', () => {
     await expect(page.getByRole('dialog')).toHaveCount(0)
   })
 
-  test('in the demo, confirming a replay is refused in words and nothing is claimed as sent', async ({ page }) => {
+  test('in the demo, a replay really runs on the made-up data and says nothing was sent', async ({ page }) => {
     await demo(page, '/?tab=dlq')
     await page.getByRole('link', { name: /^Replay message/ }).first().click()
     const modal = page.getByRole('dialog', { name: /replay/i })
     await modal.getByRole('button', { name: /^Replay 1 message/ }).first().click()
 
-    await expect(modal.getByRole('alert').first()).toContainText(/demo — nothing is sent/i)
-    await expect(modal.getByText(/^Sent back$/)).toHaveCount(0)
-    await modal.getByRole('button', { name: 'Cancel' }).click()
-    await expect(page.getByRole('dialog')).toHaveCount(0)
+    // The replay is accepted and watched — and the demo says, in words, that nothing left the browser.
+    await expect(modal.getByText(/Demo — nothing was sent/i).first()).toBeVisible()
+    await expect(modal.getByRole('alert')).toHaveCount(0)
   })
 
   test('bulk replay previews the selection, and cancelling leaves the table as it was', async ({ page }) => {
@@ -148,7 +147,7 @@ test.describe('demo mode is safe', () => {
     await demo(page, '/?tab=dlq')
     await page.getByRole('link', { name: /^Replay message/ }).first().click()
     await page.getByRole('dialog', { name: /replay/i }).getByRole('button', { name: /^Replay 1 message/ }).first().click()
-    await expect(page.getByRole('dialog').getByRole('alert').first()).toContainText(/demo/i)
+    await expect(page.getByRole('dialog').getByText(/Demo — nothing was sent/i).first()).toBeVisible()
     expect(calls).toEqual([])
   })
 })
