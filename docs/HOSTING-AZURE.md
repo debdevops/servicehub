@@ -1,64 +1,87 @@
-# Host ServiceHub on Azure
+# Host ServiceHub on Azure — an operator's runbook
 
-> **In this article:** run ServiceHub on Azure so it is always on and keeps its data across restarts — on a virtual machine, or on App Service with or
-> without a container. About 30 minutes.
+> **Who this is for:** a DevOps engineer or SRE. You do not need to know .NET, Node.js or the ServiceHub code, and you do not build anything.
+> You run a published container image on one Azure VM, copy-paste the commands, and check each step with the line that follows it.
 >
-> **Three ways, one page:** a virtual machine (recommended), App Service with a container, or App Service with plain .NET code — see §1 to choose.
->
-> **In plain language (VM option):** you rent one small Linux computer in Azure, put ServiceHub on it in a Docker container, and reach it through a secure
-> tunnel from your own laptop. Nobody else can open it.
+> **Time:** about 30 minutes. **Result:** an always-on ServiceHub that survives restarts and reboots, whose port is never exposed to the internet, with
+> backups, a patching story, an upgrade path and a way to remove it.
 
-If you only want to try ServiceHub, use the [local setup](LOCAL-SETUP.md) instead — it needs no Azure account.
+If you only want to look at ServiceHub, use [Run with Docker](DOCKER.md) or [Local setup](LOCAL-SETUP.md): no Azure account needed.
 
-> **Prefer one command?** [`infra/`](../infra/README.md) does the virtual-machine option below for you — on Azure, AWS or
-> Google Cloud — and can remove it again. This page remains the step-by-step version, and covers App Service.
+> **Prefer Terraform?** [`infra/`](../infra/README.md) builds the same thing for you (VM, data disk, Key Vault, daily snapshots, backup copies) with
+> `./deploy.sh azure`, and removes it again. This page is the manual, step-by-step version, and the one to read if you want to understand each piece or fit it into your own landing zone.
 
 ---
 
-## 1. Choose how to host it
+## How to follow this guide: CLI or portal
 
-ServiceHub is **one process with one SQLite file**, and the README asks for that file on **local block storage** (not a network share). A second
-instance on the same data folder exits on purpose. That shapes the choice:
+Every Azure step is shown **two ways**. Pick one and stay with it:
 
-| Azure option | Data lives on | Verdict |
+| | **Option A — Azure CLI** | **Option B — Azure portal** (clicks) |
 |---|---|---|
-| **A. Virtual machine + Docker** (§3–§8) | The VM's managed disk — local block storage | **Recommended.** Matches ServiceHub's design exactly |
-| **B. App Service, container** (§9) | `/home`, which App Service backs with Azure Storage over the network | Works as a managed, no-server option, with the caveats in §9.1 |
-| **C. App Service, code (no container)** (§10) | The same `/home` | Same caveats as B; you need no Docker or registry |
-| Container Apps, AKS | Azure Files or similar | Not covered: they add scaling and rescheduling you would then have to switch off |
+| Best for | Engineers who live in a terminal; repeatable | Anyone new to Azure; nothing to install |
+| You need | Azure CLI (or Cloud Shell), `ssh` | A web browser, plus `ssh` on your laptop for the final step |
+| Setting up the VM | Commands in your terminal, then `ssh` into the VM | Portal pages, then paste one script into **Run command** (no SSH needed for setup) |
 
-**Which one?** Pick **A** if the data matters and you are comfortable with a Linux VM. Pick **B or C** if your organisation wants a managed platform with
-no server to patch — and accept §9.1. Between B and C: **C** is simpler (no registry); **B** gives you exactly the image that was tested.
+Look for the headings **Option A — CLI** and **Option B — Portal** under each step. The steps that run *on the VM* (Docker, the key, the compose file) are the same
+either way; Option B pastes them into the portal's **Run command** box instead of an SSH session.
 
-Everything uses only standard Azure and Docker/.NET tooling; nothing ServiceHub-specific is installed in Azure.
+> **No tools installed?** The portal has a ready-made terminal: click the **`>_` (Cloud Shell)** icon in the top bar and choose **Bash**. It already has `az` and `openssl`.
+> Windows 10/11, macOS and Linux all include an `ssh` command (check with `ssh -V` in a terminal or PowerShell).
 
 ---
 
-## 2. Before you start
+## 0. What you are building
 
-| You need | Notes |
+```
+ your laptop ──ssh -L 8080──►  Azure VM (Ubuntu 24.04, no web port open)
+ (browser: localhost:8080)       └─ Docker ─ ServiceHub container ─ /data (Docker volume, SQLite)
+                                         │
+                                         └──► outbound only: Azure Service Bus (:5671), ghcr.io (image pull)
+```
+
+- **One container, one SQLite file, one VM.** ServiceHub is deliberately single-instance: a second copy on the same data exits on purpose. Do not put it behind a load balancer, scale set or AKS replica set.
+- **There is no login.** Whoever can reach ServiceHub's port is its Administrator. That is why this design never exposes the port: people reach it through an SSH tunnel (§7).
+- **Nothing ServiceHub-specific lives in Azure** besides the VM. It only *connects out* to the Service Bus namespaces you give it.
+
+### Decisions to make before you start
+
+| Decision | Recommended default | Notes |
+|---|---|---|
+| Region | The same region as the Service Bus namespaces you will watch | Lower latency, simpler firewalling |
+| VM size | `Standard_B2s` (2 vCPU, 4 GB) | Comfortable for one team |
+| Image tag | `latest` while you evaluate, then a pinned release such as `4.2.0` | `latest` moves; production should pin ([§9](#9-upgrade-and-roll-back)) |
+| Who may tunnel in | A named list of engineers | Everyone who can SSH in is an Administrator of ServiceHub |
+
+---
+
+## 1. Prerequisites
+
+| You need | Check |
 |---|---|
-| An Azure subscription where you may create a resource group and a VM | Contributor on the subscription or a resource group is enough |
-| The **Azure CLI** (`az`), signed in | <https://learn.microsoft.com/cli/azure/install-azure-cli> · `az login` |
-| An SSH key | `--generate-ssh-keys` below makes one if you have none |
-| The Azure Service Bus namespace you want to watch | Not created here — ServiceHub only *connects* to it. See the [Azure guide](clouds/azure.md) |
+| An Azure subscription where you can create a resource group and a VM (**Contributor** on the subscription or a resource group is enough) | `az account show` |
+| **Option A:** Azure CLI 2.50+, signed in (or Cloud Shell, which already has it). **Option B:** just a browser signed in to <https://portal.azure.com> | `az --version` · `az login` |
+| **bash**, `ssh`, `curl`, `openssl` on your workstation (Cloud Shell has all of them) | `openssl version` |
+| The Service Bus namespace(s) to watch, and someone who can create a **Shared access policy** on each | Not created here — see [§6](#6-connect-service-bus) |
+| Outbound internet from the VM to `ghcr.io` (port 443) | If your egress is locked down, allow `ghcr.io` and its content hosts, or mirror the image into your own registry ([§11](#11-air-gapped-or-locked-down-networks)) |
 
-> **Cost.** You pay for the VM, its disk and its public IP while they exist. Prices change by region — check the
-> [Azure pricing calculator](https://azure.microsoft.com/pricing/calculator/). ServiceHub itself adds no charge, and it keeps nothing in Azure except
-> what is on this VM.
+> **Cost.** You pay for the VM, its disk and its public IP while they exist (about the price of one small VM). ServiceHub adds no charge. Prices vary by region: use the
+> [Azure pricing calculator](https://azure.microsoft.com/pricing/calculator/).
 
 ---
 
-## 3. Option A — create the VM
+## 2. Create the VM
 
-Choose a name and a region close to your Service Bus namespace:
+### Option A — CLI
+
+Set your own names once; every later command reuses them:
 
 ```bash
 RG=rg-servicehub
-LOCATION=<your-region>          # e.g. westeurope — see: az account list-locations -o table
+LOCATION=westeurope            # pick yours: az account list-locations -o table
 VM=vm-servicehub
 
-az group create --name "$RG" --location "$LOCATION"
+az group create --name "$RG" --location "$LOCATION" --tags app=servicehub
 
 az vm create \
   --resource-group "$RG" --name "$VM" \
@@ -67,16 +90,21 @@ az vm create \
   --os-disk-size-gb 64 \
   --admin-username azureuser --generate-ssh-keys \
   --public-ip-sku Standard \
-  --nsg-rule SSH
+  --nsg-rule SSH \
+  --tags app=servicehub
 ```
 
-`Standard_B2s` (2 CPU, 4 GB) is comfortable for one team. Note the **`publicIpAddress`** in the output — a Standard-SKU address is static, so it
-will not change when the VM restarts.
+Copy the **`publicIpAddress`** from the output into a variable (a Standard-SKU address is static, so it survives restarts):
 
-### Lock the door
+```bash
+IP=<publicIpAddress from the output>
+```
 
-By default SSH is open to the whole internet. Allow only your own address, and **do not open any other port** — ServiceHub is reached through an SSH
-tunnel (§6), so no web port needs to be reachable at all.
+> **Check:** `az vm show -g "$RG" -n "$VM" -d --query powerState -o tsv` prints `VM running`.
+
+#### Lock the door
+
+By default SSH is open to the whole internet. Allow only your own address, and **do not open any other port**:
 
 ```bash
 MYIP="$(curl -s https://api.ipify.org)"
@@ -85,320 +113,409 @@ az network nsg rule update \
   --source-address-prefixes "$MYIP"
 ```
 
-If your address changes, repeat this. (If your organisation uses Azure Bastion or a VPN, use that instead and delete the public IP.)
+> **Check:** `az network nsg rule show -g "$RG" --nsg-name "${VM}NSG" -n default-allow-ssh --query sourceAddressPrefix -o tsv` prints your address.
+> If your address changes later, run the first command again.
+
+Your organisation may require something stricter. Both are fine, and ServiceHub does not care which you use:
+
+- **Several engineers:** put your office or VPN egress range in `--source-address-prefixes` (space-separated list).
+- **No public IP at all:** use Azure Bastion or a VPN into the VNet, delete the public IP, and tunnel through that. The rest of this page is unchanged.
+
+### Option B — Portal
+
+1. Sign in at <https://portal.azure.com>. Search for **Virtual machines** → **Create** → **Azure virtual machine**.
+2. **Basics** tab:
+   - **Subscription:** yours. **Resource group:** **Create new** → `rg-servicehub`.
+   - **Virtual machine name:** `vm-servicehub`. **Region:** the one nearest your Service Bus namespaces.
+   - **Availability options:** *No infrastructure redundancy required*. **Security type:** *Standard*.
+   - **Image:** *Ubuntu Server 24.04 LTS - x64 Gen2*. **Size:** `Standard_B2s` (use **See all sizes** to find it).
+   - **Authentication type:** *SSH public key*. **Username:** `azureuser`. **SSH public key source:** *Generate new key pair*, key pair name `vm-servicehub_key`.
+   - **Public inbound ports:** *Allow selected ports* → **SSH (22)**. (You will narrow this to your own address in a minute.)
+3. **Disks** tab: **OS disk size** → *64 GiB*. Leave the rest.
+4. **Networking** tab: leave the defaults. The **Public IP** is created for you; keep its SKU *Standard* (static).
+5. **Tags** tab: name `app`, value `servicehub`.
+6. **Review + create** → **Create**. In the pop-up choose **Download private key and create resource**. A file named `vm-servicehub_key.pem` is saved to your Downloads folder.
+   **Keep that file safe and private**: it is the only way in over SSH, and Azure cannot give it to you again.
+7. When it says *Your deployment is complete*, choose **Go to resource**. On **Overview** copy the **Public IP address**. This is your `<IP>` in the rest of the page.
+
+> **Check:** **Overview** shows *Status: Running*.
+
+#### Lock the door (portal)
+
+1. In the VM, open **Networking** (under *Settings*; newer portals call it **Network settings**).
+2. In the **Inbound port rules** list, click the **SSH** rule (port 22).
+3. Set **Source** to **IP Addresses**. In **Source IP addresses/CIDR ranges** enter your own public address (search the web for "what is my IP") and **Save**.
+4. Make sure **no other inbound rule** allows anything from *Any* source. You never open port 8080.
+
+> **Check:** the SSH rule's *Source* column shows your address instead of *Any*. If your address changes later, edit the rule again. In an office, use your company's egress range instead.
 
 ---
 
-## 4. Install Docker and ServiceHub
+## 3. Install Docker
 
-Connect, then install the tools on the VM:
+> **Option B — Portal users:** you do not SSH in. Do the key step in §4 (Option B), then run **one script** from §5 (Option B), which installs Docker, writes the files and starts ServiceHub. Skip the rest of §3 and §4's CLI box.
+
+### Option A — CLI (SSH)
 
 ```bash
-ssh azureuser@<publicIpAddress>
+ssh azureuser@"$IP"
+```
 
+On the VM:
+
+```bash
 sudo apt-get update
-sudo apt-get install -y docker.io docker-compose-v2 git
+sudo apt-get install -y docker.io docker-compose-v2
 sudo systemctl enable --now docker          # Docker starts on every boot
+sudo docker run --rm hello-world            # proves Docker can run and reach the internet
 ```
 
-Get ServiceHub. The simplest route is to build it on the VM (Docker does the .NET and Node work — you install neither). A version tag also publishes an image to `ghcr.io/debdevops/servicehub` (the package must be made public in GitHub → Packages after its first publish), but `docker-compose.yml` builds from source, and that is what this guide uses:
+> **Check:** `hello-world` prints "Hello from Docker!". You do not need git, .NET or Node.js on this VM.
+
+---
+
+## 4. Make the encryption key — once
+
+ServiceHub encrypts every cloud credential it stores, and **refuses to start in production without a key**. Make it, keep a copy off the VM, and put it in `.env` on the VM.
+
+### Option A — CLI (on the VM)
 
 ```bash
-git clone https://github.com/debdevops/servicehub.git
-cd servicehub
-git checkout <the tag or branch you want to run>
-```
-
-### Make the encryption key — once
-
-ServiceHub encrypts every cloud credential it stores, and **refuses to start in production without a key**. Make one and keep it:
-
-```bash
-umask 077
-echo "SERVICEHUB_ENCRYPTION_KEY=$(openssl rand -hex 32)" > .env
+sudo install -d -m 700 /opt/servicehub && cd /opt/servicehub
+KEY="$(openssl rand -hex 32)"
+printf 'SECURITY__ENCRYPTIONKEY=%s\n' "$KEY" | sudo tee .env >/dev/null
+sudo chmod 600 .env
+echo "$KEY"          # copy this into your secret manager NOW (next box)
+unset KEY
 ```
 
 > [!IMPORTANT]
-> **Copy that key somewhere safe now** (a password manager, or a secret store such as Azure Key Vault): `cat .env`. If the VM is lost and the key
-> with it, every stored credential is unreadable and you reconnect each cloud. Never put the key in the repository (`.env` is git-ignored) and never
-> change it on its own — to rotate, follow [Encryption key rotation](ENCRYPTION-KEY-ROTATION.md).
+> **Store the key in your secret manager before you continue** (Azure Key Vault, 1Password, …). If the VM is lost and the key with it, every saved cloud
+> connection is unreadable and has to be re-entered. Backups do **not** contain the key. Never change it on its own: to rotate it, follow
+> [Encryption key rotation](ENCRYPTION-KEY-ROTATION.md).
 
-### Start it
-
-```bash
-sudo docker compose up -d --build
-```
-
-The first build takes several minutes. `docker-compose.yml` already does the safe things for you: production mode, data in a named volume at `/data`,
-the port bound to the VM's own loopback (`127.0.0.1:8080`) so it cannot be reached from outside, and `restart: unless-stopped` so it comes back after a
-crash or a reboot.
-
-Check it:
+With Azure Key Vault, from your workstation (not the VM) — or use Option B below:
 
 ```bash
-curl http://localhost:8080/health/ready        # → Healthy
-sudo docker compose ps                          # → the container is "healthy" after about a minute
+KV=<globally-unique-vault-name>
+az keyvault create --resource-group "$RG" --name "$KV" --enable-rbac-authorization true
+az role assignment create --role "Key Vault Secrets Officer" \
+  --assignee "$(az ad signed-in-user show --query id -o tsv)" \
+  --scope "$(az keyvault show --name "$KV" --query id -o tsv)"
+# role assignments can take a minute or two to apply, then:
+az keyvault secret set --vault-name "$KV" --name servicehub-encryption-key --value '<paste the key>'
 ```
+
+> **Check:** `sudo ls -l /opt/servicehub/.env` shows `-rw-------` owned by root. The key is in your secret manager.
+
+### Option B — Portal
+
+1. **Make the key.** Click the **`>_` Cloud Shell** icon in the top bar → **Bash** (first time: accept the storage prompt). Run:
+   ```bash
+   openssl rand -hex 32
+   ```
+   It prints 64 letters and digits. Copy them. This is your key.
+2. **Store it safely first.**
+   1. Search **Key vaults** → **Create**. Resource group `rg-servicehub`, a globally unique **Key vault name**, same region, **Permission model: Azure role-based access control** → **Review + create** → **Create**.
+   2. Open the vault → **Access control (IAM)** → **Add** → **Add role assignment** → role **Key Vault Secrets Officer** → **Members** → **Select members** → choose yourself → **Review + assign**. (It can take a minute or two to apply.)
+   3. **Objects → Secrets** → **Generate/Import**. Name `servicehub-encryption-key`, **Secret value**: the key → **Create**.
+3. Keep the key handy: you paste it into the script in §5.
+
+> **Check:** the secret `servicehub-encryption-key` is listed in the vault. Never put the key in a ticket, chat or repository.
 
 ---
 
-## 5. Let it reach your Service Bus
+## 5. Start ServiceHub
 
-The VM connects **outward** to `<namespace>.servicebus.windows.net` on **port 5671 (AMQP over TLS)**. Azure allows outbound traffic by default, so
-normally there is nothing to do.
+### Option A — CLI (on the VM)
 
-If the namespace has a **firewall** ("Networking → Selected networks"), allow the VM's public IP address there, or connect them privately with a
-private endpoint. Without that, ServiceHub will report the namespace as unreachable.
-
----
-
-## 6. Open it from your laptop
-
-On your own computer, open a tunnel and leave it running:
+Still on the VM, in `/opt/servicehub`, write the compose file:
 
 ```bash
-ssh -N -L 8080:127.0.0.1:8080 azureuser@<publicIpAddress>
+sudo tee compose.yaml >/dev/null <<'EOF'
+name: servicehub
+services:
+  servicehub:
+    image: ghcr.io/debdevops/servicehub:latest        # pin a release for production, e.g. :4.2.0
+    container_name: servicehub
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"                          # loopback only: never reachable from outside the VM
+    volumes:
+      - servicehub-data:/data                          # the SQLite database and its backups
+    env_file: .env                                     # holds SECURITY__ENCRYPTIONKEY
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Backup__ScheduledBackupIntervalHours: "24"       # a ServiceHub backup every day, 14 kept
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }      # Docker's default would grow without limit
+volumes:
+  servicehub-data:
+    name: servicehub-data
+EOF
+
+sudo docker compose up -d
 ```
 
-Then browse to <http://localhost:8080>. Everything between you and ServiceHub is inside the encrypted SSH connection.
+The image is public, so there is no registry sign-in. The first start downloads it (about 230 MB) and creates the database.
 
-From here, **Add a cloud** and follow the [Azure guide](clouds/azure.md) (steps 2 onward — you already have ServiceHub running).
+> **Check (allow up to a minute):**
+> ```bash
+> sudo docker compose ps                         # STATUS shows "healthy"
+> curl -s http://localhost:8080/health/ready     # prints: Healthy
+> ```
+> If it does not become healthy: `sudo docker compose logs --tail 50`, and see [Troubleshooting](#troubleshooting).
 
-### More than one person?
+You can already look around: **Try it with sample data** uses made-up data and connects to nothing.
 
-ServiceHub does not log the browser in: **whoever can reach its port is the owner, an Administrator.** An SSH tunnel therefore makes every person with
-SSH access an Administrator. To give people different powers you need something that identifies them in front of ServiceHub:
+### Option B — Portal (one script, no SSH)
 
-- **An authenticating reverse proxy** (for example one that signs people in with Microsoft Entra ID) on the VM or in front of it. If, and only if, that
-  proxy strips any incoming `X-MS-CLIENT-PRINCIPAL-ID` header and sets it itself, enable `Security__EasyAuth__TrustClientPrincipalHeader=true`. Never
-  enable it otherwise: anyone could then pretend to be anyone.
-- **A name of your own.** If people reach ServiceHub through a proxy or a host name rather than `localhost`, set `AllowedHosts` to that name (`;`-separated, `*.example.com` wildcards) in `docker-compose.yml`'s `environment:`. It is refused otherwise, deliberately: see SECURITY.md.
-- **OIDC bearer tokens** (`Security__Oidc__Enabled`, `Security__Oidc__Authority`, `Security__Oidc__Audience`) for automation and API users.
-- **API keys** (`Security:Authentication:ApiKeys`, sent as `X-API-KEY`).
+1. Open your VM in the portal → **Operations** → **Run command** → **RunShellScript**.
+2. Paste the whole script below. **Replace `PASTE_KEY_HERE`** with your key from §4 (keep the quotes), then **Run**. It takes two to five minutes; the result appears in the output pane.
 
-Roles (Viewer, Operator, Admin) are then granted in Settings. The README's "Who is asking" section and [SECURITY.md](../SECURITY.md) are the reference;
-set these as environment variables in `docker-compose.yml`, then `docker compose up -d`. Put HTTPS in front of any of this before exposing a port.
+```bash
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y docker.io docker-compose-v2
+systemctl enable --now docker
+
+install -d -m 700 /opt/servicehub
+cd /opt/servicehub
+printf 'SECURITY__ENCRYPTIONKEY=%s\n' 'PASTE_KEY_HERE' > .env
+chmod 600 .env
+
+cat > compose.yaml <<'EOF'
+name: servicehub
+services:
+  servicehub:
+    image: ghcr.io/debdevops/servicehub:latest        # pin a release for production, e.g. :4.2.0
+    container_name: servicehub
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"                          # loopback only: never reachable from outside the VM
+    volumes:
+      - servicehub-data:/data
+    env_file: .env
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      Backup__ScheduledBackupIntervalHours: "24"
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+volumes:
+  servicehub-data:
+    name: servicehub-data
+EOF
+
+docker compose up -d
+sleep 60
+docker compose ps
+curl -s http://localhost:8080/health/ready; echo
+```
+
+> **Check:** the output ends with a `servicehub` row whose status says `healthy` (or `starting` right after the start), and the last line says `Healthy`.
+> If it says `starting`, run **Run command** again with just `cd /opt/servicehub && docker compose ps && curl -s localhost:8080/health/ready`.
+> Anyone who may use **Run command** on this VM can read the script and so the key; that is the same trust as root on the VM, so give that role only to the people who run it.
+> To run any later command from this page (logs, restart, backup) in the portal, paste it into **Run command** the same way, without `sudo`.
 
 ---
 
-## 7. Keep it healthy
+## 6. Connect Service Bus
 
-| Task | How |
+ServiceHub connects to Azure Service Bus with a **connection string** from a Shared access policy. Ask whoever owns each namespace (or do it yourself):
+
+1. In the Azure portal open the namespace → **Settings → Shared access policies → Add**.
+2. Name it `servicehub-app` and tick **Manage** (Azure ticks Send and Listen for you). Manage is needed: Azure only lets a Manage policy *list* queues and *count* their messages. Send is used only when someone presses Replay. **Do not** hand over `RootManageSharedAccessKey`.
+3. Copy the **Primary connection string**. Treat it as a secret.
+
+The full walkthrough with screenshots is the [Azure guide](clouds/azure.md) (Part 1 and Part 2).
+
+**Network path.** The VM connects *outward* to `<namespace>.servicebus.windows.net` on **port 5671 (AMQP over TLS)**. Azure allows outbound traffic by default, so normally there is nothing to do. If
+the namespace has a firewall (**Networking → Selected networks**), add the VM's public IP, or connect them with a private endpoint. Otherwise ServiceHub reports the namespace as unreachable.
+
+Paste the connection string in the app (next section: **Add a cloud**). It is encrypted on the VM with the key from §4 and never shown again.
+
+---
+
+## 7. Open it from your workstation
+
+On **your own computer**, open a tunnel and leave it running:
+
+```bash
+ssh -N -L 8080:127.0.0.1:8080 azureuser@"$IP"
+```
+
+Browse to <http://localhost:8080>. Everything between you and ServiceHub is inside the encrypted SSH connection. Choose **Add a cloud → Azure** and paste the connection string.
+
+**Option B — Portal users** connect with the `.pem` file you downloaded in §2, using the VM's public IP from **Overview**:
+
+```bash
+# macOS / Linux: the key file must be private to you
+chmod 600 ~/Downloads/vm-servicehub_key.pem
+ssh -i ~/Downloads/vm-servicehub_key.pem -N -L 8080:127.0.0.1:8080 azureuser@<IP>
+```
+
+```powershell
+# Windows PowerShell: make the key file private to you, then connect
+icacls "$HOME\Downloads\vm-servicehub_key.pem" /inheritance:r /grant:r "$($env:USERNAME):(R)"
+ssh -i "$HOME\Downloads\vm-servicehub_key.pem" -N -L 8080:127.0.0.1:8080 azureuser@<IP>
+```
+
+The window appears to hang: that is the tunnel working. Leave it open while you use ServiceHub, and close it (Ctrl-C) when you finish. Answer `yes` the first time it asks to trust the host.
+(Anywhere this page shows `ssh azureuser@"$IP"`, portal users add `-i <path to the .pem>`.)
+
+> **Check:** the namespace shows **Connected** and its queues are listed.
+
+### Giving more than one person access
+
+ServiceHub does not log the browser in, so an SSH tunnel makes **everyone who can SSH in an Administrator**. Decide this on purpose:
+
+- **A few trusted engineers** — give each their own SSH key on the VM (`/home/azureuser/.ssh/authorized_keys`, or their own Linux user) and restrict the NSG source range to your network. Easiest, and fine for a small on-call team.
+- **Different powers for different people** (Viewer, Operator, Admin) — put an **authenticating reverse proxy** (for example one that signs people in with Microsoft Entra ID) in front, and give ServiceHub the proxy's name. That needs HTTPS and extra settings; read the *Who is asking* section of the [README](../README.md#deploying-it-for-real) and [SECURITY.md](../SECURITY.md) first, and
+  never enable `Security__EasyAuth__TrustClientPrincipalHeader` unless the proxy strips and sets that header itself. This is a security design decision for your organisation.
+- **Reaching it by a name other than `localhost`** — ServiceHub refuses any `Host` it was not told about (so a web page on another site cannot drive it through your browser). Add `AllowedHosts: "localhost;your.host.name"` under `environment:` in `compose.yaml`, keeping `localhost` in the list, and run `sudo docker compose up -d`.
+
+---
+
+## 8. Operate it
+
+### Daily commands (on the VM, in `/opt/servicehub`)
+
+| Task | Command |
 |---|---|
-| **See logs** | `sudo docker compose logs -f` |
-| **Update** | `cd servicehub && git pull && sudo docker compose up -d --build` — the data volume and `.env` are untouched |
-| **Back up ServiceHub's data** | Settings → Backup → *Take a backup now* ([Backup & restore](BACKUP-RESTORE.md)). Backups land on the same disk, so also snapshot the disk or copy them off the VM |
-| **Snapshot the disk** | `az snapshot create` on the VM's OS disk, or enable Azure Backup for the VM |
-| **Save money when idle** | `az vm deallocate -g "$RG" -n "$VM"` stops the compute charge (the disk is still billed). `az vm start …` brings it back and ServiceHub restarts by itself with its data |
-| **Restart ServiceHub only** | `sudo docker compose restart` |
-| **Never** | Run a second ServiceHub against the same volume, copy the database to another machine while it runs, or delete the volume to "reset" something you want to keep |
+| Is it healthy? | `sudo docker compose ps` · `curl -s localhost:8080/health/ready` |
+| Logs | `sudo docker compose logs -f --tail 100` |
+| Restart ServiceHub only | `sudo docker compose restart` |
+| Stop / start | `sudo docker compose stop` · `sudo docker compose start` |
+| Which version is running? | `sudo docker inspect servicehub --format '{{.Config.Image}} {{.Image}}'` |
+
+**Monitoring.** Probe `GET http://localhost:8080/health/ready` (200 and `Healthy`) from a local agent, a cron job, or Azure Monitor's VM insights. `/health` and `/health/ready` are
+the only paths that answer on any host name. There is nothing to scrape on a public port, by design.
+
+### Backups — do both
+
+ServiceHub keeps everything in one SQLite file. Backups need two layers:
+
+1. **ServiceHub's own backup** (consistent, verified): the compose file above takes one every 24 hours and keeps the newest 14, in the volume. Take one on demand:
+   ```bash
+   curl -X POST http://localhost:8080/api/v1/admin/backup -H "X-ServiceHub-Intent: create-backup"
+   ```
+   The answer is a manifest with `"integrityCheck": "ok"`. Details and restore steps: [Backup & restore](BACKUP-RESTORE.md).
+2. **Copy them off the VM** — ServiceHub does not ship backups elsewhere. From your workstation:
+   ```bash
+   ssh azureuser@"$IP" 'sudo tar -C /var/lib/docker/volumes/servicehub-data/_data -cz backups' > "servicehub-backups-$(date +%F).tgz"
+   ```
+   Put this in a scheduled job that writes to private storage you control. (The `infra/` Terraform does the copy automatically if you prefer.)
+
+Also snapshot the VM's OS disk as a second safety net (the Docker volume lives on it). Use Azure Backup for the VM, or by hand:
+
+```bash
+OSDISK="$(az vm show -g "$RG" -n "$VM" --query storageProfile.osDisk.managedDisk.id -o tsv)"
+az snapshot create -g "$RG" -n "snap-servicehub-$(date +%F)" --source "$OSDISK"
+```
+
+**Portal:** VM → **Settings → Disks** → click the **OS disk** name → **Create snapshot** → name it `snap-servicehub-<date>`, resource group `rg-servicehub`, **Snapshot type: Full** → **Review + create**. For a schedule, VM → **Backup** → enable Azure Backup with the default policy.
+
+> A disk snapshot taken while the database is busy is only crash-consistent. **ServiceHub's own backup is the one to restore from**; the snapshot is for losing the VM.
+
+**Practice a restore once** on a scratch VM or container before you need it. **Keep the encryption key with the backups**: a backup restored under a different key opens, but its saved connections do not.
+
+### Patching the VM
+
+Ubuntu installs security updates by itself (`unattended-upgrades`). Reboot when a kernel update asks for it (`/var/run/reboot-required` exists):
+
+```bash
+sudo reboot        # ServiceHub and Docker start again on their own, with the data
+```
+
+Allow a minute, then re-check `/health/ready`. Reboot in a quiet period: ServiceHub watches nothing and replays nothing while it is down.
+
+### Saving money when idle
+
+`az vm deallocate -g "$RG" -n "$VM"` stops the compute charge (the disk is still billed). `az vm start -g "$RG" -n "$VM"` brings it back, and ServiceHub restarts with its data.
+
+### Never
+
+- Run a second ServiceHub against the same volume, or behind a load balancer or scale set.
+- Copy the database file to another machine while ServiceHub is running (use a backup).
+- Delete the `servicehub-data` volume to "reset" something you want to keep.
+- Publish port 8080 on `0.0.0.0` or put a public IP rule in front of it.
 
 ---
 
-## 8. Remove everything
+## 9. Upgrade and roll back
+
+ServiceHub's database is upgraded **forward only**: a newer version changes it on first start, and an older version cannot open the result. So **always back up first**, and keep the key.
+
+```bash
+# 1. Back up (on the VM), and copy it off the VM as in §8
+curl -X POST http://localhost:8080/api/v1/admin/backup -H "X-ServiceHub-Intent: create-backup"
+
+# 2. Read the release notes: https://github.com/debdevops/servicehub/blob/main/CHANGELOG.md
+
+# 3. Pull and restart on the new image
+cd /opt/servicehub
+sudo sed -i 's#servicehub:[^ ]*#servicehub:4.2.1#' compose.yaml        # or keep :latest and just pull
+sudo docker compose pull
+sudo docker compose up -d
+
+# 4. Check
+sudo docker compose ps ; curl -s localhost:8080/health/ready
+```
+
+The `.env`, the volume and your connections are untouched. Open the app and confirm your namespaces still show **Connected**.
+
+**Rolling back** a start that fails: put the previous tag back in `compose.yaml` and `sudo docker compose up -d`. If the new version already changed the database and the old one refuses
+it, restore the backup you took in step 1 ([Backup & restore](BACKUP-RESTORE.md#3-restore)), then start the old tag.
+
+---
+
+## 10. Remove everything
+
+**Option A — CLI**
 
 ```bash
 az group delete --name "$RG" --yes --no-wait
 ```
 
-This deletes the VM, its disk (and so ServiceHub's data), the IP and the network. Take a backup first if you want to keep anything.
+**Option B — Portal:** **Resource groups** → `rg-servicehub` → **Delete resource group** → type the group name → **Delete**.
+
+This deletes the VM, its disk (and with it ServiceHub's data and backups), the IP and the network. Download any backup you want to keep first. Key Vault secrets sit in the same resource group in
+this guide, so they go too (a deleted vault is recoverable for its soft-delete period).
+
+To remove only ServiceHub but keep the VM: `cd /opt/servicehub && sudo docker compose down && sudo docker volume rm servicehub-data` (irreversible: it deletes the database and ledger).
 
 ---
 
-## 9. App Service with a container (option B)
+## 11. Air-gapped or locked-down networks
 
-### 9.1 Read this first
-
-App Service has a persistent folder, `/home`, that survives restarts and redeploys. It is backed by Azure Storage **over the network**. ServiceHub's
-SQLite file and its single-instance lock would live there. That is the one thing ServiceHub's README warns against, so treat B and C as follows:
-
-- **Run exactly one instance, always.** One worker, no scale-out, no autoscale, no deployment slots. A restart can briefly overlap the old and new
-  process; if you see *"Another ServiceHub instance already holds the data directory"*, wait a minute and restart the app once.
-- **Take backups and copy them off the app** (§11). The file is the only copy of your history and ledger.
-- **Try it before relying on it.** After the first start, connect a cloud, restart the app, and confirm it is still there.
-- **App Service is on the public internet by default and ServiceHub does not log browsers in.** Lock it down (§9.4) *before* connecting a cloud.
-
-### 9.2 Build the image into a registry
-
-Build the image in Azure Container Registry straight from the source (no Docker needed on your machine; a published `ghcr.io/debdevops/servicehub` image also exists for version tags, but this builds the exact tag or branch you check out):
+If the VM cannot reach `ghcr.io`, copy the image through a machine that can, into **your own** Azure Container Registry:
 
 ```bash
-RG=rg-servicehub
-LOCATION=<your-region>
-PLAN=plan-servicehub
-APP=<globally-unique-app-name>          # becomes https://<APP>.azurewebsites.net
-ACR=<globally-unique-registry-name>     # letters and digits only
-
-az group create --name "$RG" --location "$LOCATION"
-az acr create --resource-group "$RG" --name "$ACR" --sku Basic
-
-git clone https://github.com/debdevops/servicehub.git && cd servicehub
-git checkout <the tag or branch you want to run>
-az acr build --registry "$ACR" --image servicehub:4.2.0 .
+ACR=<your-registry-name>
+az acr import --name "$ACR" --source ghcr.io/debdevops/servicehub:4.2.0 --image servicehub:4.2.0
 ```
 
-### 9.3 Create the app
-
-```bash
-# Linux plan, one worker. B1 or larger — Free/Shared cannot keep an app always on.
-az appservice plan create --resource-group "$RG" --name "$PLAN" --is-linux --sku B1 --number-of-workers 1
-
-az webapp create --resource-group "$RG" --plan "$PLAN" --name "$APP" \
-  --container-image-name "$ACR.azurecr.io/servicehub:4.2.0"
-
-# Let the app pull from the registry with its own identity (no passwords).
-PRINCIPAL="$(az webapp identity assign --resource-group "$RG" --name "$APP" --query principalId -o tsv)"
-az role assignment create --assignee "$PRINCIPAL" --role AcrPull --scope "$(az acr show --name "$ACR" --query id -o tsv)"
-az webapp config set --resource-group "$RG" --name "$APP" --always-on true \
-  --generic-configurations '{"acrUseManagedIdentityCreds": true}'
-```
-
-Now the settings. Make the encryption key **once** and keep it (see the key warning in §4 — it applies here too):
-
-```bash
-KEY="$(openssl rand -hex 32)"; echo "SAVE THIS KEY: $KEY"
-
-az webapp config appsettings set --resource-group "$RG" --name "$APP" --settings \
-  ASPNETCORE_ENVIRONMENT=Production \
-  WEBSITES_PORT=8080 \
-  WEBSITES_ENABLE_APP_SERVICE_STORAGE=true \
-  ServiceHub__DataDirectory=/home/data \
-  AllowedHosts="$APP.azurewebsites.net" \
-  SECURITY__ENCRYPTIONKEY="$KEY"
-```
-
-| Setting | Why |
-|---|---|
-| `WEBSITES_PORT=8080` | The image listens on 8080; App Service must be told |
-| `WEBSITES_ENABLE_APP_SERVICE_STORAGE=true` | Mounts the persistent `/home` |
-| `ServiceHub__DataDirectory=/home/data` | Puts the database there instead of the container's throw-away `/data` |
-| `AllowedHosts` | ServiceHub answers only to `localhost` unless told otherwise (so a web page on another site cannot drive it through a browser). App Service serves it as `<app>.azurewebsites.net`, so name that here — without it every page and API call is refused with *"This address is not one ServiceHub answers to"*. Add a custom domain with a `;`: `a.azurewebsites.net;servicehub.contoso.com`. The health endpoints answer on any host, so App Service's own probes still work |
-| `SECURITY__ENCRYPTIONKEY` | Production refuses to start without it. App settings are encrypted at rest and visible only to people with access to the app |
-
-Give it a minute, then check: `curl https://$APP.azurewebsites.net/health/ready` → `Healthy`. If it does not start, `az webapp log tail -g "$RG" -n "$APP"`.
-The image runs as a non-root user; if the log says it cannot write `/home/data`, App Service's mount permissions are not compatible with it — use
-option A or C instead.
-
-### 9.4 Lock it down — required
-
-Anyone who can reach the URL is the server's Administrator. Do **at least one** of these before you connect a cloud:
-
-**Allow only your own address** (simple; also add the same rule for the deployment site):
-
-```bash
-MYIP="$(curl -s https://api.ipify.org)"
-az webapp config access-restriction add --resource-group "$RG" --name "$APP" \
-  --rule-name me --action Allow --ip-address "$MYIP/32" --priority 100
-az webapp config access-restriction add --resource-group "$RG" --name "$APP" \
-  --rule-name me-scm --action Allow --ip-address "$MYIP/32" --priority 100 --scm-site true
-```
-
-Adding an *Allow* rule makes everything else denied. Use a company VPN/egress range instead of one address if you have one.
-
-**Or require Microsoft Entra sign-in** (Azure portal → your app → **Authentication** → *Add identity provider* → Microsoft → *Require authentication*,
-unauthenticated requests: *HTTP 302 redirect*). Then in Entra → **Enterprise applications** → your app → **Properties** set *Assignment required* to
-Yes and assign only the people who should have access. Understand what this does: it **gates** the site — only assigned people get in — and
-ServiceHub then names them in the audit trail. It does not make them less than Administrators: **everyone you assign has full control.** For finer
-roles see "More than one person?" in §6.
-
-Always use the `https://` address; `az webapp update --https-only true` enforces it.
-
-### 9.5 Update
-
-```bash
-az acr build --registry "$ACR" --image servicehub:4.1.1 .
-az webapp config container set --resource-group "$RG" --name "$APP" \
-  --container-image-name "$ACR.azurecr.io/servicehub:4.1.1"
-```
-
-Your settings and `/home/data` are untouched. Then open the app and confirm your clouds are still connected.
+Then give the VM pull access (`az vm identity assign` plus the **AcrPull** role on the registry, and `az acr login` on the VM, or a registry token) and change the `image:` line in `compose.yaml` to
+`<your-registry-name>.azurecr.io/servicehub:4.2.0`. Everything else is the same. For private networking to Service Bus, use a private endpoint ([§6](#6-connect-service-bus)).
 
 ---
 
-## 10. App Service without a container (option C)
+## 12. Hand-over checklist
 
-Same platform, same §9.1 caveats, but App Service runs the .NET app directly — you publish a folder and upload a zip. You build on your own computer,
-which needs the **.NET 10 SDK** and **Node 22** ([local setup](LOCAL-SETUP.md) §1).
+Tick these before you call it done:
 
-### 10.1 Check that App Service offers .NET 10
-
-```bash
-az webapp list-runtimes --os linux | grep -i dotnet
-```
-
-You need an entry like `DOTNETCORE:10.0` (or `DOTNET|10.0`). If there is none in your region yet, use option B or A.
-
-### 10.2 Build and package
-
-```bash
-git clone https://github.com/debdevops/servicehub.git && cd servicehub
-git checkout <the tag or branch you want to run>
-
-npm ci
-npm run build                                   # builds the web app into services/api/src/ServiceHub.Api/wwwroot
-dotnet publish services/api/src/ServiceHub.Api -c Release -o ./publish /p:UseAppHost=false
-(cd publish && zip -r ../servicehub.zip .)
-```
-
-Build the web app **before** publishing: the web files are part of what gets published. Check `publish/wwwroot/index.html` exists. You can try the
-package on your own machine first:
-
-```bash
-cd publish
-ASPNETCORE_ENVIRONMENT=Production ASPNETCORE_URLS=http://localhost:5390 \
-  ServiceHub__DataDirectory=/tmp/sh-try SECURITY__ENCRYPTIONKEY="$(openssl rand -hex 32)" dotnet ServiceHub.Api.dll
-# → http://localhost:5390/health/ready says Healthy
-```
-
-### 10.3 Create the app and deploy
-
-```bash
-RG=rg-servicehub
-LOCATION=<your-region>
-PLAN=plan-servicehub
-APP=<globally-unique-app-name>
-
-az group create --name "$RG" --location "$LOCATION"
-az appservice plan create --resource-group "$RG" --name "$PLAN" --is-linux --sku B1 --number-of-workers 1
-az webapp create --resource-group "$RG" --plan "$PLAN" --name "$APP" --runtime "<the entry from 10.1>"
-az webapp config set --resource-group "$RG" --name "$APP" --always-on true
-
-KEY="$(openssl rand -hex 32)"; echo "SAVE THIS KEY: $KEY"
-az webapp config appsettings set --resource-group "$RG" --name "$APP" --settings \
-  ASPNETCORE_ENVIRONMENT=Production \
-  ServiceHub__DataDirectory=/home/data \
-  AllowedHosts="$APP.azurewebsites.net" \
-  SECURITY__ENCRYPTIONKEY="$KEY"
-
-az webapp deploy --resource-group "$RG" --name "$APP" --src-path servicehub.zip --type zip
-```
-
-`AllowedHosts` is the one name ServiceHub will answer to (see the table in §9.3); without it the site loads nothing but its health check.
-
-The data folder (`/home/data`) is created on first start. Check `curl https://$APP.azurewebsites.net/health/ready` → `Healthy`; logs:
-`az webapp log tail -g "$RG" -n "$APP"`.
-
-Now **lock it down — §9.4 is required here too.**
-
-### 10.4 Update
-
-Rebuild and re-run the last `az webapp deploy`. Settings and data are untouched; the app restarts onto the new build.
-
----
-
-## 11. Keeping an App Service copy safe
-
-| Task | How |
-|---|---|
-| **Backups** | Settings → Backup → *Take a backup now* ([Backup & restore](BACKUP-RESTORE.md)). They land under `/home/data/backups` — download them regularly. Consider turning on scheduled backups (`Backup__ScheduledBackupIntervalHours`) |
-| **Logs** | `az webapp log tail`, or Portal → *Log stream* |
-| **Restart** | `az webapp restart -g "$RG" -n "$APP"` |
-| **Stop paying** | `az group delete --name "$RG" --yes --no-wait` removes everything, **including the data**. `az webapp stop` stops the app but the plan still bills |
-| **Never** | Scale out, add a slot, or enable autoscale |
-
-Reaching Service Bus: App Service connects outward on port 5671 like the VM (§5). If the namespace has a firewall, allow the app's
-**outbound IP addresses** (`az webapp show -g "$RG" -n "$APP" --query possibleOutboundIpAddresses -o tsv`) or use VNet integration with a private
-endpoint.
+- [ ] `/health/ready` answers `Healthy`, and `docker compose ps` shows `healthy`
+- [ ] The encryption key is in the secret manager, and a second person knows where
+- [ ] NSG allows SSH only from approved addresses; **no** rule exposes 8080
+- [ ] Each Service Bus connection uses its own `servicehub-app` policy, not the root key
+- [ ] The image tag is pinned (not `latest`) for production
+- [ ] A backup was taken, copied off the VM, and a restore was practised
+- [ ] A reboot test passed: `sudo reboot`, wait, `/health/ready` is `Healthy`, connections still **Connected**
+- [ ] Someone owns upgrades and watches the [changelog](https://github.com/debdevops/servicehub/blob/main/CHANGELOG.md)
+- [ ] The team knows that **anyone who can SSH in is an Administrator** of ServiceHub
 
 ---
 
@@ -406,14 +523,16 @@ endpoint.
 
 | You see | Why | Do this |
 |---|---|---|
-| `docker compose up` says `set SERVICEHUB_ENCRYPTION_KEY first` | No `.env` in the folder you ran it from | `cd` into the `servicehub` folder; check `ls -a` shows `.env` |
-| Container restarts in a loop; logs show `Neither Security:EncryptionKeyRegistry nor Security:EncryptionKey is configured` | The key is empty | Check `.env` has a non-empty `SERVICEHUB_ENCRYPTION_KEY=`, then `sudo docker compose up -d` |
+| `docker compose up` fails: `env file … not found` | You are not in `/opt/servicehub`, or `.env` is missing | `cd /opt/servicehub; sudo ls -la` |
+| Container restarts in a loop; logs say `Neither Security:EncryptionKeyRegistry nor Security:EncryptionKey is configured` | The key line in `.env` is empty or misspelled | `.env` must contain `SECURITY__ENCRYPTIONKEY=<64 hex characters>`; then `sudo docker compose up -d` |
+| Connections stopped decrypting after a restart or upgrade | A **different** key is in `.env` than the one that made the data | Put the original key back from the secret manager; if it is lost, remove the namespaces and add them again |
+| `pull access denied` / `unauthorized` / timeout pulling the image | The VM cannot reach `ghcr.io`, or the image name or tag is mistyped | `curl -sI https://ghcr.io/v2/` from the VM; check the NSG/firewall egress rules, or use [§11](#11-air-gapped-or-locked-down-networks) |
 | `Another ServiceHub instance already holds the data directory` | Two containers share the volume | `sudo docker ps -a`; stop the extra one |
-| Browser says connection refused on `localhost:8080` | The tunnel is not running, or something else on your laptop uses 8080 | Start the `ssh -N -L …` command; use `-L 8081:127.0.0.1:8080` and browse to `:8081` |
-| `ssh` times out | Your public address changed and the firewall rule no longer matches | Re-run the `az network nsg rule update` command in §3 |
-| Added the namespace but it is "unreachable" | The namespace firewall blocks the VM | See §5 |
-| Everything worked, then credentials stopped decrypting | The encryption key changed | Restore the original key into `.env` and `sudo docker compose up -d` |
-| **App Service:** "Application Error" or the site never starts | Missing `SECURITY__ENCRYPTIONKEY`, or (container) `WEBSITES_PORT` not `8080` | `az webapp log tail`; check the app settings in §9.3 / §10.3 |
-| **App Service:** the site answers *"This address is not one ServiceHub answers to"* (HTTP 400), but `/health/ready` works | `AllowedHosts` is missing or does not name the address you browse to | Set `AllowedHosts=<app>.azurewebsites.net` (plus any custom domain, `;`-separated) in the app settings and restart |
-| **App Service:** image will not pull | The app's identity lacks `AcrPull`, or `acrUseManagedIdentityCreds` is not set | Redo the identity, role and `config set` steps in §9.3 |
-| **App Service:** data gone after a redeploy | `WEBSITES_ENABLE_APP_SERVICE_STORAGE` is `false`, or `ServiceHub__DataDirectory` is not under `/home` | Fix the settings; anything stored elsewhere was in the container and is lost on replace |
+| `localhost:8080` refuses the connection on your laptop | The tunnel is not running, or something local uses 8080 | Start the `ssh -N -L …` command; or use `-L 8081:127.0.0.1:8080` and browse to `:8081` |
+| `ssh` times out | Your public address changed | Re-run the `az network nsg rule update` command in §2 |
+| A namespace says "unreachable" | The namespace firewall blocks the VM, or the string is wrong | Allow the VM's public IP in the namespace's Networking page; re-paste the connection string |
+| Page says `400 This address is not one ServiceHub answers to` | You browsed by a name other than `localhost`, `127.0.0.1` or `[::1]` | Use the tunnel and `http://localhost:8080`, or set `AllowedHosts` as in §7 |
+| `The database … is not a ServiceHub 4.1.0 database` | The volume holds a 4.0.0 database (there is no upgrade path from 4.0.0) | Use a fresh volume name in `compose.yaml` |
+| Disk filling up | Logs, backups, or both | Logs are capped by the compose file; lower `Backup__RetentionCount` or move old backups off the VM |
+
+Still stuck? [Open an issue](https://github.com/debdevops/servicehub/issues/new/choose) with the last 50 lines of `sudo docker compose logs` (remove anything sensitive first).

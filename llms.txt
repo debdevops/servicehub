@@ -3,7 +3,7 @@
 > Self-hosted tool for recovering stuck messages in Azure Service Bus, AWS SQS/SNS and GCP Pub/Sub.
 > Shows what is dead-lettered and why, replays messages after a preview, and keeps a local, hash-chained record of every
 > recovery that can be exported and verified offline. Each cloud's real limits are published rather than papered over: Azure can
-> confirm a replayed message stayed fixed; AWS and GCP cannot, so their results read "verification required".
+> confirm a replayed message stayed fixed; AWS and GCP read "verification required" unless fix-confirming is switched on per namespace.
 
 ServiceHub is single-instance, self-hosted software for one team, not a multi-tenant SaaS: one process and one SQLite file.
 Connection strings are encrypted at rest. Every replay goes through one eligibility gate that fails closed, and a person decides

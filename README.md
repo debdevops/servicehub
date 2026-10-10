@@ -1,235 +1,165 @@
 # ServiceHub
 
-**Self-hosted dead-letter investigation and safe replay. Azure Service Bus first; AWS SQS/SNS and GCP Pub/Sub with limits.**
+**Find out *why* your messages dead-lettered, replay them safely, and see whether the fix held. Azure Service Bus, AWS SQS/SNS and Google Pub/Sub, in one place.**
 
-Your queue says "4,218 dead-lettered messages". A count alone does not explain the failure pattern or make a replay safe. ServiceHub shows which
-messages, why each failed, and what a replay would do *before* anything is sent back, then keeps a local record you can export and verify offline.
-It runs as one process with one SQLite file. Your clouds are the only place it connects, plus a notification channel (Slack, Teams or a webhook) if
-you add one, which gets queue names and failure reasons, never message bodies. Stored locally, though: the first 500 characters of each dead-letter
-body, its properties and a hash are kept **unencrypted** in the SQLite file ([SECURITY.md](SECURITY.md)), so treat the data folder like the queue.
+Your queue says "4,218 dead-lettered messages". A count does not tell you which messages, why each failed, or whether replaying them is safe.
+ServiceHub shows all three, previews every replay *before* anything is sent back, and keeps a tamper-evident record you can export and verify offline.
+One process, one SQLite file, running on your machine.
 
-**Know the limits** before you try it:
+![ServiceHub Home: what needs you, how each cloud is doing, and the ServiceHub Agent](docs/screenshots/readme/home-all.png)
 
-- **Production namespaces are read-only for replay.** Replay is refused on any namespace you mark as Production, and ServiceHub has no way to override that. Investigate there; replay in dev and staging.
-- **Azure is the verified path.** Only Azure can confirm a replayed message stayed fixed. AWS and GCP read "verification required", and GCP often records no failure reason.
-- **Anyone who can reach its port is the admin.** Keep it on `localhost`.
-- **No upgrade from 4.0.0.** 4.1.0 and later are a from-scratch rewrite with a fresh database and cannot open a 4.0.0 file. Run it beside 4.0.0 and connect your clouds again. 4.0.0 lives, frozen, in [`archive/servicehub-4.0.0/`](archive/servicehub-4.0.0/). See the [changelog](CHANGELOG.md).
+*Every screenshot on this page is the built-in demo: made-up data, nothing is sent anywhere. You can open the same demo yourself in about two minutes, with no cloud account.*
 
-Fastest look, no cloud account: pick an install option below and choose **Try it with sample data** (or open <http://localhost:3000/demo>, or press **Demo** on Home). A captioned walkthrough video per cloud is [further down](#watch-it-work--all-of-simple-mode-start-to-finish).
+## Run it in two minutes
 
-## Try it in your browser — nothing to install
+Pick one. Both open the built-in demo, so you can look around before connecting a real cloud.
 
-**<https://debdevops.github.io/servicehub/>** opens a live demo of ServiceHub with made-up data across Azure, AWS and GCP. Replay a failed message,
-see whether it stayed fixed, watch Auto Replay stop and ask a person. Take the 13-stop **Show me around** tour, or click anywhere.
-
-It runs entirely in your browser: there is no server behind it, it connects to no cloud, and nothing you do leaves the page. Actions say
-*"Demo — nothing was sent"*. To use ServiceHub on your own queues, run it yourself (below); your data then stays on your machine.
-
-## Run it yourself
-
-No cloud account is needed to look around: both options open the same built-in demo with made-up data. Pick one.
-
-### Option 1. Clone it and run it (no Docker)
+### Option 1. From source: `./run.sh` does everything
 
 For macOS, Linux, or a WSL 2 terminal on Windows.
-
-**You do not need to install anything first.** `./run.sh` checks your machine and, if the .NET 10 SDK or Node.js is missing (or the wrong version),
-downloads it into `~/.servicehub/tools` for you: no `sudo`, nothing system-wide changes. All it needs is `bash`, `curl` (or `wget`), `tar` and an internet connection.
 
 ```bash
 git clone https://github.com/debdevops/servicehub.git
 cd servicehub
-./run.sh --check    # optional: reports what is ready and what would be installed; starts and installs nothing
-./run.sh            # installs what is missing, builds, then starts the API (:5153) and the web app (:3000)
+./run.sh
 ```
 
-Already have the tools? It uses yours: [.NET SDK](https://dotnet.microsoft.com/download/dotnet/10.0) 10.0.302 or a later 10.0.x (`dotnet --version`; an 11.x-only
-machine will not do) and [Node.js](https://nodejs.org) 22.12+ or 20.19+ (`node --version`). Offline or locked down? Install those two yourself and run
-`./run.sh --no-install`.
+That is the whole install. `./run.sh` checks your machine, **downloads the .NET 10 SDK and Node.js if you do not have them** (into `~/.servicehub/tools`, no `sudo`,
+nothing system-wide), installs the packages, builds the API and the web app, starts both, and waits until they answer.
+It needs only `bash`, `curl` (or `wget`), `tar` and an internet connection.
 
-The first start downloads packages and compiles the API, which takes a few minutes (longer if it also installs the tools). When you see **✔ ServiceHub is ready**, open **<http://localhost:3000>** and choose
-**Try it with sample data** (or go straight to <http://localhost:3000/demo>). Press **Ctrl-C** to stop. Then use **Add a cloud** (sidebar) to connect your own.
+The first start takes a few minutes while it downloads and compiles. When you see **✔ ServiceHub is ready**, open **<http://localhost:3000>** and choose
+**Try it with sample data**. Press **Ctrl-C** to stop everything it started.
 
-This mode runs in `Development` with a throw-away encryption key, so it is for trying and developing. Your data lives in `services/api/src/ServiceHub.Api/data/`.
-Something did not start? The **[Local setup guide](docs/LOCAL-SETUP.md)** covers prerequisites, what `./run.sh` does, and a troubleshooting table.
+| Want to | Run |
+|---|---|
+| See what it would install, change nothing | `./run.sh --check` |
+| Never download anything (you installed .NET and Node yourself) | `./run.sh --no-install` |
+| Use other ports | `SERVICEHUB_API_PORT=5200 SERVICEHUB_WEB_PORT=3200 ./run.sh` |
+| Keep the data somewhere else | `SERVICEHUB_DATA_DIR=/path/to/folder ./run.sh` |
 
-### Option 2. Run the Docker image (no clone, no build)
+If port 3000 or 5153 is busy, it picks the next free one and tells you. This mode is for trying and developing (it uses a throw-away encryption key); your data
+lives in `services/api/src/ServiceHub.Api/data/`. Prerequisites, what the script does, and a troubleshooting table: **[Local setup guide](docs/LOCAL-SETUP.md)**.
 
-Needs [Docker](https://docs.docker.com/get-docker/), a bash shell (macOS, Linux, or a WSL 2 terminal on Windows) and `openssl`.
+### Option 2. Docker: no clone, no build
+
+Needs [Docker](https://docs.docker.com/get-docker/), a bash shell (macOS, Linux, or WSL 2) and `openssl`.
 
 ```bash
-export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"      # keep this key; it protects stored cloud credentials
-docker run -d --name servicehub -p 127.0.0.1:8080:8080 -v servicehub-data:/data \
-  -e SECURITY__ENCRYPTIONKEY="$SERVICEHUB_ENCRYPTION_KEY" ghcr.io/debdevops/servicehub:4.2.0
+# 1. Make an encryption key once, and keep it. It protects the cloud credentials ServiceHub stores.
+export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"
+
+# 2. Download and start (the image is public: no sign-in to pull)
+docker run -d --name servicehub --restart unless-stopped \
+  -p 127.0.0.1:8080:8080 -v servicehub-data:/data \
+  -e SECURITY__ENCRYPTIONKEY="$SERVICEHUB_ENCRYPTION_KEY" \
+  ghcr.io/debdevops/servicehub:latest
 ```
 
-Open **<http://localhost:8080>** and choose **Try it with sample data**. The image is public (`linux/amd64` and `linux/arm64`, no sign-in to pull);
-`docker run` downloads it, or fetch it first with `docker pull ghcr.io/debdevops/servicehub:4.2.0`. This is the mode to run it for real: it uses `Production`
-settings and your own encryption key.
-
-Full guide, with update, back up, stop, remove and troubleshooting: **[Run ServiceHub with Docker](docs/DOCKER.md)**. To build the image from a clone instead (needs git, and Docker with the Compose v2 plugin: `docker compose version`):
+Open **<http://localhost:8080>** and choose **Try it with sample data**. Linux `amd64` and `arm64` (Intel, AMD and Apple silicon) are supported.
 
 ```bash
-export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"   # once, and keep it somewhere safe
-docker compose up --build                                       # → http://localhost:8080 (this machine only)
+docker logs -f servicehub     # watch it start
+docker stop servicehub        # stop (your data stays in the volume)
+docker start servicehub       # start again
 ```
 
-ServiceHub **refuses to start in Production without an encryption key**, because the key protects every cloud connection string it stores. Losing the
-key makes them unreadable, so back it up in a secret manager. If you reach it by any name other than `localhost`, it answers `400` until you list that name
-in `AllowedHosts` (only `/health` answers on any name); the setting replaces the default, so keep `localhost` in it: `-e "AllowedHosts=localhost;your.host.name"`.
+Pin an exact release for anything you depend on (for example `…/servicehub:4.2.0` instead of `:latest`). To **build the image yourself from a clone** instead:
 
-![Home: what needs you, how each cloud is doing, and the ServiceHub Agent](docs/screenshots/01-home.png)
+```bash
+git clone https://github.com/debdevops/servicehub.git && cd servicehub
+export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"
+docker compose up --build        # → http://localhost:8080 (this machine only)
+```
 
-*Screenshots are the built-in demo (`/demo`): made-up data, nothing is sent anywhere.*
+ServiceHub **refuses to start in Production without an encryption key**, and losing the key makes saved cloud connections unreadable, so keep it in a password manager.
+Updating, backing up, removing and fixing problems: **[Run ServiceHub with Docker](docs/DOCKER.md)**.
+
+## What it looks like, on each cloud
+
+Same app, three clouds. Each cloud shows what it can and cannot do, honestly: the chips under each cloud's heading say whether ServiceHub can count, browse, confirm a fix and watch automatically there.
+
+| | Azure Service Bus | AWS SQS / SNS | Google Pub/Sub |
+|---|---|---|---|
+| **Home** | ![Azure Home](docs/screenshots/readme/home-azure.png) | ![AWS Home](docs/screenshots/readme/home-aws.png) | ![Google Cloud Home](docs/screenshots/readme/home-gcp.png) |
+| **Dead letters** | ![Azure dead letters](docs/screenshots/readme/dead-letters-azure.png) | ![AWS dead letters](docs/screenshots/readme/dead-letters-aws.png) | ![Google Cloud dead letters](docs/screenshots/readme/dead-letters-gcp.png) |
+| **Step-by-step guide** | [Azure guide](docs/clouds/azure.md) | [AWS guide](docs/clouds/aws.md) | [Google Cloud guide](docs/clouds/gcp.md) |
 
 ## What you get
 
-**Simple** — Home and the work you do from it; everything else opens in place and lives in the URL, so a link shows someone exactly what you see.
+**Simple mode** is Home and the work you do from it. Everything else opens in place and lives in the URL, so a link shows someone exactly what you see.
 
-- **Home** — what needs you, how every connected cloud is doing, and the ServiceHub Agent.
-- **Dead letters · Active messages · Replayed · Auto Replay** (tabs on Home) — find a message, read why it failed, replay it, and watch whether it stayed fixed.
+- **See what needs you** — one Home for every connected cloud, with what is waiting for a decision and how each cloud is doing.
+- **Understand a failure** — find a dead letter, read why it failed, and see its body, properties, headers and delivery history.
+- **Replay with a preview** — one message, a few selected, or everything with Replay All. Always previewed first (how many, what risk, what policy) and always stoppable.
+- **Know whether it held** — a replayed message is watched afterwards and marked *verified* or *came back*.
+- **Let the Agent handle repeats, only when it has earned it** — Auto Replay rules replay a failure on their own only after enough verified fixes, and stop and ask a person when results turn bad.
 
-**Advanced** — four read-only investigation pages: **Overview**, **Recovery Ledger**, **Failure Signatures**, **Agents**.
+![Auto Replay: rules the Agent follows, what they replayed, and which stopped themselves](docs/screenshots/readme/auto-replay.png)
 
-![Dead letters](docs/screenshots/02-dead-letters.png)
+**Advanced mode** is four read-only investigation pages: **Overview**, **Recovery Ledger**, **Failure Signatures** (failures grouped by how they fail) and **Agents**.
 
-## Watch it work — all of Simple mode, start to finish
+| Failure Signatures | Agents |
+|---|---|
+| ![Failure Signatures](docs/screenshots/readme/advanced-signatures.png) | ![Agents](docs/screenshots/readme/advanced-agents.png) |
 
-One captioned video per cloud, about five minutes each. They cover everything you do day to day in **Simple** mode — Home, Dead letters, Look now, opening a message, **replaying one message, a few selected, or everything with Replay All** (always previewed first, always stoppable), Active messages, Replayed, Auto Replay, the approvals, Connections, Settings and Help — and then **how to switch to Advanced** (read-only: Overview, Recovery Ledger, Failure Signatures, Agents) and back. No sound needed. Click a preview to play the full video.
+## Watch it work
+
+One captioned video per cloud, about five minutes each: Home, Dead letters, Look now, replaying one, some or all, Active messages, Replayed, Auto Replay, approvals,
+Connections, Settings, Help, then Advanced and back. No sound needed. Click a preview to play the full video.
 
 | Azure Service Bus | AWS SQS / SNS | Google Pub/Sub |
 |:---:|:---:|:---:|
 | [![Azure Service Bus walkthrough — click to play](docs/media/azure-preview.gif)](docs/media/azure.mp4) | [![AWS SQS / SNS walkthrough — click to play](docs/media/aws-preview.gif)](docs/media/aws.mp4) | [![Google Pub/Sub walkthrough — click to play](docs/media/gcp-preview.gif)](docs/media/gcp.mp4) |
-| [▶ Azure Service Bus, 5:12](docs/media/azure.mp4) | [▶ AWS SQS / SNS, 5:07](docs/media/aws.mp4) | [▶ Google Pub/Sub, 6:03](docs/media/gcp.mp4) |
+| [▶ Azure, 5:12](docs/media/azure.mp4) | [▶ AWS, 5:07](docs/media/aws.mp4) | [▶ Google, 6:03](docs/media/gcp.mp4) |
 
-<details><summary><b>Azure Service Bus</b> — chapters (5:12)</summary>
+<details><summary><b>Chapters</b> (Azure; AWS and Google are within a few seconds of these)</summary>
 
-- `0:07` Connect a cloud
-- `0:15` Home: every cloud
-- `0:26` Home: one cloud
-- `0:43` Dead letters (and Look now)
-- `0:57` Open a message
-- `1:05` Replay one message
-- `1:29` **Replay selected**: preview, run, watch
-- `2:09` **Replay All Messages**: preview, run, watch, stop
-- `2:43` Active messages and Send
-- `2:57` Replayed
-- `3:07` Auto Replay
-- `3:25` Needs you: approve or decline
-- `3:37` Connections
-- `3:45` Settings
-- `4:03` Help
-- `4:09` **Switch to Advanced**: Overview
-- `4:31` Advanced: Recovery Ledger
-- `4:44` Advanced: Failure Signatures
-- `4:53` Advanced: Agents
-- `5:02` **Back to Simple**
+`0:07` Connect a cloud · `0:15` Home: every cloud · `0:26` Home: one cloud · `0:43` Dead letters and Look now · `0:57` Open a message · `1:05` Replay one ·
+`1:29` Replay selected · `2:09` Replay All, then stop · `2:43` Active messages and Send · `2:57` Replayed · `3:07` Auto Replay · `3:25` Approve or decline ·
+`3:37` Connections · `3:45` Settings · `4:03` Help · `4:09` Switch to Advanced · `5:02` Back to Simple
 
 </details>
 
-<details><summary><b>AWS SQS / SNS</b> — chapters (5:07)</summary>
+*Recorded from the real app against real development clouds. Replay All is started and then stopped on camera: **Stop now** leaves every message not yet sent exactly as it was.*
 
-- `0:07` Connect a cloud
-- `0:14` Home: every cloud
-- `0:26` Home: one cloud
-- `0:42` Dead letters (and Look now)
-- `0:59` Open a message
-- `1:08` Replay one message
-- `1:32` **Replay selected**: preview, run, watch
-- `2:04` **Replay All Messages**: preview, run, watch, stop
-- `2:38` Active messages and Send
-- `2:52` Replayed
-- `3:02` Auto Replay
-- `3:20` Needs you: approve or decline
-- `3:32` Connections
-- `3:39` Settings
-- `3:58` Help
-- `4:04` **Switch to Advanced**: Overview
-- `4:26` Advanced: Recovery Ledger
-- `4:39` Advanced: Failure Signatures
-- `4:48` Advanced: Agents
-- `4:57` **Back to Simple**
+## Know the limits
 
-</details>
-
-<details><summary><b>Google Pub/Sub</b> — chapters (6:03)</summary>
-
-- `0:07` Connect a cloud
-- `0:14` Home: every cloud
-- `0:26` Home: one cloud
-- `0:43` Dead letters (and Look now)
-- `1:00` Open a message
-- `1:08` Replay one message
-- `1:32` **Replay selected**: preview, run, watch
-- `3:00` **Replay All Messages**: preview, run, watch, stop
-- `3:34` Active messages and Send
-- `3:47` Replayed
-- `3:58` Auto Replay
-- `4:16` Needs you: approve or decline
-- `4:28` Connections
-- `4:35` Settings
-- `4:54` Help
-- `5:00` **Switch to Advanced**: Overview
-- `5:22` Advanced: Recovery Ledger
-- `5:34` Advanced: Failure Signatures
-- `5:43` Advanced: Agents
-- `5:53` **Back to Simple**
-
-</details>
-
-*Recorded from the real app against real development clouds, with the sample app's made-up orders. Replay All is started and then stopped on camera: the preview says how many it would replay, the run is paced at about two a second, and **Stop now** leaves every message not yet sent exactly as it was. Azure says "ServiceHub watches that it stays out"; AWS and Google say "verification required" — they cannot prove a replayed message stayed out of the dead-letter queue, and the videos show that rather than hide it.*
-
-## Step-by-step guides — one per cloud
-
-Each guide goes from nothing to a working ServiceHub, one screen at a time. Every picture is the real app (or the real cloud console, with account
-names and keys blanked out) with numbered markers; the list under each picture says what each control does **and what it will not do**.
-
-| | Azure Service Bus | AWS SQS / SNS | Google Pub/Sub |
-|---|---|---|---|
-| **Guide** | [Azure guide](docs/clouds/azure.md) | [AWS guide](docs/clouds/aws.md) | [Google Cloud guide](docs/clouds/gcp.md) |
-| **1. Connect** | ![Azure: connect](docs/screenshots/azure/03-add-cloud-filled.png) | ![AWS: connect](docs/screenshots/aws/03-add-cloud-filled.png) | ![Google Cloud: connect](docs/screenshots/gcp/03-add-cloud-filled.png) |
-| **2. Home** | ![Azure: Home](docs/screenshots/azure/05-home.png) | ![AWS: Home](docs/screenshots/aws/05-home.png) | ![Google Cloud: Home](docs/screenshots/gcp/05-home.png) |
-| **3. Dead letters** | ![Azure: dead letters](docs/screenshots/azure/06-dead-letters.png) | ![AWS: dead letters](docs/screenshots/aws/06-dead-letters.png) | ![Google Cloud: dead letters](docs/screenshots/gcp/06-dead-letters.png) |
-| **4. Replay result** | ![Azure: replay result](docs/screenshots/azure/10-replay-result.png) | ![AWS: replay result](docs/screenshots/aws/10-replay-result.png) | ![Google Cloud: replay result](docs/screenshots/gcp/10-replay-result.png) |
-
-The same guides are in the app: open **Help** in the sidebar, or the book icon next to any page title.
+- **Production namespaces are read-only for replay.** Replay is refused on any namespace you mark as Production, and ServiceHub has no way to override that. Investigate there; replay in dev and staging.
+- **Azure is the verified path.** Only Azure can confirm a replayed message stayed fixed out of the box. AWS and Google read "verification required" until you switch on fix-confirming per namespace (Settings → Connections), which gives ServiceHub a complete view of that cloud's dead-letter queue. GCP often records no failure reason.
+- **Anyone who can reach its port is the admin.** Keep it on `localhost`.
+- **Message content is stored unencrypted.** The first 500 characters of each dead-letter body, its properties and a hash are kept in the SQLite file ([SECURITY.md](SECURITY.md)), so treat the data folder like the queue. Cloud credentials and webhook URLs are encrypted.
+- **No upgrade from 4.0.0.** 4.1.0 and later are a from-scratch rewrite with a fresh database. Run it beside 4.0.0 and connect your clouds again. 4.0.0 lives, frozen, in [`archive/servicehub-4.0.0/`](archive/servicehub-4.0.0/). See the [changelog](CHANGELOG.md).
 
 ## How it stays safe
 
-- **A person decides by default.** The Agent replays on its own only for a failure it has earned trust on; otherwise it stops and asks. Every
-  replay, human or automatic, goes through one gate that **fails closed** — a check that cannot run blocks the replay.
-- **Honest about each cloud.** Azure can confirm a replayed message stayed out of the dead-letter queue. AWS and GCP cannot, so their results read *"verification required"*, never *"verified"*.
-- **Production namespaces are refused.** A namespace you mark as *Production* when you add the cloud can be read, but not replayed into: the recovery gate asks for a production elevation, and 4.1.0 has no screen to grant one, so recovery there is denied for everyone, people and the Agent alike.
-- **Emergency stop.** Stops everything ServiceHub does on its own — rules and the Agent; a person can still replay deliberately.
-  Switching it on needs a reason and the typed word `STOP`; lifting it, a reason and `LIFT`. Both are recorded in the ledger.
-- **Evidence you can check offline.** Every recovery action is appended to a hash-chained ledger. Export it and verify it without ServiceHub:
-  `python3 scripts/verify-recovery-chain.py <export.json>`. See [Recovery Evidence](docs/RECOVERY-EVIDENCE.md).
+- **A person decides by default.** The Agent replays on its own only for a failure it has earned trust on; otherwise it stops and asks. Every replay, human or automatic, goes through one gate that **fails closed**: a check that cannot run blocks the replay.
+- **Honest about each cloud.** Where a cloud cannot prove a fix held, results read *"verification required"*, never *"verified"*.
+- **Emergency stop.** Stops everything ServiceHub does on its own, rules and Agent alike. Switching it on needs a reason and the typed word `STOP`; lifting it, a reason and `LIFT`. Both are recorded.
+- **Evidence you can check offline.** Every recovery action is appended to a hash-chained ledger. Export it and verify it without ServiceHub: `python3 scripts/verify-recovery-chain.py <export.json>`. See [Recovery Evidence](docs/RECOVERY-EVIDENCE.md).
 - **Credentials are encrypted at rest** (AES-GCM) and the key can be rotated: [Encryption key rotation](docs/ENCRYPTION-KEY-ROTATION.md).
 
 ## Deploying it for real
 
-Step by step: **[Host ServiceHub on Azure](docs/HOSTING-AZURE.md)** — a small VM running the Docker image, data on its managed disk, reached through an SSH tunnel.
-
-| | |
-|---|---|
-| **One instance.** | One process, one SQLite file; a second instance on the same data directory exits. Keep the file on local block storage, not a network share. |
-| **Data** | Set `ServiceHub__DataDirectory` (the Docker image uses the `/data` volume). |
-| **Backups** | Settings → Backup, or `GET/POST /api/v1/admin/backup`. Restore takes effect on the next start: [Backup & restore](docs/BACKUP-RESTORE.md). |
-| **Who is asking** | **ServiceHub does not log the browser in: anyone who can reach its port is the server's owner, an Administrator.** Keep it on `localhost` (the Docker Compose file binds `127.0.0.1` for this reason) or put it behind a private network or an authenticating reverse proxy before exposing it. What it *can* do is give other people and automation **limited** access: API keys (`Security:Authentication:ApiKeys`, sent as `X-API-KEY`), OIDC (`Security:Oidc:*`) or Azure Easy Auth (`Security:EasyAuth:*`) identify who acted, and roles granted in Settings (Viewer, Operator, Admin) limit what they may do. A wrong key is refused (`401`); no key means the owner. ServiceHub also **answers only to `localhost`, `127.0.0.1` and `[::1]`** (it refuses any other `Host`, so a web page on another site cannot reach it through your browser); if you reach it by another name — a reverse proxy, an App Service host name — set `AllowedHosts` to that name. See [SECURITY.md](SECURITY.md). |
-| **Cloud permissions** | Read/receive on the queues you want watched; send and delete only if you want to replay and purge. Prefer identity-based auth (managed identity, IAM role, workload identity) over long-lived secrets. |
+- **One instance.** One process, one SQLite file; a second instance on the same data directory exits. Keep the file on local block storage, not a network share.
+- **Where to run it.** Step by step on a small Azure VM: **[Host ServiceHub on Azure](docs/HOSTING-AZURE.md)**. Terraform for Azure, AWS and Google Cloud (a private VM, no open port, daily snapshots) is in [`infra/`](infra/README.md); it has not yet been run against a real account.
+- **Data and backups.** Set `ServiceHub__DataDirectory` (the Docker image uses `/data`). Back up from Settings → Backup: [Backup & restore](docs/BACKUP-RESTORE.md).
+- **Who is asking.** ServiceHub does not log the browser in. Keep it on `localhost` or put it behind a private network or an authenticating reverse proxy. It can give other people and automation *limited* access with API keys (`X-API-KEY`), OIDC or Azure Easy Auth, plus Viewer, Operator and Admin roles. It answers only to `localhost`, `127.0.0.1` and `[::1]`; reaching it by another name needs `AllowedHosts` set (keep `localhost` in it). See [SECURITY.md](SECURITY.md).
+- **Cloud permissions.** Read/receive on the queues you want watched; send and delete only if you want to replay and purge. Prefer identity-based auth (managed identity, IAM role, workload identity) over long-lived secrets.
 
 ## Documentation
 
 | | |
 |---|---|
-| [Run with Docker](docs/DOCKER.md) | Download the public image, run it, update it, back it up, fix problems |
-| [Local setup](docs/LOCAL-SETUP.md) | Install, run, check and troubleshoot ServiceHub on your own machine |
+| [Local setup](docs/LOCAL-SETUP.md) | Install, run, check and troubleshoot on your own machine, with or without Docker |
+| [Run with Docker](docs/DOCKER.md) | Run the public image, update it, back it up, fix problems |
+| [Azure](docs/clouds/azure.md) · [AWS](docs/clouds/aws.md) · [Google Cloud](docs/clouds/gcp.md) | Step-by-step setup and use, with annotated screenshots (also in the app under **Help**) |
 | [Hosting on Azure](docs/HOSTING-AZURE.md) | Run it always-on on an Azure VM, safely |
-| [Azure](docs/clouds/azure.md) · [AWS](docs/clouds/aws.md) · [Google Cloud](docs/clouds/gcp.md) | Step-by-step setup and use, with annotated screenshots |
 | [Backup & restore](docs/BACKUP-RESTORE.md) | Take, verify and restore a backup |
-| [Encryption key rotation](docs/ENCRYPTION-KEY-ROTATION.md) | Rotate the key that protects stored cloud credentials, and what to do if it leaks |
-| [Recovery Evidence](docs/RECOVERY-EVIDENCE.md) | The hash-chained ledger and how an auditor verifies an export offline |
-| [Adding a messaging provider](docs/extending/adding-a-provider.md) · [Adding an agent](docs/extending/adding-an-agent.md) | For engineers extending ServiceHub |
+| [Encryption key rotation](docs/ENCRYPTION-KEY-ROTATION.md) | Rotate the key that protects stored credentials, and what to do if it leaks |
+| [Recovery Evidence](docs/RECOVERY-EVIDENCE.md) | The hash-chained ledger and how an auditor verifies an export |
+| [Adding a provider](docs/extending/adding-a-provider.md) · [Adding an agent](docs/extending/adding-an-agent.md) | For engineers extending ServiceHub |
+| [MCP server](tools/mcp/README.md) | A read-only way for an AI assistant to ask ServiceHub about dead letters |
 | [Tests](tests/README.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Changelog](CHANGELOG.md) | |
 
 ## Contributing

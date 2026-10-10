@@ -1,4 +1,4 @@
-# ServiceHub 4.1.0, locally.
+# ServiceHub 4.2.0, locally.
 #
 #   export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"   # once; keep it — see docs/ENCRYPTION-KEY-ROTATION.md
 #   docker compose up --build        → http://localhost:8080
