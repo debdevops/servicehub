@@ -65,6 +65,13 @@ The last planned release of ServiceHub. Development stops after 4.2.0.
 
 ### Fixed
 
+- **Auto Replay rules could be deleted, switched or changed by a bare request.** Every other action that changes something asks the caller to say it
+  meant it (the `X-ServiceHub-Intent` header), but making, switching on or off, changing, deleting and generating rules did not — found in the final
+  live pass, when a stray `DELETE /api/v1/rules/1` removed a rule with no confirmation. Those five actions now answer `428 intent_required` and name the
+  header (`create-rule`, `switch-rule`, `update-rule`, `delete-rule`, `generate-rules`); the app sends them, so nothing changes on screen. Anything
+  that called these routes directly must add the header.
+- **A flaky test, not a product fault.** `A_question_beyond_the_lists_cap_can_still_be_answered` counted a stopped agent as an approval on a loaded
+  machine; it now counts approvals only.
 - **A stuck agent no longer stays stuck.** A cycle that never came back (a network connection that died while the machine slept) froze its agent
   until the next restart — the Dead-letter Monitor and Recovery Verification both stopped for good in a live run. A cycle is now abandoned after
   10 minutes, recorded as a failure, and the agent runs again.

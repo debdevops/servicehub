@@ -115,6 +115,11 @@ describe('changes carry the intent header the API demands', () => {
     ['purge', () => replay.purgeMessage(5, 'dup'), 'POST', '/dead-letters/5/purge'],
     ['switch on fix confirmation', () => namespaces.configureDlqObserver('n1', { enabled: true }), 'PUT', '/namespaces/n1/dlq-observer'],
     ['check fix confirmation', () => namespaces.checkDlqObserver('n1'), 'POST', '/namespaces/n1/dlq-observer/check'],
+    ['make rule', () => rules.createRule({ provider: 'azure', name: 'r' } as never), 'POST', '/rules'],
+    ['switch rule', () => rules.setRuleEnabled(3, false), 'POST', '/rules/3/enabled'],
+    ['change rule', () => rules.updateRule(3, { name: 'n', maxPerHour: 5, waitSeconds: 60, backOff: true }), 'PUT', '/rules/3'],
+    ['delete rule', () => rules.deleteRule(3), 'DELETE', '/rules/3'],
+    ['make rules', () => rules.generateRules('gcp'), 'POST', '/rules/generate'],
   ]
   it.each(changes)('%s → %s with an intent', async (_name, call, method, url) => {
     await call()

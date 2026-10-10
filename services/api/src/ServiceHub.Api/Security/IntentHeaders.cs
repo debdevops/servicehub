@@ -73,6 +73,21 @@ public static class IntentHeaders
     /// <summary>Intent for staging a backup to be restored at the next start.</summary>
     public const string RestoreBackup = "restore-backup";
 
+    /// <summary>Intent for making an Auto Replay rule — it starts on, so it hands a machine the right to replay.</summary>
+    public const string CreateRule = "create-rule";
+
+    /// <summary>Intent for making Auto Replay rules for the most common failures, each starting on.</summary>
+    public const string GenerateRules = "generate-rules";
+
+    /// <summary>Intent for switching an Auto Replay rule on or off.</summary>
+    public const string SwitchRule = "switch-rule";
+
+    /// <summary>Intent for changing an Auto Replay rule's name and pace.</summary>
+    public const string UpdateRule = "update-rule";
+
+    /// <summary>Intent for deleting an Auto Replay rule.</summary>
+    public const string DeleteRule = "delete-rule";
+
     /// <summary>Whether the request declared exactly <paramref name="expected"/>.</summary>
     public static bool Declares(HttpRequest request, string expected)
     {

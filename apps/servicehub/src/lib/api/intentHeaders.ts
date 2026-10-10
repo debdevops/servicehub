@@ -31,6 +31,11 @@ export const Intent = {
   GrantRole: 'grant-role',
   RevokeRole: 'revoke-role',
   ConfigureDlqObserver: 'configure-dlq-observer',
+  CreateRule: 'create-rule',
+  GenerateRules: 'generate-rules',
+  SwitchRule: 'switch-rule',
+  UpdateRule: 'update-rule',
+  DeleteRule: 'delete-rule',
 } as const
 
 export type IntentValue = (typeof Intent)[keyof typeof Intent]
