@@ -118,6 +118,20 @@ public sealed class PubSubObserverSubscriptionCheckTests
     }
 
     [Fact]
+    public async Task A_backlog_larger_than_one_drain_is_never_answered_as_not_returned()
+    {
+        var ns = Ns();
+        var entry = Entry(LongAgo);
+        var fake = new Fake(entry);
+        for (var i = 0; i < PubSubObserverSubscriptionCheck.MaxPerDrain + 500; i++) fake.Arrives($"a{i}");
+
+        var verdict = await fake.Check().CheckAsync(ns, Attestation(ns), entry, liveSince: Now.AddDays(-1));
+
+        verdict.Should().NotBe(DeadLetterReturnVerdict.NotReturned, "the replay may be in the part that was not read yet");
+        verdict.Should().NotBe(DeadLetterReturnVerdict.Returned);
+    }
+
+    [Fact]
     public async Task A_dead_letter_carrying_the_replays_marker_is_recorded_as_came_back_before_it_is_acknowledged()
     {
         var ns = Ns();

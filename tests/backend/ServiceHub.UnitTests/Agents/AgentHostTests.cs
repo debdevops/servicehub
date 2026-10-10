@@ -88,17 +88,21 @@ public sealed class AgentHostTests
     {
         public AgentDescriptor Descriptor { get; } = descriptor;
         public int Cycles;
+        public readonly TaskCompletionSource<AgentCycleResult> Release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private bool _first = true;
 
-        // Never returns and ignores its token — a connection that died while the machine slept.
+        // The first cycle ignores its token and does not return until released — a connection that died while the machine slept.
         public Task<AgentCycleResult> ExecuteCycleAsync(CancellationToken ct)
         {
             Interlocked.Increment(ref Cycles);
-            return new TaskCompletionSource<AgentCycleResult>().Task;
+            if (!_first) return Task.FromResult(new AgentCycleResult(0, 0, "ok"));
+            _first = false;
+            return Release.Task;
         }
     }
 
     [Fact]
-    public async Task A_cycle_that_never_returns_is_given_up_on_and_the_agent_runs_again()
+    public async Task A_cycle_given_up_on_is_never_overlapped_by_the_next_one()
     {
         var hanging = new HangingAgent(Descriptor("hangs"));
         var registry = new AgentRegistry([hanging]);
@@ -107,15 +111,32 @@ public sealed class AgentHostTests
 
         await host.StartAsync(CancellationToken.None);
         await WaitUntilAsync(() => hanging.Cycles >= 1);
-        time.Advance(TimeSpan.FromMinutes(11)); // past the cycle timeout
-        await WaitUntilAsync(() => registry.StateOf("hangs")!.LastFailure is not null);
+        // Past the cycle timeout. Repeated, because on a busy machine the timer may not be armed yet when the first advance lands.
+        for (var i = 0; i < 100 && registry.StateOf("hangs")!.LastFailure is null; i++)
+        {
+            time.Advance(TimeSpan.FromMinutes(11));
+            await Task.Delay(10);
+        }
         registry.StateOf("hangs")!.LastFailure.Should().Contain("given up on");
 
-        time.Advance(TimeSpan.FromMinutes(2)); // past the cadence: the next cycle starts
-        await WaitUntilAsync(() => hanging.Cycles >= 2);
+        // Past the cadence: the next cycle would start, but the old one still runs.
+        for (var i = 0; i < 100 && registry.StateOf("hangs")!.LastFailure!.Contains("given up on", StringComparison.Ordinal); i++)
+        {
+            time.Advance(TimeSpan.FromMinutes(2));
+            await Task.Delay(10);
+        }
+        registry.StateOf("hangs")!.LastFailure.Should().Contain("still running");
+        hanging.Cycles.Should().Be(1, "a second cycle must not start beside one that is still doing work");
+
+        hanging.Release.SetResult(new AgentCycleResult(0, 0, "late")); // the old work finally ends
+        for (var i = 0; i < 100 && hanging.Cycles < 2; i++)
+        {
+            time.Advance(TimeSpan.FromMinutes(2));
+            await Task.Delay(10);
+        }
         await host.StopAsync(CancellationToken.None);
 
-        hanging.Cycles.Should().BeGreaterThanOrEqualTo(2, "a hung cycle must not freeze the agent for good");
+        hanging.Cycles.Should().BeGreaterThanOrEqualTo(2, "once the abandoned cycle is over, the agent runs again");
     }
 
     [Fact]

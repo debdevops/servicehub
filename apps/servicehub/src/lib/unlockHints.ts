@@ -20,7 +20,7 @@ export const GATE_REASON_CODES = [
   'RECURRENCE_CAP_AMBIGUOUS_COLLISION', 'RECURRENCE_CAP_EXCEEDED', 'RECURRENCE_CAP_EXCEEDED_HEURISTIC', 'RECURRENCE_CAP_QUERY_ERROR',
   'AUTONOMY_SIGNATURE_HASH_MISSING', 'AUTONOMY_GRANT_QUERY_ERROR', 'AUTONOMY_GRANT_INSUFFICIENT', 'PROVIDER_CANNOT_VERIFY_ABSENCE',
   'SIGNATURE_RECENT_RESULTS_MIXED', 'SIGNATURE_RECENT_RESULTS_QUERY_ERROR',
-  'RATE_LIMITED', 'FLEET_RATE_LIMITED', 'NOT_ACTIVE',
+  'RATE_LIMITED', 'FLEET_RATE_LIMITED', 'NOT_ACTIVE', 'REPLAY_OUTCOME_UNKNOWN',
 ] as const
 
 const couldNotRead = (what: string): UnlockHint => ({
@@ -53,6 +53,7 @@ export const unlockHints: Readonly<Record<(typeof GATE_REASON_CODES)[number], Un
   RATE_LIMITED: { why: 'Many replays just happened here, so ServiceHub is pacing itself.', takes: 'Wait a few minutes and try again — nothing is lost while it waits.' },
   FLEET_RATE_LIMITED: { why: 'Many replays just happened across every cloud, so ServiceHub is pacing itself.', takes: 'Wait a few minutes and try again — nothing is lost while it waits.' },
   NOT_ACTIVE: { why: 'ServiceHub has already seen this message leave the dead-letter queue.', takes: 'Nothing to do here. See what became of it under Replayed, or “No longer stuck”.', go: { label: 'Replayed', href: '/?tab=replayed' } },
+  REPLAY_OUTCOME_UNKNOWN: { why: 'An earlier replay of this message was never confirmed — whether it was sent is not known — so replaying again could send it twice.', takes: 'A person says what happened to that earlier attempt (it was sent, or it was not). Until then nothing replays it, approvers included.', go: { label: 'Outcome unknown', href: '/advanced/ledger?state=ExecutionUnknown' } },
 }
 
 export function hintFor(code: string | null | undefined): UnlockHint {

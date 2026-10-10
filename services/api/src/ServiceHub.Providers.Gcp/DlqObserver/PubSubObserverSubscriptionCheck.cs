@@ -148,8 +148,15 @@ public sealed class PubSubObserverSubscriptionCheck : IDeadLetterReturnCheck
             }
 
             var observer = await _clients.GetSubscriberClientAsync(ns, attestation.ObserverReference!, cancellationToken).ConfigureAwait(false);
-            var seen = await DrainAsync(ns, observer, attestation.ObserverReference!, cancellationToken).ConfigureAwait(false);
-            return seen.Contains(entry.RecoveryMarker) ? DeadLetterReturnVerdict.Returned : DeadLetterReturnVerdict.NotReturned;
+            var (seen, complete) = await DrainWithCompletenessAsync(ns, observer, attestation.ObserverReference!, cancellationToken).ConfigureAwait(false);
+            if (seen.Contains(entry.RecoveryMarker))
+            {
+                return DeadLetterReturnVerdict.Returned;
+            }
+
+            // The drain stopped at its cap with more waiting: this replay may be in the part not yet read. "Not seen" is
+            // not "did not come back" then, so it is never answered as fixed. The next look reads the rest.
+            return complete ? DeadLetterReturnVerdict.NotReturned : DeadLetterReturnVerdict.CannotTell("OBSERVER_BACKLOG_NOT_FULLY_READ");
         }
         catch (RpcException ex)
         {
@@ -163,6 +170,13 @@ public sealed class PubSubObserverSubscriptionCheck : IDeadLetterReturnCheck
     /// that replay coming back; only then is it acknowledged. Returns the markers recorded in this drain.
     /// </summary>
     internal async Task<IReadOnlySet<string>> DrainAsync(Namespace ns, SubscriberServiceApiClient subscriber, string observerId, CancellationToken ct)
+        => (await DrainWithCompletenessAsync(ns, subscriber, observerId, ct).ConfigureAwait(false)).Returned;
+
+    /// <summary>
+    /// <see cref="DrainAsync"/>, plus whether the subscription was read until it ran dry. False when the per-drain cap was
+    /// reached first, so what was not returned may simply not have been read yet.
+    /// </summary>
+    internal async Task<(IReadOnlySet<string> Returned, bool Complete)> DrainWithCompletenessAsync(Namespace ns, SubscriberServiceApiClient subscriber, string observerId, CancellationToken ct)
     {
         var name = NameOf(ns, observerId);
         var returned = new HashSet<string>(StringComparer.Ordinal);
@@ -204,7 +218,7 @@ public sealed class PubSubObserverSubscriptionCheck : IDeadLetterReturnCheck
             }
         }
 
-        return returned;
+        return (returned, empty >= EmptyPullsToStop);
     }
 
     /// <summary>Records that the replay stamped with <paramref name="marker"/> came back. True when the message may be acknowledged.</summary>

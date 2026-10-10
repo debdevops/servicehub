@@ -32,6 +32,8 @@ public sealed class AgentHost : BackgroundService
     private readonly IServiceScopeFactory? _scopes;
     private readonly Dictionary<string, (CancellationTokenSource Cts, Task Loop)> _running = new(StringComparer.Ordinal);
     private readonly HashSet<string> _decidedDormant = new(StringComparer.Ordinal);
+    /// <summary>Cycles given up on after a timeout that had not finished, by agent. A new cycle is skipped until its agent's entry completes.</summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, Task> _abandoned = new(StringComparer.Ordinal);
 
     /// <summary>How often the host re-checks which agents the connected clouds still give something to do.</summary>
     internal static readonly TimeSpan ReconcileEvery = TimeSpan.FromSeconds(30);
@@ -197,19 +199,38 @@ public sealed class AgentHost : BackgroundService
 
         var startedUtc = _time.GetUtcNow();
 
+        // A cycle given up on earlier may still be running (a non-cooperative call ignores its token). Never start another
+        // beside it: two acting cycles at once could repeat or reorder actions.
+        if (_abandoned.TryGetValue(descriptor.Id, out var earlier))
+        {
+            if (!earlier.IsCompleted)
+            {
+                var waiting = "An earlier cycle that was given up on is still running; this cycle was skipped so two never overlap.";
+                _logger.LogWarning("Agent {AgentId}: {Message}", descriptor.Id, waiting);
+                _registry.RecordFailure(descriptor.Id, waiting, startedUtc);
+                return;
+            }
+            _abandoned.TryRemove(descriptor.Id, out _);
+            // Observe its outcome so a late failure is not an unobserved task exception.
+            _ = earlier.Exception;
+        }
+
         try
         {
             using var cycleCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             AgentCycleResult result;
+            Task<AgentCycleResult>? cycle = null;
             try
             {
-                result = await agent.ExecuteCycleAsync(cycleCts.Token).WaitAsync(CycleTimeout, _time, ct).ConfigureAwait(false);
+                cycle = agent.ExecuteCycleAsync(cycleCts.Token);
+                result = await cycle.WaitAsync(CycleTimeout, _time, ct).ConfigureAwait(false);
             }
             catch (TimeoutException)
             {
+                if (cycle is not null) _abandoned[descriptor.Id] = cycle;
                 // Abandoned, not waited for: the call may never come back. Its token is cancelled in case it listens.
                 await cycleCts.CancelAsync().ConfigureAwait(false);
-                var message = $"A cycle took longer than {CycleTimeout.TotalMinutes:0} minutes and was given up on; the next one starts as usual.";
+                var message = $"A cycle took longer than {CycleTimeout.TotalMinutes:0} minutes and was given up on; the next one waits until it has finished.";
                 _logger.LogWarning("Agent {AgentId}: {Message}", descriptor.Id, message);
                 _registry.RecordFailure(descriptor.Id, message, startedUtc);
                 return;

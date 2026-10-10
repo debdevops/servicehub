@@ -14,6 +14,11 @@ locals {
 
 data "aws_caller_identity" "current" {}
 
+data "aws_vpc" "existing" {
+  count = local.create_vpc ? 0 : 1
+  id    = var.existing_network.vpc_id
+}
+
 data "aws_ssm_parameter" "al2023" {
   name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 }
@@ -72,6 +77,24 @@ resource "aws_security_group" "this" {
     to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Name lookups go to the VPC resolver (the network's .2 address, inside the VPC range). Without this the instance cannot
+  # resolve SSM, GHCR or the AWS endpoints, and first boot fails. Not open to the internet.
+  egress {
+    description = "DNS (UDP) to the VPC resolver"
+    from_port   = 53
+    to_port     = 53
+    protocol    = "udp"
+    cidr_blocks = [local.create_vpc ? aws_vpc.this[0].cidr_block : data.aws_vpc.existing[0].cidr_block]
+  }
+
+  egress {
+    description = "DNS (TCP) to the VPC resolver"
+    from_port   = 53
+    to_port     = 53
+    protocol    = "tcp"
+    cidr_blocks = [local.create_vpc ? aws_vpc.this[0].cidr_block : data.aws_vpc.existing[0].cidr_block]
   }
 }
 
