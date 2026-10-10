@@ -92,7 +92,7 @@ Go to **<http://localhost:8080>**. You will see the Welcome page.
 Your data is in the volume, so it carries over to a newer **4.2.x** image. Use the same key.
 
 ```bash
-docker pull ghcr.io/debdevops/servicehub:latest          # or an exact tag, e.g. :4.2.1
+docker pull ghcr.io/debdevops/servicehub:latest          # or an exact tag, e.g. :4.2.0
 docker stop servicehub && docker rm servicehub           # removes the container, NOT the volume
 # then run the Step 2 command again with the new tag, and the same SERVICEHUB_ENCRYPTION_KEY
 ```

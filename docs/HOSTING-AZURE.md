@@ -457,7 +457,7 @@ curl -X POST http://localhost:8080/api/v1/admin/backup -H "X-ServiceHub-Intent: 
 
 # 3. Pull and restart on the new image
 cd /opt/servicehub
-sudo sed -i 's#servicehub:[^ ]*#servicehub:4.2.1#' compose.yaml        # or keep :latest and just pull
+sudo sed -i 's#servicehub:[^ ]*#servicehub:4.2.0#' compose.yaml        # or keep :latest and just pull
 sudo docker compose pull
 sudo docker compose up -d
 

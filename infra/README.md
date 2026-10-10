@@ -86,7 +86,7 @@ Open a shell on the machine (Azure: `ssh servicehub@<address>`; AWS: `aws ssm st
 Google Cloud: `gcloud compute ssh <name> --tunnel-through-iap`) and run:
 
 ```bash
-echo 4.2.1 | sudo tee /etc/servicehub/version      # the release you want
+echo 4.2.0 | sudo tee /etc/servicehub/version      # the release you want
 sudo servicehub-setup
 ```
 
