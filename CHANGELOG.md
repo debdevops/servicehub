@@ -1,13 +1,5 @@
 # ServiceHub Changelog
 
-## [Unreleased]
-
-### Changed
-
-- **Leaving the demo is one click from the top-left.** In demo mode the **ServiceHub** logo and name now lead out to the real app (and end demo mode), and the
-  purple banner's *Leave the demo* button is now a link called **Exit demo mode**. A middle-click or Ctrl/⌘-click opens the real app in a new tab without ending the demo.
-- **README screenshots re-shot** from the current demo (all ten, 1366×768), so the banner shows **Exit demo mode** and every figure matches the app.
-
 ## [4.2.0] — 2026-10-11
 
 The last planned release of ServiceHub. Development stops after 4.2.0.
@@ -68,6 +60,9 @@ The last planned release of ServiceHub. Development stops after 4.2.0.
 
 ### Changed
 
+- **Leaving the demo is one click from the top-left.** In demo mode the **ServiceHub** logo and name now lead out to the real app (and end demo mode), and the
+  purple banner's *Leave the demo* button is now a link called **Exit demo mode**. A middle-click or Ctrl/⌘-click opens the real app in a new tab without ending the demo.
+- **README screenshots re-shot** from the current demo (all ten, 1366×768), so the banner shows **Exit demo mode** and every figure matches the app.
 - **One migration (`0015_A_DlqObserverLiveSince`, owner-signed 2026-10-09):** a nullable `LiveSince` column on the dead-letter view's set-up, so a
   restart no longer makes earlier replays on Google Cloud read *cannot tell*. A view that went stale or was lost still starts its clock again.
 
