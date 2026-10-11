@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'node:path'
 import fs from 'node:fs'
+import type { Plugin } from 'vite'
 
 // The repository's release pointer. One source for the version the UI shows (rule R5 applies to
 // the footer as much as to a stat tile).
@@ -12,8 +13,47 @@ const appVersion = fs.readFileSync(resolve(import.meta.dirname, '../../.version'
 // in production they are the same origin anyway (ADR-0014 D3).
 const apiProxyTarget = process.env.VITE_PROXY_TARGET ?? 'http://localhost:5153'
 
+// The public demo page (`VITE_DEMO_ONLY=true`) is a client-rendered app, so a crawler or link-preview bot that does not run
+// JavaScript sees an empty page. For that build only, give <head> a real title, description, Open Graph / Twitter tags and a
+// canonical URL, and put a short plain-text description inside <noscript>. The real app's index.html is not touched.
+const DEMO_URL = process.env.VITE_DEMO_URL ?? 'https://debdevops.github.io/servicehub/'
+const DEMO_TITLE = 'ServiceHub demo — dead-letter recovery for Azure, AWS and GCP'
+const DEMO_DESCRIPTION =
+  'Try ServiceHub in your browser, no install and no cloud account. Browse made-up dead-letter queues from Azure Service Bus, AWS SQS/SNS and ' +
+  'Google Pub/Sub, see why each message failed, preview a replay, and watch whether the fix held. Nothing leaves your browser.'
+const demoPageMeta = (): Plugin => ({
+  name: 'servicehub-demo-page-meta',
+  transformIndexHtml: {
+    order: 'pre',
+    handler(html) {
+      if (process.env.VITE_DEMO_ONLY !== 'true') return html
+      const image = `${DEMO_URL}og-image.png`
+      const head = [
+        `<link rel="canonical" href="${DEMO_URL}" />`,
+        `<meta property="og:type" content="website" />`,
+        `<meta property="og:site_name" content="ServiceHub" />`,
+        `<meta property="og:title" content="${DEMO_TITLE}" />`,
+        `<meta property="og:description" content="${DEMO_DESCRIPTION}" />`,
+        `<meta property="og:url" content="${DEMO_URL}" />`,
+        `<meta property="og:image" content="${image}" />`,
+        `<meta name="twitter:card" content="summary_large_image" />`,
+        `<meta name="twitter:title" content="${DEMO_TITLE}" />`,
+        `<meta name="twitter:description" content="${DEMO_DESCRIPTION}" />`,
+        `<meta name="twitter:image" content="${image}" />`,
+      ].join('\n    ')
+      const noscript =
+        '<noscript><h1>ServiceHub demo</h1><p>' + DEMO_DESCRIPTION + '</p>' +
+        '<p>This page needs JavaScript. Source, docs and the release: <a href="https://github.com/debdevops/servicehub">github.com/debdevops/servicehub</a>.</p></noscript>'
+      return html
+        .replace(/<meta name="description"[^>]*>/, `<meta name="description" content="${DEMO_DESCRIPTION}" />`)
+        .replace('<title>ServiceHub</title>', `<title>${DEMO_TITLE}</title>\n    ${head}`)
+        .replace('<div id="root"></div>', `<div id="root"></div>\n    ${noscript}`)
+    },
+  },
+})
+
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), demoPageMeta()],
 
   // Served at the origin root. No prefix, no basename, no cutover (ADR-0014 D3).
   // The one exception is the public demo page (`npm run build:demo`), which GitHub Pages serves under a path.

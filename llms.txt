@@ -11,6 +11,7 @@ by default. This is ServiceHub 4.2.0, built on the 4.1.0 from-scratch rewrite wi
 
 ## Docs
 
+- [Live demo](https://debdevops.github.io/servicehub/): The built-in demo in your browser, nothing to install; made-up data, no server, nothing is sent anywhere
 - [README](https://github.com/debdevops/servicehub/blob/main/README.md): What it is, quick start, safety model, deploying it
 - [Run with Docker](https://github.com/debdevops/servicehub/blob/main/docs/DOCKER.md): Pull the public image ghcr.io/debdevops/servicehub:4.2.0 (amd64, arm64), run, update, back up, troubleshoot
 - [Local setup](https://github.com/debdevops/servicehub/blob/main/docs/LOCAL-SETUP.md): Install, run, check and troubleshoot ServiceHub on your own machine
