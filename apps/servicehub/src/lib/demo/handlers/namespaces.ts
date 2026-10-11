@@ -21,7 +21,7 @@ export const namespaces: readonly Route[] = [
   ['post', /^\/namespaces\/([^/]+)\/dlq-observer\/check$/, () => refuse(409, 'demo_cannot_set_up', 'This is a demo — nothing is connected to a real cloud, so there is nothing to check.')],
   ['get', /^\/namespaces$/, (_m, { w }) => w.namespaces],
   ['get', /^\/namespaces\/([^/]+)$/, (m, { w }) => w.namespaces.find((n) => n.id === m[1]) ?? notFound('namespace')],
-  ['post', /^\/namespaces$/, () => refuse(409, 'demo_cannot_connect', 'This is a demo — it cannot connect to a real cloud. Leave the demo to connect your own.')],
+  ['post', /^\/namespaces$/, () => refuse(409, 'demo_cannot_connect', 'This is a demo — it cannot connect to a real cloud. Choose Exit demo mode to connect your own.')],
   ['delete', /^\/namespaces\/([^/]+)$/, () => refuse(409, 'demo_keeps_its_clouds', 'The demo keeps its three clouds connected. Use “Reset demo” to start over.')],
   ['post', /^\/namespaces\/([^/]+)\/test-connection$/, (_m, { now }) => ({ isConnected: true, message: 'Demo — the connection was not really tested.', testedAt: new Date(now).toISOString() })],
   ['get', /^\/namespaces\/([^/]+)\/stats$/, (m, { w, now }): NamespaceStats => {
