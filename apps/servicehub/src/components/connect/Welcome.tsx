@@ -31,7 +31,7 @@ export function Welcome() {
           <b>No cloud account yet?</b> Look around first with made-up data. Nothing is connected and nothing is sent anywhere.
         </p>
         <a
-          href="/demo/azure"
+          href={`${import.meta.env.BASE_URL}demo`}
           className="rounded-lg bg-[#5b21b6] px-4 py-2 text-sm font-medium text-white hover:bg-[#4c1d95]"
         >
           Try it with sample data

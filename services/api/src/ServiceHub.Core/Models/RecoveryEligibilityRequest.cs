@@ -33,6 +33,8 @@ namespace ServiceHub.Core.Models;
 /// provider's own <see cref="ProviderCapabilities.CanProveDlqAbsence"/> corroborates the grant,
 /// so the gate never has to trust <c>AutonomyGrant.CurrentLevel</c> alone. <see langword="null"/>
 /// is treated the same as an unresolvable provider — fails closed.</param>
+/// <param name="DlqMessageId">The dead-letter row being recovered, for the unresolved-attempt predicate. <see langword="null"/> skips it.</param>
+/// <param name="SourceMessageId">The cloud's own id of the message, the second way the unresolved-attempt predicate recognises it.</param>
 public sealed record RecoveryEligibilityRequest(
     string OwnerId,
     RecoveryOperationKind ActionKind,
@@ -45,4 +47,6 @@ public sealed record RecoveryEligibilityRequest(
     EnvironmentType? Environment,
     bool RateLimitExceeded = false,
     CloudProviderType? Provider = null,
-    bool FleetRateLimitExceeded = false);
+    bool FleetRateLimitExceeded = false,
+    long? DlqMessageId = null,
+    string? SourceMessageId = null);

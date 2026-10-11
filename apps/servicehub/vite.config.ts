@@ -16,7 +16,8 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
 
   // Served at the origin root. No prefix, no basename, no cutover (ADR-0014 D3).
-  base: '/',
+  // The one exception is the public demo page (`npm run build:demo`), which GitHub Pages serves under a path.
+  base: process.env.VITE_BASE ?? '/',
 
   define: {
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion),

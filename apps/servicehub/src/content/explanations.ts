@@ -45,7 +45,7 @@ export const explanations = {
       {
         term: 'Why it failed',
         meaning:
-          'ServiceHub reads the error the cloud recorded and sorts it into a category — Validation, Timeout, Lock lost… A category is a best guess, badged when it comes from the AI.',
+          'ServiceHub reads the error the cloud recorded and sorts it into a category — Validation, Timeout, Lock lost… A category is a best guess, marked Suggestion: it is ServiceHub’s reading, not something the cloud reported.',
       },
       {
         term: 'Replay',

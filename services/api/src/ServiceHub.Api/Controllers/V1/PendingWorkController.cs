@@ -142,11 +142,11 @@ public sealed class PendingWorkController : ApiControllerBase
     }
 
     // Only an item the caller can currently see is answerable — the same scoping as the list, allow-list included.
-    private async Task<PendingWorkItem?> WaitingAsync(Guid entryId, CancellationToken cancellationToken) =>
+    private async Task<PendingWorkItem?> WaitingAsync(Guid entryId, CancellationToken cancellationToken, string kind = "approval") =>
         // Asked for by id, not found by scanning the list: the list is capped at 500, and an answer must never depend on where
         // in a long queue the question sits (live 2026-09-29: with 603 waiting, approving one beyond the 500th was a 404).
         (await _pending.ListAsync(new PendingWorkScope(OwnerId, AllowedNamespaceIds, EntryId: entryId), 1, cancellationToken)).Items
-            .FirstOrDefault(i => i.EntryId == entryId);
+            .FirstOrDefault(i => i.EntryId == entryId && i.Kind == kind);
 
     // Every open screen should look again: the bell and the strip drop the answered item.
     private async Task AnnounceAsync(Namespace ns, CancellationToken cancellationToken)
@@ -159,6 +159,51 @@ public sealed class PendingWorkController : ApiControllerBase
                 Actor = OwnerId, NamespaceId = ns.Id, CloudProvider = ns.Provider.ToString().ToLowerInvariant(),
             }, cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// Settles an attempt whose answer was lost: ServiceHub stopped, or lost contact with the cloud, before it could record whether
+    /// the message was put back. The person looks at the queue and says what they found; ServiceHub records it with their name and
+    /// does <b>not</b> invent a success or a failure — the entry is closed as written off, with the reason as written. That lifts
+    /// the block on the message, so a later attempt (if one is wanted) is a fresh, gated, approved one. Intent <c>resolve-unknown-outcome</c>.
+    /// </summary>
+    [HttpPost("{entryId:guid}/resolve")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
+    public async Task<IActionResult> Resolve(Guid entryId, [FromBody] DeclineRequest? body, CancellationToken cancellationToken)
+    {
+        if (!IntentHeaders.Declares(Request, IntentHeaders.ResolveUnknownOutcome))
+        {
+            return Problem(StatusCodes.Status428PreconditionRequired, ErrorCodes.IntentRequired, IntentHeaders.MissingDetail("resolve this", IntentHeaders.ResolveUnknownOutcome));
+        }
+
+        var reason = body?.Reason?.Trim();
+        if (string.IsNullOrEmpty(reason) || reason.Length > MaxReason)
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, $"Say what you found in the queue, in up to {MaxReason} characters — it is recorded with your name.");
+        }
+
+        var item = await WaitingAsync(entryId, cancellationToken, "unresolved");
+        if (item is null)
+        {
+            return Problem(StatusCodes.Status404NotFound, ErrorCodes.NotFound, "Nothing unresolved is waiting under that id — it may already be settled.");
+        }
+
+        if (await DeniedUnlessAsync(GovernanceRole.Approver, item.NamespaceId, PillarKind.Recover, "settle an attempt whose answer was lost", cancellationToken) is { } denied) return denied;
+        var closed = await _ledger.CloseAsync(entryId, OwnerId, Actor, $"Outcome was unknown; a person checked: {reason}", cancellationToken);
+        if (closed.IsFailure)
+        {
+            return Problem(closed.Error);
+        }
+
+        if (item.NamespaceId is { } nsId && (await GetVisibleNamespaceAsync(_namespaces, nsId, cancellationToken)) is { IsSuccess: true } ns)
+        {
+            await AnnounceAsync(ns.Value, cancellationToken);
+        }
+
+        return NoContent();
     }
 
     /// <summary>The body of a decline.</summary>

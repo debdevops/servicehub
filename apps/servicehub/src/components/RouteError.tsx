@@ -19,7 +19,7 @@ export function RouteError() {
         <button type="button" onClick={() => window.location.reload()} className="rounded-lg border border-[var(--color-border)] px-4 py-2 hover:bg-[var(--color-surface-muted)]">
           Reload
         </button>
-        <a href="/" className="rounded-lg bg-[var(--color-primary-600)] px-4 py-2 text-white hover:bg-[var(--color-primary-700)]">
+        <a href={import.meta.env.BASE_URL} className="rounded-lg bg-[var(--color-primary-600)] px-4 py-2 text-white hover:bg-[var(--color-primary-700)]">
           Go to Home
         </a>
       </p>

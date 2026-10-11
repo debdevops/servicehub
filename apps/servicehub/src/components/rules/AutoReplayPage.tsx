@@ -29,7 +29,7 @@ function holdWords(code: string | null, manual = false): string {
   if (code.startsWith('AUTONOMY')) return manual ? 'This cloud can’t confirm a replay fixed it, so each replay is your decision.' : "ServiceHub hasn't earned the right to replay this failure on its own yet, so it asks first."
   if (code === 'PRODUCTION_ELEVATION_REQUIRED') return "Rules never run in Production namespaces."
   if (code === 'EMERGENCY_STOP_ACTIVE') return "Emergency stop is on."
-  if (code.startsWith('RECURRENCE_CAP')) return "They have already been replayed and came back too often."
+  if (code.startsWith('RECURRENCE_CAP')) return "ServiceHub has already tried these several times, replayed or held for a person, so it won’t try again on its own."
   return `A safety check is holding them (${code}).`
 }
 
@@ -253,6 +253,7 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
     onSuccess: () => { setConfirmOn(false); void client.invalidateQueries({ queryKey: rulesKey(provider) }) },
   })
   const tripped = r.disabledReason === 'CircuitBreaker'
+  const split = r.disabledReason === 'SignatureSplit'
   const now = new Date()
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -281,14 +282,14 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
   const test = useMutation({ mutationFn: () => testRule({ provider, reason: r.reason ?? undefined, entityName: r.entityName ?? undefined, signatureHash: r.signatureHash ?? undefined }) })
 
   return (
-    <li className={`rounded-xl border p-4 ${tripped ? 'border-[#fecaca] bg-[#fef2f2]' : 'border-[var(--color-border)] bg-[var(--color-surface)]'}`}>
+    <li className={`rounded-xl border p-4 ${tripped ? 'border-[#fecaca] bg-[#fff5f5]' : 'border-[var(--color-border)] bg-[var(--color-surface)]'}`}>
       <div className="flex items-start gap-3">
         <button
           type="button"
           role="switch"
           aria-checked={r.enabled}
           aria-label={`${r.name} is ${r.enabled ? 'on' : 'off'}`}
-          disabled={toggle.isPending || tripped || !mayToggle.allowed}
+          disabled={toggle.isPending || tripped || split || !mayToggle.allowed}
           title={mayToggle.reason ?? undefined}
           onClick={() => toggle.mutate(!r.enabled)}
           className={`mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-60 ${r.enabled ? 'bg-[var(--color-success)]' : 'bg-[#d1d5db]'}`}
@@ -338,6 +339,11 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
         </div>
       )}
       {r.disabledReason === 'Person' && <p className="mt-2 text-[12px] text-[var(--color-text-muted)]">Turned off by a person.</p>}
+      {r.disabledReason === 'SignatureSplit' && (
+        <p className="mt-2 text-[12px] text-[var(--color-text-muted)]">
+          {r.disabledDetail ?? 'ServiceHub now groups failures by their error message, so the group this rule was made for no longer exists and it was switched off.'}
+        </p>
+      )}
 
       <div className="mt-3 space-y-3 border-t border-[var(--color-border)] pt-3">
         <div className="flex flex-wrap items-center gap-2">

@@ -1,5 +1,5 @@
 import axios, { AxiosError } from 'axios'
-import { demoAdapter } from '../demo/adapter'
+import type { AxiosAdapter } from 'axios'
 import { isDemo } from '../demo/state'
 
 /**
@@ -36,10 +36,13 @@ export function sessionId(): string {
 }
 sessionId.fallback = undefined as string | undefined
 
+// The demo's whole made-up world loads only when demo mode is on — the real app never downloads it.
+const lazyDemoAdapter: AxiosAdapter = async (config) => (await import('../demo/adapter')).demoAdapter(config)
+
 api.interceptors.request.use((config) => {
   config.headers.set('X-ServiceHub-Session', sessionId())
   // Demo mode (unit 6.5): the same client, answering from made-up data — nothing leaves the browser.
-  if (isDemo()) config.adapter = demoAdapter
+  if (isDemo()) config.adapter = lazyDemoAdapter
   return config
 })
 

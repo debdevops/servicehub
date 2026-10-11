@@ -127,7 +127,7 @@ SECTIONS = [
    "Help is a panel over whatever you are doing. Search (⌘K) jumps anywhere. The bell is the only place the Agent asks you something.",
    [("app", "16-help"), ("app", "16b-help-end"), ("app", "18-search"), ("app", "18-bell")]),
   ("7.3 The Advanced pages (read-only)",
-   "Advanced never changes anything. **Overview** summarises recovery, authority and agents, and says why AWS cannot verify; the **Recovery Ledger** is the tamper-evident record of every action; **Failure Signatures** groups failures and shows what each has earned; **Agents** lists what is acting and what is only watching.",
+   "Advanced never changes anything. **Overview** summarises recovery, authority and agents, and says why AWS cannot verify; the **Recovery Ledger** is the tamper-evident record of every action; **Failure Signatures** groups failures — by cloud, queue, reason and, where the cloud records one, the shape of the error message — and shows what each has earned (if some of a group’s latest replays did not hold, ServiceHub stops replaying it on its own until newer ones do); **Agents** lists what is acting and what is only watching.",
    [("app", "17-advanced-overview"), ("app", "17-advanced-ledger"), ("app", "17-advanced-signatures"), ("app", "17c-advanced-signatures-end"), ("app", "17-advanced-agents"), ("app", "17b-advanced-agents-more")]),
  ]),
 ]

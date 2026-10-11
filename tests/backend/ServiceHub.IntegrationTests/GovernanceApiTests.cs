@@ -143,22 +143,22 @@ public sealed class GovernanceApiTests
         await Grant("viewer", "Viewer", "lead-key-value");
         await Grant("operator", "Operator", "lead-key-value");
 
-        var made = await host.Client.SendAsync(Req(HttpMethod.Post, "/api/v1/rules", "lead-key-value", null, new { provider = "azure", name = "Timeouts", reason = "Timeout" }));
+        var made = await host.Client.SendAsync(Req(HttpMethod.Post, "/api/v1/rules", "lead-key-value", "create-rule", new { provider = "azure", name = "Timeouts", reason = "Timeout" }));
         made.StatusCode.Should().Be(HttpStatusCode.Created,await made.Content.ReadAsStringAsync());
         var ruleId = (await Json(made)).GetProperty("id").GetInt64();
         var edit = new { name = "Renamed", maxPerHour = 500, waitSeconds = 0, backOff = false };
 
         foreach (var who in new[] { "viewer-key-value", "operator-key-value" })
         {
-            (await host.Client.SendAsync(Req(HttpMethod.Put, $"/api/v1/rules/{ruleId}", who, null, edit))).StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{who} may not raise a rule's pace");
-            (await host.Client.SendAsync(Req(HttpMethod.Post, "/api/v1/rules/generate", who, null, new { provider = "azure" }))).StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{who} may not make rules");
+            (await host.Client.SendAsync(Req(HttpMethod.Put, $"/api/v1/rules/{ruleId}", who, "update-rule", edit))).StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{who} may not raise a rule's pace");
+            (await host.Client.SendAsync(Req(HttpMethod.Post, "/api/v1/rules/generate", who, "generate-rules", new { provider = "azure" }))).StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{who} may not make rules");
         }
 
-        (await host.Client.SendAsync(Req(HttpMethod.Delete, $"/api/v1/rules/{ruleId}", "viewer-key-value"))).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await host.Client.SendAsync(Req(HttpMethod.Delete, $"/api/v1/rules/{ruleId}", "viewer-key-value", "delete-rule"))).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var untouched = await Json(await host.Client.SendAsync(Req(HttpMethod.Get, "/api/v1/rules?provider=azure", "lead-key-value")));
         untouched.EnumerateArray().Single().GetProperty("name").GetString().Should().Be("Timeouts", "refused edits change nothing");
 
-        (await host.Client.SendAsync(Req(HttpMethod.Put, $"/api/v1/rules/{ruleId}", "lead-key-value", null, edit))).StatusCode.Should().Be(HttpStatusCode.OK);
-        (await host.Client.SendAsync(Req(HttpMethod.Delete, $"/api/v1/rules/{ruleId}", "operator-key-value"))).StatusCode.Should().Be(HttpStatusCode.NoContent, "deleting only takes authority away");
+        (await host.Client.SendAsync(Req(HttpMethod.Put, $"/api/v1/rules/{ruleId}", "lead-key-value", "update-rule", edit))).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await host.Client.SendAsync(Req(HttpMethod.Delete, $"/api/v1/rules/{ruleId}", "operator-key-value", "delete-rule"))).StatusCode.Should().Be(HttpStatusCode.NoContent, "deleting only takes authority away");
     }
 }

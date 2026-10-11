@@ -56,6 +56,11 @@ public sealed class DlqObserverAttestation
     /// least once.</summary>
     public DateTimeOffset? LastConfirmedAt { get; set; }
 
+    /// <summary>Since when the whole view of the dead-letter queue has been continuously confirmed (ADR-0018, migration 0015). Kept so a
+    /// restart does not make earlier replays read "cannot tell". Cleared whenever the view is lost or goes stale; never set by anything but
+    /// the Fix Confirmer agent.</summary>
+    public DateTimeOffset? LiveSince { get; set; }
+
     /// <summary>How old <see cref="LastConfirmedAt"/> may be before liveness is judged false.
     /// Never "assume fine" past this bound — see this entity's own remarks.</summary>
     public required int StalenessBoundMinutes { get; set; }

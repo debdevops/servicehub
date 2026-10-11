@@ -8,7 +8,7 @@
 
 | | |
 |---|---|
-| **Image** | `ghcr.io/debdevops/servicehub:4.1.0` (public, no sign-in to pull) |
+| **Image** | `ghcr.io/debdevops/servicehub:latest` (public, no sign-in to pull) |
 | **Platforms** | `linux/amd64` and `linux/arm64` (Intel/AMD machines and Apple silicon; Docker picks the right one) |
 | **Opens at** | <http://localhost:8080> |
 | **Data** | The `servicehub-data` Docker volume, mounted at `/data` |
@@ -43,10 +43,10 @@ echo "$SERVICEHUB_ENCRYPTION_KEY"        # copy it into your password manager no
 docker run -d --name servicehub --restart unless-stopped \
   -p 127.0.0.1:8080:8080 -v servicehub-data:/data \
   -e SECURITY__ENCRYPTIONKEY="$SERVICEHUB_ENCRYPTION_KEY" \
-  ghcr.io/debdevops/servicehub:4.1.0
+  ghcr.io/debdevops/servicehub:latest
 ```
 
-`docker run` downloads the image the first time (about 230 MB on disk). To download it without starting it, run `docker pull ghcr.io/debdevops/servicehub:4.1.0`.
+`docker run` downloads the image the first time (about 230 MB on disk). To download it without starting it, run `docker pull ghcr.io/debdevops/servicehub:latest`.
 
 What each part does:
 
@@ -89,20 +89,20 @@ Go to **<http://localhost:8080>**. You will see the Welcome page.
 
 ## Update to a newer version
 
-Your data is in the volume, so it carries over to a newer **4.1.x** image. Use the same key.
+Your data is in the volume, so it carries over to a newer **4.2.x** image. Use the same key.
 
 ```bash
-docker pull ghcr.io/debdevops/servicehub:4.1.1          # the new version number
+docker pull ghcr.io/debdevops/servicehub:latest          # or an exact tag, e.g. :4.2.0
 docker stop servicehub && docker rm servicehub           # removes the container, NOT the volume
 # then run the Step 2 command again with the new tag, and the same SERVICEHUB_ENCRYPTION_KEY
 ```
 
-> **Moving from 4.0.0 is different.** 4.1.0 is a from-scratch rewrite: it cannot open a 4.0.0 database and there is no upgrade path. Run 4.1.0 beside
+> **Moving from 4.0.0 is different.** 4.1.0 and later are a from-scratch rewrite: they cannot open a 4.0.0 database and there is no upgrade path. Run 4.2.0 beside
 > 4.0.0 with a different **container name**, port and volume, in case 4.0.0 already uses `servicehub` and 8080
 > (for example `--name servicehub-41 -p 127.0.0.1:8081:8080 -v servicehub-data-41:/data`; use `servicehub-41` in place of `servicehub` in the commands on this page).
 > Connect your clouds again and retire 4.0.0 when you are ready. See the [changelog](../CHANGELOG.md).
 
-Tags: `4.1.0` is one exact release, `4.1` follows the newest 4.1.x patch, and `latest` follows the newest release overall. Pin an exact version for
+Tags: `latest` is what the commands above use. `4.2.0` is one exact release, `4.2` follows the newest 4.2.x patch, and `latest` follows the newest release overall. Pin an exact version for
 anything you depend on.
 
 ## Back up your data
@@ -120,7 +120,7 @@ From a clone of the repository, Compose builds the image for you and reads the k
 ```bash
 docker stop servicehub && docker rm servicehub
 docker volume rm servicehub-data        # IRREVERSIBLE: deletes the database, the ledger and the saved cloud connections
-docker image rm ghcr.io/debdevops/servicehub:4.1.0
+docker image rm ghcr.io/debdevops/servicehub:latest
 ```
 
 ## Security
@@ -140,7 +140,7 @@ docker image rm ghcr.io/debdevops/servicehub:4.1.0
 | What you see | Why | What to do |
 |---|---|---|
 | `Cannot connect to the Docker daemon` | Docker is not running | Start Docker Desktop (or `sudo systemctl start docker`) |
-| `pull access denied` or `unauthorized` | The name or tag is misspelled, or an old sign-in is interfering | Check `ghcr.io/debdevops/servicehub:4.1.0`; run `docker logout ghcr.io` and pull again. The image is public |
+| `pull access denied` or `unauthorized` | The name or tag is misspelled, or an old sign-in is interfering | Check `ghcr.io/debdevops/servicehub:latest`; run `docker logout ghcr.io` and pull again. The image is public |
 | Container exits at once; `docker logs servicehub` says `Neither Security:EncryptionKeyRegistry nor Security:EncryptionKey is configured` | The key was empty when you ran the command | Run Step 1 again in the **same terminal**, then Step 2 |
 | `port is already allocated` or `address already in use` | Something else uses 8080 (or an old container) | `docker rm -f servicehub`, or choose another host port |
 | Page shows `400` and `This address is not one ServiceHub answers to` | You opened it by a name other than `localhost`, `127.0.0.1` or `[::1]` | Use <http://localhost:8080>, or set `AllowedHosts` as in [Security](#security) |

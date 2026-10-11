@@ -1,8 +1,8 @@
 {
   "name": "servicehub-workspace",
   "private": true,
-  "version": "4.1.0",
-  "description": "ServiceHub 4.1.0 — find and fix stuck messages in cloud message queues.",
+  "version": "4.2.0",
+  "description": "ServiceHub 4.2.0 — find and fix stuck messages in cloud message queues.",
   "workspaces": [
     "apps/*"
   ],

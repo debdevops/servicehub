@@ -17,7 +17,7 @@ public sealed class BackupApiTests : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
+        ServiceHubApiFactory.ClearPoolFor(_dir);
         if (Directory.Exists(_dir)) Directory.Delete(_dir, recursive: true);
     }
 
@@ -75,7 +75,7 @@ public sealed class BackupApiTests : IDisposable
             (await LedgerEvents(client)).Should().Be(3, "nothing is swapped under a running server");
         }
 
-        SqliteConnection.ClearAllPools();
+        ServiceHubApiFactory.ClearPoolFor(_dir);
         using var second = ServiceHubApiFactory.Reusing(_dir);
         var restarted = second.CreateClient();
         var chain = await Json(await restarted.GetAsync("/api/v1/recovery/chain"));

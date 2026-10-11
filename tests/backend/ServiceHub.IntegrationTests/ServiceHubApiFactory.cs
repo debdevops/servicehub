@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
+using ServiceHub.Infrastructure.Persistence;
 
 namespace ServiceHub.IntegrationTests;
 
@@ -37,13 +38,23 @@ public sealed class ServiceHubApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("ServiceHub:DataDirectory", DataDirectory);
     }
 
+    /// <summary>
+    /// Closes the pooled connections to ONE host's database. <c>SqliteConnection.ClearAllPools()</c> is process-wide, so
+    /// with test classes running in parallel it closed other hosts' handles mid-<c>Open()</c> (ObjectDisposedException: SQLitePCL.sqlite3).
+    /// </summary>
+    public static void ClearPoolFor(string dataDirectory)
+    {
+        using var connection = new SqliteConnection($"Data Source={Path.Combine(dataDirectory, ServiceHubDataDirectory.DatabaseFileName)}");
+        SqliteConnection.ClearPool(connection);
+    }
+
     protected override void Dispose(bool disposing)
     {
         base.Dispose(disposing);
 
         if (disposing && !_keepData && Directory.Exists(DataDirectory))
         {
-            SqliteConnection.ClearAllPools();
+            ClearPoolFor(DataDirectory);
             Directory.Delete(DataDirectory, recursive: true);
         }
     }

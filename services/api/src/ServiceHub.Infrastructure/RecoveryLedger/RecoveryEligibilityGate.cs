@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
@@ -31,6 +32,7 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
     public const int RecurrenceLineageCap = 3;
     private static readonly TimeSpan RecurrenceLookbackWindow = TimeSpan.FromDays(90);
 
+    private const string ReasonReplayOutcomeUnknown = EscalationReasons.ReplayOutcomeUnknown;
     private const string ReasonEmergencyStopActive = "EMERGENCY_STOP_ACTIVE";
     private const string ReasonEmergencyStopQueryError = "EMERGENCY_STOP_QUERY_ERROR";
     private const string ReasonPurgeAutomationProhibited = "PURGE_AUTOMATION_PROHIBITED";
@@ -119,6 +121,28 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
     private async Task<EligibilityDecision> EvaluateCoreAsync(
         RecoveryEligibilityRequest request, CancellationToken cancellationToken)
     {
+        // Predicate -1 — an earlier attempt on this very message has no answer (restart-recovery safety fix). The attempt may
+        // have reached the cloud, and a second send could duplicate the message, so no actor — a person, an approval or a rule —
+        // may start another until a person resolves the first. It is a Deny, not an Escalate: approving it would only repeat the
+        // attempt. An unreadable answer fails closed the same way. BeginEntryAsync enforces the same rule atomically.
+        if (request.DlqMessageId is not null || !string.IsNullOrEmpty(request.SourceMessageId))
+        {
+            try
+            {
+                if (await _recoveryLedger.HasUnresolvedAttemptAsync(
+                        request.OwnerId, request.DlqMessageId, request.NamespaceId, request.EntityNameSnapshot,
+                        request.SourceMessageId, cancellationToken))
+                {
+                    return new EligibilityDecision(EligibilityVerdict.Deny, ReasonReplayOutcomeUnknown);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unresolved-attempt query failed for owner {OwnerId}; failing closed", request.OwnerId);
+                return new EligibilityDecision(EligibilityVerdict.Deny, ReasonReplayOutcomeUnknown);
+            }
+        }
+
         // Predicate 0 — emergency stop (§9.4.2, §15.2): owner-scoped kill switch on new
         // Automation/System-originated execution only, ahead of every other predicate.
         // User/ApiKey requests are never subject to it — skip the read entirely for them, so

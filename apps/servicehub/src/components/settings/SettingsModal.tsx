@@ -14,10 +14,12 @@ import * as api from '../../lib/api/settings'
 import { formatAgo, formatWhen } from '../../lib/format'
 import { permission } from '../../lib/permissions'
 import { browserTimeZone, usePreferences, writePreferences } from '../../lib/preferences'
+import { isTraceTemplate } from '../../lib/trace'
 import { providerLabel } from '../../lib/providers'
 import { environmentMeta } from '../provider/scopeChoice'
 import { NotAllowed } from '../ui/NotAllowed'
 import { BackupSection } from './BackupSection'
+import { FixConfirmation } from './FixConfirmation'
 import { Skeleton } from '../ui/Skeleton'
 import { Select } from '../ui/Select'
 
@@ -118,6 +120,7 @@ function ConnectionRow({ ns, admin }: { ns: Namespace; admin: { allowed: boolean
         <button type="button" className={btn} disabled={!admin.allowed} aria-label={`Remove ${ns.displayName ?? ns.name}`} onClick={() => setConfirming(true)}><Trash2 className="h-4 w-4" aria-hidden="true" /></button>
       )}
       {remove.isError && <p role="alert" className="w-full text-xs text-[#b91c1c]">{toProblem(remove.error).message}</p>}
+      <FixConfirmation ns={ns} admin={admin} />
     </li>
   )
 }
@@ -247,6 +250,18 @@ function Preferences() {
             <button type="button" role="radio" aria-checked={prefs.openOn === 'last'} className={seg(prefs.openOn === 'last')} onClick={() => writePreferences({ openOn: 'last' })}>Last used</button>
           </div>
         </div>
+        <label className="block text-sm font-semibold md:col-span-2">Your tracing tool
+          <input
+            type="url" inputMode="url" spellCheck={false} value={prefs.traceLink} onChange={(e) => writePreferences({ traceLink: e.target.value.trim() })}
+            placeholder="https://tracing.example.com/trace/{traceId}" aria-describedby="trace-link-help"
+            className="mt-1 block w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 font-mono text-[13px] font-normal"
+          />
+          <span id="trace-link-help" className="mt-1 block text-xs font-normal text-[var(--color-text-muted)]">
+            {prefs.traceLink && !isTraceTemplate(prefs.traceLink)
+              ? 'That is not usable yet: it must start with https:// and contain {traceId} where the trace’s ID goes.'
+              : 'Optional. Where your tracing tool shows one trace, with {traceId} where the ID goes. A message that carries a trace ID then gets an “Open the trace” link.'}
+          </span>
+        </label>
       </div>
       <p className="mt-2 text-xs text-[var(--color-text-muted)]">Kept in this browser only.</p>
     </section>

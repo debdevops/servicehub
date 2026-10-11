@@ -33,6 +33,29 @@ public sealed class DlqObserverAttestationServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task LiveSince_is_stored_cleared_and_reset_when_the_setup_changes()
+    {
+        var ns = Guid.NewGuid();
+        var since = new DateTimeOffset(2026, 10, 9, 10, 0, 0, TimeSpan.Zero);
+        await _service.ConfigureAsync(OwnerId, ns, enabled: true, observerReference: "whole-queue-scan", dlqEntityName: "*", stalenessBoundMinutes: 30);
+
+        await _service.SetLiveSinceAsync(OwnerId, ns, since);
+        _dbContext.ChangeTracker.Clear();
+        (await _service.GetAsync(OwnerId, ns))!.LiveSince.Should().Be(since, "it must survive a restart, which is why it is stored");
+
+        await _service.SetLiveSinceAsync(OwnerId, ns, null);
+        _dbContext.ChangeTracker.Clear();
+        (await _service.GetAsync(OwnerId, ns))!.LiveSince.Should().BeNull();
+
+        await _service.SetLiveSinceAsync(OwnerId, ns, since);
+        await _service.ConfigureAsync(OwnerId, ns, enabled: true, observerReference: "whole-queue-scan", dlqEntityName: "*", stalenessBoundMinutes: 30);
+        _dbContext.ChangeTracker.Clear();
+        (await _service.GetAsync(OwnerId, ns))!.LiveSince.Should().BeNull("a changed set-up is a new view");
+
+        await _service.SetLiveSinceAsync(OwnerId, Guid.NewGuid(), since); // no row: not an error
+    }
+
+    [Fact]
     public async Task IsLiveAsync_NoRowAtAll_FailsClosedToFalse()
     {
         var isLive = await _service.IsLiveAsync(OwnerId, Guid.NewGuid());

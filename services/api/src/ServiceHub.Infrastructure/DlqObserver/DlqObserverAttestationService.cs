@@ -72,6 +72,7 @@ public sealed class DlqObserverAttestationService : IDlqObserverAttestationServi
         attestation.ObserverReference = observerReference;
         attestation.DlqEntityName = dlqEntityName;
         attestation.StalenessBoundMinutes = stalenessBoundMinutes;
+        attestation.LiveSince = null; // a changed set-up is a new view: its clock starts again
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         return Result<DlqObserverAttestation>.Success(attestation);
@@ -114,6 +115,20 @@ public sealed class DlqObserverAttestationService : IDlqObserverAttestationServi
 
         await _dbContext.SaveChangesAsync(cancellationToken);
         return Result<DlqObserverAttestation>.Success(attestation);
+    }
+
+    /// <inheritdoc />
+    public async Task SetLiveSinceAsync(string ownerId, Guid namespaceId, DateTimeOffset? liveSince, CancellationToken cancellationToken = default)
+    {
+        var attestation = await _dbContext.DlqObserverAttestations
+            .FirstOrDefaultAsync(a => a.OwnerId == ownerId && a.NamespaceId == namespaceId, cancellationToken);
+        if (attestation is null || attestation.LiveSince == liveSince)
+        {
+            return;
+        }
+
+        attestation.LiveSince = liveSince;
+        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     /// <inheritdoc />

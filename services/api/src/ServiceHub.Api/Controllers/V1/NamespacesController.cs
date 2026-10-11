@@ -9,6 +9,8 @@ using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Core.Security;
 using ServiceHub.Core.Validation;
+using ServiceHub.Infrastructure.Persistence;
+using ServiceHub.Infrastructure.Signatures;
 
 namespace ServiceHub.Api.Controllers.V1;
 
@@ -235,9 +237,11 @@ public sealed class NamespacesController : ApiControllerBase
     [HttpGet("{id:guid}/dlq-observer")]
     [ProducesResponseType(typeof(DlqObserverResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> GetDlqObserver(Guid id, [FromServices] IDlqObserverAttestationService attestations, CancellationToken cancellationToken)
+    public async Task<IActionResult> GetDlqObserver(
+        Guid id, [FromServices] IDlqObserverAttestationService attestations, [FromServices] IEnumerable<IDeadLetterReturnCheck> checks, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(attestations);
+        ArgumentNullException.ThrowIfNull(checks);
         var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
         if (found.IsFailure)
         {
@@ -246,13 +250,13 @@ public sealed class NamespacesController : ApiControllerBase
 
         var ns = found.Value;
         var needed = _router.IsRegistered(ns.Provider) && !_router.Resolve(ns.Provider).Capabilities.CanProveDlqAbsence;
-        return Ok(ToObserverResponse(needed, await attestations.GetAsync(OwnerId, id, cancellationToken)));
+        return Ok(ToObserverResponse(needed, await attestations.GetAsync(OwnerId, id, cancellationToken), checks.FirstOrDefault(c => c.Provider == ns.Provider)));
     }
 
     /// <summary>
-    /// Records where this cloud's DLQ observer writes and which dead-letter queue it watches. API-only in 4.1.0: there is no setup screen
-    /// and nothing sends the liveness test message any more, so an observer recorded here is never confirmed live and does not make
-    /// any replay read "verified" — AWS and GCP stay "verification required". Requires the <c>configure-dlq-observer</c> intent header
+    /// Switches on, for a cloud that cannot confirm a fix by itself, ServiceHub's way of seeing that cloud's whole dead-letter queue
+    /// (ADR-0018). What has to be named depends on the cloud's own check: nothing where ServiceHub reads the queue itself, a
+    /// subscription of ServiceHub's own where it reads one. It confirms nothing until the Fix Confirmer agent has seen it work. Requires the <c>configure-dlq-observer</c> intent header
     /// and the Admin role for this namespace. A cloud that can confirm a fix on its own (Azure) refuses: there is nothing to set up.
     /// </summary>
     [HttpPut("{id:guid}/dlq-observer")]
@@ -262,10 +266,12 @@ public sealed class NamespacesController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
     public async Task<IActionResult> ConfigureDlqObserver(
-        Guid id, [FromBody] ConfigureDlqObserverRequest request, [FromServices] IDlqObserverAttestationService attestations, CancellationToken cancellationToken)
+        Guid id, [FromBody] ConfigureDlqObserverRequest request, [FromServices] IDlqObserverAttestationService attestations,
+        [FromServices] IEnumerable<IDeadLetterReturnCheck> checks, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(attestations);
+        ArgumentNullException.ThrowIfNull(checks);
         if (!IntentHeaders.Declares(Request, IntentHeaders.ConfigureDlqObserver))
         {
             return Problem(
@@ -307,6 +313,21 @@ public sealed class NamespacesController : ApiControllerBase
 
         var observerReference = request.ObserverReference?.Trim();
         var entityName = request.DlqEntityName?.Trim();
+        // ADR-0018: where this cloud has a way to see its whole dead-letter queue, that way says what it needs to be told.
+        // Asked of the cloud's own check — never decided here by the cloud's name.
+        if (request.Enabled && checks.FirstOrDefault(c => c.Provider == ns.Provider) is { } check)
+        {
+            if (!check.NeedsObserverReference)
+            {
+                observerReference = "whole-queue-scan"; // nothing is deployed for it: ServiceHub reads the queue itself
+                entityName = string.IsNullOrEmpty(entityName) ? "*" : entityName;
+            }
+            else if (check.ValidateObserverReference(observerReference) is { } why)
+            {
+                return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, why);
+            }
+        }
+
         if (request.Enabled && (string.IsNullOrEmpty(observerReference) || string.IsNullOrEmpty(entityName)))
         {
             return Problem(
@@ -323,10 +344,100 @@ public sealed class NamespacesController : ApiControllerBase
         }
 
         await RecordAsync(AuditActions.DlqObserverConfigure, AuditActions.Success, ns, null, cancellationToken);
-        return Ok(ToObserverResponse(true, saved.Value));
+        return Ok(ToObserverResponse(true, saved.Value, checks.FirstOrDefault(c => c.Provider == ns.Provider)));
     }
 
-    private static DlqObserverResponse ToObserverResponse(bool needed, DlqObserverAttestation? a)
+    /// <summary>
+    /// Regroups a namespace's dead letters by error message (design 10). <c>dryRun</c> (the default) writes nothing and says what would
+    /// change. A real run is one transaction, safe to repeat, and switches off rules whose signature was split. Requires the
+    /// <c>resign-signatures</c> intent header and the Admin role for this namespace.
+    /// </summary>
+    [HttpPost("{id:guid}/signatures/resign")]
+    [ProducesResponseType(typeof(ResignResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
+    public async Task<IActionResult> ResignSignatures(
+        Guid id, [FromServices] ServiceHubDbContext db, CancellationToken cancellationToken, [FromQuery] bool dryRun = true)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        if (!IntentHeaders.Declares(Request, IntentHeaders.ResignSignatures))
+        {
+            return Problem(StatusCodes.Status428PreconditionRequired, ErrorCodes.IntentRequired, IntentHeaders.MissingDetail("regroup failures by error message", IntentHeaders.ResignSignatures));
+        }
+
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        if (await DeniedUnlessAsync(GovernanceRole.Admin, id, null, "regroup failures by error message", cancellationToken) is { } denied) return denied;
+
+        var result = await SignatureResigner.ResignNamespaceAsync(db, OwnerId, id, dryRun, ct: cancellationToken);
+        _logger.LogInformation("Re-sign of namespace {NamespaceId} (dryRun={DryRun}): {Changed} of {Messages} changed", id, dryRun, result.MessagesChanged, result.Messages);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Checks now whether ServiceHub can see this cloud's whole dead-letter queue (ADR-0018). With <c>entity</c>, and where the
+    /// cloud's check can, it also looks at that one queue and says whether it saw all of it. Changes nothing in the cloud.
+    /// Requires the <c>configure-dlq-observer</c> intent header and the Admin role for this namespace.
+    /// </summary>
+    [HttpPost("{id:guid}/dlq-observer/check")]
+    [ProducesResponseType(typeof(DlqObserverCheckResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
+    public async Task<IActionResult> CheckDlqObserver(
+        Guid id, [FromQuery] string? entity, [FromServices] IDlqObserverAttestationService attestations,
+        [FromServices] IEnumerable<IDeadLetterReturnCheck> checks, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(attestations);
+        ArgumentNullException.ThrowIfNull(checks);
+        if (!IntentHeaders.Declares(Request, IntentHeaders.ConfigureDlqObserver))
+        {
+            return Problem(StatusCodes.Status428PreconditionRequired, ErrorCodes.IntentRequired, IntentHeaders.MissingDetail("check this cloud's dead-letter view", IntentHeaders.ConfigureDlqObserver));
+        }
+
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        var ns = found.Value;
+        if (await DeniedUnlessAsync(GovernanceRole.Admin, id, null, "check this cloud's dead-letter view", cancellationToken) is { } denied) return denied;
+
+        var check = checks.FirstOrDefault(c => c.Provider == ns.Provider);
+        var attestation = await attestations.GetAsync(OwnerId, id, cancellationToken);
+        if (check is null || attestation is null)
+        {
+            return Problem(StatusCodes.Status409Conflict, ErrorCodes.CapabilityUnavailable, "Nothing is set up to check for this cloud yet.");
+        }
+
+        var health = await check.CheckHealthAsync(ns, attestation, cancellationToken);
+        var probe = !string.IsNullOrWhiteSpace(entity) && check is IDeadLetterWholeViewProbe prober
+            ? await prober.ProbeAsync(ns, entity.Trim(), cancellationToken)
+            : null;
+        return Ok(new DlqObserverCheckResponse(health.Healthy, health.Reason, probe?.Complete, probe?.Reason, probe?.Count));
+    }
+
+    /// <summary>What "check now" found.</summary>
+    /// <param name="Healthy">Whether the view is usable right now.</param>
+    /// <param name="Reason">Why not.</param>
+    /// <param name="Complete">For one queue: whether all of it was seen. Null when no queue was asked about.</param>
+    /// <param name="IncompleteReason">Why it was not all seen.</param>
+    /// <param name="Count">How many messages were seen in that queue.</param>
+    public sealed record DlqObserverCheckResponse(bool Healthy, string? Reason, bool? Complete, string? IncompleteReason, int? Count);
+
+    private static DlqObserverResponse ToObserverResponse(bool needed, DlqObserverAttestation? a, IDeadLetterReturnCheck? check = null)
+    {
+        var needsReference = needed && check is { NeedsObserverReference: true };
+        var hint = needsReference ? check!.ValidateObserverReference(null) : null;
+        return Describe(needed, a) with { NeedsReference = needsReference, ReferenceHint = hint };
+    }
+
+    private static DlqObserverResponse Describe(bool needed, DlqObserverAttestation? a)
     {
         if (!needed)
         {
@@ -343,10 +454,10 @@ public sealed class NamespacesController : ApiControllerBase
 
         var live = a.IsLiveAt(DateTimeOffset.UtcNow);
         var status = live
-            ? "The observer is working: its log showed a test message recently."
+            ? "ServiceHub could see this cloud's dead letters when it last checked, so a replay here can be confirmed."
             : a.LastConfirmedAt is null
-                ? "Turned on, but the observer's log has not shown a test message yet — not confirming anything."
-                : "Turned on, but the observer's log has not shown a test message recently — not confirming anything until it does.";
+                ? "Turned on, but ServiceHub has not yet been able to see this cloud's dead letters — not confirming anything."
+                : "Turned on, but ServiceHub has not been able to see this cloud's dead letters lately — not confirming anything until it can.";
         return new DlqObserverResponse(true, true, live, a.ObserverReference, a.DlqEntityName, a.StalenessBoundMinutes, a.LastCanarySentAt, a.LastConfirmedAt, status);
     }
 

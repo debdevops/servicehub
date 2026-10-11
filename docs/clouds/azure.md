@@ -143,6 +143,7 @@ With no cloud connected, ServiceHub opens on a welcome page. Choose **Connect Az
 3. Simple | Advanced — Simple is where you act. Advanced is read-only pages (ledger, signatures, agents); it never changes anything.
 4. Help — opens the Help panel with task-shaped answers and the keyboard shortcuts.
 5. Connect AWS / Connect Google — the same Add a cloud window, on the AWS or Google Cloud tab. You do not need them for Azure.
+6. Try it with sample data — opens a demo with made-up data and no cloud connected, so you can look around first. Nothing in it is real and nothing is sent anywhere.
 
 
 ### 2.2 Add a cloud
@@ -224,6 +225,7 @@ Home answers three questions: *what needs me*, *how is each cloud doing*, and *w
 9. Got it — hides this explanation. It does not affect your data.
 10. See all dead letters in Azure — opens the Dead letters list for this cloud.
 11. Help for this page (the book beside the title) — opens Help on this very page, over it. Every page has one.
+12. Demo — a guided walk through the whole product with made-up data. No connection string is needed and nothing real is touched.
 
 
 ![3.1 Home — 05c-home-middle](../screenshots/azure/05c-home-middle.png)
@@ -306,7 +308,7 @@ Narrow the list, tick the messages you want, and use **Details** or **Replay** o
 1. Showing — Stuck now, or messages that have since left the queue.
 2. Time window — only messages set aside in this period.
 3. Search — by message ID, queue, reason or error text.
-4. Replay All Messages — opens a preview of everything shown. Nothing is sent until you confirm the preview.
+4. Replay All Messages — opens a preview of every message still stuck in the cloud and namespace you are viewing. It ignores the filters, time window and search here. Nothing is sent until you confirm the preview.
 5. Refresh — reads the queue again. On Azure this is free. The ⓘ beside it says when it was last read.
 6. Selection — tick rows to act on several; this line shows how many.
 7. Replay selected — opens the same preview for just the ticked messages.
@@ -425,6 +427,7 @@ Tick messages (or use **Replay All Messages**) to get a preview: how many will b
 6. Cancel — nothing is sent.
 7. Page controls — move through the list when more messages are chosen than fit on one page.
 8. How it will run — folds open to show the pace and the automatic stop (five failures in a row).
+9. After they are sent back — what ServiceHub does next: it records each replay and watches for 24 hours.
 
 
 ![4.5 Replay several at once — 13b-bulk-replay-end](../screenshots/azure/13b-bulk-replay-end.png)
@@ -436,6 +439,7 @@ Tick messages (or use **Replay All Messages**) to get a preview: how many will b
 4. Replay N messages — sends them one at a time, re-checking each. You can stop partway.
 5. Cancel — nothing is sent.
 6. Page controls — move through the list when more messages are chosen than fit on one page.
+7. Where each one goes — folds open to list the queue each message will be sent back to, grouped by why it failed.
 
 
 ### 4.6 The result
@@ -475,6 +479,7 @@ Every replay, who did it, and how it ended. On Azure ServiceHub can **prove** wh
 8. The table — a tick per replay (the heading tick ticks the page) and Details on each row.
 9. What am I looking at? — a short reading guide. Auto Replay rules — opens the rules page. All and Last 24 hours — the result and time filters.
 10. The three tabs — Dead letters, Active and Replayed. They switch the list below without leaving the page.
+11. Paging — rows per page, previous, the page numbers and next.
 
 
 ![5.1 Replayed — 11b-replayed-end](../screenshots/azure/11b-replayed-end.png)
@@ -582,6 +587,7 @@ Connections, Notifications (Slack, Teams, any webhook — sent only when the Age
 1. Theme — Light today; Dark is marked soon.
 2. Times shown in — your browser’s time zone, or UTC. It changes how times are displayed, never the data.
 3. Open on — start in Simple every time (Simple), or where you last were (Last used). Kept in this browser only.
+4. Your tracing tool — optional. Paste a link with {traceId} in it, and ServiceHub shows a link from each message to that trace in your own tool. It is kept in this browser only.
 
 
 ![7.1 Settings — 15-settings-access](../screenshots/azure/15-settings-access.png)
@@ -637,7 +643,7 @@ Help is a panel over whatever you are doing. Search (⌘K) jumps anywhere. The b
 
 ### 7.3 The Advanced pages (read-only)
 
-Advanced never changes anything. **Overview** summarises recovery, authority and agents; the **Recovery Ledger** is the tamper-evident record of every action; **Failure Signatures** groups failures and shows what each has earned; **Agents** lists what is acting and what is only watching.
+Advanced never changes anything. **Overview** summarises recovery, authority and agents; the **Recovery Ledger** is the tamper-evident record of every action; **Failure Signatures** groups failures — by cloud, queue, reason and, where the cloud records one, the shape of the error message — and shows what each has earned (if some of a group’s latest replays did not hold, ServiceHub stops replaying it on its own until newer ones do); **Agents** lists what is acting and what is only watching.
 
 
 ![7.3 The Advanced pages (read-only) — 17-advanced-overview](../screenshots/azure/17-advanced-overview.png)
@@ -681,6 +687,12 @@ Advanced never changes anything. **Overview** summarises recovery, authority and
 9. Chips — Signatures, All, Replay helps, Replay doesn’t help. Click one to list only those.
 10. Paging — rows per page, previous, the page number and next.
 11. About buttons (ⓘ) on the column headings — each explains that column in a sentence. They change nothing.
+
+
+![7.3 The Advanced pages (read-only) — 17d-advanced-signatures-end](../screenshots/azure/17d-advanced-signatures-end.png)
+
+
+1. Paging — rows per page, previous, the page numbers and next.
 
 
 ![7.3 The Advanced pages (read-only) — 17-advanced-agents](../screenshots/azure/17-advanced-agents.png)

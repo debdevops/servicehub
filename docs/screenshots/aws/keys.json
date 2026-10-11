@@ -2,75 +2,79 @@
  "01-welcome.png": [
   {
    "n": 1,
-   "t": "Connect AWS — opens the Add a cloud window on the AWS tab. It asks for an access key and a region; nothing is read until you press Connect there."
+   "t": "Connect AWS \u2014 opens the Add a cloud window on the AWS tab. It asks for an access key and a region; nothing is read until you press Connect there."
   },
   {
    "n": 2,
-   "t": "Add a cloud — the same window, from anywhere in the app. Use it later to connect Azure or Google Cloud as well."
+   "t": "Add a cloud \u2014 the same window, from anywhere in the app. Use it later to connect Azure or Google Cloud as well."
   },
   {
    "n": 3,
-   "t": "Simple | Advanced — Simple is where you act. Advanced is read-only pages (ledger, signatures, agents); it never changes anything."
+   "t": "Simple | Advanced \u2014 Simple is where you act. Advanced is read-only pages (ledger, signatures, agents); it never changes anything."
   },
   {
    "n": 4,
-   "t": "Help — opens the Help panel with task-shaped answers and the keyboard shortcuts."
+   "t": "Help \u2014 opens the Help panel with task-shaped answers and the keyboard shortcuts."
   },
   {
    "n": 5,
-   "t": "Connect Azure / Connect Google — the same Add a cloud window, on the Azure or Google Cloud tab. You do not need them for AWS."
+   "t": "Connect Azure / Connect Google \u2014 the same Add a cloud window, on the Azure or Google Cloud tab. You do not need them for AWS."
+  },
+  {
+   "n": 6,
+   "t": "Try it with sample data \u2014 opens a demo with made-up data and no cloud connected, so you can look around first. Nothing in it is real and nothing is sent anywhere."
   }
  ],
  "02-add-cloud.png": [
   {
    "n": 1,
-   "t": "Cloud tabs — AWS SQS / SNS is selected. The Azure and Google tabs ask for different credentials."
+   "t": "Cloud tabs \u2014 AWS SQS / SNS is selected. The Azure and Google tabs ask for different credentials."
   },
   {
    "n": 2,
-   "t": "Where do I get the AWS access key? — expands the console steps, with the permissions to give."
+   "t": "Where do I get the AWS access key? \u2014 expands the console steps, with the permissions to give."
   },
   {
    "n": 3,
-   "t": "Name — what you will see in ServiceHub. It is a label only; it does not change anything in AWS."
+   "t": "Name \u2014 what you will see in ServiceHub. It is a label only; it does not change anything in AWS."
   },
   {
    "n": 4,
-   "t": "Environment — Development, UAT or Production. Start with Development; Auto Replay never acts in Production."
+   "t": "Environment \u2014 Development, UAT or Production. Start with Development; Auto Replay never acts in Production."
   },
   {
    "n": 5,
-   "t": "Access key ID — the ID of the access key you made for ServiceHub (it starts AKIA)."
+   "t": "Access key ID \u2014 the ID of the access key you made for ServiceHub (it starts AKIA)."
   },
   {
    "n": 6,
-   "t": "Secret access key — shown by AWS only once, when you create the key. It is encrypted on this server and never shown again."
+   "t": "Secret access key \u2014 shown by AWS only once, when you create the key. It is encrypted on this server and never shown again."
   },
   {
    "n": 7,
-   "t": "Show value — reveals what you typed so you can check it. It cannot reveal a stored secret."
+   "t": "Show value \u2014 reveals what you typed so you can check it. It cannot reveal a stored secret."
   },
   {
    "n": 8,
-   "t": "Region — the region your queues are in (the console shows it top right). Queues in other regions are not seen."
+   "t": "Region \u2014 the region your queues are in (the console shows it top right). Queues in other regions are not seen."
   },
   {
    "n": 9,
-   "t": "The permissions ServiceHub uses — to watch, and (in the second sentence) also to replay. Give it nothing more."
+   "t": "The permissions ServiceHub uses \u2014 to watch, and (in the second sentence) also to replay. Give it nothing more."
   },
   {
    "n": 10,
-   "t": "(?) — opens Help on this very screen. Every window has one."
+   "t": "(?) \u2014 opens Help on this very screen. Every window has one."
   },
   {
    "n": 11,
-   "t": "✕ — closes the window without saving (Esc does the same)."
+   "t": "\u2715 \u2014 closes the window without saving (Esc does the same)."
   }
  ],
  "02-add-cloud-help.png": [
   {
    "n": 1,
-   "t": "IAM → Users — in the AWS console, make a user just for ServiceHub (not your own)."
+   "t": "IAM \u2192 Users \u2014 in the AWS console, make a user just for ServiceHub (not your own)."
   },
   {
    "n": 2,
@@ -78,7 +82,7 @@
   },
   {
    "n": 3,
-   "t": "Security credentials → Create access key — copy the Access key ID and the Secret access key; AWS shows the secret once."
+   "t": "Security credentials \u2192 Create access key \u2014 copy the Access key ID and the Secret access key; AWS shows the secret once."
   },
   {
    "n": 4,
@@ -86,7 +90,7 @@
   },
   {
    "n": 5,
-   "t": "The form underneath — the cloud tabs, Name, Environment, Access key ID, Secret access key, Show value and Region, exactly as in the previous screenshot."
+   "t": "The form underneath \u2014 the cloud tabs, Name, Environment, Access key ID, Secret access key, Show value and Region, exactly as in the previous screenshot."
   }
  ],
  "03-add-cloud-filled.png": [
@@ -96,7 +100,7 @@
   },
   {
    "n": 2,
-   "t": "The Access key ID (AWS’s documented example is shown here, not a real key)."
+   "t": "The Access key ID (AWS\u2019s documented example is shown here, not a real key)."
   },
   {
    "n": 3,
@@ -104,199 +108,203 @@
   },
   {
    "n": 4,
-   "t": "The region — here ap-south-1, Asia Pacific (Mumbai)."
+   "t": "The region \u2014 here ap-south-1, Asia Pacific (Mumbai)."
   },
   {
    "n": 5,
-   "t": "The rest of the form above — cloud tabs, Environment and Show value, as described on the previous screenshot."
+   "t": "The rest of the form above \u2014 cloud tabs, Environment and Show value, as described on the previous screenshot."
   },
   {
    "n": 6,
-   "t": "Cancel and Connect — shown in full on the next screenshot."
+   "t": "Cancel and Connect \u2014 shown in full on the next screenshot."
   }
  ],
  "03b-add-cloud-bottom.png": [
   {
    "n": 1,
-   "t": "The permissions ServiceHub uses — to watch, and (second sentence) also to replay. Give it nothing more."
+   "t": "The permissions ServiceHub uses \u2014 to watch, and (second sentence) also to replay. Give it nothing more."
   },
   {
    "n": 2,
-   "t": "Cancel — closes the window; nothing is saved."
+   "t": "Cancel \u2014 closes the window; nothing is saved."
   },
   {
    "n": 3,
-   "t": "Connect — tests the key, then saves it. It only reads queue counts; it never receives, sends or deletes anything by itself."
+   "t": "Connect \u2014 tests the key, then saves it. It only reads queue counts; it never receives, sends or deletes anything by itself."
   },
   {
    "n": 4,
-   "t": "Region — ap-south-1 (Asia Pacific, Mumbai) is chosen here."
+   "t": "Region \u2014 ap-south-1 (Asia Pacific, Mumbai) is chosen here."
   },
   {
    "n": 5,
-   "t": "The fields above — the name, key ID, secret and Show value, as filled in on the previous screenshot."
+   "t": "The fields above \u2014 the name, key ID, secret and Show value, as filled in on the previous screenshot."
   }
  ],
  "04-connected.png": [
   {
    "n": 1,
-   "t": "The result: how many queues ServiceHub found, how many messages are dead-lettered right now, and whether this cloud can prove a replayed message stayed fixed (AWS cannot yet — it will say so honestly)."
+   "t": "The result: how many queues ServiceHub found, how many messages are dead-lettered right now, and whether this cloud can prove a replayed message stayed fixed (AWS cannot yet \u2014 it will say so honestly)."
   },
   {
    "n": 2,
-   "t": "Open Home — closes the window and shows Home."
+   "t": "Open Home \u2014 closes the window and shows Home."
   }
  ],
  "05-home.png": [
   {
    "n": 1,
-   "t": "Window — the period Home counts over (24 hours, 7 or 30 days). It changes what you see, never what happens."
+   "t": "Window \u2014 the period Home counts over (24 hours, 7 or 30 days). It changes what you see, never what happens."
   },
   {
    "n": 2,
-   "t": "Connected, and the region — ServiceHub can reach AWS with your key; the region is the one you chose."
+   "t": "Connected, and the region \u2014 ServiceHub can reach AWS with your key; the region is the one you chose."
   },
   {
    "n": 3,
-   "t": "What this cloud can do — ticks show what AWS lets ServiceHub do safely. AWS counts messages and records dead letters when you look; it cannot browse active messages or prove a fix held."
+   "t": "What this cloud can do \u2014 ticks show what AWS lets ServiceHub do safely. AWS counts messages and records dead letters when you look; it cannot browse active messages or prove a fix held."
   },
   {
    "n": 4,
-   "t": "Look now — asks AWS for its dead letters (up to 100 per queue) and keeps them in ServiceHub. Each one read counts as one delivery attempt, which is why ServiceHub never does it on its own."
+   "t": "Look now \u2014 asks AWS for its dead letters (up to 100 per queue) and keeps them in ServiceHub. Each one read counts as one delivery attempt, which is why ServiceHub never does it on its own."
   },
   {
    "n": 5,
-   "t": "Dead letters — opens the list of messages that failed and were set aside."
+   "t": "Dead letters \u2014 opens the list of messages that failed and were set aside."
   },
   {
    "n": 6,
-   "t": "Active messages — on AWS this shows counts per queue only; opening a message there would count as a delivery."
+   "t": "Active messages \u2014 on AWS this shows counts per queue only; opening a message there would count as a delivery."
   },
   {
    "n": 7,
-   "t": "Replayed — everything put back, by whom, and how it went."
+   "t": "Replayed \u2014 everything put back, by whom, and how it went."
   },
   {
    "n": 8,
-   "t": "Auto Replay rules — opens the rules panel. On AWS a rule always waits for a person, because AWS cannot prove a fix held."
+   "t": "Auto Replay rules \u2014 opens the rules panel. On AWS a rule always waits for a person, because AWS cannot prove a fix held."
   },
   {
    "n": 9,
-   "t": "Got it — hides this explanation. It does not affect your data."
+   "t": "Got it \u2014 hides this explanation. It does not affect your data."
   },
   {
    "n": 10,
-   "t": "See all dead letters in AWS — opens the Dead letters list for this cloud."
+   "t": "See all dead letters in AWS \u2014 opens the Dead letters list for this cloud."
   },
   {
    "n": 11,
-   "t": "Help for this page (the book beside the title) — opens Help on this very page, over it. Every page has one."
+   "t": "Help for this page (the book beside the title) \u2014 opens Help on this very page, over it. Every page has one."
+  },
+  {
+   "n": 12,
+   "t": "Demo \u2014 a guided walk through the whole product with made-up data. No connection string is needed and nothing real is touched."
   }
  ],
  "05b-navigation.png": [
   {
    "n": 1,
-   "t": "Back — returns to the previous place in the app."
+   "t": "Back \u2014 returns to the previous place in the app."
   },
   {
    "n": 2,
-   "t": "Forward — goes to the place you came back from."
+   "t": "Forward \u2014 goes to the place you came back from."
   },
   {
    "n": 3,
-   "t": "Search (⌘K) — jump to a cloud, queue or page. Searching never changes anything."
+   "t": "Search (\u2318K) \u2014 jump to a cloud, queue or page. Searching never changes anything."
   },
   {
    "n": 4,
-   "t": "The bell — the only place the Agent asks you something. A number appears when it needs you."
+   "t": "The bell \u2014 the only place the Agent asks you something. A number appears when it needs you."
   },
   {
    "n": 5,
-   "t": "Simple — the two pages where you do the work."
+   "t": "Simple \u2014 the two pages where you do the work."
   },
   {
    "n": 6,
-   "t": "Advanced — four read-only pages."
+   "t": "Advanced \u2014 four read-only pages."
   },
   {
    "n": 7,
-   "t": "You — who ServiceHub records actions as, with your role."
+   "t": "You \u2014 who ServiceHub records actions as, with your role."
   },
   {
    "n": 8,
-   "t": "Dead letters — messages that failed, with the reason and a Replay button."
+   "t": "Dead letters \u2014 messages that failed, with the reason and a Replay button."
   },
   {
    "n": 9,
-   "t": "Active messages — what is waiting now, counted per queue on AWS."
+   "t": "Active messages \u2014 what is waiting now, counted per queue on AWS."
   },
   {
    "n": 10,
-   "t": "Replayed — what was put back and whether it stayed fixed."
+   "t": "Replayed \u2014 what was put back and whether it stayed fixed."
   },
   {
    "n": 11,
-   "t": "Auto Replay — rules for retries ServiceHub may do on its own."
+   "t": "Auto Replay \u2014 rules for retries ServiceHub may do on its own."
   },
   {
    "n": 12,
-   "t": "Your cloud — pick it to see only that cloud. The dot shows the connection is healthy."
+   "t": "Your cloud \u2014 pick it to see only that cloud. The dot shows the connection is healthy."
   },
   {
    "n": 13,
-   "t": "Connections — your connected clouds, to test or remove."
+   "t": "Connections \u2014 your connected clouds, to test or remove."
   },
   {
    "n": 14,
-   "t": "Add a cloud — connect another cloud."
+   "t": "Add a cloud \u2014 connect another cloud."
   },
   {
    "n": 15,
-   "t": "Settings — connections, notifications, preferences, access and backup."
+   "t": "Settings \u2014 connections, notifications, preferences, access and backup."
   },
   {
    "n": 16,
-   "t": "Help — answers and shortcuts."
+   "t": "Help \u2014 answers and shortcuts."
   },
   {
    "n": 17,
-   "t": "Home — the overview: what needs attention, what the Agent is doing, and how replays ended."
+   "t": "Home \u2014 the overview: what needs attention, what the Agent is doing, and how replays ended."
   }
  ],
  "06-dead-letters.png": [
   {
    "n": 1,
-   "t": "Namespace picker — all of AWS, or one account and region."
+   "t": "Namespace picker \u2014 all of AWS, or one account and region."
   },
   {
    "n": 2,
-   "t": "Why the list starts empty — on AWS, reading a dead letter counts as one delivery attempt, so ServiceHub only looks when you ask. It reads up to 100 per queue and keeps them here."
+   "t": "Why the list starts empty \u2014 on AWS, reading a dead letter counts as one delivery attempt, so ServiceHub only looks when you ask. It reads up to 100 per queue and keeps them here."
   },
   {
    "n": 3,
-   "t": "Look at AWS’s dead letters now — receives up to 100 dead letters per queue, records them, and hands them straight back. It never deletes or moves anything; it does add one to each message’s delivery count."
+   "t": "Look at AWS\u2019s dead letters now \u2014 receives up to 100 dead letters per queue, records them, and hands them straight back. It never deletes or moves anything; it does add one to each message\u2019s delivery count."
   },
   {
    "n": 4,
-   "t": "The empty list — “nothing recorded” does not mean there are none: the queue holds 324. Press Look now to see them."
+   "t": "The empty list \u2014 \u201cnothing recorded\u201d does not mean there are none: the queue holds 324. Press Look now to see them."
   },
   {
    "n": 5,
-   "t": "Help for this page — opens Help on this page’s step of the guide. The (?) beside it only re-shows the short explanation."
+   "t": "Help for this page \u2014 opens Help on this page\u2019s step of the guide. The (?) beside it only re-shows the short explanation."
   },
   {
    "n": 6,
-   "t": "The three tabs — Dead letters, Active and Replayed — switch the list below. The (?) beside the title brings back the short “What you’re looking at” card."
+   "t": "The three tabs \u2014 Dead letters, Active and Replayed \u2014 switch the list below. The (?) beside the title brings back the short \u201cWhat you\u2019re looking at\u201d card."
   },
   {
    "n": 7,
-   "t": "Filters and Refresh — Showing, Time window, queue or topic and search narrow the list; Refresh re-reads what ServiceHub has recorded. On AWS Refresh does not look at AWS: only Look now does."
+   "t": "Filters and Refresh \u2014 Showing, Time window, queue or topic and search narrow the list; Refresh re-reads what ServiceHub has recorded. On AWS Refresh does not look at AWS: only Look now does."
   }
  ],
  "06b-after-look.png": [
   {
    "n": 1,
-   "t": "What the look found — when it ran, how many queues had dead letters, and how many new ones were recorded."
+   "t": "What the look found \u2014 when it ran, how many queues had dead letters, and how many new ones were recorded."
   },
   {
    "n": 2,
@@ -304,19 +312,19 @@
   },
   {
    "n": 3,
-   "t": "Why they failed — the biggest reasons among the dead letters recorded, counted."
+   "t": "Why they failed \u2014 the biggest reasons among the dead letters recorded, counted."
   },
   {
    "n": 4,
-   "t": "Dead letters tab — the number is how many ServiceHub has recorded (not how many AWS holds)."
+   "t": "Dead letters tab \u2014 the number is how many ServiceHub has recorded (not how many AWS holds)."
   },
   {
    "n": 5,
-   "t": "Look again — records any dead letters not seen before. Each look adds one delivery attempt to the messages it reads."
+   "t": "Look again \u2014 records any dead letters not seen before. Each look adds one delivery attempt to the messages it reads."
   },
   {
    "n": 6,
-   "t": "Reason chips — click one to show only that reason."
+   "t": "Reason chips \u2014 click one to show only that reason."
   },
   {
    "n": 7,
@@ -324,175 +332,175 @@
   },
   {
    "n": 8,
-   "t": "Filters, Replay All Messages and Refresh — described on the next screenshot, where the table is in view."
+   "t": "Filters, Replay All Messages and Refresh \u2014 described on the next screenshot, where the table is in view."
   },
   {
    "n": 9,
-   "t": "The selection bar — the tick selects the whole page; View details chooses columns; Replay selected stays dimmed until something is ticked."
+   "t": "The selection bar \u2014 the tick selects the whole page; View details chooses columns; Replay selected stays dimmed until something is ticked."
   },
   {
    "n": 10,
-   "t": "The tick in the table heading — ticks every row on this page."
+   "t": "The tick in the table heading \u2014 ticks every row on this page."
   },
   {
    "n": 11,
-   "t": "The table headings — each has an ⓘ that explains that column in a sentence; the next screenshot shows the table itself."
+   "t": "The table headings \u2014 each has an \u24d8 that explains that column in a sentence; the next screenshot shows the table itself."
   }
  ],
  "05c-home-middle.png": [
   {
    "n": 1,
-   "t": "Why messages failed — the reasons among the dead letters ServiceHub has recorded, biggest first, with how many each has. It only counts what you have looked at."
+   "t": "Why messages failed \u2014 the reasons among the dead letters ServiceHub has recorded, biggest first, with how many each has. It only counts what you have looked at."
   },
   {
    "n": 2,
-   "t": "How replays ended — what happened to the replays in this window. On AWS they stay “watching”, because AWS cannot prove a fix held."
+   "t": "How replays ended \u2014 what happened to the replays in this window. On AWS they stay \u201cwatching\u201d, because AWS cannot prove a fix held."
   },
   {
    "n": 3,
-   "t": "Queues and topics needing attention — the queues with the most dead letters first. Open → shows that queue’s dead letters."
+   "t": "Queues and topics needing attention \u2014 the queues with the most dead letters first. Open \u2192 shows that queue\u2019s dead letters."
   },
   {
    "n": 4,
-   "t": "Latest recorded dead letters — the five most recent ServiceHub has recorded, each with Details →. “See all →” opens the full list."
+   "t": "Latest recorded dead letters \u2014 the five most recent ServiceHub has recorded, each with Details \u2192. \u201cSee all \u2192\u201d opens the full list."
   },
   {
    "n": 5,
-   "t": "Recent activity — shown in full on the next screenshot."
+   "t": "Recent activity \u2014 shown in full on the next screenshot."
   }
  ],
  "05d-home-end.png": [
   {
    "n": 1,
-   "t": "The five latest dead letters, each with Details → — the same message view as on the Dead letters tab."
+   "t": "The five latest dead letters, each with Details \u2192 \u2014 the same message view as on the Dead letters tab."
   },
   {
    "n": 2,
-   "t": "Recent activity — what ServiceHub and people did, newest first (Live means it updates by itself). Each line opens to show its detail; nothing here changes anything."
+   "t": "Recent activity \u2014 what ServiceHub and people did, newest first (Live means it updates by itself). Each line opens to show its detail; nothing here changes anything."
   },
   {
    "n": 3,
-   "t": "Each reason in “Why messages failed” is a link that opens the Dead letters list filtered to that reason; Open → opens that queue’s dead letters."
+   "t": "Each reason in \u201cWhy messages failed\u201d is a link that opens the Dead letters list filtered to that reason; Open \u2192 opens that queue\u2019s dead letters."
   }
  ],
  "07-filters-and-table.png": [
   {
    "n": 1,
-   "t": "Showing — Stuck now, or messages that have since left the queue."
+   "t": "Showing \u2014 Stuck now, or messages that have since left the queue."
   },
   {
    "n": 2,
-   "t": "Time window — only messages set aside in this period."
+   "t": "Time window \u2014 only messages set aside in this period."
   },
   {
    "n": 3,
-   "t": "Search — by message ID, queue, reason or error text."
+   "t": "Search \u2014 by message ID, queue, reason or error text."
   },
   {
    "n": 4,
-   "t": "Replay All Messages — opens a preview of everything shown. Nothing is sent until you confirm the preview."
+   "t": "Replay All Messages \u2014 opens a preview of every message still stuck in the cloud and namespace you are viewing. It ignores the filters, time window and search here. Nothing is sent until you confirm the preview."
   },
   {
    "n": 5,
-   "t": "Refresh — reads the queue again. It re-reads what ServiceHub has already recorded; it does not look at AWS (only Look now does). The ⓘ beside it says when it was last updated."
+   "t": "Refresh \u2014 reads the queue again. It re-reads what ServiceHub has already recorded; it does not look at AWS (only Look now does). The \u24d8 beside it says when it was last updated."
   },
   {
    "n": 6,
-   "t": "Selection — tick rows to act on several; this line shows how many."
+   "t": "Selection \u2014 tick rows to act on several; this line shows how many."
   },
   {
    "n": 7,
-   "t": "Replay selected — opens the same preview for just the ticked messages."
+   "t": "Replay selected \u2014 opens the same preview for just the ticked messages."
   },
   {
    "n": 8,
-   "t": "Details — opens the message: why it failed, its body, properties and delivery history."
+   "t": "Details \u2014 opens the message: why it failed, its body, properties and delivery history."
   },
   {
    "n": 9,
-   "t": "Replay — opens the proposal for this one message. It does not send anything yet."
+   "t": "Replay \u2014 opens the proposal for this one message. It does not send anything yet."
   },
   {
    "n": 10,
-   "t": "The table — a tick on every row (the one in the heading ticks the whole page), Details and Replay on every row, and an ⓘ About button on each column heading that explains that column in a sentence. “View details” in the heading chooses which columns show."
+   "t": "The table \u2014 a tick on every row (the one in the heading ticks the whole page), Details and Replay on every row, and an \u24d8 About button on each column heading that explains that column in a sentence. \u201cView details\u201d in the heading chooses which columns show."
   },
   {
    "n": 11,
-   "t": "Reason chips — each shows a reason and how many messages have it. Click one to show only those; click it again to show all."
+   "t": "Reason chips \u2014 each shows a reason and how many messages have it. Click one to show only those; click it again to show all."
   },
   {
    "n": 12,
-   "t": "All queues & topics — limit the list to one queue or topic."
+   "t": "All queues & topics \u2014 limit the list to one queue or topic."
   },
   {
    "n": 13,
-   "t": "The selection bar — the tick selects every row on this page; View details chooses which columns show; Replay selected stays dimmed until something is ticked."
+   "t": "The selection bar \u2014 the tick selects every row on this page; View details chooses which columns show; Replay selected stays dimmed until something is ticked."
   },
   {
    "n": 14,
-   "t": "Look at AWS’s dead letters now — records any dead letters not seen before. Each look adds one delivery attempt to the messages it reads."
+   "t": "Look at AWS\u2019s dead letters now \u2014 records any dead letters not seen before. Each look adds one delivery attempt to the messages it reads."
   }
  ],
  "07c-table-end.png": [
   {
    "n": 1,
-   "t": "The foot of the table — the same ticks, Details and Replay on every row, and the selection bar repeated underneath."
+   "t": "The foot of the table \u2014 the same ticks, Details and Replay on every row, and the selection bar repeated underneath."
   },
   {
    "n": 2,
-   "t": "Paging — rows per page, previous, the page numbers and next. The list holds up to 100 dead letters per queue from each look."
+   "t": "Paging \u2014 rows per page, previous, the page numbers and next. The list holds up to 100 dead letters per queue from each look."
   }
  ],
  "08-message-details.png": [
   {
    "n": 1,
-   "t": "Expand — widens the panel for long messages."
+   "t": "Expand \u2014 widens the panel for long messages."
   },
   {
    "n": 2,
-   "t": "Overview — reason, why it failed, the body with the bad field marked."
+   "t": "Overview \u2014 reason, why it failed, the body with the bad field marked."
   },
   {
    "n": 3,
-   "t": "Delivery — how many times the message was received (ServiceHub’s own looks count) and when AWS set it aside."
+   "t": "Delivery \u2014 how many times the message was received (ServiceHub\u2019s own looks count) and when AWS set it aside."
   },
   {
    "n": 4,
-   "t": "Why it failed — a plain-words reading of the recorded reason. Marked Suggestion: it is a reading, not something AWS reported."
+   "t": "Why it failed \u2014 a plain-words reading of the recorded reason. Marked Suggestion: it is a reading, not something AWS reported."
   },
   {
    "n": 5,
-   "t": "Formatted / Raw — switch the body view."
+   "t": "Formatted / Raw \u2014 switch the body view."
   },
   {
    "n": 6,
-   "t": "Replay this message — opens the proposal. Nothing is sent from here."
+   "t": "Replay this message \u2014 opens the proposal. Nothing is sent from here."
   },
   {
    "n": 7,
-   "t": "Body, Properties and Headers — the other tabs; each is shown below."
+   "t": "Body, Properties and Headers \u2014 the other tabs; each is shown below."
   },
   {
    "n": 8,
-   "t": "Formatted and Copy body — pretty-print the body, or copy it to your clipboard. The copy stays in your browser."
+   "t": "Formatted and Copy body \u2014 pretty-print the body, or copy it to your clipboard. The copy stays in your browser."
   },
   {
    "n": 9,
-   "t": "Copy message ID — copies the ID so you can search for it elsewhere."
+   "t": "Copy message ID \u2014 copies the ID so you can search for it elsewhere."
   }
  ],
  "08b-message-details-end.png": [
   {
    "n": 1,
-   "t": "Replay this message — opens the proposal. Nothing is sent from here."
+   "t": "Replay this message \u2014 opens the proposal. Nothing is sent from here."
   },
   {
    "n": 2,
-   "t": "Purge instead… — for a message not worth replaying. It only opens a small form: you give a reason, and nothing is deleted until you press “Purge for good”. Deleting is permanent, goes through the same checks as a replay, and is recorded with your name and reason."
+   "t": "Purge instead\u2026 \u2014 for a message not worth replaying. It only opens a small form: you give a reason, and nothing is deleted until you press \u201cPurge for good\u201d. Deleting is permanent, goes through the same checks as a replay, and is recorded with your name and reason."
   },
   {
    "n": 3,
-   "t": "Expand, the body view and the copy buttons — as on the previous screenshots."
+   "t": "Expand, the body view and the copy buttons \u2014 as on the previous screenshots."
   }
  ],
  "08-message-details-body.png": [
@@ -532,7 +540,7 @@
  "08-message-details-delivery.png": [
   {
    "n": 1,
-   "t": "How many times AWS delivered it before setting it aside. ServiceHub’s own looks are counted in this number."
+   "t": "How many times AWS delivered it before setting it aside. ServiceHub\u2019s own looks are counted in this number."
   },
   {
    "n": 2,
@@ -542,25 +550,25 @@
  "09-replay-proposal.png": [
   {
    "n": 1,
-   "t": "The message — what is about to be replayed: ID, where it is stuck, when and why it was set aside, and its body."
+   "t": "The message \u2014 what is about to be replayed: ID, where it is stuck, when and why it was set aside, and its body."
   },
   {
    "n": 2,
-   "t": "Replay 1 message — sends it back. It is only sent when you press this."
+   "t": "Replay 1 message \u2014 sends it back. It is only sent when you press this."
   },
   {
    "n": 3,
-   "t": "What will happen, Safety checks, After it runs — fold open or closed; the next screenshot shows them open."
+   "t": "What will happen, Safety checks, After it runs \u2014 fold open or closed; the next screenshot shows them open."
   },
   {
    "n": 4,
-   "t": "Cancel — closes without sending."
+   "t": "Cancel \u2014 closes without sending."
   }
  ],
  "09-replay-proposal-middle.png": [
   {
    "n": 1,
-   "t": "The four sections of the proposal — The message, What will happen, Safety checks and After it runs. Each folds open or closed; nothing here sends anything."
+   "t": "The four sections of the proposal \u2014 The message, What will happen, Safety checks and After it runs. Each folds open or closed; nothing here sends anything."
   },
   {
    "n": 2,
@@ -570,19 +578,19 @@
  "09-replay-proposal-checks.png": [
   {
    "n": 1,
-   "t": "What will happen — where it goes and what happens to the dead-letter copy (it is removed once AWS accepts the new copy)."
+   "t": "What will happen \u2014 where it goes and what happens to the dead-letter copy (it is removed once AWS accepts the new copy)."
   },
   {
    "n": 2,
-   "t": "Safety checks — every check that must pass; a failing one blocks the replay and says why."
+   "t": "Safety checks \u2014 every check that must pass; a failing one blocks the replay and says why."
   },
   {
    "n": 3,
-   "t": "After it runs — ServiceHub records it and watches for 24 hours; if it comes back, nothing retries it."
+   "t": "After it runs \u2014 ServiceHub records it and watches for 24 hours; if it comes back, nothing retries it."
   },
   {
    "n": 4,
-   "t": "Cancel — closes without sending."
+   "t": "Cancel \u2014 closes without sending."
   },
   {
    "n": 5,
@@ -592,11 +600,11 @@
  "07a-reason-filter.png": [
   {
    "n": 1,
-   "t": "Filtering by a reason — the chosen reason is highlighted and “show all reasons” clears the filter. The list below shows only that reason."
+   "t": "Filtering by a reason \u2014 the chosen reason is highlighted and \u201cshow all reasons\u201d clears the filter. The list below shows only that reason."
   },
   {
    "n": 2,
-   "t": "The reason chips — click one to show only that reason."
+   "t": "The reason chips \u2014 click one to show only that reason."
   },
   {
    "n": 3,
@@ -604,17 +612,17 @@
   },
   {
    "n": 4,
-   "t": "Filters, Replay All Messages, Refresh and Look now — described on the earlier screenshots."
+   "t": "Filters, Replay All Messages, Refresh and Look now \u2014 described on the earlier screenshots."
   },
   {
    "n": 5,
-   "t": "The selection bar (which now offers “Select all” for this reason), the table headings and the rows, as on the earlier screenshots."
+   "t": "The selection bar (which now offers \u201cSelect all\u201d for this reason), the table headings and the rows, as on the earlier screenshots."
   }
  ],
  "07a-reason-filter-end.png": [
   {
    "n": 1,
-   "t": "Show all reasons — at the foot of a filtered list too: clears the reason filter and brings every recorded dead letter back."
+   "t": "Show all reasons \u2014 at the foot of a filtered list too: clears the reason filter and brings every recorded dead letter back."
   },
   {
    "n": 2,
@@ -622,97 +630,97 @@
   },
   {
    "n": 3,
-   "t": "Paging — rows per page, previous, the page numbers and next."
+   "t": "Paging \u2014 rows per page, previous, the page numbers and next."
   }
  ],
  "07b-selection.png": [
   {
    "n": 1,
-   "t": "Row tick — choose which messages to act on. The header tick chooses every row on the page."
+   "t": "Row tick \u2014 choose which messages to act on. The header tick chooses every row on the page."
   },
   {
    "n": 2,
-   "t": "Selection count — how many messages are ticked."
+   "t": "Selection count \u2014 how many messages are ticked."
   },
   {
    "n": 3,
-   "t": "Clear — unticks everything. Nothing else changes."
+   "t": "Clear \u2014 unticks everything. Nothing else changes."
   },
   {
    "n": 4,
-   "t": "Replay selected — opens the bulk preview for just these messages. Nothing is sent yet."
+   "t": "Replay selected \u2014 opens the bulk preview for just these messages. Nothing is sent yet."
   },
   {
    "n": 5,
-   "t": "The filter row — reason chips, Showing, Time window, queue, search, Replay All Messages and Refresh, each explained on the previous screenshot."
+   "t": "The filter row \u2014 reason chips, Showing, Time window, queue, search, Replay All Messages and Refresh, each explained on the previous screenshot."
   },
   {
    "n": 6,
-   "t": "The table — the ticks, Details and Replay on every row, and the whole-page tick in the heading."
+   "t": "The table \u2014 the ticks, Details and Replay on every row, and the whole-page tick in the heading."
   },
   {
    "n": 7,
-   "t": "The selection bar — the whole-page tick and View details (which columns show)."
+   "t": "The selection bar \u2014 the whole-page tick and View details (which columns show)."
   }
  ],
  "13-bulk-replay.png": [
   {
    "n": 1,
-   "t": "Preview — nothing has run yet. Step 1 of Preview → Run → Watch."
+   "t": "Preview \u2014 nothing has run yet. Step 1 of Preview \u2192 Run \u2192 Watch."
   },
   {
    "n": 2,
-   "t": "Held back — messages that fail a safety check stay in dead letters; they are never forced."
+   "t": "Held back \u2014 messages that fail a safety check stay in dead letters; they are never forced."
   },
   {
    "n": 3,
-   "t": "Grouped by how they failed — so you can see whether you are fixing one problem or several."
+   "t": "Grouped by how they failed \u2014 so you can see whether you are fixing one problem or several."
   },
   {
    "n": 4,
-   "t": "Where each one goes — the queue each message will be sent back to."
+   "t": "Where each one goes \u2014 the queue each message will be sent back to."
   },
   {
    "n": 5,
-   "t": "Replay N messages — sends them one at a time, re-checking each. You can stop partway."
+   "t": "Replay N messages \u2014 sends them one at a time, re-checking each. You can stop partway."
   },
   {
    "n": 6,
-   "t": "Cancel — nothing is sent."
+   "t": "Cancel \u2014 nothing is sent."
   },
   {
    "n": 7,
-   "t": "A warning when the failures look like bad data — Replay one first? sends a sample of one, so you can see whether it holds before sending the rest."
+   "t": "A warning when the failures look like bad data \u2014 Replay one first? sends a sample of one, so you can see whether it holds before sending the rest."
   },
   {
    "n": 8,
-   "t": "Page controls — move through the list when more messages are chosen than fit on one page."
+   "t": "Page controls \u2014 move through the list when more messages are chosen than fit on one page."
   }
  ],
  "13b-bulk-replay-end.png": [
   {
    "n": 1,
-   "t": "How it will run — the pace (a few messages a second, gentle on your consumer) and the automatic stop: five sends in a row that are not accepted."
+   "t": "How it will run \u2014 the pace (a few messages a second, gentle on your consumer) and the automatic stop: five sends in a row that are not accepted."
   },
   {
    "n": 2,
-   "t": "After they are sent back — folds open to say what ServiceHub does next: it keeps watching, and on AWS it records each one as “verification required”, never as fixed."
+   "t": "After they are sent back \u2014 folds open to say what ServiceHub does next: it keeps watching, and on AWS it records each one as \u201cverification required\u201d, never as fixed."
   },
   {
    "n": 3,
-   "t": "Purge instead… — for messages not worth replaying. It does not delete anything yet: it opens a separate step that asks why, shows what would be purged, and needs you to type a confirmation. Deleting is for good, and each purge is recorded with your name and reason."
+   "t": "Purge instead\u2026 \u2014 for messages not worth replaying. It does not delete anything yet: it opens a separate step that asks why, shows what would be purged, and needs you to type a confirmation. Deleting is for good, and each purge is recorded with your name and reason."
   },
   {
    "n": 4,
-   "t": "Page controls — move through the list when more messages are chosen than fit on one page."
+   "t": "Page controls \u2014 move through the list when more messages are chosen than fit on one page."
   },
   {
    "n": 5,
-   "t": "Replay N messages — sends them one at a time, re-checking each. You can stop partway."
+   "t": "Replay N messages \u2014 sends them one at a time, re-checking each. You can stop partway."
   },
   {
    "n": 6,
-   "t": "Cancel — nothing is sent."
+   "t": "Cancel \u2014 nothing is sent."
   }
  ],
  "10-replay-result.png": [
@@ -722,71 +730,71 @@
   },
   {
    "n": 2,
-   "t": "It is recorded, with who did it, and shows under Replayed (and in Advanced → Recovery Ledger). On AWS the result will read “Verification required”: this cloud cannot prove the queue stayed empty, so ServiceHub never says it held."
+   "t": "It is recorded, with who did it, and shows under Replayed (and in Advanced \u2192 Recovery Ledger). On AWS the result will read \u201cVerification required\u201d: this cloud cannot prove the queue stayed empty, so ServiceHub never says it held."
   },
   {
    "n": 3,
-   "t": "Done — closes the window."
+   "t": "Done \u2014 closes the window."
   },
   {
    "n": 4,
-   "t": "Active messages / Replayed — jump to where you can watch this message."
+   "t": "Active messages / Replayed \u2014 jump to where you can watch this message."
   }
  ],
  "11-replayed.png": [
   {
    "n": 1,
-   "t": "Messages replayed — how many were put back in the window."
+   "t": "Messages replayed \u2014 how many were put back in the window."
   },
   {
    "n": 2,
-   "t": "Being watched — replays still inside their watch window. AWS cannot prove whether each stayed fixed, so they wait for you to judge."
+   "t": "Being watched \u2014 replays still inside their watch window. AWS cannot prove whether each stayed fixed, so they wait for you to judge."
   },
   {
    "n": 3,
-   "t": "Came back — messages that failed the same way again. Nothing retries them on its own."
+   "t": "Came back \u2014 messages that failed the same way again. Nothing retries them on its own."
   },
   {
    "n": 4,
-   "t": "Result filter — stayed fixed, being watched, came back."
+   "t": "Result filter \u2014 stayed fixed, being watched, came back."
   },
   {
    "n": 5,
-   "t": "Download — saves this list as a file. It does not change anything."
+   "t": "Download \u2014 saves this list as a file. It does not change anything."
   },
   {
    "n": 6,
-   "t": "Details — the full record of this replay."
+   "t": "Details \u2014 the full record of this replay."
   },
   {
    "n": 7,
-   "t": "Filters — namespace, queue or topic, result, time window and search; Refresh reads the list again. They change what is listed, never what happened."
+   "t": "Filters \u2014 namespace, queue or topic, result, time window and search; Refresh reads the list again. They change what is listed, never what happened."
   },
   {
    "n": 8,
-   "t": "The table — a tick per replay (the heading tick ticks the page) and Details on each row."
+   "t": "The table \u2014 a tick per replay (the heading tick ticks the page) and Details on each row."
   },
   {
    "n": 9,
-   "t": "What am I looking at? — a short reading guide. Auto Replay rules — opens the rules page. All and Last 24 hours — the result and time filters."
+   "t": "What am I looking at? \u2014 a short reading guide. Auto Replay rules \u2014 opens the rules page. All and Last 24 hours \u2014 the result and time filters."
   },
   {
    "n": 10,
-   "t": "The three tabs — Dead letters, Active and Replayed. They switch the list below without leaving the page."
+   "t": "The three tabs \u2014 Dead letters, Active and Replayed. They switch the list below without leaving the page."
   }
  ],
  "11b-replayed-end.png": [
   {
    "n": 1,
-   "t": "The replays, newest first — each with a tick and Details."
+   "t": "The replays, newest first \u2014 each with a tick and Details."
   },
   {
    "n": 2,
-   "t": "Paging — rows per page, previous, the page numbers and next."
+   "t": "Paging \u2014 rows per page, previous, the page numbers and next."
   },
   {
    "n": 3,
-   "t": "Filters — result, queue or topic, who replayed it, time window and search; Refresh re-reads the list and Download as CSV saves it as a file. They change what is listed, never what happened."
+   "t": "Filters \u2014 result, queue or topic, who replayed it, time window and search; Refresh re-reads the list and Download as CSV saves it as a file. They change what is listed, never what happened."
   },
   {
    "n": 4,
@@ -796,59 +804,59 @@
  "12-active.png": [
   {
    "n": 1,
-   "t": "Send a message — puts a test message on a queue. This does change the queue, so use a dev queue."
+   "t": "Send a message \u2014 puts a test message on a queue. This does change the queue, so use a dev queue."
   },
   {
    "n": 2,
-   "t": "Why there is no message list — on AWS there is no way to look at a message without it counting as a delivery, and watching could push it into the dead-letter queue by itself. So ServiceHub shows counts per queue, and “Follow live” is not offered."
+   "t": "Why there is no message list \u2014 on AWS there is no way to look at a message without it counting as a delivery, and watching could push it into the dead-letter queue by itself. So ServiceHub shows counts per queue, and \u201cFollow live\u201d is not offered."
   },
   {
    "n": 3,
-   "t": "Namespace — all of AWS, or one account and region."
+   "t": "Namespace \u2014 all of AWS, or one account and region."
   },
   {
    "n": 4,
-   "t": "The three tabs — Dead letters, Active and Replayed — each with an ⓘ that explains it."
+   "t": "The three tabs \u2014 Dead letters, Active and Replayed \u2014 each with an \u24d8 that explains it."
   },
   {
    "n": 5,
-   "t": "The table — one row per queue found in this region, including the dead-letter queue itself: Queue or topic, Waiting now (ready to be received) and Dead-lettered (moved here after failing too often). AWS counts them; ServiceHub never opens them. The ⓘ on each heading says what that count means."
+   "t": "The table \u2014 one row per queue found in this region, including the dead-letter queue itself: Queue or topic, Waiting now (ready to be received) and Dead-lettered (moved here after failing too often). AWS counts them; ServiceHub never opens them. The \u24d8 on each heading says what that count means."
   }
  ],
  "14-auto-replay.png": [
   {
    "n": 1,
-   "t": "Auto Generate Rules — proposes rules from failures already seen. It only proposes; you decide what to turn on."
+   "t": "Auto Generate Rules \u2014 proposes rules from failures already seen. It only proposes; you decide what to turn on."
   },
   {
    "n": 2,
-   "t": "Create rule — start a rule from a failure you have already seen."
+   "t": "Create rule \u2014 start a rule from a failure you have already seen."
   },
   {
    "n": 3,
-   "t": "How it works — you name a failure, safety checks decide, it replays gently, it proves it worked and stops itself if it does not."
+   "t": "How it works \u2014 you name a failure, safety checks decide, it replays gently, it proves it worked and stops itself if it does not."
   },
   {
    "n": 4,
-   "t": "Totals — rules on, replayed by rules, waiting for a person, stopped themselves."
+   "t": "Totals \u2014 rules on, replayed by rules, waiting for a person, stopped themselves."
   },
   {
    "n": 5,
-   "t": "Namespace — Auto Replay rules apply to every AWS account and region you connected; this picks which one the page shows."
+   "t": "Namespace \u2014 Auto Replay rules apply to every AWS account and region you connected; this picks which one the page shows."
   },
   {
    "n": 6,
-   "t": "Refresh rules — reads the rules again."
+   "t": "Refresh rules \u2014 reads the rules again."
   },
   {
    "n": 7,
-   "t": "Create your first rule — the same as Create rule, shown while there are none."
+   "t": "Create your first rule \u2014 the same as Create rule, shown while there are none."
   }
  ],
  "14-auto-replay-create.png": [
   {
    "n": 1,
-   "t": "Based on — pick a failure ServiceHub has already seen. A rule can only be made from a seen failure."
+   "t": "Based on \u2014 pick a failure ServiceHub has already seen. A rule can only be made from a seen failure."
   },
   {
    "n": 2,
@@ -856,283 +864,291 @@
   },
   {
    "n": 3,
-   "t": "Create and turn on — enabled once you choose a failure."
+   "t": "Create and turn on \u2014 enabled once you choose a failure."
   },
   {
    "n": 4,
-   "t": "Cancel — nothing is created."
+   "t": "Cancel \u2014 nothing is created."
   },
   {
    "n": 5,
-   "t": "The page header — namespace, Refresh rules, Auto Generate Rules (proposes only) and the “How Auto Replay works” fold, as on the previous screenshot."
+   "t": "The page header \u2014 namespace, Refresh rules, Auto Generate Rules (proposes only) and the \u201cHow Auto Replay works\u201d fold, as on the previous screenshot."
   }
  ],
  "15-settings-connections.png": [
   {
    "n": 1,
-   "t": "Sections — Connections, Notifications, Preferences, Access & security and Backup. Each jumps to that part of this window."
+   "t": "Sections \u2014 Connections, Notifications, Preferences, Access & security and Backup. Each jumps to that part of this window."
   },
   {
    "n": 2,
-   "t": "Add a cloud — connect another cloud."
+   "t": "Add a cloud \u2014 connect another cloud."
   },
   {
    "n": 3,
-   "t": "Test — checks the connection now and shows the result. Reads only."
+   "t": "Test \u2014 checks the connection now and shows the result. Reads only."
   },
   {
    "n": 4,
-   "t": "Remove — forgets this connection and its stored credential. It does not delete anything in AWS."
+   "t": "Remove \u2014 forgets this connection and its stored credential. It does not delete anything in AWS."
+  },
+  {
+   "n": 5,
+   "t": "Confirm fixes on this cloud \u2014 Off until you switch it on. Without it, a replay here is sent back but cannot be confirmed as fixed. Switch on sets up the observer that lets ServiceHub see this cloud\u2019s whole dead-letter queue."
   }
  ],
  "15-settings-notifications.png": [
   {
    "n": 1,
-   "t": "In-app bell and pop-up — always on. It cannot be switched off, so it can never be switched off by mistake."
+   "t": "In-app bell and pop-up \u2014 always on. It cannot be switched off, so it can never be switched off by mistake."
   },
   {
    "n": 2,
-   "t": "Add webhook (Slack) — paste a Slack incoming-webhook URL to also get the message there."
+   "t": "Add webhook (Slack) \u2014 paste a Slack incoming-webhook URL to also get the message there."
   },
   {
    "n": 3,
-   "t": "Add webhook (Microsoft Teams) — the same for a Teams channel."
+   "t": "Add webhook (Microsoft Teams) \u2014 the same for a Teams channel."
   },
   {
    "n": 4,
-   "t": "Add webhook (any other system) — JSON to a URL you choose. Private and internal addresses are refused."
+   "t": "Add webhook (any other system) \u2014 JSON to a URL you choose. Private and internal addresses are refused."
   }
  ],
  "15-settings-preferences.png": [
   {
    "n": 1,
-   "t": "Theme — Light today; Dark is marked soon."
+   "t": "Theme \u2014 Light today; Dark is marked soon."
   },
   {
    "n": 2,
-   "t": "Times shown in — your browser’s time zone, or UTC. It changes how times are displayed, never the data."
+   "t": "Times shown in \u2014 your browser\u2019s time zone, or UTC. It changes how times are displayed, never the data."
   },
   {
    "n": 3,
-   "t": "Open on — start in Simple every time (Simple), or where you last were (Last used). Kept in this browser only."
+   "t": "Open on \u2014 start in Simple every time (Simple), or where you last were (Last used). Kept in this browser only."
+  },
+  {
+   "n": 4,
+   "t": "Your tracing tool \u2014 optional. Paste a link with {traceId} in it, and ServiceHub shows a link from each message to that trace in your own tool. It is kept in this browser only."
   }
  ],
  "15-settings-access.png": [
   {
    "n": 1,
-   "t": "Who you are — shown from this browser session until roles are switched on. The credential key fingerprint shows what encrypts stored credentials."
+   "t": "Who you are \u2014 shown from this browser session until roles are switched on. The credential key fingerprint shows what encrypts stored credentials."
   },
   {
    "n": 2,
-   "t": "Roles — Viewer sees, Operator replays, Approver answers the Agent, Admin connects clouds. Giving the first role switches roles on."
+   "t": "Roles \u2014 Viewer sees, Operator replays, Approver answers the Agent, Admin connects clouds. Giving the first role switches roles on."
   },
   {
    "n": 3,
-   "t": "Who — the API key name or signed-in user the role is for."
+   "t": "Who \u2014 the API key name or signed-in user the role is for."
   },
   {
    "n": 4,
-   "t": "Kind, Role, Where and Grant — choose whether it is a key or a person, the role, whether it applies everywhere or to one namespace, then Grant. Granting the first role switches roles on for everyone."
+   "t": "Kind, Role, Where and Grant \u2014 choose whether it is a key or a person, the role, whether it applies everywhere or to one namespace, then Grant. Granting the first role switches roles on for everyone."
   },
   {
    "n": 5,
-   "t": "Emergency stop — type STOP, say why, and switch it on to halt every automatic action at once. Nothing already done is undone; switch it off to resume."
+   "t": "Emergency stop \u2014 type STOP, say why, and switch it on to halt every automatic action at once. Nothing already done is undone; switch it off to resume."
   }
  ],
  "15-settings-backup.png": [
   {
    "n": 1,
-   "t": "Take a backup now — saves a consistent copy of ServiceHub’s own database (not of your clouds)."
+   "t": "Take a backup now \u2014 saves a consistent copy of ServiceHub\u2019s own database (not of your clouds)."
   }
  ],
  "16-help.png": [
   {
    "n": 1,
-   "t": "Search — type what you are trying to do."
+   "t": "Search \u2014 type what you are trying to do."
   },
   {
    "n": 2,
-   "t": "An answer — click to open it in place; each links to the screen it is about."
+   "t": "An answer \u2014 click to open it in place; each links to the screen it is about."
   },
   {
    "n": 3,
-   "t": "Setting up answers — connecting, alerts and who may replay."
+   "t": "Setting up answers \u2014 connecting, alerts and who may replay."
   },
   {
    "n": 4,
-   "t": "Keyboard shortcuts — only ones that work are listed."
+   "t": "Keyboard shortcuts \u2014 only ones that work are listed."
   },
   {
    "n": 5,
-   "t": "Step by step — one guide per cloud, each with every screen as a real screenshot and a numbered key for every button and link. Yours (AWS) is listed first. The same guides are the articles in docs/clouds."
+   "t": "Step by step \u2014 one guide per cloud, each with every screen as a real screenshot and a numbered key for every button and link. Yours (AWS) is listed first. The same guides are the articles in docs/clouds."
   }
  ],
  "17-advanced-overview.png": [
   {
    "n": 1,
-   "t": "Scope — all clouds, or one."
+   "t": "Scope \u2014 all clouds, or one."
   },
   {
    "n": 2,
-   "t": "Window — the period the page counts over."
+   "t": "Window \u2014 the period the page counts over."
   },
   {
    "n": 3,
-   "t": "Insights — patterns ServiceHub noticed across your failures."
+   "t": "Insights \u2014 patterns ServiceHub noticed across your failures."
   },
   {
    "n": 4,
-   "t": "Recovery — how replays ended. “Recovered” means it did not come back, not that the business transaction completed."
+   "t": "Recovery \u2014 how replays ended. \u201cRecovered\u201d means it did not come back, not that the business transaction completed."
   },
   {
    "n": 5,
-   "t": "Authority — what each failure may do on its own, and what holds it there."
+   "t": "Authority \u2014 what each failure may do on its own, and what holds it there."
   },
   {
    "n": 6,
-   "t": "Capability — what each cloud can prove."
+   "t": "Capability \u2014 what each cloud can prove."
   },
   {
    "n": 7,
-   "t": "Being watched, All agents → and Recovery Ledger → — jump to the Agents page and the Recovery Ledger. They only open pages; nothing changes."
+   "t": "Being watched, All agents \u2192 and Recovery Ledger \u2192 \u2014 jump to the Agents page and the Recovery Ledger. They only open pages; nothing changes."
   },
   {
    "n": 8,
-   "t": "Overview — the page you are on; the other three Advanced pages are in the bar at the top."
+   "t": "Overview \u2014 the page you are on; the other three Advanced pages are in the bar at the top."
   },
   {
    "n": 9,
-   "t": "Why → — explains why this cloud cannot yet prove a replayed message stayed fixed, and what would unlock it. It opens Help; nothing changes."
+   "t": "Why \u2192 \u2014 explains why this cloud cannot yet prove a replayed message stayed fixed, and what would unlock it. It opens Help; nothing changes."
   }
  ],
  "17-advanced-ledger.png": [
   {
    "n": 1,
-   "t": "Export evidence — downloads the ledger so it can be verified offline. It changes nothing."
+   "t": "Export evidence \u2014 downloads the ledger so it can be verified offline. It changes nothing."
   },
   {
    "n": 2,
-   "t": "Outcome chips — Waiting, Watching, Recovered, Unverified, Returned, Failed, Unknown, Declined. Recovered and Unverified are never counted together."
+   "t": "Outcome chips \u2014 Waiting, Watching, Recovered, Unverified, Returned, Failed, Unknown, Declined. Recovered and Unverified are never counted together."
   },
   {
    "n": 3,
-   "t": "Filters — cloud, namespace, queue or topic, who did it, and search."
+   "t": "Filters \u2014 cloud, namespace, queue or topic, who did it, and search."
   },
   {
    "n": 4,
-   "t": "Details — who took the action, what happened and its evidence. Each entry carries a fingerprint of the one before it."
+   "t": "Details \u2014 who took the action, what happened and its evidence. Each entry carries a fingerprint of the one before it."
   },
   {
    "n": 5,
-   "t": "Filters and entries — namespace, queue or topic, who, and search narrow the list; each entry opens to show its evidence."
+   "t": "Filters and entries \u2014 namespace, queue or topic, who, and search narrow the list; each entry opens to show its evidence."
   },
   {
    "n": 6,
-   "t": "What am I looking at? — a short reading guide for this page. Window — the period it counts over."
+   "t": "What am I looking at? \u2014 a short reading guide for this page. Window \u2014 the period it counts over."
   },
   {
    "n": 7,
-   "t": "Outcome chips with counts — click one to list only those entries; All shows everything again."
+   "t": "Outcome chips with counts \u2014 click one to list only those entries; All shows everything again."
   },
   {
    "n": 8,
-   "t": "Paging — how many rows per page, previous, the page number and next."
+   "t": "Paging \u2014 how many rows per page, previous, the page number and next."
   },
   {
    "n": 9,
-   "t": "The table headings — each has an ⓘ that explains that column in a sentence."
+   "t": "The table headings \u2014 each has an \u24d8 that explains that column in a sentence."
   }
  ],
  "17-advanced-signatures.png": [
   {
    "n": 1,
-   "t": "Trace a message — follow one message across clouds by its ID."
+   "t": "Trace a message \u2014 follow one message across clouds by its ID."
   },
   {
    "n": 2,
-   "t": "Growing — signatures whose recent days hold at least twice what earlier days did."
+   "t": "Growing \u2014 signatures whose recent days hold at least twice what earlier days did."
   },
   {
    "n": 3,
-   "t": "Sort — most messages, or others."
+   "t": "Sort \u2014 most messages, or others."
   },
   {
    "n": 4,
-   "t": "A signature — one way of failing: the same queue and the same kind of error, so many messages become one thing to reason about."
+   "t": "A signature \u2014 one way of failing: the same queue and the same kind of error, so many messages become one thing to reason about."
   },
   {
    "n": 5,
-   "t": "Replays — how many of these were replayed and how many were verified to have held. On AWS none can be verified, and this says so."
+   "t": "Replays \u2014 how many of these were replayed and how many were verified to have held. On AWS none can be verified, and this says so."
   },
   {
    "n": 6,
-   "t": "Filters — cloud, namespace, queue or topic, who, and search."
+   "t": "Filters \u2014 cloud, namespace, queue or topic, who, and search."
   },
   {
    "n": 7,
-   "t": "Each signature row — opens to show the failures grouped under it and what each replay did."
+   "t": "Each signature row \u2014 opens to show the failures grouped under it and what each replay did."
   },
   {
    "n": 8,
-   "t": "What am I looking at? — a short reading guide. Window — the period counted."
+   "t": "What am I looking at? \u2014 a short reading guide. Window \u2014 the period counted."
   },
   {
    "n": 9,
-   "t": "Chips — Signatures, All, Replay helps, Replay doesn’t help. Click one to list only those."
+   "t": "Chips \u2014 Signatures, All, Replay helps, Replay doesn\u2019t help. Click one to list only those."
   },
   {
    "n": 10,
-   "t": "Paging — rows per page, previous, the page number and next."
+   "t": "Paging \u2014 rows per page, previous, the page number and next."
   },
   {
    "n": 11,
-   "t": "The table headings — Signature, Messages, Days and Replays, each with an ⓘ that explains it."
+   "t": "The table headings \u2014 Signature, Messages, Days and Replays, each with an \u24d8 that explains it."
   }
  ],
  "17c-advanced-signatures-end.png": [
   {
    "n": 1,
-   "t": "Each signature row — opens to show the failures grouped under it and what each replay did."
+   "t": "Each signature row \u2014 opens to show the failures grouped under it and what each replay did."
   },
   {
    "n": 2,
-   "t": "Paging — rows per page, previous, the page numbers and next."
+   "t": "Paging \u2014 rows per page, previous, the page numbers and next."
   },
   {
    "n": 3,
-   "t": "The controls above the list — Signatures, Trace a message, the filters, search, sort, and the ⓘ About buttons on the headings — as on the previous screenshot."
+   "t": "The controls above the list \u2014 Signatures, Trace a message, the filters, search, sort, and the \u24d8 About buttons on the headings \u2014 as on the previous screenshot."
   }
  ],
  "17-advanced-agents.png": [
   {
    "n": 1,
-   "t": "Acting agents — the only ones that can change anything, and only after the same safety checks you get."
+   "t": "Acting agents \u2014 the only ones that can change anything, and only after the same safety checks you get."
   },
   {
    "n": 2,
-   "t": "Watching agents — they only look and record."
+   "t": "Watching agents \u2014 they only look and record."
   },
   {
    "n": 3,
-   "t": "Pause — stops that agent acting. It is the one thing Advanced can do, because it only removes authority. Nothing it already did is undone."
+   "t": "Pause \u2014 stops that agent acting. It is the one thing Advanced can do, because it only removes authority. Nothing it already did is undone."
   },
   {
    "n": 4,
-   "t": "Learn more — a short explanation of how agents work."
+   "t": "Learn more \u2014 a short explanation of how agents work."
   },
   {
    "n": 5,
-   "t": "Health summary, agent rows and Open — the summary says whether every agent is running normally; a row opens that agent’s details; Open goes to the screen the agent works through."
+   "t": "Health summary, agent rows and Open \u2014 the summary says whether every agent is running normally; a row opens that agent\u2019s details; Open goes to the screen the agent works through."
   },
   {
    "n": 6,
-   "t": "What am I looking at? — a short reading guide for this page."
+   "t": "What am I looking at? \u2014 a short reading guide for this page."
   }
  ],
  "17b-advanced-agents-more.png": [
   {
    "n": 1,
-   "t": "Watching agents — they only look and record; they cannot change anything."
+   "t": "Watching agents \u2014 they only look and record; they cannot change anything."
   },
   {
    "n": 2,
@@ -1140,43 +1156,29 @@
   },
   {
    "n": 3,
-   "t": "Learn more — a short explanation of how agents work."
+   "t": "Learn more \u2014 a short explanation of how agents work."
   }
  ],
  "18-search.png": [
   {
    "n": 1,
-   "t": "Search box — type part of a cloud, queue or page name. Enter opens the first result. Esc closes. Searching never changes anything."
+   "t": "Search box \u2014 type part of a cloud, queue or page name. Enter opens the first result. Esc closes. Searching never changes anything."
   }
  ],
  "18-bell.png": [
   {
    "n": 1,
-   "t": "The bell — the only place the Agent asks you something. It lists what is waiting for you and clears when it is resolved, not when you look."
+   "t": "The bell \u2014 the only place the Agent asks you something. It lists what is waiting for you and clears when it is resolved, not when you look."
   },
   {
    "n": 2,
-   "t": "See all waiting — opens the full list of what needs a person."
-  }
- ],
- "18-user-menu.png": [
-  {
-   "n": 1,
-   "t": "Settings — opens Settings (connections, notifications, preferences, access, backup)."
-  },
-  {
-   "n": 2,
-   "t": "Help and shortcuts — opens Help."
-  },
-  {
-   "n": 3,
-   "t": "You — who ServiceHub records your actions as, and whether this server has sign-in turned on."
+   "t": "See all waiting \u2014 opens the full list of what needs a person."
   }
  ],
  "16b-help-end.png": [
   {
    "n": 1,
-   "t": "Answers and guides — click one to open it in place; the “Every screen” entries are one guide per cloud, each a real screenshot with a numbered key for every button and link."
+   "t": "Answers and guides \u2014 click one to open it in place; the \u201cEvery screen\u201d entries are one guide per cloud, each a real screenshot with a numbered key for every button and link."
   }
  ]
 }

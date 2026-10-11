@@ -111,6 +111,8 @@ public sealed class RecoveryVerificationAgent : IAgent
         var metrics = services.GetService<ServiceHubMetrics>();
         var attestationService = services.GetService<IDlqObserverAttestationService>();
         var logReaders = services.GetService<IEnumerable<IDlqObserverLogReader>>();
+        var returnChecks = services.GetService<IEnumerable<IDeadLetterReturnCheck>>();
+        var viewTracker = services.GetService<DlqObserver.DeadLetterViewTracker>();
 
         var now = DateTimeOffset.UtcNow;
         var due = (await ledger.GetAgeingAsync(ownerId, _maxBatch, ct).ConfigureAwait(false))
@@ -121,8 +123,18 @@ public sealed class RecoveryVerificationAgent : IAgent
         foreach (var entry in due)
         {
             ct.ThrowIfCancellationRequested();
-            var (outcome, reason, confidence) = await DetermineCoverageAsync(
-                entry, namespaceRepo, router, attestationService, logReaders, _logger, ct).ConfigureAwait(false);
+            // A namespace with a live WHOLE view of its dead-letter queue (ADR-0018) is asked first. Anything it does not
+            // cover falls through to the path below, unchanged.
+            var viaView = await DeadLetterViewVerdict.DecideAsync(
+                entry, namespaceRepo, router, attestationService, returnChecks, viewTracker, now, _logger, ct).ConfigureAwait(false);
+            if (viaView.LeaveOpen)
+            {
+                continue; // too early to tell, or the view cannot answer yet: it is asked again next sweep
+            }
+
+            var (outcome, reason, confidence) = viaView.Handled
+                ? (viaView.Outcome, viaView.Reason, viaView.Confidence)
+                : await DetermineCoverageAsync(entry, namespaceRepo, router, attestationService, logReaders, _logger, ct).ConfigureAwait(false);
 
             var result = await ledger.RecordObservationAsync(new RecordObservationRequest
             {

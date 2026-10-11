@@ -75,7 +75,7 @@ npm ci
 
 `./run.sh --check` verifies your tools first; [docs/LOCAL-SETUP.md](docs/LOCAL-SETUP.md) has the full walkthrough and troubleshooting.
 
-`/demo/azure` runs the whole UI on made-up data — no API, no cloud, nothing sent — which is the quickest way to try a UI change.
+`/demo` runs the whole UI on made-up data — no API, no cloud, nothing sent — which is the quickest way to try a UI change.
 
 The frozen 4.0.0 codebase in `archive/servicehub-4.0.0/` is a parts bin: read it, copy from it, **never edit it and never import it**
 (an architecture test fails the build if you do).

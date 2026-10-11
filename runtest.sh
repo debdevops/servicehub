@@ -73,6 +73,9 @@ if [ "$MODE" = "--all" ]; then
   step "Frontend type-check (runtest.sh normally skips this — CI does not)"
   npm run typecheck -w apps/servicehub
 
+  step "MCP server tests (tools/mcp)"
+  node --test tools/mcp/servicehub-mcp.test.mjs
+
   step "Frontend lint (app and tests)"
   npm run lint -w apps/servicehub
 

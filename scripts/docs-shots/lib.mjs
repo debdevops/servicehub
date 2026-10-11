@@ -68,7 +68,7 @@ function recordKeys(file, callouts) {
  *  centre is not inside any callout. Written next to keys.json as uncovered.json: the inventory gap, from the running app. */
 /** What each shot of the current scene covered, and what lay out of view (below the fold, or under another element) — see endScene. */
 let sceneShots = []
-const keyOf = (c) => `${c.where}|${c.tag}|${c.name.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/gi, '#').replace(/\d+/g, '#')}`
+const keyOf = (c) => `${c.where}|${c.tag}|${c.name.replace(/[0-9a-f]{8}-[0-9a-f-]{27}|[0-9a-f]{32}/gi, '#').replace(/\d+/g, '#')}`
 
 async function recordCoverage(page, file, boxes, scope) {
   const collect = (root) => {

@@ -17,6 +17,7 @@ import { LookNow } from './LookNow'
 import { MessageTable } from './MessageTable'
 import { WorkTabs } from './WorkTabs'
 import { useDeadLetters } from '../../hooks/useDeadLetters'
+import { useProviderSummary } from '../../hooks/useProviderSummary'
 import { useMe } from '../../hooks/useIdentity'
 import { permission } from '../../lib/permissions'
 import { openReplayAll, useReplayAll } from '../../lib/replayAll'
@@ -85,6 +86,8 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
   const { data, isPending, isError, refetch, isFetching, dataUpdatedAt } = useDeadLetters(query)
   const mayReplay = permission(useMe().data, 'Operator', 'replay these messages', { recover: true })
   const replayAllRun = useReplayAll()
+  const cloudSummary = useProviderSummary(namespaces)
+  const cloudCount = cloudSummary.status === 'ready' ? cloudSummary.summary.deadLetters : null
   const replayAllBusy = replayAllRun?.phase === 'running'
   const scopeLabel = scope.ns ? `${cloud} · ${scope.ns.displayName ?? scope.ns.name}` : scope.env ? `All ${environmentMeta[scope.env].label} namespaces in ${cloud}` : `All namespaces in ${cloud}`
 
@@ -254,8 +257,8 @@ export function DeadLettersView({ provider, namespaces }: { provider: CloudProvi
                 <button
                   type="button"
                   disabled={!mayReplay.allowed}
-                  title={mayReplay.allowed ? (replayAllBusy ? 'A replay-all run is in progress — open it' : 'Replay every stuck message in this scope, one by one, in the background') : (mayReplay.reason ?? 'You cannot replay these messages')}
-                  onClick={() => void openReplayAll({ provider, namespaceId: scope.ns?.id, environment: scope.env ?? undefined }, scopeLabel)}
+                  title={mayReplay.allowed ? (replayAllBusy ? 'A replay-all run is in progress — open it' : `Replay every message still stuck in ${scopeLabel}, one by one, in the background. Ignores the filters, time window and search here; the preview shows the exact count first.`) : (mayReplay.reason ?? 'You cannot replay these messages')}
+                  onClick={() => void openReplayAll({ provider, namespaceId: scope.ns?.id, environment: scope.env ?? undefined }, scopeLabel, cloudCount)}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-primary-600)] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[var(--color-primary-700)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <ListRestart className="h-4 w-4" aria-hidden="true" /> {replayAllBusy ? 'Replay all (running…)' : 'Replay All Messages'}

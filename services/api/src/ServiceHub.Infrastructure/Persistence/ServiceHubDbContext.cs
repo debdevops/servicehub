@@ -207,6 +207,7 @@ public sealed class ServiceHubDbContext : DbContext
         entity.Property(e => e.LastCanaryMessageId).HasMaxLength(128);
         entity.Property(e => e.LastCanarySentAt).HasConversion(SortableUtcNullable);
         entity.Property(e => e.LastConfirmedAt).HasConversion(SortableUtcNullable);
+        entity.Property(e => e.LiveSince).HasConversion(SortableUtcNullable);
 
         // No FK on NamespaceId — a soft reference, like every other ledger-adjacent namespace id.
         entity.HasIndex(e => new { e.OwnerId, e.NamespaceId }).IsUnique().HasDatabaseName("IX_DlqObserverAttestations_Owner_Namespace");

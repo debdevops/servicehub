@@ -1,0 +1,57 @@
+# Publishes the public demo page to GitHub Pages.
+#
+# The page is the same app built so that it is ONLY the demo (VITE_DEMO_ONLY): made-up data, no server, no sign-in, and no
+# connection to any cloud. It is not a hosted ServiceHub — nobody can connect anything to it.
+#
+# One-time setup (repository owner): Settings → Pages → Build and deployment → Source: "GitHub Actions".
+name: Demo page
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: demo-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build the demo-only page
+        run: npm run build:demo -w apps/servicehub
+        env:
+          # A project page is served under /<repository>/. Set to "/" if a custom domain is added.
+          VITE_BASE: /${{ github.event.repository.name }}/
+      - name: Nothing real may be in the page
+        run: |
+          if grep -rIlE "servicehub-dev|sb-servicehub|502914" apps/servicehub/dist-demo; then
+            echo "A real resource name was found in the demo page." >&2
+            exit 1
+          fi
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/servicehub/dist-demo
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

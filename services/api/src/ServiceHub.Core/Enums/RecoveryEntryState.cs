@@ -15,8 +15,10 @@ public enum RecoveryEntryState
     /// <summary>Provider rejected the call. Terminal.</summary>
     ExecutionFailed = 2,
 
-    /// <summary>The process died mid-call; the outcome is genuinely unknown. A re-attempt opens
-    /// a new entry rather than transitioning this one further.</summary>
+    /// <summary>The outcome is genuinely unknown: the call lost contact with the cloud, or the process stopped (the startup
+    /// sweep settles an <see cref="Executing"/> entry left by an earlier run as this). Neither success nor failure. It stays open,
+    /// and no other attempt on the same source message may begin until a person resolves it (see
+    /// <c>IRecoveryLedger.HasUnresolvedAttemptAsync</c>).</summary>
     ExecutionUnknown = 3,
 
     /// <summary>Accepted and no recurrence was observed for the full window with adequate

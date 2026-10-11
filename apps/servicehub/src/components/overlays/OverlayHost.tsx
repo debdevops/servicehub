@@ -1,10 +1,11 @@
-import { Suspense } from 'react'
+import { Suspense, useState } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { visibleEntries, type OverlayEntry } from '../../nav/navigation'
 import { OverlayFrame } from './OverlayFrame'
 import { guideTopic } from '../../content/guides/links'
 import { screenHelpStep } from '../../content/help'
 import { useGuideCloud } from '../help/useGuideCloud'
+import { OverlayTitleContext, type OverlayTitleOverride } from './overlayTitle'
 import { overlayBodies, overlayCompanionParams, overlayWide, overlayWider } from './registry'
 
 type OverlayKind = 'modal' | 'panel'
@@ -24,6 +25,17 @@ export function OverlayHost({ connectedCloudCount }: { connectedCloudCount: numb
   const { pathname } = useLocation()
   const offered = visibleEntries(connectedCloudCount)
   const guideCloud = useGuideCloud()
+  // A body may retitle its own frame (see overlayTitle.ts), keyed by the overlay so one never retitles another.
+  const [titles, setTitles] = useState<Readonly<Record<string, OverlayTitleOverride>>>({})
+  const retitle = (key: string) => (override: OverlayTitleOverride | null) =>
+    setTitles((all) => {
+      if (override === null) {
+        if (!(key in all)) return all
+        return Object.fromEntries(Object.entries(all).filter(([k]) => k !== key))
+      }
+      const same = all[key]?.title === override.title && all[key]?.description === override.description
+      return same ? all : { ...all, [key]: override }
+    })
 
   const find = (kind: OverlayKind): OverlayEntry | undefined => {
     const value = params.get(kind)
@@ -68,10 +80,12 @@ export function OverlayHost({ connectedCloudCount }: { connectedCloudCount: numb
         const Body = overlayBodies[entry.id]
         const onClose = close(kind, entry.id)
         return (
-          <OverlayFrame key={`${kind}:${entry.id}`} kind={kind} title={entry.label} description={entry.description} onClose={onClose} helpHref={helpHref(entry.id)} size={overlayWider.has(entry.id) ? 'wider' : overlayWide.has(entry.id) ? 'wide' : 'default'}>
+          <OverlayFrame key={`${kind}:${entry.id}`} kind={kind} title={titles[`${kind}:${entry.id}`]?.title ?? entry.label} description={titles[`${kind}:${entry.id}`]?.description ?? entry.description} onClose={onClose} helpHref={helpHref(entry.id)} size={overlayWider.has(entry.id) ? 'wider' : overlayWide.has(entry.id) ? 'wide' : 'default'}>
             {Body ? (
               <Suspense fallback={<p className="text-sm text-[var(--color-text-muted)]">Loading…</p>}>
-                <Body entry={entry} close={onClose} />
+                <OverlayTitleContext.Provider value={retitle(`${kind}:${entry.id}`)}>
+                  <Body entry={entry} close={onClose} />
+                </OverlayTitleContext.Provider>
               </Suspense>
             ) : (
               <p className="inline-block rounded-full bg-[var(--color-surface-muted)] px-4 py-1.5 text-sm text-[var(--color-text-muted)]">

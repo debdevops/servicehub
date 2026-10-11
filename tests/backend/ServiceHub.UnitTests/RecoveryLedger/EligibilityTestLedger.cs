@@ -120,6 +120,9 @@ internal sealed class EligibilityTestLedger : IRecoveryLedger
     public Task<IReadOnlyList<RecoveryLedgerEntry>> GetAgeingAsync(string ownerId, int limit = int.MaxValue, CancellationToken cancellationToken = default) => _real.GetAgeingAsync(ownerId, limit, cancellationToken);
     public Task<RecoveryLedgerEntry?> FindByMarkerAsync(string ownerId, string marker, CancellationToken cancellationToken = default) => _real.FindByMarkerAsync(ownerId, marker, cancellationToken);
     public Task<IReadOnlyList<RecoveryLedgerEntry>> FindHeuristicRecurrenceCandidatesAsync(string ownerId, Guid? namespaceId, string entityName, string bodyHash, DateTimeOffset beganBefore, CancellationToken cancellationToken = default) => _real.FindHeuristicRecurrenceCandidatesAsync(ownerId, namespaceId, entityName, bodyHash, beganBefore, cancellationToken);
+    public Task<bool> HasUnresolvedAttemptAsync(string ownerId, long? dlqMessageId, Guid? namespaceId, string? entityName, string? sourceMessageId, CancellationToken cancellationToken = default) => _real.HasUnresolvedAttemptAsync(ownerId, dlqMessageId, namespaceId, entityName, sourceMessageId, cancellationToken);
+    public Task<int> ReconcileInterruptedAsync(DateTimeOffset processStartedAt, CancellationToken cancellationToken = default) => _real.ReconcileInterruptedAsync(processStartedAt, cancellationToken);
+
     public Task<bool> IsEmergencyStopActiveAsync(string ownerId, CancellationToken cancellationToken = default) => _real.IsEmergencyStopActiveAsync(ownerId, cancellationToken);
 
     // Trust queries (unit 4.1) read real recorded outcomes; grants stay in memory above, as the gate's tests expect.

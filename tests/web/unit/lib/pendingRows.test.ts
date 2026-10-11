@@ -29,6 +29,19 @@ describe('pendingRows', () => {
     expect(rows[2].title).toBe('1 replay needs your approval')
   })
 
+  it('shows an attempt with no recorded answer as its own row, never as an approval or a failure', () => {
+    const rows = pendingRows([
+      item({ kind: 'unresolved', id: 'u1', entryId: 'u1', ruleId: null, ruleName: null, provider: 'azure', namespaceName: 'orders-dev', entity: 'orders',
+        reasonCode: 'REPLAY_OUTCOME_UNKNOWN', reason: 'ServiceHub stopped before it could record whether an earlier attempt put this message back.' }),
+      item({}),
+    ])
+    expect(rows.map((r) => r.kind)).toEqual(['unresolved', 'approval'])
+    expect(rows[0]!.title).toBe('An earlier attempt has no recorded answer')
+    expect(rows[0]!.where).toBe('Azure · orders-dev · orders')
+    expect(rows[0]!.action).toEqual({ label: 'Say what happened', href: '?modal=approve&entry=u1' })
+    expect(rows[0]!.title.toLowerCase()).not.toMatch(/fail|recover|success/)
+  })
+
   it('says "N+" when the server sent only the first page — a page size is not a count', () => {
     const items = [item({}), item({ id: 'e2', entryId: 'e2' })]
     expect(pendingRows(items, { capped: true })[0]!.title).toBe('2+ replays need your approval')

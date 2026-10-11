@@ -116,6 +116,31 @@ public sealed class PendingWorkService : IPendingWorkService
                 code, EscalationReasons.Describe(code), r.entry.BegunAt));
         }
 
+        // An attempt with no answer: ServiceHub stopped, or lost contact with the cloud, before it could record whether the message was
+        // sent. It stays open until a person looks at the queue and says what happened, and meanwhile nothing recovers that message.
+        // Narrowed by the same scope as approvals; "unknown" is its own item, never folded into a failure or a success.
+        var unknownQuery = _db.RecoveryLedgerEntries.AsNoTracking()
+            .Where(e => e.OwnerId == scope.OwnerId && e.State == RecoveryEntryState.ExecutionUnknown && e.NamespaceId != null);
+        if (scope.EntryId is { } onlyUnknown) unknownQuery = unknownQuery.Where(e => e.Id == onlyUnknown);
+        if (scope.NamespaceId is { } unknownNs) unknownQuery = unknownQuery.Where(e => e.NamespaceId == unknownNs);
+        if (scope.Provider is { } unknownProvider) unknownQuery = unknownQuery.Where(e => e.ProviderSnapshot == unknownProvider);
+        if (scope.Environment is { } unknownEnv) unknownQuery = unknownQuery.Where(e => e.EnvironmentSnapshot == unknownEnv);
+        if (scope.AllowedNamespaceIds is { } unknownAllowed)
+        {
+            var allowedIds = unknownAllowed.ToList();
+            unknownQuery = unknownQuery.Where(e => allowedIds.Contains(e.NamespaceId!.Value));
+        }
+
+        var unknownRows = scope.ReasonCode is not null && scope.ReasonCode != EscalationReasons.ReplayOutcomeUnknown
+            ? []
+            : await unknownQuery.ToListAsync(cancellationToken).ConfigureAwait(false);
+        var unknownItems = unknownRows.Select(e => new PendingWorkItem(
+            "unresolved", e.Id.ToString(), e.Id, null, e.DlqMessageId, e.NamespaceId, e.NamespaceNameSnapshot,
+            e.ProviderSnapshot?.ToString().ToLowerInvariant(), e.EnvironmentSnapshot?.ToString().ToLowerInvariant(),
+            e.EntityNameSnapshot ?? e.TargetEntity, e.DeadLetterReasonSnapshot, null, null,
+            EscalationReasons.ReplayOutcomeUnknown, EscalationReasons.Describe(EscalationReasons.ReplayOutcomeUnknown), e.BegunAt)).ToList();
+        items.AddRange(unknownItems);
+
         // A rule the breaker switched off waits until a person turns it back on, changes it or deletes it (3.6). Rules are
         // per cloud, not per namespace, so a caller narrowed to one namespace or a restricted key still sees its cloud's rules.
         var stopped = scope.EntryId is not null ? [] : await _db.AutoReplayRules.AsNoTracking()
@@ -143,6 +168,7 @@ public sealed class PendingWorkService : IPendingWorkService
         // Most urgent first: a stopped agent (it silently stops everything it does), then a stopped rule, then the oldest question.
         var all = agentItems.OrderBy(i => i.Since)
             .Concat(items.Where(i => i.Kind == "rule").OrderBy(i => i.Since))
+            .Concat(items.Where(i => i.Kind == "unresolved").OrderBy(i => i.Since))
             .Concat(InterleaveByNamespace(items.Where(i => i.Kind == "approval").OrderBy(i => i.Since))).ToList();
         var byProvider = items.Where(i => i.Provider is not null).GroupBy(i => i.Provider!)
             .Select(g => new PendingWorkProviderCount(g.Key, g.Count())).OrderByDescending(p => p.Count).ToList();

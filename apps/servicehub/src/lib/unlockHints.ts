@@ -19,7 +19,8 @@ export const GATE_REASON_CODES = [
   'EMERGENCY_STOP_ACTIVE', 'EMERGENCY_STOP_QUERY_ERROR', 'PURGE_AUTOMATION_PROHIBITED', 'PRODUCTION_ELEVATION_REQUIRED',
   'RECURRENCE_CAP_AMBIGUOUS_COLLISION', 'RECURRENCE_CAP_EXCEEDED', 'RECURRENCE_CAP_EXCEEDED_HEURISTIC', 'RECURRENCE_CAP_QUERY_ERROR',
   'AUTONOMY_SIGNATURE_HASH_MISSING', 'AUTONOMY_GRANT_QUERY_ERROR', 'AUTONOMY_GRANT_INSUFFICIENT', 'PROVIDER_CANNOT_VERIFY_ABSENCE',
-  'RATE_LIMITED', 'FLEET_RATE_LIMITED', 'NOT_ACTIVE',
+  'SIGNATURE_RECENT_RESULTS_MIXED', 'SIGNATURE_RECENT_RESULTS_QUERY_ERROR',
+  'RATE_LIMITED', 'FLEET_RATE_LIMITED', 'NOT_ACTIVE', 'REPLAY_OUTCOME_UNKNOWN',
 ] as const
 
 const couldNotRead = (what: string): UnlockHint => ({
@@ -47,9 +48,12 @@ export const unlockHints: Readonly<Record<(typeof GATE_REASON_CODES)[number], Un
   AUTONOMY_GRANT_QUERY_ERROR: couldNotRead('record of what this failure has earned'),
   AUTONOMY_GRANT_INSUFFICIENT: { why: 'This kind of failure hasn’t earned automatic replay yet.', takes: 'Every replay of it that is verified as fixed counts. After 10 at 95% or better, rules may replay it on their own.', go: { label: 'Its track record', href: '/advanced/signatures' }, earnable: true },
   PROVIDER_CANNOT_VERIFY_ABSENCE: { why: 'This cloud can’t prove a replayed message stayed fixed.', takes: 'Only Azure can prove the queue really drained. On this cloud a person decides each time — that is the safe answer, not a fault.', go: { label: 'Why this cloud can’t verify', href: '?panel=help&topic=verification-required' }, earnable: true },
+  SIGNATURE_RECENT_RESULTS_MIXED: { why: 'Some of the latest replays of this kind of failure did not hold, so ServiceHub stopped replaying it on its own.', takes: 'Look at what is failing, then approve the next ones yourself. Once newer replays hold, it can go back to handling this alone.', go: { label: 'See its signature', href: '/advanced/signatures' } },
+  SIGNATURE_RECENT_RESULTS_QUERY_ERROR: couldNotRead('latest replay results'),
   RATE_LIMITED: { why: 'Many replays just happened here, so ServiceHub is pacing itself.', takes: 'Wait a few minutes and try again — nothing is lost while it waits.' },
   FLEET_RATE_LIMITED: { why: 'Many replays just happened across every cloud, so ServiceHub is pacing itself.', takes: 'Wait a few minutes and try again — nothing is lost while it waits.' },
   NOT_ACTIVE: { why: 'ServiceHub has already seen this message leave the dead-letter queue.', takes: 'Nothing to do here. See what became of it under Replayed, or “No longer stuck”.', go: { label: 'Replayed', href: '/?tab=replayed' } },
+  REPLAY_OUTCOME_UNKNOWN: { why: 'An earlier replay of this message was never confirmed — whether it was sent is not known — so replaying again could send it twice.', takes: 'A person says what happened to that earlier attempt (it was sent, or it was not). Until then nothing replays it, approvers included.', go: { label: 'Outcome unknown', href: '/advanced/ledger?state=ExecutionUnknown' } },
 }
 
 export function hintFor(code: string | null | undefined): UnlockHint {

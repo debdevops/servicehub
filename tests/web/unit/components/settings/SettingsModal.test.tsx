@@ -117,4 +117,61 @@ describe('Safety banners', () => {
     expect(await screen.findByText('Resume on Home')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Resume' })).not.toBeInTheDocument()
   })
+
+  describe('confirming fixes', () => {
+    const caps = (canProveDlqAbsence: boolean) => ({ canProveDlqAbsence } as namespaces.ProviderCapabilities)
+    const ns = (id: string, provider: namespaces.CloudProvider, canProve: boolean): namespaces.Namespace => ({
+      id, name: `${provider}-ns`, displayName: null, description: null, provider, environment: 'dev', authType: 'connectionString', awsRegion: null, gcpProjectId: null,
+      isActive: true, createdAt: '2026-10-01T00:00:00Z', lastConnectionTestAt: null, lastConnectionTestSucceeded: true, capabilities: caps(canProve),
+    })
+    const off: namespaces.DlqObserver = {
+      needed: true, enabled: false, live: false, observerReference: null, dlqEntityName: null, stalenessBoundMinutes: 30, lastCanarySentAt: null, lastConfirmedAt: null,
+      status: 'No observer is set up, so a replay here can be sent back but not confirmed as fixed.', needsReference: false, referenceHint: null,
+    }
+
+    it('is offered only to a cloud that cannot tell by itself (asked of its capability, not its name)', async () => {
+      vi.mocked(namespaces.fetchNamespaces).mockResolvedValue([ns('a', 'azure', true), ns('b', 'aws', false)])
+      const fetch = vi.spyOn(namespaces, 'fetchDlqObserver').mockResolvedValue(off)
+      wrap(<SettingsModal />)
+      expect(await screen.findByLabelText('Confirming fixes on aws-ns')).toBeInTheDocument()
+      expect(screen.queryByLabelText('Confirming fixes on azure-ns')).toBeNull()
+      expect(fetch).toHaveBeenCalledTimes(1)
+      expect(fetch).toHaveBeenCalledWith('b')
+    })
+
+    it('switches on with nothing to name when the cloud reads the queue itself', async () => {
+      vi.mocked(namespaces.fetchNamespaces).mockResolvedValue([ns('b', 'aws', false)])
+      vi.spyOn(namespaces, 'fetchDlqObserver').mockResolvedValue(off)
+      const configure = vi.spyOn(namespaces, 'configureDlqObserver').mockResolvedValue({ ...off, enabled: true, status: 'Turned on, but ServiceHub has not yet been able to see this cloud’s dead letters — not confirming anything.' })
+      wrap(<SettingsModal />)
+      await userEvent.click(await screen.findByRole('button', { name: 'Switch on' }))
+      expect(configure).toHaveBeenCalledWith('b', { enabled: true })
+      expect(await screen.findByText(/not confirming anything/)).toBeInTheDocument()
+      expect(screen.getByText('On — not working yet')).toBeInTheDocument()
+    })
+
+    it('asks for the two names the cloud’s own check wants, and will not switch on without both', async () => {
+      vi.mocked(namespaces.fetchNamespaces).mockResolvedValue([ns('g', 'gcp', false)])
+      vi.spyOn(namespaces, 'fetchDlqObserver').mockResolvedValue({ ...off, needsReference: true, referenceHint: 'Its name must end with ‘-servicehub-observer’.' })
+      const configure = vi.spyOn(namespaces, 'configureDlqObserver').mockResolvedValue({ ...off, enabled: true })
+      wrap(<SettingsModal />)
+      const on = await screen.findByRole('button', { name: 'Switch on' })
+      expect(on).toBeDisabled()
+      expect(screen.getByText(/must end with/)).toBeInTheDocument()
+      await userEvent.type(screen.getByLabelText(/Subscription ServiceHub reads/), 'q-servicehub-observer')
+      expect(on).toBeDisabled()
+      await userEvent.type(screen.getByLabelText(/Dead-letter topic/), 'q-topic')
+      await userEvent.click(on)
+      expect(configure).toHaveBeenCalledWith('g', { enabled: true, observerReference: 'q-servicehub-observer', dlqEntityName: 'q-topic' })
+    }, 20_000)
+
+    it('says a check that could not read the queue could not, with the reason', async () => {
+      vi.mocked(namespaces.fetchNamespaces).mockResolvedValue([ns('b', 'aws', false)])
+      vi.spyOn(namespaces, 'fetchDlqObserver').mockResolvedValue({ ...off, enabled: true })
+      vi.spyOn(namespaces, 'checkDlqObserver').mockResolvedValue({ healthy: false, reason: 'PERMISSION_DENIED', complete: null, incompleteReason: null, count: null })
+      wrap(<SettingsModal />)
+      await userEvent.click(await screen.findByRole('button', { name: 'Check now' }))
+      expect(await screen.findByText(/cannot read this cloud’s dead letters right now \(PERMISSION_DENIED\)/)).toBeInTheDocument()
+    })
+  })
 })

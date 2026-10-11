@@ -4,7 +4,7 @@ import { useMe } from '../../hooks/useIdentity'
 import { permission } from '../../lib/permissions'
 import { UnlockHint } from '../UnlockHint'
 import { NotAllowed } from '../ui/NotAllowed'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useApprovePending, useDeclinePending, usePendingWork } from '../../hooks/usePendingWork'
 import { useReplayProposal } from '../../hooks/useReplay'
@@ -24,6 +24,7 @@ import type { OverlayBodyProps } from '../overlays/registry'
 import { RetryLink } from '../ui/RetryLink'
 import { Skeleton } from '../ui/Skeleton'
 import { Select } from '../ui/Select'
+import ResolveUnknownBody from './ResolveUnknownModal'
 
 /**
  * Approve and Decline (5.10) — `?modal=approve&group=<cloud>:<namespace>` or `&entry=<id>`. One modal, five doors: the bell,
@@ -43,6 +44,9 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
   const waiting = (pending.data?.items ?? []).filter((i) =>
     i.kind === 'approval' && (entry ? i.entryId === entry : group ? `${i.provider ?? '?'}:${i.namespaceId ?? '?'}` === group : true))
 
+  const unresolvedNow = !!entry && !!pending.data?.items.some((i) => i.kind === 'unresolved' && i.entryId === entry)
+  const [wasUnresolved, setWasUnresolved] = useState(false)
+  useEffect(() => { if (unresolvedNow) setWasUnresolved(true) }, [unresolvedNow])
   const [unticked, setUnticked] = useState<ReadonlySet<string>>(new Set())
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE)
@@ -60,6 +64,10 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
   const namespaces = useNamespaces()
   const record = useTrackRecord(head)
 
+  // An attempt whose answer was lost is answered here too — one door for "the Agent stopped and asked" — but it is a different
+  // question: nothing to approve, only what the person found in the queue. Once seen it stays this screen: recording the answer
+  // removes the item from the list, and without this the person would never see that it was recorded (found in a live run).
+  if (entry && (unresolvedNow || wasUnresolved)) return <ResolveUnknownBody close={close} />
   if (approve.isPending) return <Sending done={progress} total={approve.variables?.entryIds.length ?? 0} />
   if (approve.data) return <Approved results={approve.data} close={close} stillWaiting={pending.isFetching ? null : (entry ? waiting.length : (pending.data?.total ?? null))} />
   if (decline.isSuccess) {
@@ -359,12 +367,12 @@ function MessagePanel({ dlqMessageId }: { dlqMessageId: number | null }) {
           </div>
           {view === 'body' && (
             <>
-              <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[var(--color-surface-muted)] p-2 font-mono text-[11px] leading-snug">{d.bodyPreview ? prettyJson(d.bodyPreview) : 'ServiceHub has no stored body for this message.'}</pre>
+              <pre tabIndex={0} aria-label="Message body text" className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[var(--color-surface-muted)] p-2 font-mono text-[11px] leading-snug">{d.bodyPreview ? prettyJson(d.bodyPreview) : 'ServiceHub has no stored body for this message.'}</pre>
               {d.bodyIsPreview && <p className="text-xs text-[var(--color-text-muted)]">This is the start of the body; ServiceHub keeps only a preview.</p>}
             </>
           )}
           {view === 'properties' && (
-            <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[var(--color-surface-muted)] p-2 font-mono text-[11px] leading-snug">{d.applicationPropertiesJson ? prettyJson(d.applicationPropertiesJson) : 'The sender attached no properties.'}</pre>
+            <pre tabIndex={0} aria-label="Message properties text" className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[var(--color-surface-muted)] p-2 font-mono text-[11px] leading-snug">{d.applicationPropertiesJson ? prettyJson(d.applicationPropertiesJson) : 'The sender attached no properties.'}</pre>
           )}
           {view === 'delivery' && (
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">

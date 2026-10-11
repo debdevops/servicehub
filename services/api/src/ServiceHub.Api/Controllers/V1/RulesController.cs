@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using ServiceHub.Api.Security;
 using ServiceHub.Core.Constants;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
@@ -54,6 +55,12 @@ public sealed class RulesController : ApiControllerBase
     public async Task<IActionResult> Held([FromQuery] CloudProviderType? provider, CancellationToken cancellationToken) =>
         provider is { } cloud ? Ok(await _rules.HeldAsync(OwnerId, AllowedNamespaceIds, cloud, cancellationToken)) : NeedsCloud();
 
+    // Making, switching, changing or deleting a rule decides what a machine may replay, so it must be meant — a stray DELETE (a pasted URL, a script) is refused.
+    private ObjectResult? NeedsIntent(string intent, string words) =>
+        IntentHeaders.Declares(Request, intent)
+            ? null
+            : Problem(StatusCodes.Status428PreconditionRequired, ErrorCodes.IntentRequired, IntentHeaders.MissingDetail(words, intent));
+
     // A rule belongs to one cloud, and an enum left out would quietly mean the first one — so a missing cloud is refused, never defaulted.
     private ObjectResult NeedsCloud() => Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "Say which cloud: give a 'provider'.");
 
@@ -63,6 +70,7 @@ public sealed class RulesController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Create([FromBody] CreateRuleRequest request, CancellationToken cancellationToken)
     {
+        if (NeedsIntent(IntentHeaders.CreateRule, "make an auto-replay rule") is { } missing) return missing;
         if (request.Provider is not { } cloud)
         {
             return NeedsCloud();
@@ -83,6 +91,7 @@ public sealed class RulesController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> SetEnabled(long id, [FromBody] EnabledRequest request, CancellationToken cancellationToken)
     {
+        if (NeedsIntent(IntentHeaders.SwitchRule, "switch an auto-replay rule on or off") is { } missing) return missing;
         // Switching a rule on hands a machine the right to replay: an Approver's call. Switching it off only takes that away.
         if (await DeniedUnlessAsync(request.Enabled ? GovernanceRole.Approver : GovernanceRole.Operator, null, PillarKind.Recover,
                 request.Enabled ? "switch an auto-replay rule on" : "switch an auto-replay rule off", cancellationToken) is { } denied) return denied;
@@ -97,6 +106,7 @@ public sealed class RulesController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Update(long id, [FromBody] UpdateRuleRequest request, CancellationToken cancellationToken)
     {
+        if (NeedsIntent(IntentHeaders.UpdateRule, "change an auto-replay rule") is { } missing) return missing;
         if (await DeniedUnlessAsync(GovernanceRole.Approver, null, PillarKind.Recover, "change an auto-replay rule", cancellationToken) is { } denied) return denied;
         var result = await _rules.UpdateAsync(OwnerId, id, request.Name, request.MaxPerHour ?? 10, request.WaitSeconds ?? 120, request.BackOff ?? true, cancellationToken);
         await AuditAsync(AuditActions.RuleUpdate, $"{id} · {request.Name}", result.IsSuccess, cancellationToken);
@@ -109,6 +119,7 @@ public sealed class RulesController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Delete(long id, CancellationToken cancellationToken)
     {
+        if (NeedsIntent(IntentHeaders.DeleteRule, "delete an auto-replay rule") is { } missing) return missing;
         if (await DeniedUnlessAsync(GovernanceRole.Operator, null, PillarKind.Recover, "delete an auto-replay rule", cancellationToken) is { } denied) return denied;
         var result = await _rules.DeleteAsync(OwnerId, id, cancellationToken);
         await AuditAsync(AuditActions.RuleDelete, id.ToString(System.Globalization.CultureInfo.InvariantCulture), result.IsSuccess, cancellationToken);
@@ -131,6 +142,7 @@ public sealed class RulesController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Generate([FromBody] GenerateRulesRequest request, CancellationToken cancellationToken)
     {
+        if (NeedsIntent(IntentHeaders.GenerateRules, "make auto-replay rules") is { } missing) return missing;
         if (request.Provider is not { } cloud)
         {
             return NeedsCloud();

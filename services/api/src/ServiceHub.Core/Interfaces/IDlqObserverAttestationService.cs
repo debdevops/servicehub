@@ -54,6 +54,9 @@ public interface IDlqObserverAttestationService
     Task<Result<DlqObserverAttestation>> RecordCanaryConfirmedAsync(
         string ownerId, Guid namespaceId, CancellationToken cancellationToken = default);
 
+    /// <summary>Stores (or, with null, clears) <see cref="DlqObserverAttestation.LiveSince"/>. A missing attestation is not an error.</summary>
+    Task SetLiveSinceAsync(string ownerId, Guid namespaceId, DateTimeOffset? liveSince, CancellationToken cancellationToken = default);
+
     /// <summary>Every attestation row with <see cref="DlqObserverAttestation.Enabled"/> true,
     /// across every owner — <c>DlqObserverAttestationWorker</c>'s sweep set.</summary>
     Task<IReadOnlyList<DlqObserverAttestation>> GetAllEnabledAsync(

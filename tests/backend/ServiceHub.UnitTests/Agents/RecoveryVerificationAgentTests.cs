@@ -233,6 +233,7 @@ public sealed class RecoveryVerificationAgentTests : IDisposable
         public Task<Result<DlqObserverAttestation>> RecordCanarySentAsync(string ownerId, Guid namespaceId, string canaryMessageId, CancellationToken ct) => throw new NotSupportedException();
         public Task<Result<DlqObserverAttestation>> RecordCanaryConfirmedAsync(string ownerId, Guid namespaceId, CancellationToken ct) => throw new NotSupportedException();
         public Task<IReadOnlyList<DlqObserverAttestation>> GetAllEnabledAsync(CancellationToken ct) => throw new NotSupportedException();
+        public Task SetLiveSinceAsync(string ownerId, Guid namespaceId, DateTimeOffset? liveSince, CancellationToken ct) => Task.CompletedTask;
     }
 
     private sealed class FakeLogReader(CloudProviderType provider, ISet<string> arrivedMessageIds) : IDlqObserverLogReader

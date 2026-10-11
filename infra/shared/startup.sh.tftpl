@@ -1,0 +1,152 @@
+#!/bin/bash
+# ServiceHub — first-boot set-up for the VM that the infra/ modules create.
+# Safe to run more than once (Google Cloud runs a start-up script on every boot).
+# Log: /var/log/servicehub-setup.log
+set -uo pipefail
+exec >>/var/log/servicehub-setup.log 2>&1
+echo "==== $(date -u +%FT%TZ) ServiceHub set-up starts"
+
+VERSION="${servicehub_version}"
+IMAGE="${image}"
+SOURCE_REPO="${source_repo}"
+DATA_DIR=/data
+ENV_FILE=/etc/servicehub/env
+
+fail() { echo "FAILED: $*"; exit 1; }
+
+# Updating later: write the new version to /etc/servicehub/version and run `sudo servicehub-setup` (see infra/README.md).
+mkdir -p /etc/servicehub && chmod 700 /etc/servicehub
+if [ -s /etc/servicehub/version ]; then
+  VERSION="$(tr -d '[:space:]' </etc/servicehub/version)"
+  IMAGE="$(printf '%s' "$IMAGE" | sed "s/:[^:/]*$/:$VERSION/")"
+  echo "Using version $VERSION from /etc/servicehub/version"
+fi
+if [ -r "$0" ] && [ "$0" != /usr/local/bin/servicehub-setup ]; then
+  cp "$0" /usr/local/bin/servicehub-setup && chmod 700 /usr/local/bin/servicehub-setup
+fi
+
+# ── 1. Docker and the few tools this script needs ────────────────────────────────────────────────
+if ! command -v docker >/dev/null 2>&1; then
+  if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -y && apt-get install -y docker.io git curl python3 || fail "could not install Docker"
+  else
+    dnf install -y docker git curl python3 || fail "could not install Docker"
+  fi
+fi
+systemctl enable --now docker || fail "Docker did not start"
+
+# ── 2. The data disk: format it ONLY if it has no filesystem, then mount it at /data ─────────────
+if ! mountpoint -q "$DATA_DIR"; then
+  ROOT_DISK="/dev/$(lsblk -no PKNAME "$(findmnt -no SOURCE /)" 2>/dev/null | head -1)"
+  DISK=""
+  for attempt in $(seq 1 60); do
+    # The data disk is the one whole disk that is not the system disk and has no partitions and nothing mounted.
+    for candidate in $(lsblk -dpno NAME,TYPE | awk '$2=="disk"{print $1}'); do
+      [ "$candidate" = "$ROOT_DISK" ] && continue
+      [ "$(lsblk -no NAME "$candidate" | wc -l)" -gt 1 ] && continue
+      [ -n "$(lsblk -no MOUNTPOINT "$candidate" | tr -d '[:space:]')" ] && continue
+      DISK="$candidate"; break
+    done
+    [ -n "$DISK" ] && break
+    sleep 2
+  done
+  [ -n "$DISK" ] || fail "no data disk was found"
+  if [ -z "$(blkid -o value -s TYPE "$DISK")" ]; then
+    echo "Formatting the new data disk $DISK"
+    mkfs.ext4 -q -L servicehub-data "$DISK" || fail "could not format $DISK"
+  else
+    echo "The data disk $DISK already has a filesystem — keeping what is on it"
+  fi
+  mkdir -p "$DATA_DIR"
+  UUID="$(blkid -o value -s UUID "$DISK")"
+  grep -q "$UUID" /etc/fstab || echo "UUID=$UUID $DATA_DIR ext4 defaults,nofail 0 2" >>/etc/fstab
+  mount "$DATA_DIR" || fail "could not mount the data disk"
+fi
+
+# ── 3. The encryption key, read with this VM's own identity. It is never printed. ────────────────
+read_key() {
+${read_key_command}
+}
+KEY=""
+for attempt in $(seq 1 30); do
+  KEY="$(read_key 2>/dev/null | tr -d '[:space:]')"
+  [ -n "$KEY" ] && break
+  sleep 10   # a new identity's permission can take a minute to arrive
+done
+[ -n "$KEY" ] || fail "could not read the encryption key from the secret store"
+umask 077
+cat >"$ENV_FILE" <<ENV
+ASPNETCORE_ENVIRONMENT=Production
+SECURITY__ENCRYPTIONKEY=$KEY
+Backup__ScheduledBackupIntervalHours=24
+ENV
+unset KEY
+
+# ── 4. The image: pull the published one; if it cannot be pulled, build this version from source ──
+if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+  if ! docker pull "$IMAGE"; then
+    echo "Could not pull $IMAGE — building $VERSION from source instead (several minutes)"
+    rm -rf /opt/servicehub-src
+    git clone --depth 1 --branch "v$VERSION" "$SOURCE_REPO" /opt/servicehub-src || fail "could not fetch the source for v$VERSION"
+    docker build -t "$IMAGE" /opt/servicehub-src || fail "the build failed"
+  fi
+fi
+
+# The container does not run as root: the data disk must belong to the user it runs as.
+OWNER="$(docker run --rm --entrypoint id "$IMAGE" -u):$(docker run --rm --entrypoint id "$IMAGE" -g)"
+chown -R "$OWNER" "$DATA_DIR"
+
+# ── 5. Run it. Only this machine can reach the port: people come in through the cloud's tunnel. ──
+if [ "$(docker inspect -f '{{.Config.Image}}' servicehub 2>/dev/null)" != "$IMAGE" ]; then
+  docker rm -f servicehub >/dev/null 2>&1
+  docker run -d --name servicehub --restart unless-stopped \
+    -p 127.0.0.1:8080:8080 -v "$DATA_DIR:/data" --env-file "$ENV_FILE" "$IMAGE" || fail "the container did not start"
+fi
+
+# ── 6. Copy finished backups off this machine every hour ─────────────────────────────────────────
+cat >/usr/local/bin/servicehub-backup-copy <<'COPY'
+#!/bin/bash
+# Copies each finished ServiceHub backup (a folder with a manifest.json) to the bucket, once.
+set -uo pipefail
+upload() {
+${upload_command}
+}
+for manifest in /data/backups/*/manifest.json; do
+  [ -e "$manifest" ] || continue
+  dir="$(dirname "$manifest")"; id="$(basename "$dir")"
+  [ -e "$dir/.copied" ] && continue
+  ok=1
+  for file in "$dir"/*; do upload "$file" "$id/$(basename "$file")" || ok=0; done
+  [ "$ok" = 1 ] && touch "$dir/.copied"
+done
+COPY
+chmod 755 /usr/local/bin/servicehub-backup-copy
+cat >/etc/systemd/system/servicehub-backup-copy.service <<'UNIT'
+[Unit]
+Description=Copy ServiceHub backups to cloud storage
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/servicehub-backup-copy
+UNIT
+cat >/etc/systemd/system/servicehub-backup-copy.timer <<'UNIT'
+[Unit]
+Description=Copy ServiceHub backups to cloud storage, hourly
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=1h
+[Install]
+WantedBy=timers.target
+UNIT
+systemctl daemon-reload && systemctl enable --now servicehub-backup-copy.timer
+
+# ── 7. Wait until it answers ─────────────────────────────────────────────────────────────────────
+for attempt in $(seq 1 60); do
+  if curl -fsS http://127.0.0.1:8080/health/ready >/dev/null 2>&1; then
+    echo "==== $(date -u +%FT%TZ) ServiceHub $VERSION is ready"
+    exit 0
+  fi
+  sleep 5
+done
+docker logs --tail 40 servicehub
+fail "ServiceHub did not become ready — see the container log above"

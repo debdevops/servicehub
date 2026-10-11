@@ -129,7 +129,7 @@ public sealed class NamespacesApiTests
         using var host = Host();
         await host.Client.SendAsync(Post("/api/v1/namespaces", AzureBody("acme-bus")));
 
-        SqliteConnection.ClearAllPools();
+        ServiceHubApiFactory.ClearPoolFor(host.Root.DataDirectory);
         using var connection = new SqliteConnection(
             $"Data Source={Path.Combine(host.Root.DataDirectory, ServiceHubDataDirectory.DatabaseFileName)};Pooling=False");
         connection.Open();
@@ -219,7 +219,7 @@ public sealed class NamespacesApiTests
         }
         finally
         {
-            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            ServiceHubApiFactory.ClearPoolFor(dataDirectory);
             if (Directory.Exists(dataDirectory))
             {
                 Directory.Delete(dataDirectory, recursive: true);
@@ -323,21 +323,71 @@ public sealed class NamespacesApiTests
 
         (await host.Client.SendAsync(PutObserver(id, new { enabled = true, observerReference = "t", dlqEntityName = "q" }, intent: null)))
             .StatusCode.Should().Be(HttpStatusCode.PreconditionRequired);
-        (await host.Client.SendAsync(PutObserver(id, new { enabled = true, dlqEntityName = "q" })))
-            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await host.Client.SendAsync(PutObserver(id, new { enabled = true, observerReference = "t", dlqEntityName = "q", stalenessBoundMinutes = 1 })))
             .StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
+        // ADR-0018: on this cloud ServiceHub reads the dead-letter queue itself, so nothing has to be named — and whatever is
+        // sent as "where the observer writes" is not kept, because nothing is deployed for it.
         var saved = await host.Client.SendAsync(PutObserver(id, new { enabled = true, observerReference = "obs-table", dlqEntityName = "orders-dlq" }));
         saved.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await host.Client.SendAsync(PutObserver(id, new { enabled = true }))).StatusCode.Should().Be(HttpStatusCode.OK);
         var after = await Json(await host.Client.GetAsync($"/api/v1/namespaces/{id}/dlq-observer"));
 
         after.GetProperty("enabled").GetBoolean().Should().BeTrue();
-        after.GetProperty("observerReference").GetString().Should().Be("obs-table");
-        after.GetProperty("dlqEntityName").GetString().Should().Be("orders-dlq");
-        after.GetProperty("live").GetBoolean().Should().BeFalse("only the observer's own log, seen by the canary, can make it live");
+        after.GetProperty("observerReference").GetString().Should().Be("whole-queue-scan");
+        after.GetProperty("live").GetBoolean().Should().BeFalse("turning it on confirms nothing: only a check that really saw the queue can");
         after.GetProperty("lastConfirmedAt").ValueKind.Should().Be(JsonValueKind.Null);
         after.GetProperty("status").GetString().Should().Contain("not confirming anything");
+    }
+
+    [Fact]
+    public async Task Checking_the_dead_letter_view_needs_the_intent_header_and_something_set_up()
+    {
+        using var host = Host();
+        var id = await ConnectAws(host, "orders-queue");
+
+        (await host.Client.PostAsync($"/api/v1/namespaces/{id}/dlq-observer/check", null)).StatusCode.Should().Be(HttpStatusCode.PreconditionRequired);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/namespaces/{id}/dlq-observer/check");
+        request.Headers.Add("X-ServiceHub-Intent", "configure-dlq-observer");
+        (await host.Client.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.Conflict, "nothing was switched on for this cloud, so there is nothing to check");
+    }
+
+    [Fact]
+    public async Task The_observer_tells_the_screen_whether_anything_has_to_be_named_without_the_screen_knowing_the_cloud()
+    {
+        using var host = Host();
+        var aws = await ConnectAws(host, "orders-queue");
+        var azure = await Connect(host, "acme-bus");
+
+        var scanned = await Json(await host.Client.GetAsync($"/api/v1/namespaces/{aws}/dlq-observer"));
+        var own = await Json(await host.Client.GetAsync($"/api/v1/namespaces/{azure}/dlq-observer"));
+
+        scanned.TryGetProperty("needsReference", out _).Should().BeTrue();
+        own.GetProperty("needsReference").GetBoolean().Should().BeFalse();
+        own.GetProperty("referenceHint").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task Regrouping_failures_by_error_message_needs_the_intent_header_and_defaults_to_a_dry_run()
+    {
+        using var host = Host();
+        var id = await Connect(host, "acme-bus");
+
+        (await host.Client.PostAsync($"/api/v1/namespaces/{id}/signatures/resign", null)).StatusCode.Should().Be(HttpStatusCode.PreconditionRequired);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/namespaces/{id}/signatures/resign");
+        request.Headers.Add("X-ServiceHub-Intent", "resign-signatures");
+        var response = await host.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var result = await Json(response);
+        result.GetProperty("saved").GetBoolean().Should().BeFalse("nothing is written unless dryRun=false is asked for");
+        result.GetProperty("messagesChanged").GetInt32().Should().Be(0);
+
+        var unknown = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/namespaces/{Guid.NewGuid()}/signatures/resign");
+        unknown.Headers.Add("X-ServiceHub-Intent", "resign-signatures");
+        (await host.Client.SendAsync(unknown)).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]

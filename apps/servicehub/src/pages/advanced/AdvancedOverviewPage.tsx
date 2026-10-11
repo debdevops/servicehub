@@ -35,7 +35,7 @@ const states: readonly { state: EntryState; label: string; meaning: string; colo
   { state: 'Returned', label: 'Returned', meaning: 'The failure came back inside the window. The fix did not hold.', color: '#ef4444' },
   { state: 'ExecutionFailed', label: 'Execution failed', meaning: 'The cloud refused the call. Nothing was replayed.', color: '#9ca3af' },
   { state: 'Observing', label: 'Being watched', meaning: 'Replayed; the observation window is still open.', color: '#38bdf8' },
-  { state: 'ExecutionUnknown', label: 'Unknown', meaning: 'ServiceHub lost contact before the cloud answered.', color: '#6b7280' },
+  { state: 'ExecutionUnknown', label: 'Unknown', meaning: 'ServiceHub lost contact, or stopped, before the answer was recorded.', color: '#6b7280' },
   { state: 'Discarded', label: 'Discarded', meaning: 'Purged on purpose, with a reason.', color: '#d1d5db' },
   { state: 'Declined', label: 'Declined', meaning: 'The safety checks stopped it before any cloud was contacted — most are waiting for a person to decide.', color: '#e5e7eb' },
   { state: 'WrittenOff', label: 'Written off', meaning: 'Left as it is, on purpose.', color: '#e5e7eb' },

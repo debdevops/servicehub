@@ -1,12 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  checkDlqObserver,
+  configureDlqObserver,
   connectNamespace,
+  fetchDlqObserver,
   fetchEntities,
   fetchNamespace,
   fetchNamespaceStats,
   fetchNamespaces,
   removeNamespace,
   testConnection,
+  type ConfigureDlqObserverInput,
   type ConnectNamespaceInput,
   type EntityKind,
 } from '../lib/api/namespaces'
@@ -17,6 +21,7 @@ export const namespaceKeys = {
   list: () => [...namespaceKeys.all, 'list'] as const,
   one: (id: string) => [...namespaceKeys.all, 'one', id] as const,
   stats: (id: string) => [...namespaceKeys.all, 'stats', id] as const,
+  observer: (id: string) => [...namespaceKeys.all, 'observer', id] as const,
   entities: (id: string, kind?: EntityKind) => [...namespaceKeys.all, 'entities', id, kind ?? 'all'] as const,
 }
 
@@ -73,3 +78,20 @@ export function useRemoveNamespace() {
   })
 }
 
+
+/** Where confirming fixes stands for one namespace. Asked only for a cloud that needs it. */
+export function useDlqObserver(id: string, wanted: boolean) {
+  return useQuery({ queryKey: namespaceKeys.observer(id), queryFn: () => fetchDlqObserver(id), enabled: wanted })
+}
+
+export function useConfigureDlqObserver(id: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: ConfigureDlqObserverInput) => configureDlqObserver(id, input),
+    onSuccess: (saved) => queryClient.setQueryData(namespaceKeys.observer(id), saved),
+  })
+}
+
+export function useCheckDlqObserver(id: string) {
+  return useMutation({ mutationFn: () => checkDlqObserver(id) })
+}

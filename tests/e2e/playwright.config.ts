@@ -25,6 +25,8 @@ export default defineConfig({
     viewport: { width: 1366, height: 768 },
     channel: process.env.PW_CHANNEL || undefined,
     trace: 'retain-on-failure',
+    // The demo's guided tour starts by itself on a first visit. Every test but the tour's own begins as a returning visitor.
+    storageState: { cookies: [], origins: [{ origin: `http://localhost:${port}`, localStorage: [{ name: 'servicehub.demo.tour', value: 'done' }] }] },
   },
   webServer: {
     // The app lives in apps/servicehub; this config lives with the tests.

@@ -22,7 +22,7 @@ export interface PendingRow {
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
 /**
- * Turns pending items into rows, most urgent first (the server's order): a stopped agent, a stopped rule, then questions.
+ * Turns pending items into rows, most urgent first (the server's order): a stopped agent, a stopped rule, an attempt with no recorded answer, then questions.
  * Approvals in the same namespace become one row — "2 replays need your approval" — with one Review action; anything
  * else is one row each. The action opens the flow that resolves it; it never marks anything read.
  *
@@ -48,6 +48,16 @@ export function pendingRows(items: readonly PendingWorkItem[], { capped = false,
     }
 
     const cloud = i.provider ? providerLabel[i.provider] : null
+    if (i.kind === 'unresolved') {
+      // Unknown is its own thing: not a failure, not a success. Nothing recovers this message until a person says what happened.
+      rows.push({
+        key: i.id, kind: 'unresolved', title: 'An earlier attempt has no recorded answer',
+        where: [cloud, i.namespaceName, i.entity].filter(Boolean).join(' · '), why: i.reason, reasonCode: i.reasonCode, count: 1,
+        since: i.since, action: { label: 'Say what happened', href: `?modal=approve&entry=${i.entryId}` }, items: [i],
+      })
+      continue
+    }
+
     rows.push(i.kind === 'rule'
       ? {
           key: i.id, kind: 'rule', title: 'A rule stopped itself', where: [cloud, i.ruleName].filter(Boolean).join(' · '), why: i.reason,

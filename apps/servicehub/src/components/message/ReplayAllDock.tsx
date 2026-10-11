@@ -52,6 +52,10 @@ function Ready({ s, onStart }: { s: ReplayAllState; onStart: () => void }) {
       <div>
         <h3 className="text-lg font-bold">Replay all · {a.selected.toLocaleString()} {a.selected === 1 ? 'message' : 'messages'}</h3>
         <div className="mt-2"><Steps at={1} /></div>
+        <p className="mt-2 text-[13px] text-[var(--color-text-muted)]">This is everything still stuck in <b>{s.scopeLabel}</b>. The filters, time window and search on the list do not apply.</p>
+        {s.cloudCount !== null && s.cloudCount > a.selected && (
+          <p className="mt-1.5 text-[13px] text-[#78350f]">ServiceHub has recorded <b>{a.selected.toLocaleString()}</b> of the <b>{s.cloudCount.toLocaleString()}</b> this cloud counts. Only recorded messages can be replayed; use <b>Look now</b> to record more.</p>
+        )}
         <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-[var(--color-surface-muted)] px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide"><Eye className="h-3 w-3" aria-hidden="true" /> Preview — nothing has run yet</p>
       </div>
 

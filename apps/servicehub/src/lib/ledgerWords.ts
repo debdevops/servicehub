@@ -23,12 +23,12 @@ export const stateMeaning: Readonly<Record<EntryState, string>> = {
   Executing: 'the cloud call is in flight',
   Observing: 'accepted — ServiceHub is watching for it to come back',
   ExecutionFailed: 'nothing was sent back — the cloud refused it, or the message could not be found in the dead-letter queue',
-  ExecutionUnknown: 'contact was lost mid-call — whether it was sent is not known',
+  ExecutionUnknown: 'contact was lost, or ServiceHub stopped, before the answer was recorded — whether it was sent is not known; nothing tries again until a person looks',
   Recovered: 'did not return',
   Returned: 'the failure came back',
   Discarded: 'deliberately purged from the queue',
   Unverified: 'replayed, but the cloud can’t prove the queue stayed empty',
-  WrittenOff: 'a person declared it unrecoverable',
+  WrittenOff: 'a person closed it with a written note — this is not a recovery',
   Expired: 'aged out without an outcome',
   Declined: 'blocked before any cloud was contacted',
 }
@@ -66,7 +66,7 @@ export function describeEvent(e: LedgerEvent, cloud: string): { title: string; n
         ? { title: 'Not sent — the message was not found in the dead-letter queue', note: code }
         : { title: `${cloud} rejected it`, note: code }
     }
-    case 'ExecutionUnknown': return { title: 'Outcome unknown', note: 'contact was lost before it was known whether it was sent' }
+    case 'ExecutionUnknown': return { title: 'Outcome unknown', note: 'it was not recorded whether it was sent' }
     case 'ObservationWindowOpened':
       return { title: 'Watching', note: typeof d.appliedObservationWindowHours === 'number' ? `${d.appliedObservationWindowHours} hour window` : null }
     case 'RecurrenceObserved': return { title: 'Came back', note: typeof d.collisionCount === 'number' ? `matched by contents · ${d.collisionCount} possible` : 'matched by its recovery ID' }

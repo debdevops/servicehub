@@ -49,6 +49,7 @@ builder.Services.AddAgentPlatform();
 ServiceHub.Infrastructure.Webhooks.WebhookServiceCollectionExtensions.AddWebhooks(builder.Services, builder.Configuration);
 builder.Services.AddAgent<DlqMonitorAgent>();
 builder.Services.AddAgent<RecoveryVerificationAgent>();
+builder.Services.AddAgent<DeadLetterViewAgent>(); // ADR-0018: idle unless a person switched a cloud's whole dead-letter view on
 builder.Services.AddAgent<BulkOperationAgent>();
 builder.Services.AddAgent<ServiceHub.Infrastructure.Rules.AutoReplayAgent>();
 builder.Services.AddAgent<AutonomyEvaluationAgent>();

@@ -266,7 +266,7 @@ function MessageToReplay({ detail, pending }: { detail: DeadLetterDetail | undef
           {detail.bodyPreview ? (
             <div>
               <p className="mb-1 text-xs font-semibold text-[var(--color-text-muted)]">What it says{detail.bodyIsPreview ? ' (first part)' : ''}</p>
-              <pre className="max-h-44 overflow-auto rounded-lg bg-[var(--color-surface-muted)] p-3 font-mono text-[11.5px] leading-relaxed">{readable(detail.bodyPreview)}</pre>
+              <pre tabIndex={0} aria-label="What the message says, text" className="max-h-44 overflow-auto rounded-lg bg-[var(--color-surface-muted)] p-3 font-mono text-[11.5px] leading-relaxed">{readable(detail.bodyPreview)}</pre>
             </div>
           ) : (
             <p className="text-xs text-[var(--color-text-muted)]">This message has no body to show.</p>

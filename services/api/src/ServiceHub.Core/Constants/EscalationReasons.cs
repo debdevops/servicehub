@@ -16,6 +16,12 @@ public static class EscalationReasons
     /// <summary>A rule's circuit breaker switched it off (unit 3.6); it waits until a person looks.</summary>
     public const string RuleStoppedItself = "RULE_CIRCUIT_BREAKER";
 
+    /// <summary>
+    /// An earlier attempt to recover this message has no recorded answer (ServiceHub stopped, or lost contact with the cloud, before it
+    /// could tell whether the message was sent). Nothing tries again until a person checks and says what happened.
+    /// </summary>
+    public const string ReplayOutcomeUnknown = "REPLAY_OUTCOME_UNKNOWN";
+
     /// <summary>The sentence for a code. An unknown code still gets an honest sentence, never a blank.</summary>
     public static string Describe(string? code) => code switch
     {
@@ -28,17 +34,23 @@ public static class EscalationReasons
         "PROVIDER_CANNOT_VERIFY_ABSENCE" =>
             "This cloud can't prove a replayed message stayed fixed, so ServiceHub never replays here on its own. A person decides.",
         "RECURRENCE_CAP_EXCEEDED" or "RECURRENCE_CAP_EXCEEDED_HEURISTIC" =>
-            "This message has come back after replaying before. Replaying it again may fail the same way — check the cause first.",
+            "ServiceHub has already tried this message several times, replayed or held for a person. Trying again may fail the same way — check the cause first.",
         "RECURRENCE_CAP_AMBIGUOUS_COLLISION" =>
             "Several earlier replays look like this message, and ServiceHub can't tell which it is. A person decides.",
         "RECURRENCE_CAP_QUERY_ERROR" =>
             "ServiceHub couldn't check this message's replay history, so it stopped rather than guess. A person decides.",
+        "SIGNATURE_RECENT_RESULTS_MIXED" =>
+            "Some of the latest replays of this kind of failure did not hold, so it stopped replaying on its own. Check the cause, then approve the next ones yourself.",
+        "SIGNATURE_RECENT_RESULTS_QUERY_ERROR" =>
+            "ServiceHub couldn't read the latest results for this failure, so it stopped rather than guess. A person decides.",
         "RATE_LIMITED" or "FLEET_RATE_LIMITED" =>
             "The replay pace limit was reached. It can go now if a person says so, or wait for the next window.",
         "EMERGENCY_STOP_ACTIVE" =>
             "Emergency stop is on, so nothing replays on its own. A person decides.",
         "EMERGENCY_STOP_QUERY_ERROR" =>
             "ServiceHub couldn't check whether emergency stop is on, so it stopped rather than guess. A person decides.",
+        ReplayOutcomeUnknown =>
+            "ServiceHub lost contact with the cloud, or stopped, before it could record whether an earlier attempt put this message back. It may or may not have been sent, so it will not try again on its own. Check the queue, then say what you found.",
         AgentStale =>
             "This agent has stopped reporting. What it does is not happening — check the ServiceHub server.",
         AgentFailing =>

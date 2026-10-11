@@ -26,6 +26,8 @@ export interface ReplayAllState {
   readonly phase: ReplayAllPhase
   readonly minimized: boolean
   readonly scopeLabel: string
+  /** How many the cloud itself counts in this scope, when it reports one — can be more than ServiceHub has recorded. */
+  readonly cloudCount: number | null
   readonly chunks: readonly Chunk[]
   readonly status: BulkStatus
   readonly endedReason: string | null
@@ -76,12 +78,12 @@ export function aggregate(s: ReplayAllState): BulkProgress {
 }
 
 /** Opens the window and works out — without sending anything — what replaying everything would do. */
-export async function openReplayAll(q: DeadLetterQuery, scopeLabel: string): Promise<void> {
+export async function openReplayAll(q: DeadLetterQuery, scopeLabel: string, cloudCount: number | null = null): Promise<void> {
   if (state && (state.phase === 'running' || state.phase === 'ready' || state.phase === 'ended')) return set({ minimized: false })
   query = { ...q, status: 'active', reason: undefined, noReason: undefined, entity: undefined, q: undefined, range: 'all', page: undefined, pageSize: undefined }
   cancelled = false
   state = null
-  set({ phase: 'preparing', minimized: false, scopeLabel, chunks: [], status: 'running', endedReason: null, error: null, stopping: false })
+  set({ phase: 'preparing', minimized: false, scopeLabel, cloudCount, chunks: [], status: 'running', endedReason: null, error: null, stopping: false })
   try {
     const ids: number[] = []
     const first = await fetchDeadLetters({ ...query, page: 1, pageSize: 100 })
