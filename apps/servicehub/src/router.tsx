@@ -10,6 +10,7 @@ import { PlaceholderPage } from './pages/PlaceholderPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { RouteError } from './components/RouteError'
 import { pages } from './nav/navigation'
+import { nextRoute } from './next/router'
 
 // Each built page is its own chunk, so the first paint carries only the shell and Home.
 const RecoveryLedgerPage = lazy(() => import('./pages/advanced/RecoveryLedgerPage'))
@@ -83,6 +84,9 @@ export const routes: RouteObject[] = [
   // These match only when the router has NO demo basename — i.e. an address that names no cloud (`/demo/other`). When the address
   // is `/demo`, `/demo/aws`… the prefix is the basename (below), react-router strips it, and the page routes above match instead
   // (tests/web/unit/router.basename.test.tsx).
+  // The 5.0.0 layout, in the same build until the cutover (build-plan unit I1). A sibling of the layout route above, so the
+  // 4.2.0 navigation array and its tests are untouched.
+  nextRoute,
   { path: '/demo', element: <DemoEntry /> },
   { path: '/demo/:provider', element: <DemoEntry /> },
   { path: '/demo/:provider/*', element: <DemoEntry /> },

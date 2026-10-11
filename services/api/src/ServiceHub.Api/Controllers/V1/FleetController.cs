@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Core.Constants;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Components;
 using ServiceHub.Core.Models;
 
 namespace ServiceHub.Api.Controllers.V1;
@@ -43,4 +44,13 @@ public sealed class FleetController : ApiControllerBase
 
         return Ok(await _fleet.GetAsync(OwnerId, AllowedNamespaceIds, name, since, cancellationToken));
     }
+
+    /// <summary>
+    /// What ServiceHub covers (5.0.0): every component on every cloud, where failed work ends up, how it is found, whether it
+    /// can be put back, and why not when it cannot. The whole catalogue, the same for every caller: it describes the product,
+    /// not this installation. The menu, the coverage page and the README table all come from it.
+    /// </summary>
+    [HttpGet("coverage")]
+    [ProducesResponseType(typeof(CoverageResponse), StatusCodes.Status200OK)]
+    public IActionResult Coverage() => Ok(CoverageResponse.Current);
 }
