@@ -73,7 +73,7 @@ curl -s http://localhost:8080/health      # → Healthy
 Go to **<http://localhost:8080>**. You will see the Welcome page.
 
 - **Try it with sample data** opens a demo on made-up data. Nothing is connected and nothing is sent anywhere. Open a dead letter, read why it failed,
-  and press **Replay** to see the preview. Choose **Leave the demo** in the purple bar when you are done.
+  and press **Replay** to see the preview. Choose **Exit demo mode** in the purple bar when you are done.
 - **Connect Azure / AWS / Google** connects a real cloud. Each cloud has a step-by-step guide:
   [Azure](clouds/azure.md) · [AWS](clouds/aws.md) · [Google Cloud](clouds/gcp.md).
 

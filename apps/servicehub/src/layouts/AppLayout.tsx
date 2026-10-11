@@ -9,7 +9,7 @@ import { SurfaceSwitch } from '../components/ui/SurfaceSwitch'
 import { Bell } from '../components/pending/Bell'
 import { AccountMenu } from '../components/AccountMenu'
 import { SafetyBanners } from '../components/banners/SafetyBanners'
-import { DemoBanner } from '../components/banners/DemoEntry'
+import { DemoBanner, exitDemo, exitDemoHref } from '../components/banners/DemoEntry'
 import { isDemo } from '../lib/demo/state'
 import { usePendingWork } from '../hooks/usePendingWork'
 import { rememberPage } from '../lib/preferences'
@@ -95,7 +95,7 @@ export function AppLayout() {
           >
             <Menu className="h-5 w-5" aria-hidden="true" />
           </button>
-          <div className="flex items-center gap-2.5">
+          <BrandLink>
             <span
               aria-hidden="true"
               className="flex h-[34px] w-[34px] items-center justify-center rounded-[10px] text-[17px] font-extrabold text-white shadow-[0_2px_6px_rgba(2,132,199,0.28)]"
@@ -111,7 +111,7 @@ export function AppLayout() {
                 Keep messages moving.
               </div>
             </div>
-          </div>
+          </BrandLink>
           <HistoryButtons />
           <button
             type="button"
@@ -201,6 +201,17 @@ export function AppLayout() {
       <ActionNotice />
       <ReplayAllDock />
     </ProviderScopeProvider>
+  )
+}
+
+/** The logo and name. In the demo it leads out to the real ServiceHub (ending demo mode); otherwise it is plain text, as before. */
+function BrandLink({ children }: { children: React.ReactNode }) {
+  const cls = 'flex items-center gap-2.5'
+  if (!isDemo()) return <div className={cls}>{children}</div>
+  return (
+    <a href={exitDemoHref} onClick={exitDemo} title="Exit demo mode and open ServiceHub" className={`${cls} rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary-600)]`}>
+      {children}
+    </a>
   )
 }
 

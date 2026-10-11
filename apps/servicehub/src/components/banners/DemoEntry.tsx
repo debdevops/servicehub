@@ -30,6 +30,17 @@ export function DemoEntry() {
   return <Navigate to={cloud ? `/?tab=dlq&provider=${cloud}` : '/'} replace />
 }
 
+/** Where leaving the demo lands: the real app at the site root (the router's `/demo` basename is not involved), or the repository on the public demo page. */
+export const exitDemoHref = DEMO_ONLY ? REPOSITORY : at('/')
+
+/** Ends demo mode for this browser session, then follows the link to the real ServiceHub. Plain click only, so open-in-new-tab still works. */
+export function exitDemo(e: { preventDefault(): void; metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; button: number }): void {
+  if (DEMO_ONLY || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
+  e.preventDefault()
+  leaveDemo()
+  window.location.assign(exitDemoHref)
+}
+
 /** Visible on every screen while demo mode is on: this is made-up data, and nothing is sent. */
 export function DemoBanner() {
   const client = useQueryClient()
@@ -47,7 +58,7 @@ export function DemoBanner() {
         <button type="button" onClick={() => { void resetDemo().then(() => client.invalidateQueries()) }} className={button}>Reset demo</button>
         {DEMO_ONLY
           ? <a href={REPOSITORY} className={button}>Get ServiceHub</a>
-          : <button type="button" onClick={() => { leaveDemo(); window.location.assign(at('/')) }} className={button}>Leave the demo</button>}
+          : <a href={exitDemoHref} onClick={exitDemo} className={button}>Exit demo mode</a>}
       </span>
     </div>
   )

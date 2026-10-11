@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as agents from '@/lib/api/agents'
@@ -47,5 +47,18 @@ describe('safety banners', () => {
     wrap(<DemoBanner />)
     expect(screen.getByRole('status')).toHaveTextContent(/Everything here is made up/)
     leaveDemo()
+  })
+
+  it('offers a plain link out of the demo to the real app, and a click ends demo mode', () => {
+    enterDemo()
+    wrap(<DemoBanner />)
+    const exit = screen.getByRole('link', { name: 'Exit demo mode' })
+    expect(exit).toHaveAttribute('href', '/')
+    const assign = vi.fn()
+    vi.stubGlobal('location', { ...window.location, assign })
+    fireEvent.click(exit)
+    expect(assign).toHaveBeenCalledWith('/')
+    expect(sessionStorage.getItem('servicehub.demo')).toBeNull()
+    vi.unstubAllGlobals()
   })
 })
