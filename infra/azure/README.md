@@ -13,7 +13,7 @@ Run from the folder above: `./deploy.sh azure` (Windows: `.\deploy.ps1 -Cloud az
 | Managed data disk, 32 GB | The database and backups | Yes |
 | User-assigned managed identity | Reads the VM's own key, writes its own backups | — |
 | Key Vault + one secret | The encryption key | Small |
-| Storage account + private container | Copies of each backup, kept 30 days | Small |
+| Storage account + private container | Copies of each backup, kept 30 days. The VM can add them — it cannot read, list or delete them | Small |
 | Backup vault + daily disk snapshot policy | Snapshots kept 7 days | Small |
 
 Prices change by region — check the [Azure pricing calculator](https://azure.microsoft.com/pricing/calculator/).

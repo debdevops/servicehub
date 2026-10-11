@@ -251,6 +251,7 @@ public sealed class BulkOperationService : IBulkOperationService
         "AUTONOMY_GRANT_INSUFFICIENT" => "ServiceHub hasn't earned the right to replay this kind of failure on its own yet.",
         "PURGE_UNSUPPORTED" => "This cloud cannot delete one message on its own, so it is left where it is.",
         "PURGE_AUTOMATION_PROHIBITED" => "Only a person can purge, never an automatic rule.",
+        EscalationReasons.ReplayOutcomeUnknown => "An earlier replay of it was never confirmed, so replaying again could send it twice. Say what happened to that attempt first; approving does not unlock it.",
         _ => $"A safety check held it back ({reasonCode}). A person with approval rights has to decide.",
     };
 

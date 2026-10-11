@@ -22,10 +22,27 @@ resource "azurerm_storage_container" "backups" {
   container_access_type = "private"
 }
 
+# The VM may add backups. It cannot read, list or delete them — the built-in "Storage Blob Data Contributor" allows all three,
+# so this is a role of its own. Writing over a backup of the same name keeps the earlier one as a version (versioning, above).
+resource "azurerm_role_definition" "vm_adds_backups" {
+  name        = "ServiceHub backup writer (${var.name}-${local.unique})"
+  scope       = azurerm_resource_group.this.id
+  description = "Add blobs. No read, no list, no delete."
+
+  permissions {
+    data_actions = [
+      "Microsoft.Storage/storageAccounts/blobServices/containers/blobs/write",
+      "Microsoft.Storage/storageAccounts/blobServices/containers/blobs/add/action",
+    ]
+  }
+
+  assignable_scopes = [azurerm_resource_group.this.id]
+}
+
 resource "azurerm_role_assignment" "vm_writes_backups" {
-  scope                = azurerm_storage_account.backups.id
-  role_definition_name = "Storage Blob Data Contributor"
-  principal_id         = azurerm_user_assigned_identity.this.principal_id
+  scope              = azurerm_storage_account.backups.id
+  role_definition_id = azurerm_role_definition.vm_adds_backups.role_definition_resource_id
+  principal_id       = azurerm_user_assigned_identity.this.principal_id
 }
 
 resource "azurerm_storage_management_policy" "backups" {
