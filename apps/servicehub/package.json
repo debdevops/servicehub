@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "build:demo": "tsc -b && VITE_DEMO_ONLY=true VITE_BASE=${VITE_BASE:-/servicehub/} vite build --outDir dist-demo --emptyOutDir && cp dist-demo/index.html dist-demo/404.html",
+    "build:demo": "tsc -b && VITE_DEMO_ONLY=true VITE_BASE=${VITE_BASE:-/servicehub/} vite build --outDir dist-demo --emptyOutDir && cp dist-demo/index.html dist-demo/404.html && rm -f dist-demo/robots.txt dist-demo/sitemap.xml && cp ../../llms.txt dist-demo/llms.txt && cp ../../docs/screenshots/readme/home-all.png dist-demo/og-image.png",
     "lint": "eslint . && npm run lint:tests",
     "lint:tests": "cd ../../tests && eslint -c eslint.config.mjs web e2e",
     "typecheck": "tsc -b && tsc -b tsconfig.tests.json tsconfig.e2e.json",

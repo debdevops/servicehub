@@ -8,11 +8,11 @@ One process, one SQLite file, running on your machine.
 
 ![ServiceHub Home: what needs you, how each cloud is doing, and the ServiceHub Agent](docs/screenshots/readme/home-all.png)
 
-*Every screenshot on this page is the built-in demo: made-up data, nothing is sent anywhere. You can open the same demo yourself in about two minutes, with no cloud account.*
+*Every screenshot on this page is the built-in demo: made-up data, nothing is sent anywhere. You can open the same demo yourself, with no cloud account: **[try it in your browser](https://debdevops.github.io/servicehub/)** (nothing to install) or run it locally in about two minutes, below.*
 
 ## Run it in two minutes
 
-Pick one. Both open the built-in demo, so you can look around before connecting a real cloud.
+Pick one. Both open the built-in demo, so you can look around before connecting a real cloud. Want to look first without installing anything? Open the **[demo in your browser](https://debdevops.github.io/servicehub/)**.
 
 ### Option 1. From source: `./run.sh` does everything
 
