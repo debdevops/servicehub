@@ -8,7 +8,7 @@
 
 | | |
 |---|---|
-| **Image** | `ghcr.io/debdevops/servicehub:latest` (public, no sign-in to pull) |
+| **Image** | `ghcr.io/debdevops/servicehub:4.2.0` (public, no sign-in to pull). `:latest` follows new releases. |
 | **Platforms** | `linux/amd64` and `linux/arm64` (Intel/AMD machines and Apple silicon; Docker picks the right one) |
 | **Opens at** | <http://localhost:8080> |
 | **Data** | The `servicehub-data` Docker volume, mounted at `/data` |
@@ -43,10 +43,10 @@ echo "$SERVICEHUB_ENCRYPTION_KEY"        # copy it into your password manager no
 docker run -d --name servicehub --restart unless-stopped \
   -p 127.0.0.1:8080:8080 -v servicehub-data:/data \
   -e SECURITY__ENCRYPTIONKEY="$SERVICEHUB_ENCRYPTION_KEY" \
-  ghcr.io/debdevops/servicehub:latest
+  ghcr.io/debdevops/servicehub:4.2.0
 ```
 
-`docker run` downloads the image the first time (about 230 MB on disk). To download it without starting it, run `docker pull ghcr.io/debdevops/servicehub:latest`.
+`docker run` downloads the image the first time (about 230 MB on disk). To download it without starting it, run `docker pull ghcr.io/debdevops/servicehub:4.2.0`.
 
 What each part does:
 
@@ -92,7 +92,7 @@ Go to **<http://localhost:8080>**. You will see the Welcome page.
 Your data is in the volume, so it carries over to a newer **4.2.x** image. Use the same key.
 
 ```bash
-docker pull ghcr.io/debdevops/servicehub:latest          # or an exact tag, e.g. :4.2.0
+docker pull ghcr.io/debdevops/servicehub:<new-tag>       # e.g. :4.2.1, or :latest to follow releases
 docker stop servicehub && docker rm servicehub           # removes the container, NOT the volume
 # then run the Step 2 command again with the new tag, and the same SERVICEHUB_ENCRYPTION_KEY
 ```

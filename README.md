@@ -10,6 +10,24 @@ One process, one SQLite file, running on your machine.
 
 *Every screenshot on this page is the built-in demo: made-up data, nothing is sent anywhere. You can open the same demo yourself, with no cloud account: **[try it in your browser](https://debdevops.github.io/servicehub/)** (nothing to install) or run it locally in about two minutes, below.*
 
+## Is it for you?
+
+**Best for one operator or a small team, on a private network, looking after non-production dead letters.** It is one process and one SQLite file, and it does not log the browser in.
+
+| It suits you if | It does not suit you if |
+|---|---|
+| You want to see *why* messages dead-lettered, and replay them from dev or staging with a preview first | You need to replay **in production**: ServiceHub refuses, and there is no override |
+| You can keep it on `localhost` or behind a private network or an authenticating proxy | You need a shared, highly available service with browser sign-in and named users |
+| You accept that a short preview of each message body is stored unencrypted on the machine it runs on | You cannot store any message content, even briefly |
+
+What each cloud can confirm after a replay:
+
+| | Azure Service Bus | AWS SQS / SNS | Google Pub/Sub |
+|---|---|---|---|
+| **"Did the fix hold?"** | Confirmed out of the box: *verified* or *came back* | *Verification required* until you switch on fix-confirming for that namespace, then *recovered* or *came back* | Same as AWS |
+
+The full list of limits is [further down](#know-the-limits). Read it before you connect a real cloud.
+
 ## Run it in two minutes
 
 Pick one. Both open the built-in demo, so you can look around before connecting a real cloud. Want to look first without installing anything? Open the **[demo in your browser](https://debdevops.github.io/servicehub/)**.
@@ -53,7 +71,7 @@ export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"
 docker run -d --name servicehub --restart unless-stopped \
   -p 127.0.0.1:8080:8080 -v servicehub-data:/data \
   -e SECURITY__ENCRYPTIONKEY="$SERVICEHUB_ENCRYPTION_KEY" \
-  ghcr.io/debdevops/servicehub:latest
+  ghcr.io/debdevops/servicehub:4.2.0
 ```
 
 Open **<http://localhost:8080>** and choose **Try it with sample data**. Linux `amd64` and `arm64` (Intel, AMD and Apple silicon) are supported.
@@ -64,7 +82,7 @@ docker stop servicehub        # stop (your data stays in the volume)
 docker start servicehub       # start again
 ```
 
-Pin an exact release for anything you depend on (for example `…/servicehub:4.2.0` instead of `:latest`). To **build the image yourself from a clone** instead:
+`:4.2.0` is the release this page describes; `:latest` follows new releases. To **build the image yourself from a clone** instead:
 
 ```bash
 git clone https://github.com/debdevops/servicehub.git && cd servicehub
@@ -125,10 +143,10 @@ Connections, Settings, Help, then Advanced and back. No sound needed. Click a pr
 
 ## Know the limits
 
-- **Production namespaces are read-only for replay.** Replay is refused on any namespace you mark as Production, and ServiceHub has no way to override that. Investigate there; replay in dev and staging.
+- **Production namespaces are read-only for replay.** Replay is refused on any namespace you mark as Production, and ServiceHub has no way to override that. Investigate there; replay in dev and staging. If a production message needs recovering, use ServiceHub to understand it, then recover it with your own tooling. Do not mark a production namespace as Staging to get around this: the safety checks trust the label, so a wrong label switches them off.
 - **Azure is the verified path.** Only Azure can confirm a replayed message stayed fixed out of the box. AWS and Google read "verification required" until you switch on fix-confirming per namespace (Settings → Connections), which gives ServiceHub a complete view of that cloud's dead-letter queue. GCP often records no failure reason.
-- **Anyone who can reach its port is the admin.** Keep it on `localhost`.
-- **Message content is stored unencrypted.** The first 500 characters of each dead-letter body, its properties and a hash are kept in the SQLite file ([SECURITY.md](SECURITY.md)), so treat the data folder like the queue. Cloud credentials and webhook URLs are encrypted.
+- **Anyone who can reach its port is the admin.** There is no browser sign-in. Keep it on `localhost`, or behind a private network or an authenticating proxy.
+- **Message content is stored unencrypted.** The first 500 characters of each dead-letter body, its properties and a hash are kept in the SQLite file ([SECURITY.md](SECURITY.md)), so treat the data folder like the queue. Cloud credentials and webhook URLs are encrypted. A replay never sends that stored preview: it reads the full message from the cloud's dead-letter queue and sends that.
 - **No upgrade from 4.0.0.** 4.1.0 and later are a from-scratch rewrite with a fresh database. Run it beside 4.0.0 and connect your clouds again. 4.0.0 lives, frozen, in [`archive/servicehub-4.0.0/`](archive/servicehub-4.0.0/). See the [changelog](CHANGELOG.md).
 
 ## How it stays safe
