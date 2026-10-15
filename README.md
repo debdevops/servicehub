@@ -95,15 +95,9 @@ docker compose up --build        # → http://localhost:8080 (this machine only)
 ServiceHub **refuses to start in Production without an encryption key**, and losing the key makes saved cloud connections unreadable, so keep it in a password manager.
 Updating, backing up, removing and fixing problems: **[Run ServiceHub with Docker](docs/DOCKER.md)**.
 
-## What it looks like, on each cloud
+## See it
 
-Same app, three clouds. Each cloud shows what it can and cannot do, honestly: the chips under each cloud's heading say whether ServiceHub can count, browse, confirm a fix and watch automatically there.
-
-| | Azure Service Bus | AWS SQS / SNS | Google Pub/Sub |
-|---|---|---|---|
-| **Home** | ![Azure Home](docs/screenshots/readme/home-azure.png) | ![AWS Home](docs/screenshots/readme/home-aws.png) | ![Google Cloud Home](docs/screenshots/readme/home-gcp.png) |
-| **Dead letters** | ![Azure dead letters](docs/screenshots/readme/dead-letters-azure.png) | ![AWS dead letters](docs/screenshots/readme/dead-letters-aws.png) | ![Google Cloud dead letters](docs/screenshots/readme/dead-letters-gcp.png) |
-| **Step-by-step guide** | [Azure guide](docs/clouds/azure.md) | [AWS guide](docs/clouds/aws.md) | [Google Cloud guide](docs/clouds/gcp.md) |
+Screenshots of each cloud and one captioned five-minute video per cloud: **[Walkthroughs](docs/WALKTHROUGHS.md)**.
 
 ## What you get
 
@@ -122,26 +116,6 @@ Same app, three clouds. Each cloud shows what it can and cannot do, honestly: th
 | Failure Signatures | Agents |
 |---|---|
 | ![Failure Signatures](docs/screenshots/readme/advanced-signatures.png) | ![Agents](docs/screenshots/readme/advanced-agents.png) |
-
-## Watch it work
-
-One captioned video per cloud, about five minutes each: Home, Dead letters, Look now, replaying one, some or all, Active messages, Replayed, Auto Replay, approvals,
-Connections, Settings, Help, then Advanced and back. No sound needed. Click a preview to play the full video.
-
-| Azure Service Bus | AWS SQS / SNS | Google Pub/Sub |
-|:---:|:---:|:---:|
-| [![Azure Service Bus walkthrough — click to play](docs/media/azure-preview.gif)](docs/media/azure.mp4) | [![AWS SQS / SNS walkthrough — click to play](docs/media/aws-preview.gif)](docs/media/aws.mp4) | [![Google Pub/Sub walkthrough — click to play](docs/media/gcp-preview.gif)](docs/media/gcp.mp4) |
-| [▶ Azure, 5:01](docs/media/azure.mp4) | [▶ AWS, 5:03](docs/media/aws.mp4) | [▶ Google, 5:35](docs/media/gcp.mp4) |
-
-<details><summary><b>Chapters</b> (Azure; AWS and Google are within a few seconds of these)</summary>
-
-`0:07` Connect a cloud · `0:15` Home: every cloud · `0:26` Home: one cloud · `0:43` Dead letters and Look now · `0:57` Open a message · `1:05` Replay one ·
-`1:29` Replay selected · `2:09` Replay All, then stop · `2:43` Active messages and Send · `2:57` Replayed · `3:07` Auto Replay · `3:25` Approve or decline ·
-`3:37` Connections · `3:45` Settings · `4:03` Help · `4:09` Switch to Advanced · `5:02` Back to Simple
-
-</details>
-
-*Recorded from the real app against real development clouds. Replay All is started and then stopped on camera: **Stop now** leaves every message not yet sent exactly as it was.*
 
 ## Know the limits
 
@@ -171,6 +145,7 @@ Connections, Settings, Help, then Advanced and back. No sound needed. Click a pr
 
 | | |
 |---|---|
+| [Walkthroughs](docs/WALKTHROUGHS.md) | Screenshots of each cloud and the three five-minute videos |
 | [Local setup](docs/LOCAL-SETUP.md) | Install, run, check and troubleshoot on your own machine, with or without Docker |
 | [Run with Docker](docs/DOCKER.md) | Run the public image, update it, back it up, fix problems |
 | [Azure](docs/clouds/azure.md) · [AWS](docs/clouds/aws.md) · [Google Cloud](docs/clouds/gcp.md) | Step-by-step setup and use, with annotated screenshots (also in the app under **Help**) |

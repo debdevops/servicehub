@@ -740,7 +740,7 @@ public sealed class DeadLettersApiTests
     // The ledger and the verification agent already honoured the observer; the replay list and proposal read only the
     // provider's own capability, so a replay the ledger called Recovered still read "verification required" on screen.
 
-    private static async Task SwitchObserverOn(Handle host, Guid namespaceId, DateTimeOffset confirmedAt, bool enabled = true)
+    internal static async Task SwitchObserverOn(Handle host, Guid namespaceId, DateTimeOffset confirmedAt, bool enabled = true)
     {
         using var scope = host.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ServiceHubDbContext>();

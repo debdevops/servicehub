@@ -12,7 +12,8 @@ namespace ServiceHub.Infrastructure.Signatures;
 /// record no error text, so every message there has the empty shape and nothing is split).
 /// </summary>
 /// <remarks>
-/// Not used by anything yet — fingerprint v2 is not wired. Known limit: if the oldest messages of a queue are purged, the
+/// Used by <see cref="SignatureRecorder"/> when it signs a message, so the template is part of its version-2 fingerprint. (Re-signing
+/// signatures that already exist is a separate step: <see cref="SignatureResigner"/>.) Known limit: if the oldest messages of a queue are purged, the
 /// "first seen" order is recomputed from what remains, so a purge can change which shapes hold a slot for <i>new</i> messages
 /// (messages that already carry a signature keep it).
 /// </remarks>
