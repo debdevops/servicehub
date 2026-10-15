@@ -2,6 +2,8 @@
 
 **Find out *why* your messages dead-lettered, replay them safely, and see whether the fix held. Azure Service Bus, AWS SQS/SNS and Google Pub/Sub, in one place.**
 
+**[Look around first: open the demo in your browser](https://debdevops.github.io/servicehub/)**. Made-up data on all three clouds, nothing to install, nothing sent anywhere.
+
 Your queue says "4,218 dead-lettered messages". A count does not tell you which messages, why each failed, or whether replaying them is safe.
 ServiceHub shows all three, previews every replay *before* anything is sent back, and keeps a tamper-evident record you can export and verify offline.
 One process, one SQLite file, running on your machine.
