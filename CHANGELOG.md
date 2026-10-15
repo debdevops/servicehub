@@ -1,5 +1,21 @@
 # ServiceHub Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **A confirmed replay on AWS or Google Cloud now reads as confirmed.** With *Confirm fixes on this cloud* switched on and its view live, the ledger
+  recorded a replay as *Recovered*, but the **Replayed** list, the replay drawer, the replay preview and the Replay All preview still said
+  *verification required* and "cannot prove it stayed fixed", because they looked only at what the cloud can do on its own. They now also count a live
+  view, the same test the verification agent and the eligibility gate already used. A view that is switched off, or has not been confirmed within its
+  staleness bound, still reads *verification required*. Nothing about whether a replay is allowed, or what is sent, changed.
+
+### Observed
+
+- **A cured replay on Google Cloud, 2026-10-15.** Against real Pub/Sub: three messages dead-lettered, the observer went live, a replay sent after the outage had
+  cleared was watched for its window and recorded *Recovered*, and (after the fix above) read *verified* on screen. Still **not observed:** 1,000+ and 5,000-message queues,
+  a second reader on AWS.
+
 ## [4.2.0] — 2026-10-11
 
 The last planned release of ServiceHub. Development stops after 4.2.0.

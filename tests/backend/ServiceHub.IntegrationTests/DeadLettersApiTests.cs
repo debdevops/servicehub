@@ -736,6 +736,83 @@ public sealed class DeadLettersApiTests
         (await Total("entries", $"namespaceId={azure}")).Should().Be(1);
     }
 
+    // ── A live observer lets a cloud that cannot prove absence on its own confirm a fix (ADR-0018) ──
+    // The ledger and the verification agent already honoured the observer; the replay list and proposal read only the
+    // provider's own capability, so a replay the ledger called Recovered still read "verification required" on screen.
+
+    private static async Task SwitchObserverOn(Handle host, Guid namespaceId, DateTimeOffset confirmedAt, bool enabled = true)
+    {
+        using var scope = host.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ServiceHubDbContext>();
+        var owner = (await db.Namespaces.FindAsync(namespaceId))!.OwnerId;
+        db.DlqObserverAttestations.Add(new DlqObserverAttestation
+        {
+            OwnerId = owner, NamespaceId = namespaceId, Enabled = enabled, StalenessBoundMinutes = 30,
+            ObserverReference = "orders-dlq-servicehub-observer", DlqEntityName = "orders-dlq",
+            LastConfirmedAt = confirmedAt, LiveSince = confirmedAt,
+        });
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task MarkEntriesRecovered(Handle host)
+    {
+        using var scope = host.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ServiceHubDbContext>();
+        foreach (var entry in await db.RecoveryLedgerEntries.ToListAsync())
+        {
+            entry.State = RecoveryEntryState.Recovered;
+            entry.ObservationWindowEndsAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task A_recovered_replay_on_a_cloud_with_a_live_observer_reads_verified_and_its_proposal_says_it_can_confirm()
+    {
+        var aws = new PeekLog { OnReplay = () => Result<bool>.Success(true) };
+        using var host = Host(new PeekLog(), aws);
+        var ns = await Connect(host.Client, "aws");
+        await Seed(host, ns, CloudProviderType.Aws, 1);
+        await SwitchObserverOn(host, ns, DateTimeOffset.UtcNow.AddMinutes(-1));
+        var id = await FirstId(host, ns);
+
+        var proposal = await Body(await host.Client.GetAsync($"/api/v1/dead-letters/{id}/replay-proposal"));
+        proposal.GetProperty("canConfirm").GetBoolean().Should().BeTrue("the observer gives this cloud a whole view of its queue");
+        proposal.GetProperty("checks").EnumerateArray().Single(c => c.GetProperty("id").GetString() == "verification")
+            .GetProperty("state").GetString().Should().Be("passed");
+
+        (await PostReplay(host, id)).StatusCode.Should().Be(HttpStatusCode.OK);
+        await MarkEntriesRecovered(host);
+
+        var verification = await Verification(host, id);
+        verification.GetProperty("status").GetString().Should().Be("verified");
+        verification.GetProperty("canConfirm").GetBoolean().Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(false, 1)]   // observer switched off
+    [InlineData(true, 45)]   // switched on, but last confirmed longer ago than its staleness bound (30 minutes)
+    public async Task A_recovered_replay_without_a_live_observer_still_reads_verification_required(bool enabled, int confirmedMinutesAgo)
+    {
+        var aws = new PeekLog { OnReplay = () => Result<bool>.Success(true) };
+        using var host = Host(new PeekLog(), aws);
+        var ns = await Connect(host.Client, "aws");
+        await Seed(host, ns, CloudProviderType.Aws, 1);
+        await SwitchObserverOn(host, ns, DateTimeOffset.UtcNow.AddMinutes(-confirmedMinutesAgo), enabled);
+        var id = await FirstId(host, ns);
+
+        var proposal = await Body(await host.Client.GetAsync($"/api/v1/dead-letters/{id}/replay-proposal"));
+        proposal.GetProperty("canConfirm").GetBoolean().Should().BeFalse();
+
+        (await PostReplay(host, id)).StatusCode.Should().Be(HttpStatusCode.OK);
+        await MarkEntriesRecovered(host);
+
+        var verification = await Verification(host, id);
+        verification.GetProperty("status").GetString().Should().Be("verification_required", "a stale or switched-off observer proves nothing");
+        verification.GetProperty("canConfirm").GetBoolean().Should().BeFalse();
+    }
+
     private static async Task<JsonElement> Verification(Handle host, long dlqMessageId)
     {
         var page = await Body(await host.Client.GetAsync($"/api/v1/replays?dlqMessageId={dlqMessageId}"));
