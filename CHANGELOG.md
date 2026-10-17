@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- **One start command on every operating system.** `./run.sh` (macOS, Linux, Git Bash) and `run` / `.\run.cmd` (Windows Command Prompt and PowerShell, no WSL) check the
+  machine, **ask before downloading** the .NET 10 SDK or Node.js (into your home folder, checksum-verified; `--yes` / `-Yes` skips the question, `--no-install` never
+  downloads), build, start, and stop everything on Ctrl-C. `--docker` (`-Docker`) runs the container instead: it checks Docker, its daemon and Compose, creates and keeps
+  the encryption key at `~/.servicehub/docker.key` (asking first), and waits until it answers on <http://localhost:8080>. Plain `./run.sh` in a terminal with Docker running asks
+  *Locally or Docker?*; `--local`, `--docker` or `SERVICEHUB_RUN` answer it in advance. Docker itself is never installed for you. `.gitattributes` keeps `.sh` as LF and
+  `.cmd` / `.ps1` as CRLF. The Windows scripts have been parsed and exercised on PowerShell 7 only, not yet on a Windows machine.
+
 ### Fixed
 
 - **A confirmed replay on AWS or Google Cloud now reads as confirmed.** With *Confirm fixes on this cloud* switched on and its view live, the ledger
