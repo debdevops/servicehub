@@ -22,6 +22,11 @@ A patch release: an easier way to start ServiceHub, a fix to how replays read on
   *verification required* and "cannot prove it stayed fixed", because they looked only at what the cloud can do on its own. They now also count a live
   view, the same test the verification agent and the eligibility gate already used. A view that is switched off, or has not been confirmed within its
   staleness bound, still reads *verification required*. Nothing about whether a replay is allowed, or what is sent, changed.
+- **The MCP server now warns the assistant about message text.** Answers that carry text written by whoever sent a message (a dead letter's body, properties
+  and error, and the failure kinds, replays and pending work that quote it) now begin with a notice that the text is untrusted data, not instructions, so an assistant
+  is not asked to obey a dead letter that says "ignore your instructions". The server is still read-only; this reduces the risk, it does not remove it.
+- **`./run.sh --docker` no longer reports a start it did not check.** On a machine with `wget` but no `curl`, startup is now probed with `wget`. With neither, it exits
+  with an error and tells you to check `docker compose ps` and the logs, instead of exiting as if it had succeeded.
 
 ### Observed
 

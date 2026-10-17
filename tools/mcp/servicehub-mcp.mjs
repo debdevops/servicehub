@@ -61,6 +61,7 @@ export const tools = [
   {
     name: 'list_failure_kinds',
     description: 'Kinds of failure seen recently, grouped: how many messages, whether it is growing, and whether replaying it has helped before.',
+    untrusted: true,
     inputSchema: { type: 'object', properties: { provider: clouds, days: { type: 'integer', minimum: 1, maximum: 90 }, onlyGrowing: { type: 'boolean' } } },
     path: (a) => ['/signatures', { provider: a.provider?.toLowerCase(), days: a.days ?? 7, tab: a.onlyGrowing ? 'growing' : 'all', sort: 'messages', page: 1, pageSize: 25 }],
   },
@@ -73,6 +74,7 @@ export const tools = [
   {
     name: 'list_replays',
     description: 'Messages that were replayed and how each ended: stayed fixed, came back, still being watched, or could not be proven.',
+    untrusted: true,
     inputSchema: {
       type: 'object',
       properties: {
@@ -88,6 +90,7 @@ export const tools = [
   {
     name: 'waiting_for_a_person',
     description: 'What ServiceHub has stopped and asked a person about: replays an agent may not make alone, and rules that stopped themselves.',
+    untrusted: true,
     inputSchema: { type: 'object', properties: { provider: clouds } },
     path: (a) => ['/pending-work', { provider: a.provider }],
   },

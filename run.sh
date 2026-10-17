@@ -147,6 +147,12 @@ fetch() {   # fetch URL DEST — retries, follows redirects, shows a progress ba
     wget -q --tries=3 --timeout=30 -O "$dest" "$url"
   fi
 }
+# up URL — true when the URL answers. Uses curl, or wget when curl is missing (the same two tools the downloads accept).
+can_probe() { have curl || have wget; }
+up() {
+  if have curl; then curl -fsS -o /dev/null --max-time 2 "$1" 2>/dev/null
+  else wget -q -O /dev/null --tries=1 --timeout=2 "$1" 2>/dev/null; fi
+}
 offline_help() {
   cat >&2 <<EOF
   If this is a network problem (offline, behind a proxy, or a firewall in the way):
@@ -410,8 +416,8 @@ run_docker() {
   step "Building and starting the container (first run builds the image — a few minutes)…"
   ( cd "$ROOT" && docker compose up --build -d ) || die "docker compose failed (output above). See docs/DOCKER.md → Troubleshooting."
   local waited=0
-  have curl || { echo "• curl not found — cannot probe startup. Open http://localhost:${DOCKER_PORT} in a minute."; exit 0; }
-  until curl -fsS -o /dev/null --max-time 2 "http://localhost:${DOCKER_PORT}/health/ready" 2>/dev/null; do
+  can_probe || { echo "• Neither curl nor wget is installed, so startup could not be checked and ServiceHub may still be starting (or may have failed). Check: docker compose ps · docker compose logs servicehub — then open http://localhost:${DOCKER_PORT}."; exit 1; }
+  until up "http://localhost:${DOCKER_PORT}/health/ready"; do
     waited=$((waited + 2)); sleep 2
     if [ "$waited" -ge "$READY_TIMEOUT" ]; then
       ( cd "$ROOT" && docker compose logs --tail 40 servicehub ) || true
@@ -465,12 +471,12 @@ if [ "$MODE" = "check" ]; then
     if port_in_use "$p"; then echo "• Port $p is in use (a previous ServiceHub is stopped; for any other program the next free port is used, or run.sh refuses if you pinned the port)."
     else echo "✔ Port $p is free"; fi
   done
-  have curl || warn "curl not found — run.sh cannot probe startup (and cannot download tools); install curl for the best experience."
+  can_probe || warn "Neither curl nor wget found — run.sh cannot probe startup (and cannot download tools); install curl for the best experience."
   echo "✔ Check finished. Run ./run.sh"
   exit 0
 fi
 
-have curl || echo "• curl not found — startup will not be probed; watch the log for 'Now listening'."
+can_probe || echo "• Neither curl nor wget found — startup will not be probed; watch the log for 'Now listening'."
 
 # ── Web dependencies ────────────────────────────────────────────────────────────────────────────
 # Install the first time, again whenever the lockfile moves on (a `git pull` that changed it), and again if a
@@ -529,10 +535,9 @@ if [ "$NEED_WEB" = 1 ]; then
 fi
 
 # ── Wait, announce, supervise ───────────────────────────────────────────────────────────────────
-up() { curl -fsS -o /dev/null --max-time 2 "$1" 2>/dev/null; }
 announced=0
 waited=0
-if ! have curl; then announced=1; fi   # cannot probe; do not nag
+if ! can_probe; then announced=1; fi   # cannot probe; do not nag
 
 # Stop everything as soon as either process exits, so a crashed API is not hidden behind a live dev server.
 while :; do

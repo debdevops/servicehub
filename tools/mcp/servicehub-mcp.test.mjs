@@ -102,3 +102,16 @@ test('answers with no message text carry no notice', async () => {
   const reply = await handle(rpc('tools/call', { name: 'list_clouds', arguments: {} }))
   assert.equal(reply.result.content.length, 1)
 })
+
+test('every tool that can return sender-written text is marked untrusted, and only those', () => {
+  const marked = tools.filter((x) => x.untrusted).map((x) => x.name).sort()
+  assert.deepEqual(marked, ['get_dead_letter', 'list_dead_letters', 'list_failure_kinds', 'list_replays', 'waiting_for_a_person'])
+})
+
+test('failure kinds, replays and pending work carry the notice too', async () => {
+  const { handle } = fake()
+  for (const name of ['list_failure_kinds', 'list_replays', 'waiting_for_a_person']) {
+    const reply = await handle(rpc('tools/call', { name, arguments: {} }))
+    assert.equal(reply.result.content[0].text, UNTRUSTED_NOTICE, name)
+  }
+})
