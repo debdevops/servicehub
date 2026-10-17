@@ -1,5 +1,39 @@
 # ServiceHub Changelog
 
+## [Unreleased]
+
+## [4.2.1] — 2026-10-17
+
+A patch release: an easier way to start ServiceHub, a fix to how replays read on AWS and Google Cloud, and docs. No new product features, no database migration; 4.2.0 data opens as is.
+
+### Added
+
+- **One start command on every operating system.** `./run.sh` (macOS, Linux, Git Bash) and `run` / `.\run.cmd` (Windows Command Prompt and PowerShell, no WSL) check the
+  machine, **ask before downloading** the .NET 10 SDK or Node.js (into your home folder, checksum-verified; `--yes` / `-Yes` skips the question, `--no-install` never
+  downloads), build, start, and stop everything on Ctrl-C. `--docker` (`-Docker`) runs the container instead: it checks Docker, its daemon and Compose, creates and keeps
+  the encryption key at `~/.servicehub/docker.key` (asking first), and waits until it answers on <http://localhost:8080>. Plain `./run.sh` in a terminal with Docker running asks
+  *Locally or Docker?*; `--local`, `--docker` or `SERVICEHUB_RUN` answer it in advance. Docker itself is never installed for you. `.gitattributes` keeps `.sh` as LF and
+  `.cmd` / `.ps1` as CRLF. The Windows scripts have been parsed and exercised on PowerShell 7 only, not yet on a Windows machine.
+
+### Fixed
+
+- **A confirmed replay on AWS or Google Cloud now reads as confirmed.** With *Confirm fixes on this cloud* switched on and its view live, the ledger
+  recorded a replay as *Recovered*, but the **Replayed** list, the replay drawer, the replay preview and the Replay All preview still said
+  *verification required* and "cannot prove it stayed fixed", because they looked only at what the cloud can do on its own. They now also count a live
+  view, the same test the verification agent and the eligibility gate already used. A view that is switched off, or has not been confirmed within its
+  staleness bound, still reads *verification required*. Nothing about whether a replay is allowed, or what is sent, changed.
+- **The MCP server now warns the assistant about message text.** Answers that carry text written by whoever sent a message (a dead letter's body, properties
+  and error, and the failure kinds, replays and pending work that quote it) now begin with a notice that the text is untrusted data, not instructions, so an assistant
+  is not asked to obey a dead letter that says "ignore your instructions". The server is still read-only; this reduces the risk, it does not remove it.
+- **`./run.sh --docker` no longer reports a start it did not check.** On a machine with `wget` but no `curl`, startup is now probed with `wget`. With neither, it exits
+  with an error and tells you to check `docker compose ps` and the logs, instead of exiting as if it had succeeded.
+
+### Observed
+
+- **A cured replay on Google Cloud, 2026-10-15.** Against real Pub/Sub: three messages dead-lettered, the observer went live, a replay sent after the outage had
+  cleared was watched for its window and recorded *Recovered*, and (after the fix above) read *verified* on screen. Still **not observed:** 1,000+ and 5,000-message queues,
+  a second reader on AWS.
+
 ## [4.2.0] — 2026-10-11
 
 The last planned release of ServiceHub. Development stops after 4.2.0.

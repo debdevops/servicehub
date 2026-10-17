@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ServiceHub 4.2.0 — run from source.
+# ServiceHub 4.2.1 — run from source.
 #
 # One command for anyone, developer or not:   ./run.sh
 #
@@ -24,40 +24,49 @@ valid_port() { case "$1" in ""|*[!0-9]*) return 1 ;; esac; [ "${#1}" -le 5 ] && 
 valid_port "$API_PORT" || { echo "✖ SERVICEHUB_API_PORT='${API_PORT}' is not a valid port (use a number from 1 to 65535)." >&2; exit 1; }
 valid_port "$WEB_PORT" || { echo "✖ SERVICEHUB_WEB_PORT='${WEB_PORT}' is not a valid port (use a number from 1 to 65535)." >&2; exit 1; }
 READY_TIMEOUT="${SERVICEHUB_READY_TIMEOUT:-180}"   # seconds to wait for startup (after the build)
-AUTO_INSTALL="${SERVICEHUB_AUTO_INSTALL:-1}"       # 0 = never download anything, just report what is missing
+AUTO_INSTALL="${SERVICEHUB_AUTO_INSTALL:-ask}"     # ask (default) = confirm before each download · 1 = download without asking · 0 = never download
 TOOLS_DIR="${SERVICEHUB_TOOLS_DIR:-${HOME:-$ROOT}/.servicehub/tools}"   # where a missing .NET / Node is installed
 NODE_LTS_LINE="v22.x"                              # the Node line downloaded when Node is missing or too old
 
 usage() {
   cat <<'USAGE'
-Usage: ./run.sh [--api-only | --web-only | --check] [--no-install]
+Usage: ./run.sh [--local | --docker | --api-only | --web-only | --check] [--yes | --no-install]
 
-  (no flags)    Check the machine, install anything missing, then start the API and the web dev server.
+  (no flags)    In a terminal where Docker is also usable, ask: run locally or in Docker? Otherwise run locally:
+                check the machine, ask before installing anything missing, start the API and the web dev server.
   --api-only    Start only the .NET API.
   --web-only    Start only the Vite dev server (expects an API already running).
+  --local       Run from source on this machine without asking "local or Docker?".
+  --docker      Run in Docker instead (checks Docker, the daemon and Compose, makes and keeps an encryption key, then
+                builds and starts the container on http://localhost:8080). Combine with --check to only verify.
   --check       Report what is ready and what would be installed, then exit. Starts and installs nothing.
+  --yes, -y     Download missing tools without asking (default: you are asked first).
   --no-install  Never download anything; stop with instructions if a tool is missing.
 
 Environment:
+  SERVICEHUB_RUN            local | docker — answers the "local or Docker?" question in advance
   SERVICEHUB_API_PORT       API port (default 5153; if unset and busy, the next free port is used)
   SERVICEHUB_WEB_PORT       Dev server port (default 3000; same rule)
   SERVICEHUB_DATA_DIR       Where the SQLite database lives (default: services/api/src/ServiceHub.Api/data)
   SERVICEHUB_READY_TIMEOUT  Seconds to wait for startup before giving up (default 180)
-  SERVICEHUB_AUTO_INSTALL   0 = same as --no-install (default 1)
+  SERVICEHUB_AUTO_INSTALL   1 = same as --yes, 0 = same as --no-install (default: ask before downloading)
   SERVICEHUB_TOOLS_DIR      Where a missing .NET SDK / Node.js is installed (default ~/.servicehub/tools)
   ASPNETCORE_ENVIRONMENT    Defaults to Development, which supplies a throw-away dev encryption key
 USAGE
 }
 
-MODE="both"
+MODE="both"; DOCKER=0; EXPLICIT=0
+case "${SERVICEHUB_RUN:-}" in docker) DOCKER=1; EXPLICIT=1 ;; local) EXPLICIT=1 ;; esac
 for arg in "$@"; do
   case "$arg" in
     --help|-h) usage; exit 0 ;;
-    --api-only) MODE="api" ;;
-    --web-only) MODE="web" ;;
-    --check) MODE="check" ;;
+    --api-only) MODE="api"; EXPLICIT=1 ;;
+    --web-only) MODE="web"; EXPLICIT=1 ;;
+    --check) MODE="check"; EXPLICIT=1 ;;
+    --docker) DOCKER=1; EXPLICIT=1 ;;
+    --local) EXPLICIT=1 ;;
     --no-install) AUTO_INSTALL=0 ;;
-    --yes|-y) ;;   # accepted for scripts; installing is already the default
+    --yes|-y) AUTO_INSTALL=1 ;;   # download missing tools without asking (for scripts / CI)
     *) echo "Unknown option: $arg" >&2; usage >&2; exit 1 ;;
   esac
 done
@@ -112,7 +121,11 @@ OS="$(uname -s 2>/dev/null || echo unknown)"
 case "$OS" in
   Darwin) PLAT="darwin" ;;
   Linux)  PLAT="linux" ;;
-  MINGW*|MSYS*|CYGWIN*) die "This is a Windows shell. ServiceHub runs on Windows through WSL 2: open an Ubuntu (WSL) terminal, clone the repo there, and run ./run.sh. Guide: docs/LOCAL-SETUP.md" ;;
+  # Git Bash / MSYS / Cygwin on Windows: hand over to the native PowerShell script (same options, same behaviour).
+  MINGW*|MSYS*|CYGWIN*)
+    have powershell.exe || die "powershell.exe not found. On Windows run run.cmd from Command Prompt or PowerShell. Guide: docs/LOCAL-SETUP.md"
+    PS_ARGS=(); for a in "$@"; do case "$a" in --api-only) PS_ARGS+=(-ApiOnly) ;; --web-only) PS_ARGS+=(-WebOnly) ;; --check) PS_ARGS+=(-Check) ;; --no-install) PS_ARGS+=(-NoInstall) ;; --docker) PS_ARGS+=(-Docker) ;; --local) PS_ARGS+=(-Local) ;; --yes|-y) PS_ARGS+=(-Yes) ;; *) PS_ARGS+=("$a") ;; esac; done
+    exec powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$ROOT/run.ps1" 2>/dev/null || echo "$ROOT/run.ps1")" ${PS_ARGS[@]+"${PS_ARGS[@]}"} ;;
   *) die "Unsupported operating system '$OS'. ServiceHub runs on macOS and Linux (and Windows via WSL 2)." ;;
 esac
 case "$(uname -m 2>/dev/null)" in
@@ -133,6 +146,12 @@ fetch() {   # fetch URL DEST — retries, follows redirects, shows a progress ba
   else
     wget -q --tries=3 --timeout=30 -O "$dest" "$url"
   fi
+}
+# up URL — true when the URL answers. Uses curl, or wget when curl is missing (the same two tools the downloads accept).
+can_probe() { have curl || have wget; }
+up() {
+  if have curl; then curl -fsS -o /dev/null --max-time 2 "$1" 2>/dev/null
+  else wget -q -O /dev/null --tries=1 --timeout=2 "$1" 2>/dev/null; fi
 }
 offline_help() {
   cat >&2 <<EOF
@@ -159,6 +178,18 @@ check_disk() {   # check_disk DIR NEEDED_MB WHAT — warn (never block) when spa
   free_kb="$(df -Pk "$dir" 2>/dev/null | awk 'NR==2 {print $4}' || true)"
   [ -n "$free_kb" ] || return 0
   [ "$((free_kb / 1024))" -ge "$need" ] || warn "Only $((free_kb / 1024)) MB free in $dir; ${what} needs about ${need} MB."
+}
+
+# Ask before downloading anything. Non-interactive runs (CI, pipes) must opt in with --yes.
+confirm_install() {   # confirm_install WHAT SIZE
+  [ "$AUTO_INSTALL" = 1 ] && return 0
+  if [ -t 0 ] && [ -t 1 ]; then
+    local ans=""
+    read -r -p "? Download and install $1 (about $2) into $TOOLS_DIR now? Nothing else on your system is touched. [Y/n] " ans || ans="n"
+    case "$ans" in ""|y|Y|yes|YES|Yes) return 0 ;; esac
+    die "Not installed (you answered no). Install $1 yourself and re-run, or re-run and answer y."
+  fi
+  die "$1 is missing and this is not an interactive terminal, so I cannot ask. Re-run with --yes to allow the download, or install it yourself."
 }
 
 # ── .NET SDK ────────────────────────────────────────────────────────────────────────────────────
@@ -209,8 +240,9 @@ ensure_dotnet() {
   local why="is not installed"
   have dotnet && why="does not satisfy services/api/global.json (needs 10.0.x). Installed: $(dotnet --list-sdks 2>/dev/null | cut -d' ' -f1 | tr '\n' ' ')"
   if [ "$MODE" = "check" ]; then echo "• .NET 10 SDK $why — ./run.sh will download it to $TOOLS_DIR/dotnet"; return 0; fi
-  if [ "$AUTO_INSTALL" != 1 ]; then die "The .NET 10 SDK $why. Install it from https://dotnet.microsoft.com/download/dotnet/10.0 (or drop --no-install to let run.sh do it)."; fi
+  if [ "$AUTO_INSTALL" = 0 ]; then die "The .NET 10 SDK $why. Install it from https://dotnet.microsoft.com/download/dotnet/10.0 (or drop --no-install so run.sh can offer to do it)."; fi
   echo "• The .NET 10 SDK $why."
+  confirm_install "the .NET 10 SDK" "250 MB"
   install_dotnet
   echo "✔ .NET SDK $DOTNET_FOUND (installed by run.sh)"
 }
@@ -276,8 +308,9 @@ ensure_node() {
   have node && why="$(node --version 2>/dev/null || echo '?') is too old or too new a line (needs 20.19+ or 22.12+)"
   have node && ! have npm && why="has no npm next to it"
   if [ "$MODE" = "check" ]; then echo "• Node.js $why — ./run.sh will download Node ${NODE_LTS_LINE%.x} LTS to $TOOLS_DIR/node"; return 0; fi
-  if [ "$AUTO_INSTALL" != 1 ]; then die "Node.js $why. Install Node 22 LTS from https://nodejs.org (or drop --no-install to let run.sh do it)."; fi
+  if [ "$AUTO_INSTALL" = 0 ]; then die "Node.js $why. Install Node 22 LTS from https://nodejs.org (or drop --no-install so run.sh can offer to do it)."; fi
   echo "• Node.js $why."
+  confirm_install "Node.js 22 LTS" "40 MB"
   install_node
   echo "✔ Node $NODE_FOUND (installed by run.sh)"
 }
@@ -337,11 +370,83 @@ claim_port() {
 }
 BLOCKER=""
 
+# ── Docker mode ─────────────────────────────────────────────────────────────────────────────────
+# For people who prefer a container: nothing to install except Docker itself (a system-level install this script
+# will not do for you — it only checks and explains).
+DOCKER_PORT=8080
+KEY_FILE="${HOME:-$ROOT}/.servicehub/docker.key"
+run_docker() {
+  local check=0; [ "$MODE" = "check" ] && check=1
+  have docker || die "Docker is not installed. Install Docker Desktop (macOS/Windows) or Docker Engine (Linux): https://docs.docker.com/get-docker/ — then run ./run.sh --docker again. (No Docker? Run ./run.sh without --docker; it needs no Docker.)"
+  echo "✔ Docker $(docker --version 2>/dev/null | sed -E 's/^Docker version ([^,]*).*/\1/')"
+  docker info >/dev/null 2>&1 || die "Docker is installed but its daemon is not running. Start Docker Desktop (or: sudo systemctl start docker), wait until it says running, and try again."
+  echo "✔ Docker daemon is running"
+  docker compose version >/dev/null 2>&1 || die "The Docker Compose v2 plugin is missing ('docker compose'). Update Docker Desktop, or install the plugin: https://docs.docker.com/compose/install/"
+  echo "✔ $(docker compose version 2>/dev/null | head -1)"
+  [ -f "$ROOT/docker-compose.yml" ] && [ -f "$ROOT/Dockerfile" ] || die "docker-compose.yml / Dockerfile not found next to run.sh. Run this from the repository root."
+  local ours=""; ours="$(cd "$ROOT" && SERVICEHUB_ENCRYPTION_KEY="${SERVICEHUB_ENCRYPTION_KEY:-probe}" docker compose ps -q 2>/dev/null || true)"   # compose refuses to even list without the key set
+  if [ -z "$ours" ] && port_in_use "$DOCKER_PORT"; then
+    die "Port ${DOCKER_PORT} is already in use by another program (not this ServiceHub container). Stop it, or change the host port in docker-compose.yml."
+  fi
+  [ -n "$ours" ] && echo "• A ServiceHub container from this folder already exists; it will be rebuilt and restarted (your data volume is kept)."
+
+  # The encryption key protects every stored cloud credential, and losing it makes them unreadable — so it is
+  # made once and kept, never regenerated behind your back.
+  if [ -n "${SERVICEHUB_ENCRYPTION_KEY:-}" ]; then echo "✔ Encryption key: taken from SERVICEHUB_ENCRYPTION_KEY"
+  elif [ -s "$KEY_FILE" ]; then echo "✔ Encryption key: reusing $KEY_FILE"
+  else
+    if [ "$check" = 1 ]; then echo "• No encryption key yet — run.sh would create one at $KEY_FILE (only you can read it)"
+    else
+      if [ "$AUTO_INSTALL" != 1 ]; then
+        [ -t 0 ] && [ -t 1 ] || die "No encryption key exists and this is not an interactive terminal. Export SERVICEHUB_ENCRYPTION_KEY, or re-run with --yes to create one at $KEY_FILE."
+        local ans=""
+        read -r -p "? Create an encryption key and save it to $KEY_FILE (readable only by you)? Keep a backup: without it saved cloud connections cannot be read. [Y/n] " ans || ans="n"
+        case "$ans" in ""|y|Y|yes|YES|Yes) ;; *) die "No key, no container. Export SERVICEHUB_ENCRYPTION_KEY yourself and re-run." ;; esac
+      fi
+      mkdir -p "$(dirname "$KEY_FILE")"
+      ( umask 077; LC_ALL=C head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$KEY_FILE" ) || die "Could not write $KEY_FILE."
+      chmod 600 "$KEY_FILE" 2>/dev/null || true
+      [ "$(wc -c < "$KEY_FILE" | tr -d ' ')" = 64 ] || die "Key generation failed (got an unexpected length)."
+      echo "✔ Encryption key created at $KEY_FILE — back it up somewhere safe."
+    fi
+  fi
+  if [ "$check" = 1 ]; then echo "✔ Check finished. Run ./run.sh --docker"; exit 0; fi
+  [ -n "${SERVICEHUB_ENCRYPTION_KEY:-}" ] || export SERVICEHUB_ENCRYPTION_KEY="$(cat "$KEY_FILE")"
+
+  step "Building and starting the container (first run builds the image — a few minutes)…"
+  ( cd "$ROOT" && docker compose up --build -d ) || die "docker compose failed (output above). See docs/DOCKER.md → Troubleshooting."
+  local waited=0
+  can_probe || { echo "• Neither curl nor wget is installed, so startup could not be checked and ServiceHub may still be starting (or may have failed). Check: docker compose ps · docker compose logs servicehub — then open http://localhost:${DOCKER_PORT}."; exit 1; }
+  until up "http://localhost:${DOCKER_PORT}/health/ready"; do
+    waited=$((waited + 2)); sleep 2
+    if [ "$waited" -ge "$READY_TIMEOUT" ]; then
+      ( cd "$ROOT" && docker compose logs --tail 40 servicehub ) || true
+      die "Not ready after ${READY_TIMEOUT}s (last log lines above). See docs/DOCKER.md → Troubleshooting."
+    fi
+  done
+  echo; echo "✔ ServiceHub is ready in Docker"
+  echo "   Open http://localhost:${DOCKER_PORT}      (try /demo/azure first: made-up data, nothing is sent anywhere)"
+  echo "   Logs: docker compose logs -f servicehub   ·   Stop: docker compose down   (your data stays in the volume)"
+  exit 0
+}
+
 # ── Preflight ───────────────────────────────────────────────────────────────────────────────────
 echo "ServiceHub — checking this machine ($OS/$ARCH)…"
 [ "$API_PORT" != "$WEB_PORT" ] || die "SERVICEHUB_API_PORT and SERVICEHUB_WEB_PORT are both ${API_PORT}; they must differ."
 [ -f "$ROOT/package.json" ] && [ -d "$ROOT/services/api" ] || die "Run this script from the ServiceHub repository root (package.json and services/api not found next to it)."
 [ "${BASH_VERSINFO[0]:-0}" -ge 3 ] || die "bash 3.2 or newer is required."
+
+# Both routes are available when Docker is installed and running: ask once, in a terminal only. Scripts, CI and
+# anyone who passed a mode flag (or --yes) are never asked.
+if [ "$EXPLICIT" = 0 ] && [ "$AUTO_INSTALL" != 1 ] && [ -t 0 ] && [ -t 1 ] && have docker && docker info >/dev/null 2>&1; then
+  echo "Docker is installed and running here, so there are two ways to run ServiceHub:"
+  echo "  1) Locally   — runs from this source folder (may download .NET and Node, after asking)"
+  echo "  2) Docker    — nothing to install; builds and runs a container"
+  read -r -p "? Choose 1 or 2 [1]: " pick || pick=""
+  case "$pick" in 2|d|D|docker|Docker) DOCKER=1 ;; ""|1|l|L|local|Local) ;; *) die "Please answer 1 or 2." ;; esac
+  echo "  (Skip this question next time with ./run.sh --local or ./run.sh --docker.)"
+fi
+[ "$DOCKER" = 1 ] && run_docker
 
 NEED_API=1; NEED_WEB=1
 [ "$MODE" = "web" ] && NEED_API=0
@@ -366,12 +471,12 @@ if [ "$MODE" = "check" ]; then
     if port_in_use "$p"; then echo "• Port $p is in use (a previous ServiceHub is stopped; for any other program the next free port is used, or run.sh refuses if you pinned the port)."
     else echo "✔ Port $p is free"; fi
   done
-  have curl || warn "curl not found — run.sh cannot probe startup (and cannot download tools); install curl for the best experience."
+  can_probe || warn "Neither curl nor wget found — run.sh cannot probe startup (and cannot download tools); install curl for the best experience."
   echo "✔ Check finished. Run ./run.sh"
   exit 0
 fi
 
-have curl || echo "• curl not found — startup will not be probed; watch the log for 'Now listening'."
+can_probe || echo "• Neither curl nor wget found — startup will not be probed; watch the log for 'Now listening'."
 
 # ── Web dependencies ────────────────────────────────────────────────────────────────────────────
 # Install the first time, again whenever the lockfile moves on (a `git pull` that changed it), and again if a
@@ -430,10 +535,9 @@ if [ "$NEED_WEB" = 1 ]; then
 fi
 
 # ── Wait, announce, supervise ───────────────────────────────────────────────────────────────────
-up() { curl -fsS -o /dev/null --max-time 2 "$1" 2>/dev/null; }
 announced=0
 waited=0
-if ! have curl; then announced=1; fi   # cannot probe; do not nag
+if ! can_probe; then announced=1; fi   # cannot probe; do not nag
 
 # Stop everything as soon as either process exits, so a crashed API is not hidden behind a live dev server.
 while :; do

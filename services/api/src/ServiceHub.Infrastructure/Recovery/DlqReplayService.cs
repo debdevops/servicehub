@@ -8,6 +8,7 @@ using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Core.Results;
 using ServiceHub.Core.Security;
+using ServiceHub.Infrastructure.DlqObserver;
 using ServiceHub.Infrastructure.Persistence;
 using ServiceHub.Infrastructure.RecoveryLedger;
 
@@ -83,6 +84,8 @@ public sealed class DlqReplayService : IDlqReplayService
 
         var active = message.Status == DlqMessageStatus.Active;
         var canExecute = active && decision.Verdict == EligibilityVerdict.Allow;
+        // The provider's own capability, or a live observer that gives this namespace a whole view of its queue (ADR-0018).
+        var canConfirm = capabilities.CanProveDlqAbsence || (await ObserverLiveness.LiveAmongAsync(_db, [ns], cancellationToken)).Contains(ns.Id);
 
         var checks = new List<ReplayCheck>
         {
@@ -93,16 +96,16 @@ public sealed class DlqReplayService : IDlqReplayService
             new("frequency", prior >= RecoveryEligibilityGate.RecurrenceLineageCap ? "Replayed several times already" : "Not replayed too often",
                 prior >= RecoveryEligibilityGate.RecurrenceLineageCap ? "warning" : "passed",
                 $"{prior} of {RecoveryEligibilityGate.RecurrenceLineageCap} earlier attempts"),
-            new("verification", capabilities.CanProveDlqAbsence ? "The cloud can confirm whether it stayed fixed" : "The cloud cannot prove it stayed fixed",
-                capabilities.CanProveDlqAbsence ? "passed" : "warning",
-                capabilities.CanProveDlqAbsence ? null : "The result will read “verification required”, never “verified”."),
+            new("verification", canConfirm ? "The cloud can confirm whether it stayed fixed" : "The cloud cannot prove it stayed fixed",
+                canConfirm ? "passed" : "warning",
+                canConfirm ? null : "The result will read “verification required”, never “verified”."),
         };
 
         return Result<ReplayProposal>.Success(new ReplayProposal(
             message.Id, message.MessageId, message.EntityName, TargetOf(message),
             ns.DisplayName ?? ns.Name, ns.Provider.ToString().ToLowerInvariant(), ns.Environment.ToString(),
             capabilities.SupportsRecoveryMarker, prior, RecoveryEligibilityGate.RecurrenceLineageCap, others,
-            RecoveryLedgerService.ResolveObservationWindowHours(_configuration), capabilities.CanProveDlqAbsence,
+            RecoveryLedgerService.ResolveObservationWindowHours(_configuration), canConfirm,
             decision.Verdict.ToString(), decision.ReasonCode, decision.Verdict == EligibilityVerdict.Escalate,
             canExecute, canExecute ? null : (!active ? NotActive : decision.ReasonCode), checks));
     }
@@ -476,9 +479,13 @@ public sealed class DlqReplayService : IDlqReplayService
         var entries = await _db.RecoveryLedgerEntries.AsNoTracking().Where(e => entryIds.Contains(e.Id)).ToDictionaryAsync(e => e.Id, cancellationToken);
 
         // Whether each namespace's cloud can prove the queue stayed empty — a capability of the namespace, never its name.
-        var providers = await _db.Namespaces.AsNoTracking().Where(n => namespaceIds.Contains(n.Id)).ToDictionaryAsync(n => n.Id, n => n.Provider, cancellationToken);
+        // Its provider's own capability, or a live observer that gives it a whole view of its queue (ADR-0018).
+        var namespaceRows = await _db.Namespaces.AsNoTracking().Where(n => namespaceIds.Contains(n.Id)).ToListAsync(cancellationToken);
+        var providers = namespaceRows.ToDictionary(n => n.Id, n => n.Provider);
+        var observed = await ObserverLiveness.LiveAmongAsync(_db, namespaceRows, cancellationToken);
         bool CanConfirm(Guid ns) =>
-            providers.TryGetValue(ns, out var p) && (_router.IsRegistered(p) ? _router.Resolve(p).Capabilities : ProviderCapabilities.For(p)).CanProveDlqAbsence;
+            observed.Contains(ns)
+            || (providers.TryGetValue(ns, out var p) && (_router.IsRegistered(p) ? _router.Resolve(p).Capabilities : ProviderCapabilities.For(p)).CanProveDlqAbsence);
 
         var nullableIds = entryIds.Select(x => (Guid?)x).ToList();
         var reasons = (await _db.RecoveryEvents.AsNoTracking()

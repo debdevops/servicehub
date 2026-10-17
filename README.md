@@ -2,6 +2,8 @@
 
 **Find out *why* your messages dead-lettered, replay them safely, and see whether the fix held. Azure Service Bus, AWS SQS/SNS and Google Pub/Sub, in one place.**
 
+**[Look around first: open the demo in your browser](https://debdevops.github.io/servicehub/)**. Made-up data on all three clouds, nothing to install, nothing sent anywhere.
+
 Your queue says "4,218 dead-lettered messages". A count does not tell you which messages, why each failed, or whether replaying them is safe.
 ServiceHub shows all three, previews every replay *before* anything is sent back, and keeps a tamper-evident record you can export and verify offline.
 One process, one SQLite file, running on your machine.
@@ -10,21 +12,45 @@ One process, one SQLite file, running on your machine.
 
 *Every screenshot on this page is the built-in demo: made-up data, nothing is sent anywhere. You can open the same demo yourself, with no cloud account: **[try it in your browser](https://debdevops.github.io/servicehub/)** (nothing to install) or run it locally in about two minutes, below.*
 
+## Is it for you?
+
+**Best for one operator or a small team, on a private network, looking after non-production dead letters.** It is one process and one SQLite file, and it does not log the browser in.
+
+| It suits you if | It does not suit you if |
+|---|---|
+| You want to see *why* messages dead-lettered, and replay them from dev or staging with a preview first | You need to replay **in production**: ServiceHub refuses, and there is no override |
+| You can keep it on `localhost` or behind a private network or an authenticating proxy | You need a shared, highly available service with browser sign-in and named users |
+| You accept that a short preview of each message body is stored unencrypted on the machine it runs on | You cannot store any message content, even briefly |
+
+What each cloud can confirm after a replay:
+
+| | Azure Service Bus | AWS SQS / SNS | Google Pub/Sub |
+|---|---|---|---|
+| **"Did the fix hold?"** | Confirmed out of the box: *verified* or *came back* | *Verification required* until you switch on fix-confirming for that namespace, then *recovered* or *came back* | Same as AWS |
+
+The full list of limits is [further down](#know-the-limits). Read it before you connect a real cloud.
+
 ## Run it in two minutes
 
 Pick one. Both open the built-in demo, so you can look around before connecting a real cloud. Want to look first without installing anything? Open the **[demo in your browser](https://debdevops.github.io/servicehub/)**.
 
 ### Option 1. From source: `./run.sh` does everything
 
-For macOS, Linux, or a WSL 2 terminal on Windows.
+Works on macOS, Linux, and native Windows (no WSL needed).
 
 ```bash
 git clone https://github.com/debdevops/servicehub.git
 cd servicehub
-./run.sh
+./run.sh          # macOS, Linux, Git Bash
 ```
 
-That is the whole install. `./run.sh` checks your machine, **downloads the .NET 10 SDK and Node.js if you do not have them** (into `~/.servicehub/tools`, no `sudo`,
+```bat
+run               :: Windows Command Prompt   (PowerShell: .\run.cmd)
+```
+
+**Docker installed and running?** Plain `./run.sh` first asks *1) Locally or 2) Docker* (Enter = locally). Skip the question with `./run.sh --local` or `./run.sh --docker` (Windows: `run -Local` / `run -Docker`), or set `SERVICEHUB_RUN=local|docker`. Scripts and CI are never asked.
+
+That is the whole install. `./run.sh` checks your machine, **offers to download the .NET 10 SDK and Node.js if you do not have them (it asks first; `--yes` skips the question)** (into `~/.servicehub/tools`, no `sudo`,
 nothing system-wide), installs the packages, builds the API and the web app, starts both, and waits until they answer.
 It needs only `bash`, `curl` (or `wget`), `tar` and an internet connection.
 
@@ -45,6 +71,8 @@ lives in `services/api/src/ServiceHub.Api/data/`. Prerequisites, what the script
 
 Needs [Docker](https://docs.docker.com/get-docker/), a bash shell (macOS, Linux, or WSL 2) and `openssl`.
 
+**Shortcut from a clone:** `./run.sh --docker` (Windows: `run -Docker`) checks Docker, its daemon and Compose, creates and keeps the encryption key for you (asking first), builds, starts, and waits until it answers on <http://localhost:8080>. Add `--check` to only verify. Docker itself is never installed for you.
+
 ```bash
 # 1. Make an encryption key once, and keep it. It protects the cloud credentials ServiceHub stores.
 export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"
@@ -53,7 +81,7 @@ export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"
 docker run -d --name servicehub --restart unless-stopped \
   -p 127.0.0.1:8080:8080 -v servicehub-data:/data \
   -e SECURITY__ENCRYPTIONKEY="$SERVICEHUB_ENCRYPTION_KEY" \
-  ghcr.io/debdevops/servicehub:latest
+  ghcr.io/debdevops/servicehub:4.2.1
 ```
 
 Open **<http://localhost:8080>** and choose **Try it with sample data**. Linux `amd64` and `arm64` (Intel, AMD and Apple silicon) are supported.
@@ -64,7 +92,7 @@ docker stop servicehub        # stop (your data stays in the volume)
 docker start servicehub       # start again
 ```
 
-Pin an exact release for anything you depend on (for example `…/servicehub:4.2.0` instead of `:latest`). To **build the image yourself from a clone** instead:
+`:4.2.1` is the release this page describes; `:latest` follows new releases. To **build the image yourself from a clone** instead:
 
 ```bash
 git clone https://github.com/debdevops/servicehub.git && cd servicehub
@@ -75,15 +103,9 @@ docker compose up --build        # → http://localhost:8080 (this machine only)
 ServiceHub **refuses to start in Production without an encryption key**, and losing the key makes saved cloud connections unreadable, so keep it in a password manager.
 Updating, backing up, removing and fixing problems: **[Run ServiceHub with Docker](docs/DOCKER.md)**.
 
-## What it looks like, on each cloud
+## See it
 
-Same app, three clouds. Each cloud shows what it can and cannot do, honestly: the chips under each cloud's heading say whether ServiceHub can count, browse, confirm a fix and watch automatically there.
-
-| | Azure Service Bus | AWS SQS / SNS | Google Pub/Sub |
-|---|---|---|---|
-| **Home** | ![Azure Home](docs/screenshots/readme/home-azure.png) | ![AWS Home](docs/screenshots/readme/home-aws.png) | ![Google Cloud Home](docs/screenshots/readme/home-gcp.png) |
-| **Dead letters** | ![Azure dead letters](docs/screenshots/readme/dead-letters-azure.png) | ![AWS dead letters](docs/screenshots/readme/dead-letters-aws.png) | ![Google Cloud dead letters](docs/screenshots/readme/dead-letters-gcp.png) |
-| **Step-by-step guide** | [Azure guide](docs/clouds/azure.md) | [AWS guide](docs/clouds/aws.md) | [Google Cloud guide](docs/clouds/gcp.md) |
+Screenshots of each cloud and one captioned five-minute video per cloud: **[Walkthroughs](docs/WALKTHROUGHS.md)**.
 
 ## What you get
 
@@ -103,32 +125,12 @@ Same app, three clouds. Each cloud shows what it can and cannot do, honestly: th
 |---|---|
 | ![Failure Signatures](docs/screenshots/readme/advanced-signatures.png) | ![Agents](docs/screenshots/readme/advanced-agents.png) |
 
-## Watch it work
-
-One captioned video per cloud, about five minutes each: Home, Dead letters, Look now, replaying one, some or all, Active messages, Replayed, Auto Replay, approvals,
-Connections, Settings, Help, then Advanced and back. No sound needed. Click a preview to play the full video.
-
-| Azure Service Bus | AWS SQS / SNS | Google Pub/Sub |
-|:---:|:---:|:---:|
-| [![Azure Service Bus walkthrough — click to play](docs/media/azure-preview.gif)](docs/media/azure.mp4) | [![AWS SQS / SNS walkthrough — click to play](docs/media/aws-preview.gif)](docs/media/aws.mp4) | [![Google Pub/Sub walkthrough — click to play](docs/media/gcp-preview.gif)](docs/media/gcp.mp4) |
-| [▶ Azure, 5:01](docs/media/azure.mp4) | [▶ AWS, 5:03](docs/media/aws.mp4) | [▶ Google, 5:35](docs/media/gcp.mp4) |
-
-<details><summary><b>Chapters</b> (Azure; AWS and Google are within a few seconds of these)</summary>
-
-`0:07` Connect a cloud · `0:15` Home: every cloud · `0:26` Home: one cloud · `0:43` Dead letters and Look now · `0:57` Open a message · `1:05` Replay one ·
-`1:29` Replay selected · `2:09` Replay All, then stop · `2:43` Active messages and Send · `2:57` Replayed · `3:07` Auto Replay · `3:25` Approve or decline ·
-`3:37` Connections · `3:45` Settings · `4:03` Help · `4:09` Switch to Advanced · `5:02` Back to Simple
-
-</details>
-
-*Recorded from the real app against real development clouds. Replay All is started and then stopped on camera: **Stop now** leaves every message not yet sent exactly as it was.*
-
 ## Know the limits
 
-- **Production namespaces are read-only for replay.** Replay is refused on any namespace you mark as Production, and ServiceHub has no way to override that. Investigate there; replay in dev and staging.
+- **Production namespaces are read-only for replay.** Replay is refused on any namespace you mark as Production, and ServiceHub has no way to override that. Investigate there; replay in dev and staging. If a production message needs recovering, use ServiceHub to understand it, then recover it with your own tooling. Do not mark a production namespace as Staging to get around this: the safety checks trust the label, so a wrong label switches them off.
 - **Azure is the verified path.** Only Azure can confirm a replayed message stayed fixed out of the box. AWS and Google read "verification required" until you switch on fix-confirming per namespace (Settings → Connections), which gives ServiceHub a complete view of that cloud's dead-letter queue. GCP often records no failure reason.
-- **Anyone who can reach its port is the admin.** Keep it on `localhost`.
-- **Message content is stored unencrypted.** The first 500 characters of each dead-letter body, its properties and a hash are kept in the SQLite file ([SECURITY.md](SECURITY.md)), so treat the data folder like the queue. Cloud credentials and webhook URLs are encrypted.
+- **Anyone who can reach its port is the admin.** There is no browser sign-in. Keep it on `localhost`, or behind a private network or an authenticating proxy.
+- **Message content is stored unencrypted.** The first 500 characters of each dead-letter body, its properties and a hash are kept in the SQLite file ([SECURITY.md](SECURITY.md)), so treat the data folder like the queue. Cloud credentials and webhook URLs are encrypted. A replay never sends that stored preview: it reads the full message from the cloud's dead-letter queue and sends that.
 - **No upgrade from 4.0.0.** 4.1.0 and later are a from-scratch rewrite with a fresh database. Run it beside 4.0.0 and connect your clouds again. 4.0.0 lives, frozen, in [`archive/servicehub-4.0.0/`](archive/servicehub-4.0.0/). See the [changelog](CHANGELOG.md).
 
 ## How it stays safe
@@ -151,6 +153,7 @@ Connections, Settings, Help, then Advanced and back. No sound needed. Click a pr
 
 | | |
 |---|---|
+| [Walkthroughs](docs/WALKTHROUGHS.md) | Screenshots of each cloud and the three five-minute videos |
 | [Local setup](docs/LOCAL-SETUP.md) | Install, run, check and troubleshoot on your own machine, with or without Docker |
 | [Run with Docker](docs/DOCKER.md) | Run the public image, update it, back it up, fix problems |
 | [Azure](docs/clouds/azure.md) · [AWS](docs/clouds/aws.md) · [Google Cloud](docs/clouds/gcp.md) | Step-by-step setup and use, with annotated screenshots (also in the app under **Help**) |

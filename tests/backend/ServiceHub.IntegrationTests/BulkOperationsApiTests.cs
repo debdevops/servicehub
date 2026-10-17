@@ -65,6 +65,35 @@ public sealed class BulkOperationsApiTests : IDisposable
         log.Replays.Should().Be(0, "a preview must never touch the cloud");
     }
 
+    [Theory]
+    [InlineData(null, null, false)]    // no observer set up: AWS cannot prove the queue stayed empty
+    [InlineData(true, 1, true)]        // switched on and confirmed a minute ago: a whole-queue view, so it can
+    [InlineData(true, 45, false)]      // confirmed longer ago than its 30-minute staleness bound
+    [InlineData(false, 1, false)]      // switched off
+    public async Task A_preview_says_a_fix_can_be_confirmed_only_where_the_cloud_or_a_live_observer_can_prove_it(bool? enabled, int? confirmedMinutesAgo, bool expected)
+    {
+        var log = new PeekLog { OnReplay = () => Result<bool>.Success(true) };
+        using var host = DeadLettersApiTests.Host(new PeekLog(), log);
+        var ns = await DeadLettersApiTests.Connect(host.Client, "aws");
+        await DeadLettersApiTests.Seed(host, ns, CloudProviderType.Aws, 2);
+        if (enabled is { } on)
+        {
+            await DeadLettersApiTests.SwitchObserverOn(host, ns, DateTimeOffset.UtcNow.AddMinutes(-confirmedMinutesAgo!.Value), on);
+        }
+
+        List<long> ids;
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServiceHubDbContext>();
+            ids = await db.DlqMessages.OrderBy(m => m.Id).Select(m => m.Id).ToListAsync();
+        }
+
+        var preview = await Post(host.Client, "/api/v1/bulk-operations/preview", new { dlqMessageIds = ids });
+
+        preview.GetProperty("canProveDlqAbsence").GetBoolean().Should().Be(expected);
+        log.Replays.Should().Be(0, "a preview must never touch the cloud");
+    }
+
     [Fact]
     public async Task A_message_no_longer_in_the_queue_is_held_back_with_its_reason_and_a_remedy_never_a_bare_count()
     {
