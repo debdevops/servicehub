@@ -8,7 +8,7 @@
 
 | | |
 |---|---|
-| **Image** | `ghcr.io/debdevops/servicehub:4.2.0` (public, no sign-in to pull). `:latest` follows new releases. |
+| **Image** | `ghcr.io/debdevops/servicehub:4.2.1` (public, no sign-in to pull). `:latest` follows new releases. |
 | **Platforms** | `linux/amd64` and `linux/arm64` (Intel/AMD machines and Apple silicon; Docker picks the right one) |
 | **Opens at** | <http://localhost:8080> |
 | **Data** | The `servicehub-data` Docker volume, mounted at `/data` |
@@ -43,10 +43,10 @@ echo "$SERVICEHUB_ENCRYPTION_KEY"        # copy it into your password manager no
 docker run -d --name servicehub --restart unless-stopped \
   -p 127.0.0.1:8080:8080 -v servicehub-data:/data \
   -e SECURITY__ENCRYPTIONKEY="$SERVICEHUB_ENCRYPTION_KEY" \
-  ghcr.io/debdevops/servicehub:4.2.0
+  ghcr.io/debdevops/servicehub:4.2.1
 ```
 
-`docker run` downloads the image the first time (about 230 MB on disk). To download it without starting it, run `docker pull ghcr.io/debdevops/servicehub:4.2.0`.
+`docker run` downloads the image the first time (about 230 MB on disk). To download it without starting it, run `docker pull ghcr.io/debdevops/servicehub:4.2.1`.
 
 What each part does:
 
@@ -97,12 +97,12 @@ docker stop servicehub && docker rm servicehub           # removes the container
 # then run the Step 2 command again with the new tag, and the same SERVICEHUB_ENCRYPTION_KEY
 ```
 
-> **Moving from 4.0.0 is different.** 4.1.0 and later are a from-scratch rewrite: they cannot open a 4.0.0 database and there is no upgrade path. Run 4.2.0 beside
+> **Moving from 4.0.0 is different.** 4.1.0 and later are a from-scratch rewrite: they cannot open a 4.0.0 database and there is no upgrade path. Run 4.2.1 beside
 > 4.0.0 with a different **container name**, port and volume, in case 4.0.0 already uses `servicehub` and 8080
 > (for example `--name servicehub-41 -p 127.0.0.1:8081:8080 -v servicehub-data-41:/data`; use `servicehub-41` in place of `servicehub` in the commands on this page).
 > Connect your clouds again and retire 4.0.0 when you are ready. See the [changelog](../CHANGELOG.md).
 
-Tags: `latest` is what the commands above use. `4.2.0` is one exact release, `4.2` follows the newest 4.2.x patch, and `latest` follows the newest release overall. Pin an exact version for
+Tags: `latest` is what the commands above use. `4.2.1` is one exact release, `4.2` follows the newest 4.2.x patch, and `latest` follows the newest release overall. Pin an exact version for
 anything you depend on.
 
 ## Back up your data

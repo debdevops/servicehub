@@ -81,7 +81,7 @@ export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"
 docker run -d --name servicehub --restart unless-stopped \
   -p 127.0.0.1:8080:8080 -v servicehub-data:/data \
   -e SECURITY__ENCRYPTIONKEY="$SERVICEHUB_ENCRYPTION_KEY" \
-  ghcr.io/debdevops/servicehub:4.2.0
+  ghcr.io/debdevops/servicehub:4.2.1
 ```
 
 Open **<http://localhost:8080>** and choose **Try it with sample data**. Linux `amd64` and `arm64` (Intel, AMD and Apple silicon) are supported.
@@ -92,7 +92,7 @@ docker stop servicehub        # stop (your data stays in the volume)
 docker start servicehub       # start again
 ```
 
-`:4.2.0` is the release this page describes; `:latest` follows new releases. To **build the image yourself from a clone** instead:
+`:4.2.1` is the release this page describes; `:latest` follows new releases. To **build the image yourself from a clone** instead:
 
 ```bash
 git clone https://github.com/debdevops/servicehub.git && cd servicehub

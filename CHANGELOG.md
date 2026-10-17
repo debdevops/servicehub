@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [4.2.1] — 2026-10-17
+
+A patch release: an easier way to start ServiceHub, a fix to how replays read on AWS and Google Cloud, and docs. No new product features, no database migration; 4.2.0 data opens as is.
+
 ### Added
 
 - **One start command on every operating system.** `./run.sh` (macOS, Linux, Git Bash) and `run` / `.\run.cmd` (Windows Command Prompt and PowerShell, no WSL) check the

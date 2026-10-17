@@ -1,4 +1,4 @@
-# ServiceHub 4.2.0 - run from source on Windows (PowerShell or Command Prompt).
+# ServiceHub 4.2.1 - run from source on Windows (PowerShell or Command Prompt).
 #
 # One command:   .\run.cmd        (works in Command Prompt AND PowerShell; `run` alone also works in cmd)
 #      or:       powershell -ExecutionPolicy Bypass -File .\run.ps1

@@ -33,7 +33,7 @@ az group create -n $RG -l $LOC
 az appservice plan create -g $RG -n $PLAN --is-linux --sku B1
 
 az webapp create -g $RG -p $PLAN -n $APP \
-  --container-image-name ghcr.io/debdevops/servicehub:4.2.0
+  --container-image-name ghcr.io/debdevops/servicehub:4.2.1
 
 az webapp config appsettings set -g $RG -n $APP --settings \
   WEBSITES_PORT=8080 \
@@ -52,7 +52,7 @@ az webapp update -g $RG -n $APP --https-only true
 
 Do **not** add deployment slots and do **not** enable autoscale.
 
-> **Portal equivalent:** *App Services → Create → Web App → Publish: Container, OS: Linux* → Container tab: image source **Other container registries**, image `ghcr.io/debdevops/servicehub:4.2.0`, port `8080`. Then **Settings → Environment variables** for the settings above.
+> **Portal equivalent:** *App Services → Create → Web App → Publish: Container, OS: Linux* → Container tab: image source **Other container registries**, image `ghcr.io/debdevops/servicehub:4.2.1`, port `8080`. Then **Settings → Environment variables** for the settings above.
 
 ## Hardened: put a login in front (do this before real use)
 

@@ -50,7 +50,7 @@ either way; Option B pastes them into the portal's **Run command** box instead o
 |---|---|---|
 | Region | The same region as the Service Bus namespaces you will watch | Lower latency, simpler firewalling |
 | VM size | `Standard_B2s` (2 vCPU, 4 GB) | Comfortable for one team |
-| Image tag | `latest` while you evaluate, then a pinned release such as `4.2.0` | `latest` moves; production should pin ([§9](#9-upgrade-and-roll-back)) |
+| Image tag | `latest` while you evaluate, then a pinned release such as `4.2.1` | `latest` moves; production should pin ([§9](#9-upgrade-and-roll-back)) |
 | Who may tunnel in | A named list of engineers | Everyone who can SSH in is an Administrator of ServiceHub |
 
 ---
@@ -236,7 +236,7 @@ sudo tee compose.yaml >/dev/null <<'EOF'
 name: servicehub
 services:
   servicehub:
-    image: ghcr.io/debdevops/servicehub:latest        # pin a release for production, e.g. :4.2.0
+    image: ghcr.io/debdevops/servicehub:latest        # pin a release for production, e.g. :4.2.1
     container_name: servicehub
     restart: unless-stopped
     ports:
@@ -290,7 +290,7 @@ cat > compose.yaml <<'EOF'
 name: servicehub
 services:
   servicehub:
-    image: ghcr.io/debdevops/servicehub:latest        # pin a release for production, e.g. :4.2.0
+    image: ghcr.io/debdevops/servicehub:latest        # pin a release for production, e.g. :4.2.1
     container_name: servicehub
     restart: unless-stopped
     ports:
@@ -457,7 +457,7 @@ curl -X POST http://localhost:8080/api/v1/admin/backup -H "X-ServiceHub-Intent: 
 
 # 3. Pull and restart on the new image
 cd /opt/servicehub
-sudo sed -i 's#servicehub:[^ ]*#servicehub:4.2.0#' compose.yaml        # or keep :latest and just pull
+sudo sed -i 's#servicehub:[^ ]*#servicehub:4.2.1#' compose.yaml        # or keep :latest and just pull
 sudo docker compose pull
 sudo docker compose up -d
 
@@ -495,11 +495,11 @@ If the VM cannot reach `ghcr.io`, copy the image through a machine that can, int
 
 ```bash
 ACR=<your-registry-name>
-az acr import --name "$ACR" --source ghcr.io/debdevops/servicehub:4.2.0 --image servicehub:4.2.0
+az acr import --name "$ACR" --source ghcr.io/debdevops/servicehub:4.2.1 --image servicehub:4.2.1
 ```
 
 Then give the VM pull access (`az vm identity assign` plus the **AcrPull** role on the registry, and `az acr login` on the VM, or a registry token) and change the `image:` line in `compose.yaml` to
-`<your-registry-name>.azurecr.io/servicehub:4.2.0`. Everything else is the same. For private networking to Service Bus, use a private endpoint ([§6](#6-connect-service-bus)).
+`<your-registry-name>.azurecr.io/servicehub:4.2.1`. Everything else is the same. For private networking to Service Bus, use a private endpoint ([§6](#6-connect-service-bus)).
 
 ---
 
