@@ -36,15 +36,21 @@ Pick one. Both open the built-in demo, so you can look around before connecting 
 
 ### Option 1. From source: `./run.sh` does everything
 
-For macOS, Linux, or a WSL 2 terminal on Windows.
+Works on macOS, Linux, and native Windows (no WSL needed).
 
 ```bash
 git clone https://github.com/debdevops/servicehub.git
 cd servicehub
-./run.sh
+./run.sh          # macOS, Linux, Git Bash
 ```
 
-That is the whole install. `./run.sh` checks your machine, **downloads the .NET 10 SDK and Node.js if you do not have them** (into `~/.servicehub/tools`, no `sudo`,
+```bat
+run               :: Windows Command Prompt   (PowerShell: .\run.cmd)
+```
+
+**Docker installed and running?** Plain `./run.sh` first asks *1) Locally or 2) Docker* (Enter = locally). Skip the question with `./run.sh --local` or `./run.sh --docker` (Windows: `run -Local` / `run -Docker`), or set `SERVICEHUB_RUN=local|docker`. Scripts and CI are never asked.
+
+That is the whole install. `./run.sh` checks your machine, **offers to download the .NET 10 SDK and Node.js if you do not have them (it asks first; `--yes` skips the question)** (into `~/.servicehub/tools`, no `sudo`,
 nothing system-wide), installs the packages, builds the API and the web app, starts both, and waits until they answer.
 It needs only `bash`, `curl` (or `wget`), `tar` and an internet connection.
 
@@ -64,6 +70,8 @@ lives in `services/api/src/ServiceHub.Api/data/`. Prerequisites, what the script
 ### Option 2. Docker: no clone, no build
 
 Needs [Docker](https://docs.docker.com/get-docker/), a bash shell (macOS, Linux, or WSL 2) and `openssl`.
+
+**Shortcut from a clone:** `./run.sh --docker` (Windows: `run -Docker`) checks Docker, its daemon and Compose, creates and keeps the encryption key for you (asking first), builds, starts, and waits until it answers on <http://localhost:8080>. Add `--check` to only verify. Docker itself is never installed for you.
 
 ```bash
 # 1. Make an encryption key once, and keep it. It protects the cloud credentials ServiceHub stores.
