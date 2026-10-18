@@ -22,7 +22,15 @@ export interface AgentLinks {
   readonly ledger: string
 }
 
-export function Detail({ agent, onPause, pausing, notAllowed, links }: { agent: Agent; onPause: () => void; pausing: boolean; notAllowed: string | null; links?: AgentLinks }) {
+/**
+ * `resume`, when given, is the 5.0.0 shell's own: its Agents page is where an Admin gives authority back (owner decision 2026-10-19), so a
+ * paused agent offers a Resume button there instead of naming another place. Without it (the 4.2.0 Advanced page) nothing here ever gives
+ * authority back, as ADR-0016 D3 says.
+ */
+export function Detail({ agent, onPause, pausing, notAllowed, links, resume }: {
+  agent: Agent; onPause: () => void; pausing: boolean; notAllowed: string | null; links?: AgentLinks
+  resume?: { readonly onResume: () => void; readonly busy: boolean; readonly notAllowed: string | null }
+}) {
   const activity = useAgentActivity(agent.id)
   const now = new Date()
   // Idle cycles are folded: a run of "nothing to do" is one line, not twenty.
@@ -41,8 +49,19 @@ export function Detail({ agent, onPause, pausing, notAllowed, links }: { agent: 
         {agent.isPaused ? (
           <div className="rounded-xl border border-[#fcd34d] bg-[#fffbeb] p-4">
             <p className="font-bold text-[#92400e]">{agent.name} is paused</p>
-            <p className="mt-1 text-[#92400e]">Its cycles are skipped, so it will not act. Nothing it already did is undone. Resume it from {links ? links.resume.where : 'Home’s agent bar'}.</p>
-            <Link to={links ? links.resume.to : '/'} className="mt-2 inline-block font-semibold text-[var(--color-primary-700)] hover:underline">{links ? links.resume.label : 'Go to Home to resume ›'}</Link>
+            {resume ? (
+              <>
+                <p className="mt-1 text-[#92400e]">Its cycles are skipped, so it will not act. Nothing it already did is undone. Resuming gives it its authority back, and is recorded with your name.</p>
+                <button type="button" onClick={resume.onResume} disabled={resume.busy || resume.notAllowed !== null} title={resume.notAllowed ?? undefined}
+                  className="mt-2 rounded-lg bg-[var(--color-primary-600)] px-3.5 py-2 font-semibold text-white disabled:opacity-50">{resume.busy ? 'Resuming…' : `Resume ${agent.name}`}</button>
+                <NotAllowed reason={resume.notAllowed} />
+              </>
+            ) : (
+              <>
+                <p className="mt-1 text-[#92400e]">Its cycles are skipped, so it will not act. Nothing it already did is undone. Resume it from {links ? links.resume.where : 'Home’s agent bar'}.</p>
+                <Link to={links ? links.resume.to : '/'} className="mt-2 inline-block font-semibold text-[var(--color-primary-700)] hover:underline">{links ? links.resume.label : 'Go to Home to resume ›'}</Link>
+              </>
+            )}
           </div>
         ) : (
           <div className="flex items-center gap-3 rounded-xl border border-[#fcd34d] bg-[#fffbeb] p-4">

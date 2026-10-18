@@ -74,7 +74,7 @@ describe('Agents (unit E8)', () => {
     expect(screen.getByText('Late')).toBeInTheDocument()
   })
 
-  it('pauses exactly one agent, on a click, and offers no resume', async () => {
+  it('pauses exactly one agent, on a click, and offers no Resume for one that is running', async () => {
     const user = userEvent.setup()
     open('/next/azure/agents')
     await user.click(await screen.findByRole('button', { name: 'Pause Auto Replay' }))
@@ -92,16 +92,58 @@ describe('Agents (unit E8)', () => {
     expect(button).toHaveAttribute('title', expect.stringContaining('Operator'))
   })
 
-  it('opens an agent’s detail in the address; a paused agent says where to resume, in this shell’s terms', async () => {
+  it('opens an agent’s detail in the address, with a link to the ledger in this shell', async () => {
     const user = userEvent.setup()
-    vi.mocked(agentsApi.fetchAgents).mockResolvedValue([acting({ isPaused: true, health: 'paused' })])
     const { router } = open('/next/azure/agents')
     await user.click(await screen.findByRole('button', { name: 'View Auto Replay' }))
     expect(router.state.location.search).toBe('?agent=auto-replay')
     const detail = await screen.findByRole('complementary', { name: 'Auto Replay details' })
-    expect(within(detail).getByText(/Resume it from the agent bar on the 4.2.0 Home/)).toBeInTheDocument()
     expect(within(detail).getByRole('link', { name: 'Everything it did, in the Ledger ›' })).toHaveAttribute('href', '/next/azure/ledger')
-    expect(within(detail).queryByRole('button', { name: /Resume/ })).not.toBeInTheDocument()
+  })
+
+  describe('Resume lives on this page, for Admins (owner decision 2026-10-19)', () => {
+    const paused = () => vi.mocked(agentsApi.fetchAgents).mockResolvedValue([acting({ isPaused: true, health: 'paused' })])
+    const resumed = () => vi.mocked(agentsApi.resumeAgent).mock.calls.map((c) => c[0])
+
+    it('resumes exactly one agent, from the row, on a click, and never pauses', async () => {
+      const user = userEvent.setup()
+      paused()
+      vi.mocked(agentsApi.resumeAgent).mockResolvedValue(acting())
+      open('/next/azure/agents')
+      await user.click(await screen.findByRole('button', { name: 'Resume Auto Replay' }))
+      await waitFor(() => expect(resumed()).toEqual(['auto-replay']))
+      expect(agentsApi.pauseAgent).not.toHaveBeenCalled()
+    })
+
+    it('resumes from the detail too, saying it is recorded with the person’s name', async () => {
+      const user = userEvent.setup()
+      paused()
+      vi.mocked(agentsApi.resumeAgent).mockResolvedValue(acting())
+      open('/next/azure/agents?agent=auto-replay')
+      const detail = await screen.findByRole('complementary', { name: 'Auto Replay details' })
+      expect(within(detail).getByText(/recorded with your name/)).toBeInTheDocument()
+      await user.click(within(detail).getByRole('button', { name: 'Resume Auto Replay' }))
+      await waitFor(() => expect(resumed()).toEqual(['auto-replay']))
+    })
+
+    it('is an Admin’s: an Operator who may pause may not resume, and is told who can grant it', async () => {
+      paused()
+      vi.mocked(identityApi.fetchMe).mockResolvedValue(me({ governanceActive: true, effectiveRole: 'Operator', recoverRole: 'Operator' }))
+      open('/next/azure/agents')
+      const button = await screen.findByRole('button', { name: 'Resume Auto Replay' })
+      await waitFor(() => expect(button).toBeDisabled())
+      expect(button).toHaveAttribute('title', expect.stringContaining('Admin'))
+      expect(resumed()).toEqual([])
+    })
+
+    it('shows the failure and changes nothing when the server refuses', async () => {
+      const user = userEvent.setup()
+      paused()
+      vi.mocked(agentsApi.resumeAgent).mockRejectedValue(new Error('refused'))
+      open('/next/azure/agents')
+      await user.click(await screen.findByRole('button', { name: 'Resume Auto Replay' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent('Nothing changed')
+    })
   })
 
   it('names an agent that stopped reporting, from the pending-work item it raised', async () => {

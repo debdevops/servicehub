@@ -26,7 +26,8 @@ const needsLook = (a: Agent) => !a.isPaused && (a.health === 'degraded' || a.hea
  * Agents (build-plan unit E8; design `p13-agents`): the background workers that watch, replay, verify and learn, and what each may do
  * on its own. Agents are the server's, not a cloud's, so the list is the same under every scope. Every row is drawn from `/agents`
  * (never per-agent code, so a newly registered agent appears by being registered); health comes from its cycles, never its own word.
- * **Pause is the one control** and only takes authority away; giving it back is not offered here (ADR-0016 D3), the detail says where.
+ * **Pause** takes authority away (Operator); **Resume** gives it back and is an **Admin's** (owner decision 2026-10-19: Resume lives on this
+ * page; the 4.2.0 Home's agent bar is the other place until the cutover). Both are one agent, on a click, and both are recorded with the person's name.
  */
 export default function AgentsPage() {
   const scope = parseScope(useParams().cloud)
@@ -36,7 +37,10 @@ export default function AgentsPage() {
   const dormant = useDormantAgents().data ?? []
   const setPaused = useSetAgentsPaused()
   const pending = usePendingWork({})
-  const mayPause = permission(useMe().data, 'Operator', 'pause an agent')
+  const me = useMe().data
+  const mayPause = permission(me, 'Operator', 'pause an agent')
+  // Giving authority back is an Admin's, as on the 4.2.0 Home's agent bar (owner decision 2026-10-19: it lives on this page).
+  const mayResume = permission(me, 'Admin', 'resume an agent')
 
   const all = agents.data ?? []
   const { items: shown, pager } = usePagedList(all)
@@ -44,6 +48,7 @@ export default function AgentsPage() {
   const selected = all.find((a) => a.id === selectedId) ?? null
   const select = (id: string | null) => setParams((p) => { const n = new URLSearchParams(p); if (id === null) n.delete('agent'); else n.set('agent', id); return n }, { replace: true })
   const pause = (a: Agent) => setPaused.mutate({ ids: [a.id], paused: true })
+  const resume = (a: Agent) => setPaused.mutate({ ids: [a.id], paused: false })
   const now = new Date()
   // Agents that stopped reporting are raised as pending work of their own kind; they are not approvals, so they are named here.
   const stopped = (pending.data?.items ?? []).filter((i) => i.kind === 'agent')
@@ -75,7 +80,7 @@ export default function AgentsPage() {
           </div>
 
           {stopped.map((i) => <p key={i.id} role="status" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"><b>{all.find((a) => a.id === i.agentId)?.name ?? i.agentId ?? 'An agent'}:</b> {i.reason}</p>)}
-          {setPaused.isError && <p role="alert" className="text-sm text-red-700">The pause didn’t go through. Nothing changed — try again.</p>}
+          {setPaused.isError && <p role="alert" className="text-sm text-red-700">That change didn’t go through. Nothing changed — try again.</p>}
 
           <div className={`grid gap-4 ${selected ? 'xl:grid-cols-[minmax(0,1fr)_400px]' : ''}`}>
             <section aria-labelledby="agents-title" className="min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -97,7 +102,8 @@ export default function AgentsPage() {
                             <button type="button" onClick={() => select(a.id === selectedId ? null : a.id)} aria-pressed={a.id === selectedId} aria-label={`View ${a.name}`}
                               className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">View</button>
                             {a.isPaused
-                              ? <span className="text-xs text-[var(--color-text-muted)]">Paused</span>
+                              ? <button type="button" onClick={() => resume(a)} disabled={setPaused.isPending || !mayResume.allowed} title={mayResume.reason ?? undefined} aria-label={`Resume ${a.name}`}
+                  className="rounded-lg border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] disabled:opacity-50">Resume</button>
                               : <button type="button" onClick={() => pause(a)} disabled={setPaused.isPending || !mayPause.allowed} title={mayPause.reason ?? undefined} aria-label={`Pause ${a.name}`}
                                   className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-50 disabled:opacity-50">Pause</button>}
                           </span>
@@ -118,7 +124,8 @@ export default function AgentsPage() {
             {selected && (
               <div className="space-y-2">
                 <button type="button" onClick={() => select(null)} className="text-sm font-semibold text-[var(--color-primary-700)] hover:underline">‹ All agents</button>
-                <Detail agent={selected} onPause={() => pause(selected)} pausing={setPaused.isPending || !mayPause.allowed} notAllowed={mayPause.reason} links={links} />
+                <Detail agent={selected} onPause={() => pause(selected)} pausing={setPaused.isPending || !mayPause.allowed} notAllowed={mayPause.reason} links={links}
+                  resume={{ onResume: () => resume(selected), busy: setPaused.isPending, notAllowed: mayResume.allowed ? null : mayResume.reason }} />
               </div>
             )}
           </div>
