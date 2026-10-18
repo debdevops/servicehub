@@ -14,13 +14,24 @@ export interface NextOverlayBodyProps {
  */
 export const nextOverlayBodies: Readonly<Record<string, LazyExoticComponent<ComponentType<NextOverlayBodyProps>>>> = {
   message: lazy(() => import('./MessageDialog')),
+  review: lazy(() => import('./ReviewDialog')),
+  connect: lazy(() => import('./ConnectDialog')),
+  help: lazy(() => import('./HelpPanel')),
+  security: lazy(() => import('./SecurityPanel')),
+  autonomy: lazy(() => import('./AutonomyPanel')),
+  send: lazy(() => import('./SendDialog')),
+  search: lazy(() => import('./SearchDialog')),
+  'emergency-stop': lazy(() => import('./EmergencyStopDialog')),
+  'hand-off': lazy(() => import('./HandOffPanel')),
+  replay: lazy(() => import('./ReplayDialog')),
+  'bulk-replay': lazy(() => import('./BulkReplayDialog')),
 }
 
 /**
  * Query parameters an overlay reads beyond `?dialog=` / `?panel=`. They belong to the overlay, so closing it removes them too and a
  * closed dialog leaves no debris in the address. (`entity` and `tab` are the page's, never an overlay's.)
  */
-export const nextOverlayCompanions: readonly string[] = ['id', 'entry', 'component']
+export const nextOverlayCompanions: readonly string[] = ['id', 'entry', 'entries', 'component', 'job', 'topic', 'ns']
 
 /** Overlays drawn wider than the default: the Message dialog is read side by side (summary and properties). */
-export const nextOverlayWide: ReadonlySet<string> = new Set(['message'])
+export const nextOverlayWide: ReadonlySet<string> = new Set(['message', 'review', 'bulk-replay'])

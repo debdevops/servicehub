@@ -100,49 +100,49 @@ export const nextNavigation: readonly NextEntry[] = [
   {
     kind: 'page', id: 'attention', label: 'Needs your attention', path: ':cloud/attention', badge: 'needsYou',
     description: 'Everything waiting for a person: replays the Agent is holding, and items ServiceHub handed off.',
-    icon: TriangleAlert, group: 'tool', unit: 'E1', design: 'p06-needs-your-attention', built: false,
+    icon: TriangleAlert, group: 'tool', unit: 'E1', design: 'p06-needs-your-attention', built: true,
   },
   {
     kind: 'page', id: 'approvals', label: 'Pending approvals', path: ':cloud/approvals', badge: 'approvals',
     description: 'Replays the Agent prepared and is holding until a person says yes or no.',
-    icon: ShieldCheck, group: 'tool', unit: 'E2', design: 'p07-pending-approvals', built: false,
+    icon: ShieldCheck, group: 'tool', unit: 'E2', design: 'p07-pending-approvals', built: true,
   },
   {
     kind: 'page', id: 'active', label: 'Active messages', path: ':cloud/active',
     description: 'Messages that have not failed: still waiting in a queue or subscription.',
-    icon: Boxes, group: 'tool', unit: 'E3', design: 'p08-active-messages', built: false,
+    icon: Boxes, group: 'tool', unit: 'E3', design: 'p08-active-messages', built: true,
   },
   {
     kind: 'page', id: 'replays', label: 'Replay history', path: ':cloud/replays',
     description: 'Every message put back, by whom, and what ServiceHub observed afterwards.',
-    icon: RotateCcw, group: 'tool', unit: 'E4', design: 'p09-replay-history', built: false,
+    icon: RotateCcw, group: 'tool', unit: 'E4', design: 'p09-replay-history', built: true,
   },
   {
     kind: 'page', id: 'rules', label: 'Auto Replay rules', path: ':cloud/rules',
     description: 'What ServiceHub may replay without asking, how fast, and whether each rule is still working.',
-    icon: Timer, group: 'tool', unit: 'E5', design: 'p10-auto-replay-rules', built: false,
+    icon: Timer, group: 'tool', unit: 'E5', design: 'p10-auto-replay-rules', built: true,
   },
   {
     kind: 'page', id: 'signatures', label: 'Failure signatures', path: ':cloud/signatures',
     description: 'Each kind of failure: is it still happening, does replaying help, and may the Agent fix it alone?',
-    icon: Fingerprint, group: 'tool', unit: 'E6', design: 'p11-failure-signatures', built: false,
+    icon: Fingerprint, group: 'tool', unit: 'E6', design: 'p11-failure-signatures', built: true,
   },
   {
     kind: 'page', id: 'ledger', label: 'Evidence ledger', path: ':cloud/ledger',
     description: 'Every recovery action with who did it, each step, and exactly what was observed afterwards.',
-    icon: ScrollText, group: 'tool', unit: 'E7', design: 'p12-evidence-ledger', built: false,
+    icon: ScrollText, group: 'tool', unit: 'E7', design: 'p12-evidence-ledger', built: true,
   },
   {
     kind: 'page', id: 'agents', label: 'Agents', path: ':cloud/agents',
     description: 'The background workers that watch, replay, verify and learn.',
-    icon: Bot, group: 'tool', unit: 'E8', design: 'p13-agents', built: false,
+    icon: Bot, group: 'tool', unit: 'E8', design: 'p13-agents', built: true,
   },
 
   // ── Reference — not scoped to a cloud ─────────────────────────────────────────────────────────
   {
     kind: 'page', id: 'configuration', label: 'Configuration', path: 'configuration',
     description: 'What ServiceHub is connected to, whom it tells, when it calls something stuck, and who may do what.',
-    icon: Settings, group: 'reference', unit: 'E9', design: 'p14-configuration', built: false,
+    icon: Settings, group: 'reference', unit: 'E9', design: 'p14-configuration', built: true,
   },
   {
     kind: 'page', id: 'coverage', label: 'What ServiceHub covers', path: 'coverage',
@@ -153,28 +153,28 @@ export const nextNavigation: readonly NextEntry[] = [
   // ── Contextual — opened from a page ───────────────────────────────────────────────────────────
   {
     kind: 'dialog', id: 'connect', label: 'Connect a component', value: 'connect',
-    description: 'Pick the component, read-only or read-and-send, the credential, and see what it can prove.',
-    icon: Plus, group: 'contextual', unit: 'F1', design: 'd01-connect-a-component', built: false,
+    description: 'Connect a cloud: one connection, one credential, then ServiceHub tests it and says what it can see.',
+    icon: Plus, group: 'contextual', unit: 'F1', design: 'd01-connect-a-component', built: true,
   },
   {
     kind: 'dialog', id: 'replay', label: 'Replay', value: 'replay',
     description: 'The preview for one message: what will happen, the checks, then replay.',
-    icon: Play, group: 'contextual', unit: 'F2', design: 'd02-replay', built: false,
+    icon: Play, group: 'contextual', unit: 'F2', design: 'd02-replay', built: true,
   },
   {
     kind: 'dialog', id: 'bulk-replay', label: 'Bulk replay', value: 'bulk-replay',
     description: 'Put many messages back, with a preview first.',
-    icon: ListChecks, group: 'contextual', unit: 'F3', design: 'd03-bulk-replay', built: false,
+    icon: ListChecks, group: 'contextual', unit: 'F3', design: 'd03-bulk-replay', built: true,
   },
   {
     kind: 'dialog', id: 'review', label: 'Review', value: 'review',
     description: 'What the Agent stopped and asked you about, and why. Approve or decline.',
-    icon: ShieldCheck, group: 'contextual', unit: 'E2', design: 'd05-review', built: false,
+    icon: ShieldCheck, group: 'contextual', unit: 'E2', design: 'd05-review', built: true,
   },
   {
     kind: 'panel', id: 'hand-off', label: 'Handed to a person', value: 'hand-off',
     description: 'What, where, since when, why ServiceHub stops, who was told, and where to look next.',
-    icon: Hand, group: 'contextual', unit: 'F4', design: 'd06-hand-off', built: false,
+    icon: Hand, group: 'contextual', unit: 'F4', design: 'd06-hand-off', built: true,
   },
   {
     kind: 'dialog', id: 'message', label: 'Message', value: 'message',
@@ -184,22 +184,32 @@ export const nextNavigation: readonly NextEntry[] = [
   {
     kind: 'dialog', id: 'emergency-stop', label: 'Emergency stop', value: 'emergency-stop',
     description: 'Stop every replay ServiceHub would do on its own, on every cloud, now.',
-    icon: TriangleAlert, group: 'contextual', unit: 'F5', design: 'd08-emergency-stop-confirm', built: false,
+    icon: TriangleAlert, group: 'contextual', unit: 'F5', design: 'd08-emergency-stop-confirm', built: true,
   },
   {
     kind: 'panel', id: 'help', label: 'Help', value: 'help',
     description: 'How do I do the thing I am trying to do?',
-    icon: CircleHelp, group: 'contextual', unit: 'F6', design: 'd09-help', built: false,
+    icon: CircleHelp, group: 'contextual', unit: 'F6', design: 'd09-help', built: true,
   },
   {
     kind: 'dialog', id: 'search', label: 'Search', value: 'search',
     description: 'Go anywhere and do the common things. Never message contents.',
-    icon: Search, group: 'contextual', unit: 'F7', design: 'd10-search', built: false,
+    icon: Search, group: 'contextual', unit: 'F7', design: 'd10-search', built: true,
+  },
+  {
+    kind: 'panel', id: 'security', label: 'Security and data', value: 'security',
+    description: 'What ServiceHub keeps on this machine, for how long, and what it may do in your cloud.',
+    icon: ShieldCheck, group: 'contextual', unit: 'F10', design: 'd13-security-and-data', built: true,
+  },
+  {
+    kind: 'panel', id: 'autonomy', label: 'How autonomy is earned', value: 'autonomy',
+    description: 'How a kind of failure goes from a person approving each replay to the Agent handling it, and what takes that away.',
+    icon: Bot, group: 'contextual', unit: 'F11', design: 'd14-how-autonomy-is-earned', built: true,
   },
   {
     kind: 'dialog', id: 'send', label: 'Send a test message', value: 'send',
     description: 'Put one test message onto a queue or topic.',
-    icon: Send, group: 'contextual', unit: 'F8', design: 'd11-send-test-message', built: false,
+    icon: Send, group: 'contextual', unit: 'F8', design: 'd11-send-test-message', built: true,
   },
   {
     kind: 'dialog', id: 'cloud-redrive', label: 'Let the cloud redrive', value: 'cloud-redrive',

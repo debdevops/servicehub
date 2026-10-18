@@ -133,7 +133,7 @@ function Detail({ cloudKey: cloud, componentKey, namespaceId }: { cloudKey: NonN
 
       <div className="flex flex-wrap items-end justify-between gap-3">
         <DetailTabs basePath={here} active={tab} hasStuck={hasStuck} deadLetterCount={deadLetterCount} />
-        <Link to={nextHref(nextEntry('send'), {}, pathname)} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-2 text-xs font-bold hover:bg-[var(--color-surface-muted)]">Send a test message</Link>
+        <Link to={`${nextHref(nextEntry('send'), {}, pathname)}&ns=${encodeURIComponent(namespaceId)}`} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-2 text-xs font-bold hover:bg-[var(--color-surface-muted)]">Send a test message</Link>
       </div>
 
       {tab === 'dead-letters' ? (

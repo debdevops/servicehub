@@ -1,4 +1,4 @@
-import { OctagonAlert } from 'lucide-react'
+import { CircleHelp, OctagonAlert, Search } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAgents } from '../../hooks/useAgents'
 import { useMe } from '../../hooks/useIdentity'
@@ -38,6 +38,14 @@ export function HeaderStatus() {
       >
         <OctagonAlert className="h-3.5 w-3.5" aria-hidden="true" />
         {on ? 'Emergency stop is ON' : 'Emergency stop'}
+      </Link>
+
+      <Link to={nextHref(nextEntry('search'), {}, pathname)} aria-label="Search" className="inline-flex items-center gap-1.5 rounded-md bg-white/15 px-2.5 py-1.5 text-xs font-semibold hover:bg-white/25">
+        <Search className="h-3.5 w-3.5" aria-hidden="true" /> Search <kbd className="text-[10px] opacity-75">⌘K</kbd>
+      </Link>
+
+      <Link to={nextHref(nextEntry('help'), {}, pathname)} className="inline-flex items-center gap-1.5 rounded-md bg-white/15 px-2.5 py-1.5 text-xs font-semibold hover:bg-white/25">
+        <CircleHelp className="h-3.5 w-3.5" aria-hidden="true" /> Help
       </Link>
 
       <span className="rounded-md bg-white/15 px-2.5 py-1.5 text-xs font-semibold">Role: {role ?? '…'}</span>

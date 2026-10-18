@@ -262,6 +262,9 @@ export function outcomeWords(v: { status: string; confidence: 'Exact' | 'Heurist
   }
 }
 
+/** The chip colour of an outcome word's tone. Colour only; the word itself says what happened. */
+export const outcomeTone = { good: 'bg-green-50 text-green-800', caution: 'bg-amber-50 text-amber-800', bad: 'bg-red-50 text-red-700', neutral: 'bg-slate-100 text-slate-700' } as const
+
 export const recoveryWindows = [
   { id: '24h', label: 'Last 24 hours' }, { id: '7d', label: 'Last 7 days' }, { id: '30d', label: 'Last 30 days' }, { id: 'all', label: 'All time' },
 ] as const

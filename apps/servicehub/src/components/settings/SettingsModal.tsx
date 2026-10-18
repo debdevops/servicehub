@@ -69,10 +69,11 @@ export default function SettingsModal() {
   )
 }
 
-function Connections({ admin }: { admin: { allowed: boolean; reason: string | null } }) {
+/** `addHref` is where "Add a cloud" goes: the 4.2.0 modal over this page by default, or whatever the 5.0.0 shell passes. */
+export function Connections({ admin, addHref: given }: { admin: { allowed: boolean; reason: string | null }; addHref?: string }) {
   const namespaces = useNamespaces()
   const { pathname, search } = useLocation()
-  const addHref = (() => { const q = withoutDrawers(new URLSearchParams(search)); q.set('modal', 'add-cloud'); return `${pathname}?${q}` })()
+  const addHref = given ?? (() => { const q = withoutDrawers(new URLSearchParams(search)); q.set('modal', 'add-cloud'); return `${pathname}?${q}` })()
   return (
     <section id="settings-connections" aria-label="Connections">
       <div className="mb-3 flex items-center justify-between">
@@ -127,7 +128,7 @@ function ConnectionRow({ ns, admin }: { ns: Namespace; admin: { allowed: boolean
 
 const formatName: Readonly<Record<api.ChannelFormat, string>> = { slack: 'Slack', teams: 'Microsoft Teams', generic: 'Any other system' }
 
-function Notifications({ data, admin }: { data: api.Settings; admin: { allowed: boolean; reason: string | null } }) {
+export function Notifications({ data, admin }: { data: api.Settings; admin: { allowed: boolean; reason: string | null } }) {
   const [adding, setAdding] = useState<api.ChannelFormat | null>(null)
   return (
     <section id="settings-notifications" aria-label="Notifications">
@@ -222,7 +223,7 @@ function AddChannel({ format, onDone }: { format: api.ChannelFormat; onDone: () 
   )
 }
 
-function Preferences() {
+export function Preferences() {
   const prefs = usePreferences()
   const zones = (() => { try { return (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf?.('timeZone') ?? [] } catch { return [] } })()
   const seg = (active: boolean) => `flex-1 rounded-lg px-3 py-2 text-sm font-semibold ${active ? 'bg-[var(--color-surface)] shadow' : 'text-[var(--color-text-muted)]'}`
@@ -268,7 +269,7 @@ function Preferences() {
   )
 }
 
-function Access({ data }: { data: api.Settings }) {
+export function Access({ data }: { data: api.Settings }) {
   const me = useMe().data
   const isAdmin = permission(me, 'Admin', 'manage roles')
   return (

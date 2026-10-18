@@ -1,12 +1,14 @@
 import { Search } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
+import { BulkBar } from '../../../components/message/BulkBar'
 import { FailureGroups, NO_REASON } from '../../../components/message/FailureGroups'
 import { Pager } from '../../../components/ui/Pager'
 import { useDeadLetters } from '../../../hooks/useDeadLetters'
 import { usePendingWork } from '../../../hooks/usePendingWork'
 import type { ConnectedComponent } from '../../../lib/api/components'
 import type { Me } from '../../../lib/api/identity'
+import { BULK_LIMIT, bulkSelection } from '../../../lib/bulkSelection'
 import { formatWhen } from '../../../lib/format'
 import { usePageSize } from '../../../lib/pageSize'
 import { permission } from '../../../lib/permissions'
@@ -22,8 +24,9 @@ const field = 'rounded-lg border border-[var(--color-border)] bg-[var(--color-su
 
 /**
  * The Dead-letter messages tab of one connection (build-plan unit D3; design `p05a-service-bus-dead-letters`). Every filter is in the
- * address, so a filtered view is a link that survives a refresh. Read-only: a message opens the Message dialog, one waiting on a person
- * opens Review or the hand-off panel, and nothing is replayed from this list — Replay and Bulk replay are their own dialogs (F2, F3).
+ * address, so a filtered view is a link that survives a refresh. A message opens the Message dialog, one waiting on a person opens Review
+ * or the hand-off panel. **Nothing is replayed from this list**: ticking messages and choosing Replay selected opens Bulk replay (F3), whose
+ * PREVIEW comes first; a message held for a person is not tickable (Review answers it).
  * Failure groups are by RECORDED reason, a fact the cloud or the application wrote down, not a category ServiceHub guessed.
  */
 export function DeadLettersTab({ component: c, me }: { component: ConnectedComponent; me: Me | undefined }) {
@@ -36,10 +39,8 @@ export function DeadLettersTab({ component: c, me }: { component: ConnectedCompo
   const entity = params.get('entity') ?? undefined
   const q = params.get('q') ?? ''
 
-  const list = useDeadLetters({
-    namespaceId: c.namespaceId, status: showing, reason: reason && reason !== NO_REASON ? reason : undefined, noReason: reason === NO_REASON,
-    entity, q: q || undefined, page, pageSize,
-  })
+  const filter = { namespaceId: c.namespaceId, status: showing, reason: reason && reason !== NO_REASON ? reason : undefined, noReason: reason === NO_REASON, entity, q: q || undefined } as const
+  const list = useDeadLetters({ ...filter, page, pageSize })
   const pending = usePendingWork({ namespaceId: c.namespaceId })
   const waiting = new Map((pending.data?.items ?? []).filter((i) => i.dlqMessageId !== null).map((i) => [i.dlqMessageId as number, i]))
 
@@ -65,6 +66,32 @@ export function DeadLettersTab({ component: c, me }: { component: ConnectedCompo
 
   const total = list.data?.paging.total ?? 0
   const items = list.data?.items ?? []
+
+  // What is ticked, keyed by the filters it was ticked under: a new filter or connection starts with nothing ticked.
+  const signature = JSON.stringify([c.namespaceId, showing, reason, entity, q])
+  const [selection, setSelection] = useState<{ sig: string; ids: ReadonlySet<number>; all: boolean }>({ sig: signature, ids: new Set(), all: false })
+  const current = selection.sig === signature ? selection : { sig: signature, ids: new Set<number>(), all: false }
+  const tickable = items.filter((m) => m.status === 'active' && !waiting.has(m.id))
+  const toggle = (id: number) => { const ids = new Set(current.ids); if (ids.has(id)) ids.delete(id); else ids.add(id); setSelection({ sig: signature, ids, all: false }) }
+  const togglePage = () => {
+    const every = tickable.length > 0 && tickable.every((m) => current.ids.has(m.id))
+    const ids = new Set(current.ids)
+    tickable.forEach((m) => (every ? ids.delete(m.id) : ids.add(m.id)))
+    setSelection({ sig: signature, ids, all: false })
+  }
+  // A bulk run that has ended has used up its selection.
+  useEffect(() => bulkSelection.onFinished(() => setSelection({ sig: signature, ids: new Set(), all: false })), [signature])
+  const selectedCount = current.all ? Math.min(total, BULK_LIMIT) : current.ids.size
+  const bulkBar = (edge: 'top' | 'bottom') => (
+    <BulkBar edge={edge} hideDetails replayHref={`${pathname}?tab=dead-letters&dialog=bulk-replay`}
+      allOnPage={tickable.length > 0 && tickable.every((m) => current.ids.has(m.id))} onTogglePage={togglePage}
+      count={selectedCount} allMatching={current.all} matchingTotal={Math.min(total, BULK_LIMIT)}
+      matchingLabel={reason === NO_REASON ? 'with no reason recorded' : reason ?? 'dead letters'}
+      canSelectAll={!!reason && total > items.length && showing === 'active'}
+      onSelectAll={() => setSelection({ sig: signature, ids: new Set(tickable.map((m) => m.id)), all: true })}
+      onClear={() => setSelection({ sig: signature, ids: new Set(), all: false })}
+      onOpen={() => bulkSelection.set(current.all ? { query: { ...filter, page: 1, pageSize: 100 }, total } : { ids: [...current.ids] })} />
+  )
   const filtering = !!(reason || entity || q || showing !== 'active')
   const now = new Date()
   const title = c.watched ? `Dead-letter messages (${total.toLocaleString('en-US')})` : `Recorded dead-letter messages (showing ${items.length.toLocaleString('en-US')} of ${total.toLocaleString('en-US')})`
@@ -104,10 +131,11 @@ export function DeadLettersTab({ component: c, me }: { component: ConnectedCompo
           </p>
         ) : (
           <div className="mt-3 overflow-x-auto">
+            {c.watched || items.length > 0 ? bulkBar('top') : null}
             <table className="w-full border-t border-[var(--color-border)]">
               <caption className="sr-only">Dead-letter messages of {c.name}</caption>
               <thead>
-                <tr><th className={th}>Message</th><th className={th}>Entity</th><th className={th}>Reason</th><th className={th}>Description</th><th className={th}>Deliveries</th><th className={th}>Enqueued</th><th className={th}>{c.watched ? 'Detected' : 'Recorded'}</th><th className={th}>State</th><th className={th}>Actions</th></tr>
+                <tr><th className={th}><span className="sr-only">Select</span></th><th className={th}>Message</th><th className={th}>Entity</th><th className={th}>Reason</th><th className={th}>Description</th><th className={th}>Deliveries</th><th className={th}>Enqueued</th><th className={th}>{c.watched ? 'Detected' : 'Recorded'}</th><th className={th}>State</th><th className={th}>Actions</th></tr>
               </thead>
               <tbody>
                 {items.map((m) => {
@@ -119,6 +147,11 @@ export function DeadLettersTab({ component: c, me }: { component: ConnectedCompo
                   const open = held ? `${pathname}?tab=dead-letters&${hand ? 'panel=hand-off' : 'dialog=review'}&entry=${encodeURIComponent(held.entryId ?? held.id)}` : `${pathname}?tab=dead-letters&dialog=message&id=${m.id}`
                   return (
                     <tr key={m.id} className="border-t border-[var(--color-border)]">
+                      <td className={td}>
+                        {m.status === 'active' && !held
+                          ? <input type="checkbox" className="h-4 w-4" checked={current.all || current.ids.has(m.id)} disabled={current.all} onChange={() => toggle(m.id)} aria-label={`Select message ${m.messageId}`} />
+                          : null}
+                      </td>
                       <td className={`${td} font-mono text-xs`}>{m.messageId}</td>
                       <td className={td}>{entityLabel(m.entityName, m.topicName)}</td>
                       <td className={td}>{m.deadLetterReason ?? '—'}</td>
@@ -140,6 +173,7 @@ export function DeadLettersTab({ component: c, me }: { component: ConnectedCompo
                 })}
               </tbody>
             </table>
+            {bulkBar('bottom')}
           </div>
         )}
         <Pager page={page} pageSize={pageSize} total={total} filtered={filtering} onPage={(p) => change({ page: String(p) })} onPageSize={(n) => { setPageSize(n); change({}) }} label="dead-letter messages" />
@@ -149,7 +183,7 @@ export function DeadLettersTab({ component: c, me }: { component: ConnectedCompo
         {c.watched
           ? <><strong>{c.deadLetters.kind === 'exact' ? 'Counts are exact here.' : 'This list is what ServiceHub has seen.'}</strong> This connection is watched automatically, so the list is every dead-letter message ServiceHub has seen, not a sample.</>
           : <><strong>This is what ServiceHub recorded when you last looked.</strong> It is not watched in the background, so messages that failed since are not here until you press Look now.</>}
-        {' '}Nothing is replayed from this list.
+        {' '}Nothing is replayed from this list; choosing Replay selected shows a preview first.
       </p>
     </div>
   )

@@ -36,14 +36,19 @@ import ResolveUnknownBody from './ResolveUnknownModal'
  * - **Approve N** replays each through the one gated route, as you, and records your name. **Decline…** needs a reason and
  *   deletes nothing. **Not now** changes nothing: the items stay in the bell (R7).
  */
-export default function ApproveModal({ close }: OverlayBodyProps) {
+export default function ApproveModal({ close, replayedHref = '/?tab=replayed' }: Pick<OverlayBodyProps, 'close'> & Partial<Pick<OverlayBodyProps, 'entry'>> & {
+  /** Where "See them in Replayed" goes. The 4.2.0 shell's default; the 5.0.0 shell passes its own Replay history page. */
+  readonly replayedHref?: string
+}) {
   const [params] = useSearchParams()
   const group = params.get('group')
   const entry = params.get('entry')
+  // A person's own ticked list from a page (`entries=a,b,c`): exactly those and no others. Absent, `group` / `entry` decide as before.
+  const chosenEntries = params.get('entries')?.split(',').filter(Boolean)
   const [groupProvider, groupNamespace] = group ? group.split(':') : []
   const pending = usePendingWork(group && groupProvider !== '?' && groupNamespace && groupNamespace !== '?' ? { provider: groupProvider as CloudProvider, namespaceId: groupNamespace } : {})
   const waiting = (pending.data?.items ?? []).filter((i) =>
-    i.kind === 'approval' && (entry ? i.entryId === entry : group ? `${i.provider ?? '?'}:${i.namespaceId ?? '?'}` === group : true))
+    i.kind === 'approval' && (chosenEntries ? chosenEntries.includes(i.entryId ?? '') : entry ? i.entryId === entry : group ? `${i.provider ?? '?'}:${i.namespaceId ?? '?'}` === group : true))
 
   const unresolvedNow = !!entry && !!pending.data?.items.some((i) => i.kind === 'unresolved' && i.entryId === entry)
   const [wasUnresolved, setWasUnresolved] = useState(false)
@@ -70,7 +75,7 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
   // removes the item from the list, and without this the person would never see that it was recorded (found in a live run).
   if (entry && (unresolvedNow || wasUnresolved)) return <ResolveUnknownBody close={close} />
   if (approve.isPending) return <Sending done={progress} total={approve.variables?.entryIds.length ?? 0} />
-  if (approve.data) return <Approved results={approve.data} close={close} stillWaiting={pending.isFetching ? null : (entry ? waiting.length : (pending.data?.total ?? null))} />
+  if (approve.data) return <Approved results={approve.data} close={close} replayedHref={replayedHref} stillWaiting={pending.isFetching ? null : (entry ? waiting.length : (pending.data?.total ?? null))} />
   if (decline.isSuccess) {
     const n = decline.variables?.entryIds.length ?? 0
     const left = pending.isFetching ? null : (entry ? waiting.length : (pending.data?.total ?? null))
@@ -120,7 +125,7 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
   const canProve = namespaces.data?.find((n) => n.id === first.namespaceId)?.capabilities?.canProveDlqAbsence
   const may = permission(me.data, 'Approver', 'answer what the Agent asked', { recover: true, namespaceId: first.namespaceId ?? undefined })
   // The API may hold more than this window carries; say so rather than let "all" mean "some".
-  const total = entry ? waiting.length : Math.max(pending.data?.total ?? 0, waiting.length)
+  const total = (entry || chosenEntries) ? waiting.length : Math.max(pending.data?.total ?? 0, waiting.length)
   const restStay = total - chosen.length
   const now = new Date()
   const checksSummary = proposal.data ? `${proposal.data.checks.filter((c) => c.state === 'passed').length} of ${proposal.data.checks.length} passed` : undefined
@@ -455,7 +460,7 @@ function Sending({ done, total }: { done: number; total: number }) {
   )
 }
 
-function Approved({ results, close, stillWaiting }: { results: readonly { entryId: string; ok: boolean; error?: string }[]; close: () => void; stillWaiting: number | null }) {
+function Approved({ results, close, stillWaiting, replayedHref }: { results: readonly { entryId: string; ok: boolean; error?: string }[]; close: () => void; stillWaiting: number | null; replayedHref: string }) {
   const ok = results.filter((r) => r.ok).length
   const failed = results.filter((r) => !r.ok)
   return (
@@ -470,7 +475,7 @@ function Approved({ results, close, stillWaiting }: { results: readonly { entryI
         </ul>
       )}
       <div className="flex gap-2">
-        <Link to="/?tab=replayed" onClick={close} className="rounded-lg bg-[var(--color-primary-600)] px-3.5 py-2 font-semibold text-white">See them in Replayed</Link>
+        <Link to={replayedHref} onClick={close} className="rounded-lg bg-[var(--color-primary-600)] px-3.5 py-2 font-semibold text-white">See them in Replayed</Link>
         <button type="button" onClick={close} className="rounded-lg border border-[var(--color-border)] px-3.5 py-2 font-semibold">Close</button>
       </div>
     </div>

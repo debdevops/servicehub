@@ -25,10 +25,14 @@ const hoursLabel = (h: number) => (h < 1 ? `${Math.round(h * 60)} minutes` : h =
  * what will happen, why it might fail again, the checks, and what comes after. Then the one button.
  * When replay is blocked the button stays, disabled, with the reason beside it — never hidden (P4).
  */
-export default function ReplayModal({ close }: OverlayBodyProps) {
+export default function ReplayModal({ close, links }: Pick<OverlayBodyProps, 'close'> & Partial<Pick<OverlayBodyProps, 'entry'>> & {
+  /** Where the result's two links go. The 4.2.0 shell's tabs by default; the 5.0.0 shell passes its own pages. */
+  readonly links?: { readonly active: string; readonly replayed: string }
+}) {
   const [params] = useSearchParams()
   // `replay=` is a row's own Replay: this modal alone, no message drawer behind it. `message=` is the drawer's Replay, over the drawer.
-  const raw = params.get('replay') ?? params.get('message')
+  // `id=` is how the 5.0.0 shell carries a message (`?dialog=replay&id=`); the 4.2.0 shell uses `replay=` and `message=`.
+  const raw = params.get('replay') ?? params.get('message') ?? params.get('id')
   const id = raw !== null && /^\d+$/.test(raw) ? Number(raw) : null
   const proposal = useReplayProposal(id)
   const message = useDeadLetter(id)
@@ -45,7 +49,7 @@ export default function ReplayModal({ close }: OverlayBodyProps) {
     )
   }
 
-  if (replay.data) return <Result outcome={replay.data} proposal={proposal.data} close={close} />
+  if (replay.data) return <Result outcome={replay.data} proposal={proposal.data} close={close} links={links} />
 
   const p = proposal.data
   const explanation = message.data
@@ -180,7 +184,7 @@ function CheckRow({ check }: { check: ReplayCheck }) {
 }
 
 /** What happened. Three honest endings: sent back, the cloud refused, or nobody can tell. */
-function Result({ outcome, proposal, close }: { outcome: ReplayOutcome; proposal: ReplayProposal; close: () => void }) {
+function Result({ outcome, proposal, close, links }: { outcome: ReplayOutcome; proposal: ReplayProposal; close: () => void; links?: { active: string; replayed: string } }) {
   const border =
     outcome.result === 'accepted' ? 'border-[var(--color-success)]' : outcome.result === 'rejected' ? 'border-[var(--color-error)]' : 'border-[var(--color-warning)]'
   const { search } = useLocation()
@@ -215,8 +219,8 @@ function Result({ outcome, proposal, close }: { outcome: ReplayOutcome; proposal
       {outcome.result === 'accepted' && (
         <p className="text-sm text-[var(--color-text-muted)]">
           It is now on <span className="font-mono text-[13px]">{proposal.targetEntity}</span>, and the dead letter has left the list. Where the consumer is running it is picked up straight away, so it may already be gone from{' '}
-          <Link to={follow('active')} onClick={close} className="font-medium text-[var(--color-primary-700)] hover:underline">Active messages</Link>; its result is recorded in{' '}
-          <Link to={follow('replayed')} onClick={close} className="font-medium text-[var(--color-primary-700)] hover:underline">Replayed</Link>.
+          <Link to={links ? links.active : follow('active')} onClick={close} className="font-medium text-[var(--color-primary-700)] hover:underline">Active messages</Link>; its result is recorded in{' '}
+          <Link to={links ? links.replayed : follow('replayed')} onClick={close} className="font-medium text-[var(--color-primary-700)] hover:underline">Replayed</Link>.
         </p>
       )}
       <div className="flex justify-end">

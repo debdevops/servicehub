@@ -10,7 +10,8 @@ import { Pager } from '../../../components/ui/Pager'
 import { cloudLabel } from '../../lib/clouds'
 import { familyWords } from '../../lib/words'
 
-type Tab = 'all' | 'approvals' | 'handOffs'
+export type AttentionTab = 'all' | 'approvals' | 'handOffs'
+type Tab = AttentionTab
 const th = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
 const td = 'px-3 py-2.5 align-top text-sm'
 
@@ -22,9 +23,15 @@ const typeOf = (i: PendingWorkItem) => i.type ?? (i.kind === 'unresolved' ? 'han
  * hand-off panel (both are carried in the URL; F-units build them). The owner column says "All channels": a notification channel has
  * no component field in 5.0.0 (decision F2, option A), so it is not drawn as if each item had its own.
  */
-export function AttentionTable({ items, coverage, me, showCloud = false }: { items: readonly PendingWorkItem[]; coverage: readonly CoverageRow[]; me: Me | undefined; showCloud?: boolean }) {
+export function AttentionTable({ items, coverage, me, showCloud = false, tab: controlledTab, onTab }: {
+  items: readonly PendingWorkItem[]; coverage: readonly CoverageRow[]; me: Me | undefined; showCloud?: boolean
+  /** A page that keeps the tab in its address passes both; Home keeps it here. */
+  tab?: AttentionTab; onTab?: (tab: AttentionTab) => void
+}) {
   const { pathname } = useLocation()
-  const [tab, setTab] = useState<Tab>('all')
+  const [ownTab, setOwnTab] = useState<Tab>('all')
+  const tab = controlledTab ?? ownTab
+  const setTab = onTab ?? setOwnTab
   const mine = items.filter(isMine)
   const approvals = mine.filter((i) => typeOf(i) === 'approval')
   const handOffs = mine.filter((i) => typeOf(i) === 'handOff')

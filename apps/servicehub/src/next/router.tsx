@@ -12,6 +12,15 @@ const HomePage = lazy(() => import('./pages/HomePage'))
 const AllCloudsPage = lazy(() => import('./pages/AllCloudsPage'))
 const ComponentListPage = lazy(() => import('./pages/ComponentListPage'))
 const ComponentDetailPage = lazy(() => import('./pages/ComponentDetailPage'))
+const AttentionPage = lazy(() => import('./pages/AttentionPage'))
+const ApprovalsPage = lazy(() => import('./pages/ApprovalsPage'))
+const ActivePage = lazy(() => import('./pages/ActivePage'))
+const ReplaysPage = lazy(() => import('./pages/ReplaysPage'))
+const RulesPage = lazy(() => import('./pages/RulesPage'))
+const SignaturesPage = lazy(() => import('./pages/SignaturesPage'))
+const LedgerPage = lazy(() => import('./pages/LedgerPage'))
+const AgentsPage = lazy(() => import('./pages/AgentsPage'))
+const ConfigurationPage = lazy(() => import('./pages/ConfigurationPage'))
 
 const loading = <p role="status" className="px-6 py-6 text-sm">Loading…</p>
 
@@ -31,6 +40,24 @@ function pageFor(entry: NextPage) {
       return <Suspense fallback={loading}><ComponentListPage /></Suspense>
     case 'component-detail':
       return <Suspense fallback={loading}><ComponentDetailPage /></Suspense>
+    case 'attention':
+      return <Suspense fallback={loading}><AttentionPage /></Suspense>
+    case 'approvals':
+      return <Suspense fallback={loading}><ApprovalsPage /></Suspense>
+    case 'active':
+      return <Suspense fallback={loading}><ActivePage /></Suspense>
+    case 'replays':
+      return <Suspense fallback={loading}><ReplaysPage /></Suspense>
+    case 'rules':
+      return <Suspense fallback={loading}><RulesPage /></Suspense>
+    case 'signatures':
+      return <Suspense fallback={loading}><SignaturesPage /></Suspense>
+    case 'ledger':
+      return <Suspense fallback={loading}><LedgerPage /></Suspense>
+    case 'agents':
+      return <Suspense fallback={loading}><AgentsPage /></Suspense>
+    case 'configuration':
+      return <Suspense fallback={loading}><ConfigurationPage /></Suspense>
     default:
       return <NextPlaceholderPage entry={entry} />
   }

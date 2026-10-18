@@ -52,6 +52,7 @@ export default function MessageDialog({ close }: NextOverlayBodyProps) {
   const held = (pending.data?.items ?? []).find((i) => i.dlqMessageId === m.id)
   const state = held ? (held.kind === 'unresolved' ? 'Handed to a person' : 'Waiting for approval') : m.status === 'active' ? 'In dead-letter' : 'No longer in dead-letter'
   const may = permission(me.data, 'Approver', 'approve or decline a replay', { recover: true, namespaceId: m.namespaceId })
+  const mayReplay = permission(me.data, 'Operator', 'replay this message', { recover: true, namespaceId: m.namespaceId })
   const trace = findTrace(d.applicationPropertiesJson)
   const link = trace ? traceLink(template, trace.traceId) : null
   const now = new Date()
@@ -122,6 +123,10 @@ export default function MessageDialog({ close }: NextOverlayBodyProps) {
 
       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--color-border)] pt-3">
         {link && <a href={link} target="_blank" rel="noreferrer" className="rounded-lg border border-[var(--color-border)] px-3.5 py-2 text-sm font-semibold hover:bg-[var(--color-surface-muted)]">Open the trace</a>}
+        {/* A held replay is answered by Review; replaying it here would be a second door to the same decision. */}
+        {!held && m.status === 'active' && (mayReplay.allowed
+          ? <Link to={`${pathname}?dialog=replay&id=${m.id}`} className="rounded-lg bg-[var(--color-primary-600)] px-3.5 py-2 text-sm font-bold text-white hover:bg-[var(--color-primary-700)]">Replay…</Link>
+          : <span title={mayReplay.reason ?? undefined} className="text-sm text-[var(--color-text-muted)]">Needs an Operator to replay</span>)}
         {held && held.kind === 'approval' && (may.allowed
           ? <Link to={`${pathname}?dialog=review&entry=${encodeURIComponent(held.entryId ?? held.id)}`} className="rounded-lg bg-[var(--color-primary-600)] px-3.5 py-2 text-sm font-bold text-white hover:bg-[var(--color-primary-700)]">Review…</Link>
           : <span title={may.reason ?? undefined} className="text-sm text-[var(--color-text-muted)]">Needs an Approver to review</span>)}

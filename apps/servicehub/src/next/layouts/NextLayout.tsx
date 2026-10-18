@@ -1,4 +1,5 @@
-import { Link, NavLink, Outlet, useParams } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { onRequestComponents, sidebarComponents, useCoverage } from '../../hooks/useCoverage'
 import { useComponents } from '../../hooks/useComponents'
 import { HeaderStatus } from '../components/HeaderStatus'
@@ -38,6 +39,16 @@ function Badge({ count, label }: { count: number | null; label: string }) {
  */
 export function NextLayout() {
   const params = useParams()
+  const navigate = useNavigate()
+  const { pathname } = useLocation()
+  // ⌘K / Ctrl-K opens Search from anywhere in the shell (F7).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); navigate(nextHref(nextEntry('search'), {}, pathname)) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [navigate, pathname])
   // `configuration` and `coverage` are not clouds: on those pages the menu shows every cloud's components.
   const scope: CloudScope = parseScope(params.cloud)
   const cloud = cloudOf(scope)

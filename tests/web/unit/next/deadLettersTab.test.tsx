@@ -95,12 +95,12 @@ describe('the Dead-letter messages tab (unit D3)', () => {
     expect(screen.queryByRole('link', { name: 'Review' })).not.toBeInTheDocument()
   })
 
-  it('nothing on this list replays, selects or edits: it is read-only', async () => {
+  it('nothing replays from this list: a tick only chooses what Bulk replay will PREVIEW, and Replay selected waits for one', async () => {
     open(`${ok}?tab=dead-letters`)
     await screen.findByRole('table')
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /replay/i })).not.toBeInTheDocument()
-    expect(screen.getByRole('note')).toHaveTextContent('Nothing is replayed from this list.')
+    expect(screen.getAllByRole('checkbox').length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('button', { name: 'Replay selected…' })[0]).toBeDisabled()
+    expect(screen.getByRole('note')).toHaveTextContent('Nothing is replayed from this list')
   })
 
   it('filters live in the address: choosing a reason, an entity or a state asks again from page 1 and survives a refresh', async () => {

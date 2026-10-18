@@ -44,7 +44,7 @@ const looksLikeValidation = (reason: string) => /valid|schema|format|malformed|m
  * without the preview — starting needs the stored preview's id, and only this modal makes one. Closing it does NOT stop
  * a running job: the run is the server's, and progress reappears from `?job=`.
  */
-export default function BulkReplayModal({ close }: OverlayBodyProps) {
+export default function BulkReplayModal({ close }: Pick<OverlayBodyProps, 'close'> & Partial<Pick<OverlayBodyProps, 'entry'>>) {
   const [params, setParams] = useSearchParams()
   const jobId = params.get('job')
   return jobId ? <Running id={jobId} close={close} /> : <Preview close={close} onStarted={(id) => setParams((c) => { const n = new URLSearchParams(c); n.set('job', id); return n }, { replace: true })} />

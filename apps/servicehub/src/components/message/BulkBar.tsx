@@ -22,6 +22,8 @@ export function BulkBar({
   allOnPage = false,
   onTogglePage,
   single = null,
+  replayHref,
+  hideDetails = false,
 }: {
   count: number
   allMatching: boolean
@@ -39,6 +41,10 @@ export function BulkBar({
   onTogglePage?: () => void
   /** The one ticked message, when exactly one is: what View details opens. */
   single?: string | null
+  /** Where Replay selected goes. Default: the 4.2.0 Home with its `?modal=bulk-replay`; the 5.0.0 shell passes its own `?dialog=`. */
+  replayHref?: string
+  /** The 5.0.0 shell opens a message from its own list; "View details" here is the 4.2.0 drawer. */
+  hideDetails?: boolean
 }) {
   const may = permission(useMe().data, 'Operator', 'replay these messages', { recover: true })
   const { search } = useLocation()
@@ -76,7 +82,7 @@ export function BulkBar({
         </button>
       )}
       <span className="ml-auto flex items-center gap-3">
-        {edge === 'top' && (single ? (
+        {edge === 'top' && !hideDetails && (single ? (
           <Link to={`/?${detailParams(search, single)}`} className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 font-medium hover:bg-[var(--color-surface-muted)]">
             <PanelRight className="h-4 w-4" aria-hidden="true" /> View details
           </Link>
@@ -88,7 +94,7 @@ export function BulkBar({
         <span className="text-xs text-[var(--color-text-muted)]">{!may.allowed ? <NotAllowed reason={may.reason} /> : none ? 'tick one or more below to replay them' : 'you’ll see a preview first'}</span>
         {canReplay ? (
           <Link
-            to={`/?${params.toString()}`}
+            to={replayHref ?? `/?${params.toString()}`}
             onClick={onOpen}
             className="rounded-lg bg-[var(--color-primary-600)] px-4 py-2 font-medium text-white hover:bg-[var(--color-primary-700)]"
           >

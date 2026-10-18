@@ -7,14 +7,11 @@ import type { ReplayQuery } from '../../../lib/api/replay'
 import { formatWhen } from '../../../lib/format'
 import { usePageSize } from '../../../lib/pageSize'
 import { cloudLabel } from '../../lib/clouds'
-import { entityLabel } from '../../lib/entityRows'
-import { outcomeFootnote, outcomeWords, recoveryWindows, type RecoveryWindowId } from '../../lib/words'
+import { outcomeFootnote, recoveryWindows, type RecoveryWindowId } from '../../lib/words'
 import { nextEntry, nextHref } from '../../nav/navigation'
+import { ReplayTable } from '../ReplayTable'
 
-const th = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
-const td = 'px-3 py-2.5 align-top text-sm'
 const field = 'rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm'
-const tone = { good: 'bg-green-50 text-green-800', caution: 'bg-amber-50 text-amber-800', bad: 'bg-red-50 text-red-700', neutral: 'bg-slate-100 text-slate-700' } as const
 
 const endings: readonly { id: NonNullable<ReplayQuery['ending']> | ''; label: string }[] = [
   { id: '', label: 'Any outcome' }, { id: 'fixed', label: 'Verified' }, { id: 'unproven', label: 'Unverified' }, { id: 'returned', label: 'Came back' },
@@ -116,28 +113,7 @@ export function RecoveryTab({ component: c, canProve }: { component: ConnectedCo
             {filtering ? 'No replay matches that outcome.' : `Nothing has been replayed from ${c.name} in this period (${windowLabel.toLowerCase()}). An outcome appears here once a replay has happened.`}
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-t border-[var(--color-border)]">
-              <caption className="sr-only">Replays from {c.name} on {cloudLabel[c.cloud]}</caption>
-              <thead><tr><th className={th}>Message</th><th className={th}>Entity</th><th className={th}>Replayed by</th><th className={th}>When</th><th className={th}>Outcome</th><th className={th}>What was observed</th><th className={th}>Actions</th></tr></thead>
-              <tbody>
-                {items.map((r) => {
-                  const o = outcomeWords(r.verification, fmt)
-                  return (
-                    <tr key={r.id} className="border-t border-[var(--color-border)]">
-                      <td className={`${td} font-mono text-xs`}>{r.messageId}</td>
-                      <td className={td}>{entityLabel(r.sourceEntity, null)}{r.targetEntity !== r.sourceEntity && <span className="block text-xs text-[var(--color-text-muted)]">sent to {entityLabel(r.targetEntity, null)}</span>}</td>
-                      <td className={td}>{r.actor.label}</td>
-                      <td className={td}>{fmt(r.replayedAt)}</td>
-                      <td className={td}><span className={`inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${tone[o.tone]}`}>{o.word}</span></td>
-                      <td className={td}>{o.observed}</td>
-                      <td className={td}><Link to={open(r.dlqMessageId)} aria-label={`Open message ${r.messageId}`} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">Open</Link></td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          <ReplayTable items={items} caption={`Replays from ${c.name} on ${cloudLabel[c.cloud]}`} openHref={(r) => open(r.dlqMessageId)} fmt={fmt} />
         )}
         {items.length > 0 && <p className="border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-muted)]">{outcomeFootnote(canProve)}</p>}
         <Pager page={page} pageSize={pageSize} total={total} filtered={filtering} onPage={(p) => change({ page: String(p) })} onPageSize={(n) => { setPageSize(n); change({}) }} label="replays" />

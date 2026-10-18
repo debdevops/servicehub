@@ -217,7 +217,7 @@ const outcomeWords: Record<string, string> = {
 }
 
 /** The replays this rule really sent — the proof that it is working, straight from the ledger. */
-function RuleActivity({ rule }: { rule: Rule }) {
+function RuleActivity({ rule, messageHref }: { rule: Rule; messageHref?: (dlqMessageId: number) => string }) {
   const { search } = useLocation()
   // Message details open in a modal over this page.
   const detailsParams = (dlqMessageId: number) => { const n = new URLSearchParams(search); n.set('message', String(dlqMessageId)); n.set('view', 'modal'); return n.toString() }
@@ -233,7 +233,7 @@ function RuleActivity({ rule }: { rule: Rule }) {
       {data.items.map((i: ReplayListItem) => (
         <li key={i.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 px-3 py-2">
           <span className="tabular text-[var(--color-text-muted)]">{formatWhen(i.replayedAt, now)}</span>
-          <Link to={`?${detailsParams(i.dlqMessageId)}`} className="font-mono text-[12px] text-[var(--color-primary-700)] hover:underline [overflow-wrap:anywhere]" title="Open the message details">{i.messageId}</Link>
+          <Link to={messageHref ? messageHref(i.dlqMessageId) : `?${detailsParams(i.dlqMessageId)}`} className="font-mono text-[12px] text-[var(--color-primary-700)] hover:underline [overflow-wrap:anywhere]" title="Open the message details">{i.messageId}</Link>
           <span className="font-mono text-[11.5px] text-[var(--color-text-muted)]">{i.sourceEntity} → {i.targetEntity}</span>
           <span className="ml-auto">{i.outcomeStatus === 'accepted' ? (outcomeWords[i.verification.status] ?? i.verification.status) : i.outcomeStatus === 'rejected' ? 'cloud refused it' : 'outcome unknown'}</span>
         </li>
@@ -243,7 +243,19 @@ function RuleActivity({ rule }: { rule: Rule }) {
   )
 }
 
-function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }) {
+/**
+ * Where a rule card's links go. The 4.2.0 Home page passes nothing and keeps its own addresses; the 5.0.0 shell passes its own.
+ * `replayAll: false` hides Replay all there until the Bulk replay dialog is built in that shell (unit F3).
+ */
+export interface RuleLinks {
+  readonly held: (rule: Rule) => string
+  readonly message: (dlqMessageId: number) => string
+  readonly replayAll: boolean
+  /** Which address parameter opens Bulk replay: the 4.2.0 shell's `modal` (default) or the 5.0.0 shell's `dialog`. */
+  readonly bulkParam?: 'modal' | 'dialog'
+}
+
+export function RuleCard({ rule: r, provider, links }: { rule: Rule; provider: CloudProvider; links?: RuleLinks }) {
   const manual = useCloudIsManual(provider)
   const mayToggle = permission(useMe().data, r.enabled ? 'Operator' : 'Approver', r.enabled ? 'switch this rule off' : 'switch this rule on', { recover: true })
   const client = useQueryClient()
@@ -271,7 +283,7 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
       if (ids.length === 0) throw new Error('none')
       bulkSelection.set({ ids })
     },
-    onSuccess: () => setParams((c) => { const n = new URLSearchParams(c); n.set('modal', 'bulk-replay'); n.delete('job'); ;['message', 'view', 'replay'].forEach((k) => n.delete(k)); return n }),
+    onSuccess: () => setParams((c) => { const n = new URLSearchParams(c); n.set(links?.bulkParam ?? 'modal', 'bulk-replay'); n.delete('job'); ;['message', 'view', 'replay'].forEach((k) => n.delete(k)); return n }),
   })
   // What is waiting for this rule right now, so Replay all is only offered when it has something to preview.
   const waiting = useQuery({ queryKey: ['rule-matches', r.id], queryFn: () => fetchRuleMatches(r.id), refetchInterval: 15_000 })
@@ -321,7 +333,7 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
       {r.enabled && r.askedCount > 0 && (
         <p className="mt-3 flex items-start gap-2 rounded-lg border border-[#fde68a] bg-[var(--color-warning-light)] px-3 py-2 text-[12.5px] text-[#78350f]">
           <Eye className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          <span><b>{heldWords([r])} matching {r.askedCount === 1 && !r.askedIsLowerBound ? 'message is' : 'messages are'} waiting for a person.</b> {holdWords(r.lastAskedReason, manual)}{' '}<Link to={waitingHref(r)} className="font-semibold underline">See {r.askedCount === 1 && !r.askedIsLowerBound ? 'it' : 'them'} ›</Link></span>
+          <span><b>{heldWords([r])} matching {r.askedCount === 1 && !r.askedIsLowerBound ? 'message is' : 'messages are'} waiting for a person.</b> {holdWords(r.lastAskedReason, manual)}{' '}<Link to={links ? links.held(r) : waitingHref(r)} className="font-semibold underline">See {r.askedCount === 1 && !r.askedIsLowerBound ? 'it' : 'them'} ›</Link></span>
         </p>
       )}
 
@@ -356,7 +368,7 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
             <FlaskConical className="h-3.5 w-3.5" aria-hidden="true" /> {test.isPending ? 'Testing…' : 'Test this rule'}
           </button>
           {/* The tooltip sits on the wrapper: a disabled button does not always show its own. */}
-          <span title={replayTitle}>
+          {links?.replayAll !== false && <span title={replayTitle}>
             <button
               type="button"
               disabled={replayAll.isPending || !mayReplay.allowed || nothingWaiting}
@@ -365,7 +377,7 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
             >
               <Play className="h-3.5 w-3.5" aria-hidden="true" /> {replayAll.isPending ? 'Finding…' : 'Replay all'}
             </button>
-          </span>
+          </span>}
           <button
             type="button"
             onClick={() => { setEditing((e) => !e); setConfirmDelete(false) }}
@@ -384,7 +396,7 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
             <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Delete
           </button>
         </div>
-        <p className="text-[11.5px] text-[var(--color-text-muted)]">Test shows what it would do today and sends nothing. Replay all shows a preview first.</p>
+        <p className="text-[11.5px] text-[var(--color-text-muted)]">Test shows what it would do today and sends nothing.{links?.replayAll !== false && ' Replay all shows a preview first.'}</p>
         <NotAllowed reason={mayReplay.reason ?? mayDelete.reason ?? mayToggle.reason} />
         {replayAll.isError && (
           // Right under the buttons and clearly a result: a muted line at the foot of the card read as "nothing happened".
@@ -410,7 +422,7 @@ function RuleCard({ rule: r, provider }: { rule: Rule; provider: CloudProvider }
         {test.data && <TestResult test={test.data} manual={manual} />}
         {r.replayed > 0 && (
           <Collapsible title="What it replayed" summary={`${r.replayed} ${r.replayed === 1 ? 'message' : 'messages'}`} defaultOpen={false}>
-            <RuleActivity rule={r} />
+            <RuleActivity rule={r} messageHref={links?.message} />
           </Collapsible>
         )}
       </div>
@@ -452,7 +464,7 @@ function EditRule({ rule: r, provider, onDone }: { rule: Rule; provider: CloudPr
   )
 }
 
-function NewRule({ provider, onDone }: { provider: CloudProvider; onDone: () => void }) {
+export function NewRule({ provider, onDone }: { provider: CloudProvider; onDone: () => void }) {
   const manual = useCloudIsManual(provider)
   const mayCreate = permission(useMe().data, 'Approver', 'create a rule (it starts on)', { recover: true })
   const client = useQueryClient()

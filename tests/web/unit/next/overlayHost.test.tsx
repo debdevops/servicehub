@@ -28,7 +28,7 @@ function open(url: string) {
   return router
 }
 
-describe('the 5.0.0 overlay host (unit F1, host half)', () => {
+describe('the 5.0.0 overlay host (unit G6, host half)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(coverageApi.fetchCoverage).mockResolvedValue({ rows: coverageRows })
@@ -66,20 +66,20 @@ describe('the 5.0.0 overlay host (unit F1, host half)', () => {
   })
 
   it('Esc closes it and removes its parameters, keeping the page’s own (?tab=)', async () => {
-    const router = open('/next/coverage?tab=x&dialog=emergency-stop&id=7&entry=e1')
-    expect(await screen.findByText(/Not built yet — unit F5/)).toBeInTheDocument()
+    const router = open('/next/coverage?tab=x&dialog=cloud-redrive&id=7&entry=e1')
+    expect(await screen.findByText(/Not built yet — unit G6/)).toBeInTheDocument()
     await userEvent.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByText(/Not built yet — unit F5/)).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByText(/Not built yet — unit G6/)).not.toBeInTheDocument())
     expect(router.state.location.search).toBe('?tab=x')
   })
 
   it('the Close button closes it, and closing replaces the entry so Back does not reopen it', async () => {
     const router = open('/next/coverage')
     await screen.findByRole('heading', { level: 1, name: 'What ServiceHub covers' })
-    await router.navigate('/next/coverage?panel=help')
-    expect(await screen.findByText(/Not built yet — unit F6/)).toBeInTheDocument()
+    await router.navigate('/next/coverage?dialog=cloud-redrive')
+    expect(await screen.findByText(/Not built yet — unit G6/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Close' }))
-    await waitFor(() => expect(screen.queryByText(/Not built yet — unit F6/)).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByText(/Not built yet — unit G6/)).not.toBeInTheDocument())
     await router.navigate(-1)
     expect(router.state.location.search).toBe('') // back went to the page before the dialog, not to a reopened one
   })
@@ -87,16 +87,16 @@ describe('the 5.0.0 overlay host (unit F1, host half)', () => {
   it('Back closes a dialog that was opened by a link', async () => {
     const router = open('/next/coverage')
     await screen.findByRole('heading', { level: 1, name: 'What ServiceHub covers' })
-    await router.navigate('/next/coverage?dialog=send')
-    expect(await screen.findByText(/Not built yet — unit F8/)).toBeInTheDocument()
+    await router.navigate('/next/coverage?dialog=cloud-redrive')
+    expect(await screen.findByText(/Not built yet — unit G6/)).toBeInTheDocument()
     await router.navigate(-1)
-    await waitFor(() => expect(screen.queryByText(/Not built yet — unit F8/)).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByText(/Not built yet — unit G6/)).not.toBeInTheDocument())
   })
 
   it('a panel and a dialog can be open together, as the old host allowed', async () => {
-    open('/next/coverage?panel=help&dialog=send')
-    expect(await screen.findByText(/Not built yet — unit F6/)).toBeInTheDocument()
-    expect(await screen.findByText(/Not built yet — unit F8/)).toBeInTheDocument()
+    open('/next/coverage?panel=help&dialog=cloud-redrive')
+    expect(await screen.findByPlaceholderText('Search help…')).toBeInTheDocument() // the Help panel (F6)
+    expect(await screen.findByText(/Not built yet — unit G6/)).toBeInTheDocument()
   })
 
   it('knows the parameters it owns', () => {
