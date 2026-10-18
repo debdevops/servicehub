@@ -13,8 +13,9 @@ import { formatWhen } from '../../../lib/format'
 import { abilities, grantScope, granteeWords, roleRows } from '../../lib/roles'
 import { credentialWords } from '../../lib/words'
 import { nextEntry, nextHref } from '../../nav/navigation'
+import { Th } from '../Tip'
+import { Tip } from '../Tip'
 
-const th = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
 const td = 'px-3 py-2.5 align-top text-sm'
 const roleTone: Record<Role, string> = { Viewer: 'bg-slate-100 text-slate-700', Operator: 'bg-slate-100 text-slate-700', Approver: 'bg-amber-50 text-amber-800', Admin: 'bg-purple-50 text-purple-800' }
 
@@ -42,7 +43,7 @@ export function AccessTab({ component: c, namespace: ns }: { component: Connecte
       <div className="min-w-0 space-y-4">
         <section aria-labelledby="who-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
           <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-            <h2 id="who-title" className="text-base font-semibold">Who may do what here</h2>
+            <h2 id="who-title" className="text-base font-semibold">Who may do what here<Tip label="section:Who may do what here" /></h2>
             <Link to={nextHref(nextEntry('configuration'))} className="rounded-lg border border-[var(--color-border)] px-3.5 py-2 text-xs font-bold hover:bg-[var(--color-surface-muted)]">Manage access</Link>
           </div>
           {me.data && (
@@ -67,7 +68,7 @@ export function AccessTab({ component: c, namespace: ns }: { component: Connecte
             <div className="overflow-x-auto">
               <table className="w-full border-t border-[var(--color-border)]">
                 <caption className="sr-only">Roles that apply to {c.name}</caption>
-                <thead><tr><th className={th}>Who</th><th className={th}>Kind</th><th className={th}>Role</th><th className={th}>Applies to</th><th className={th}>Since</th><th className={th}>Granted by</th></tr></thead>
+                <thead><tr><Th>Who</Th><Th>Kind</Th><Th>Role</Th><Th>Applies to</Th><Th>Since</Th><Th>Granted by</Th></tr></thead>
                 <tbody>
                   {items.map((g) => (
                     <tr key={g.id} className="border-t border-[var(--color-border)]">
@@ -88,11 +89,11 @@ export function AccessTab({ component: c, namespace: ns }: { component: Connecte
         </section>
 
         <section aria-labelledby="roles-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-          <h2 id="roles-title" className="px-4 pt-4 text-base font-semibold">What each role can do</h2>
+          <h2 id="roles-title" className="px-4 pt-4 text-base font-semibold">What each role can do<Tip label="section:What each role can do" /></h2>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full border-t border-[var(--color-border)]">
               <caption className="sr-only">What each role can do</caption>
-              <thead><tr><th className={th}>Role</th>{abilities.map((a) => <th key={a.id} className={th}>{a.label}</th>)}</tr></thead>
+              <thead><tr><Th>Role</Th>{abilities.map((a) => <Th key={a.id} label={a.label}>{a.label}</Th>)}</tr></thead>
               <tbody>
                 {roleRows.map((r) => (
                   <tr key={r.role} className="border-t border-[var(--color-border)]">
@@ -114,7 +115,7 @@ export function AccessTab({ component: c, namespace: ns }: { component: Connecte
       </div>
 
       <section aria-labelledby="conn-title" className="h-fit rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-        <h2 id="conn-title" className="mb-2 text-base font-semibold">This connection</h2>
+        <h2 id="conn-title" className="mb-2 text-base font-semibold">This connection<Tip label="section:This connection" /></h2>
         <dl className="text-sm">
           <Fact label="Connected with">{ns ? credentialWords(ns.authType) : '—'}</Fact>
           <Fact label="Read (listen)">{c.reachable ? <span className="font-semibold text-green-700">Yes</span> : <span className="font-semibold text-amber-800">Not known: it cannot be reached</span>}</Fact>

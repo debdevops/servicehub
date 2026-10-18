@@ -1,6 +1,7 @@
 import { Clock, Inbox, TriangleAlert } from 'lucide-react'
 import { formatWhen } from '../../../lib/format'
 import type { HomeTotals } from '../../lib/words'
+import { Tip } from '../Tip'
 
 const n = (value: number) => value.toLocaleString('en-US')
 
@@ -9,7 +10,7 @@ function Tile({ icon, tone, title, children }: { icon: React.ReactNode; tone: st
     <section aria-label={title} className="flex items-start gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
       <span className={`mt-1 grid h-10 w-10 shrink-0 place-items-center rounded-full ${tone}`} aria-hidden="true">{icon}</span>
       <div className="min-w-0">
-        <h2 className="text-sm font-semibold text-[var(--color-text)]">{title}</h2>
+        <h2 className="flex items-center text-sm font-semibold text-[var(--color-text)]">{title}<Tip label={title} context="tile" /></h2>
         {children}
       </div>
     </section>

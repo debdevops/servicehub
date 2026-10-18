@@ -1,6 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Check, CircleHelp, Clock, RotateCcw, TriangleAlert } from 'lucide-react'
-import type { ReactNode } from 'react'
 import { useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { Pager } from '../../components/ui/Pager'
 import { useComponents } from '../../hooks/useComponents'
@@ -14,9 +13,11 @@ import { ReplayTable } from '../components/ReplayTable'
 import { ToolPageHeader } from '../components/ToolPageHeader'
 import { cloudLabel, cloudOf, parseScope } from '../lib/clouds'
 import { outcomeTone, recoveryWindows, type RecoveryWindowId } from '../lib/words'
+import { Th } from '../components/Tip'
+import { StatTile as Tile } from '../components/StatTile'
+import { Tip } from '../components/Tip'
 
 const field = 'rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-sm'
-const th = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
 const td = 'px-3 py-2.5 align-top text-sm'
 
 const endings: readonly { id: NonNullable<ReplayQuery['ending']> | ''; label: string }[] = [
@@ -106,29 +107,29 @@ export default function ReplaysPage() {
           <select className={field} value={namespaceId ?? ''} onChange={(e) => change({ connection: e.target.value || null })}>
             <option value="">all</option>{connections.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
           </select>
-        </label>
+        </label><Tip label="Connection:" />
         <label className="flex items-center gap-2 text-sm"><span className="text-[var(--color-text-muted)]">Outcome:</span>
           <select className={field} value={ending ?? ''} onChange={(e) => change({ ending: e.target.value || null })}>
             {endings.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}
           </select>
-        </label>
+        </label><Tip label="Outcome:" />
         <label className="flex items-center gap-2 text-sm"><span className="text-[var(--color-text-muted)]">Replayed by:</span>
           <select className={field} value={by ?? ''} onChange={(e) => change({ by: e.target.value || null })}>
             {bys.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
           </select>
-        </label>
+        </label><Tip label="Replayed by:" />
         <label className="flex items-center gap-2 text-sm"><span className="text-[var(--color-text-muted)]">When:</span>
           <select className={field} value={window} onChange={(e) => change({ window: e.target.value === '7d' ? null : e.target.value })}>
             {recoveryWindows.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
           </select>
-        </label>
+        </label><Tip label="When:" />
         {filtering && <button type="button" onClick={() => change({ ending: null, by: null, rule: null })} className="text-sm font-semibold text-[var(--color-primary-700)]">Clear filters</button>}
         {ruleId !== undefined && <span className="text-xs text-[var(--color-text-muted)]">Only what one Auto Replay rule sent.</span>}
         {by && <span className="text-xs text-[var(--color-text-muted)]">The tiles count everyone’s replays; the list is narrowed.</span>}
       </div>
 
       <section aria-labelledby="put-back" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-        <h2 id="put-back" className="px-4 py-3 text-base font-semibold">What was put back</h2>
+        <h2 id="put-back" className="px-4 py-3 text-base font-semibold">What was put back<Tip label="section:What was put back" /></h2>
         {replays.isError ? null : replays.isPending ? (
           <p role="status" className="border-t border-[var(--color-border)] px-4 py-6 text-sm text-[var(--color-text-muted)]">Loading…</p>
         ) : items.length === 0 ? (
@@ -143,11 +144,11 @@ export default function ReplaysPage() {
       </section>
 
       <section aria-labelledby="four-words" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-        <h2 id="four-words" className="px-4 py-3 text-base font-semibold">The four outcome words</h2>
+        <h2 id="four-words" className="px-4 py-3 text-base font-semibold">The four outcome words<Tip label="section:The four outcome words" /></h2>
         <div className="overflow-x-auto">
           <table className="w-full border-t border-[var(--color-border)]">
             <caption className="sr-only">What each outcome word means</caption>
-            <thead><tr><th className={th}>Word</th><th className={th}>Means</th><th className={th}>Does not mean</th></tr></thead>
+            <thead><tr><Th>Word</Th><Th>Means</Th><Th>Does not mean</Th></tr></thead>
             <tbody>
               {words.map((w) => (
                 <tr key={w.word} className="border-t border-[var(--color-border)]">
@@ -163,11 +164,3 @@ export default function ReplaysPage() {
   )
 }
 
-function Tile({ icon, title, note, children }: { icon: ReactNode; title: string; note: string; children: ReactNode }) {
-  return (
-    <div className="flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <span className="rounded-full bg-[var(--color-surface-muted)] p-2.5">{icon}</span>
-      <div><p className="text-sm font-semibold">{title}</p><p className="text-2xl font-bold">{children}</p><p className="text-xs text-[var(--color-text-muted)]">{note}</p></div>
-    </div>
-  )
-}

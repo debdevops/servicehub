@@ -9,10 +9,11 @@ import { usePagedList } from '../../../hooks/usePagedList'
 import { Pager } from '../../../components/ui/Pager'
 import { cloudLabel } from '../../lib/clouds'
 import { familyWords } from '../../lib/words'
+import { Th } from '../Tip'
+import { Tip } from '../Tip'
 
 export type AttentionTab = 'all' | 'approvals' | 'handOffs'
 type Tab = AttentionTab
-const th = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
 const td = 'px-3 py-2.5 align-top text-sm'
 
 const isMine = (i: PendingWorkItem) => i.kind === 'approval' || i.kind === 'unresolved'
@@ -46,7 +47,7 @@ export function AttentionTable({ items, coverage, me, showCloud = false, tab: co
 
   return (
     <section aria-labelledby="attention-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-      <h2 id="attention-title" className="px-4 pt-4 text-base font-semibold">Items that need your attention ({mine.length})</h2>
+      <h2 id="attention-title" className="px-4 pt-4 text-base font-semibold">Items that need your attention ({mine.length})<Tip label="section:Items that need your attention" /></h2>
       <div role="tablist" aria-label="Items that need your attention" className="flex gap-5 border-b border-[var(--color-border)] px-4">
         {tabs.map((t) => (
           <button key={t.id} role="tab" type="button" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
@@ -55,6 +56,7 @@ export function AttentionTable({ items, coverage, me, showCloud = false, tab: co
           </button>
         ))}
       </div>
+      <Tip label="Tabs" />
       {pager.total === 0 ? (
         <p className="px-4 py-6 text-sm text-[var(--color-text-muted)]">Nothing here needs a person right now.</p>
       ) : (
@@ -62,10 +64,10 @@ export function AttentionTable({ items, coverage, me, showCloud = false, tab: co
           <table className="w-full">
             <thead>
               <tr>
-                {showCloud && <th className={th}>Cloud</th>}
-                <th className={th}>Message</th><th className={th}>Component</th><th className={th}>Entity</th><th className={th}>Reason</th>
-                <th className={th}>Family (if hand-off)</th><th className={th}>Age</th><th className={th}>Type</th><th className={th}>What’s needed</th>
-                <th className={th}>Owner (notification channel)</th><th className={th}>Actions</th>
+                {showCloud && <Th context="attention">Cloud</Th>}
+                <Th context="attention">Message</Th><Th context="attention">Component</Th><Th context="attention">Entity</Th><Th context="attention">Reason</Th>
+                <Th context="attention">Family (if hand-off)</Th><Th context="attention">Age</Th><Th context="attention">Type</Th><Th context="attention">What’s needed</Th>
+                <Th context="attention">Owner (notification channel)</Th><Th context="attention">Actions</Th>
               </tr>
             </thead>
             <tbody>

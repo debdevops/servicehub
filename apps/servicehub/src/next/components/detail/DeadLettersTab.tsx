@@ -13,12 +13,13 @@ import { formatWhen } from '../../../lib/format'
 import { usePageSize } from '../../../lib/pageSize'
 import { permission } from '../../../lib/permissions'
 import { entityLabel } from '../../lib/entityRows'
+import { Th, ThHidden } from '../Tip'
+import { Tip } from '../Tip'
 
 type Showing = 'active' | 'resolved' | 'all'
 const showings: readonly { id: Showing; label: string }[] = [{ id: 'active', label: 'Stuck now' }, { id: 'resolved', label: 'No longer stuck' }, { id: 'all', label: 'All' }]
 const asShowing = (v: string | null): Showing => (v === 'resolved' || v === 'all' ? v : 'active')
 
-const th = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
 const td = 'px-3 py-2.5 align-top text-sm'
 const field = 'rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm'
 
@@ -104,23 +105,24 @@ export function DeadLettersTab({ component: c, me }: { component: ConnectedCompo
             <option value="">All</option>
             {(list.data?.entities ?? []).map((name) => <option key={name} value={name}>{name}</option>)}
           </select>
-        </label>
+        </label><Tip label="Entity:" />
         <label className="flex items-center gap-2 text-sm">State
           <select aria-label="State" className={field} value={showing} onChange={(e) => change({ status: e.target.value === 'active' ? null : e.target.value })}>
             {showings.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
           </select>
-        </label>
+        </label><Tip label="State:" />
         <label className="relative flex items-center">
           <Search className="pointer-events-none absolute left-2.5 h-4 w-4 text-[var(--color-text-muted)]" aria-hidden="true" />
-          <input type="search" aria-label="Search messages" placeholder="Message ID or reason" value={draft} onChange={(e) => setDraft(e.target.value)} className={`${field} pl-8`} />
+          <input type="search" data-shortcut="filter" aria-label="Search messages" placeholder="Message ID or reason" value={draft} onChange={(e) => setDraft(e.target.value)} className={`${field} pl-8`} />
         </label>
+        <Tip label="Search" />
         {filtering && <button type="button" onClick={() => { setDraft(''); change({ entity: null, status: null, reason: null, q: null }) }} className="text-sm font-semibold text-[var(--color-primary-700)]">Clear filters</button>}
       </div>
 
       {list.data && <FailureGroups groups={list.data.groups} other={list.data.otherReasons} selected={reason} onSelect={(r) => change({ reason: r })} />}
 
       <section aria-labelledby="dl-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-        <h2 id="dl-title" className="px-4 pt-4 text-base font-semibold">{title}</h2>
+        <h2 id="dl-title" className="px-4 pt-4 text-base font-semibold">{title}<Tip label="section:Dead-letter messages" /></h2>
         {list.isError ? (
           <p role="alert" className="px-4 py-6 text-sm text-red-800">The dead-letter messages could not be read.</p>
         ) : list.isPending ? (
@@ -135,7 +137,7 @@ export function DeadLettersTab({ component: c, me }: { component: ConnectedCompo
             <table className="w-full border-t border-[var(--color-border)]">
               <caption className="sr-only">Dead-letter messages of {c.name}</caption>
               <thead>
-                <tr><th className={th}><span className="sr-only">Select</span></th><th className={th}>Message</th><th className={th}>Entity</th><th className={th}>Reason</th><th className={th}>Description</th><th className={th}>Deliveries</th><th className={th}>Enqueued</th><th className={th}>{c.watched ? 'Detected' : 'Recorded'}</th><th className={th}>State</th><th className={th}>Actions</th></tr>
+                <tr><ThHidden><span className="sr-only">Select</span></ThHidden><Th>Message</Th><Th>Entity</Th><Th>Reason</Th><Th>Description</Th><Th>Deliveries</Th><Th>Enqueued</Th><Th label={c.watched ? 'Detected' : 'Recorded'}>{c.watched ? 'Detected' : 'Recorded'}</Th><Th>State</Th><Th>Actions</Th></tr>
               </thead>
               <tbody>
                 {items.map((m) => {

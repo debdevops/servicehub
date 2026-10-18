@@ -226,7 +226,7 @@ describe('one connection’s page (unit D2)', () => {
     vi.mocked(deadLettersApi.fetchDeadLetters).mockResolvedValue({ items: [letter(1)], paging: { total: 200, page: 1, pageSize: 5 }, groups: [], otherReasons: null, entities: [] })
     open('/next/aws/c/sqs/ns-aws', aws(), namespace({ id: 'ns-aws', provider: 'aws', capabilities: caps({ supportsRepeatablePeek: false }) }))
     const preview = await screen.findByRole('region', { name: /Recorded dead-letter messages \(showing 1 of 200\)/ })
-    expect(within(preview).getByText('Recorded', { selector: 'span' })).toBeInTheDocument() // the state chip (the column is also headed Recorded)
+    expect(within(preview).getByText('Recorded', { selector: 'td span' })).toBeInTheDocument() // the state chip (the column is also headed Recorded)
     expect(within(preview).queryByText('In dead-letter')).not.toBeInTheDocument()
   })
 

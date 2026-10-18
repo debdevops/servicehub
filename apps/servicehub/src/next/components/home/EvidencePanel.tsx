@@ -1,5 +1,6 @@
 import type { CoverageRow } from '../../../lib/api/coverage'
 import { evidenceSentence } from '../../lib/words'
+import { Tip } from '../Tip'
 
 const dot = { good: 'bg-green-600', caution: 'bg-amber-500', none: 'bg-slate-300' } as const
 
@@ -10,7 +11,7 @@ const dot = { good: 'bg-green-600', caution: 'bg-amber-500', none: 'bg-slate-300
 export function EvidencePanel({ cloudName, rows, heading }: { cloudName: string; rows: readonly CoverageRow[]; heading?: string }) {
   return (
     <section aria-labelledby="evidence-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <h2 id="evidence-title" className="mb-3 text-base font-semibold">{heading ?? `Evidence and replay outcome (${cloudName})`}</h2>
+      <h2 id="evidence-title" className="mb-3 text-base font-semibold">{heading ?? `Evidence and replay outcome (${cloudName})`}<Tip label="section:What the evidence can show" /></h2>
       {rows.length === 0 ? (
         <p className="text-sm text-[var(--color-text-muted)]">Nothing is covered here yet.</p>
       ) : (

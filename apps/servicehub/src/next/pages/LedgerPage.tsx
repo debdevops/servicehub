@@ -18,8 +18,9 @@ import { ToolPageHeader } from '../components/ToolPageHeader'
 import { cloudLabel, cloudOf, parseScope } from '../lib/clouds'
 import { entityLabel } from '../lib/entityRows'
 import { recoveryWindows } from '../lib/words'
+import { Th } from '../components/Tip'
+import { Tip } from '../components/Tip'
 
-const th = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
 const td = 'px-3 py-2.5 align-top text-sm'
 const field = 'rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-sm'
 type Tab = 'all' | 'waiting' | 'watching'
@@ -96,19 +97,19 @@ export default function LedgerPage() {
         <label className="flex items-center gap-2 text-sm"><span className="text-[var(--color-text-muted)]">Connection:</span>
           <select className={field} value={namespaceId ?? ''} onChange={(e) => change({ connection: e.target.value || null })}>
             <option value="">all</option>{connections.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-          </select></label>
+          </select></label><Tip label="Connection:" />
         <label className="flex items-center gap-2 text-sm"><span className="text-[var(--color-text-muted)]">State:</span>
           <select className={field} value={tab === 'watching' ? 'Observing' : (state ?? '')} disabled={tab !== 'all'} onChange={(e) => change({ state: e.target.value || null })}>
             <option value="">all</option>{states.map((s) => <option key={s} value={s}>{stateChip[s]}</option>)}
-          </select></label>
+          </select></label><Tip label="State:" />
         <label className="flex items-center gap-2 text-sm"><span className="text-[var(--color-text-muted)]">Who:</span>
           <select className={field} value={by ?? ''} onChange={(e) => change({ by: e.target.value || null })}>
             <option value="">anyone</option><option value="people">people</option><option value="autonomous">the Agent</option>
-          </select></label>
+          </select></label><Tip label="Who:" />
         <label className="flex items-center gap-2 text-sm"><span className="text-[var(--color-text-muted)]">When:</span>
           <select className={field} value={window} onChange={(e) => change({ window: e.target.value === '7d' ? null : e.target.value })}>
             {recoveryWindows.map((w) => <option key={w.id} value={w.id}>{w.label.toLowerCase()}</option>)}
-          </select></label>
+          </select></label><Tip label="When:" />
         {filtering && <button type="button" onClick={() => change({ state: null, by: null, connection: null })} className="text-sm font-semibold text-[var(--color-primary-700)]">Clear filters</button>}
       </div>
 
@@ -121,6 +122,7 @@ export default function LedgerPage() {
                 className={`-mb-px border-b-2 px-1 py-2.5 text-sm font-semibold ${tab === t.id ? 'border-[var(--color-primary-600)] text-[var(--color-primary-700)]' : 'border-transparent text-[var(--color-text-muted)]'}`}>{t.label} ({t.n ?? '…'})</button>
             ))}
           </div>
+          <Tip label="Tabs" />
 
           {tab === 'waiting' ? (
             waiting.isError ? <p role="alert" className="px-4 py-6 text-sm">What is waiting could not be read.</p>
@@ -129,7 +131,7 @@ export default function LedgerPage() {
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <caption className="sr-only">Entries waiting for a person</caption>
-                    <thead><tr><th scope="col" className={th}>Waiting</th><th scope="col" className={th}>Message</th><th scope="col" className={th}>Where</th><th scope="col" className={th}>State</th><th scope="col" className={th}>Why</th><th scope="col" className={th}>Actions</th></tr></thead>
+                    <thead><tr><Th context="ledger">Waiting</Th><Th context="ledger">Message</Th><Th context="ledger">Where</Th><Th context="ledger">State</Th><Th context="ledger">Why</Th><Th context="ledger">Actions</Th></tr></thead>
                     <tbody>
                       {waitingShown.map((i) => {
                         const hand = i.type === 'handOff' || i.kind === 'unresolved'
@@ -165,8 +167,8 @@ export default function LedgerPage() {
                 <caption className="sr-only">Recovery ledger entries, newest first</caption>
                 <thead>
                   <tr>
-                    <th scope="col" className={th}>When</th>{scope === 'all' && <th scope="col" className={th}>Cloud</th>}<th scope="col" className={th}>Message</th><th scope="col" className={th}>Where</th><th scope="col" className={th}>Who</th>
-                    <th scope="col" className={th}>State</th><th scope="col" className={th}>What was observed</th><th scope="col" className={th}>How, and its limits</th><th scope="col" className={th}>Actions</th>
+                    <Th context="ledger">When</Th>{scope === 'all' && <Th context="ledger">Cloud</Th>}<Th context="ledger">Message</Th><Th context="ledger">Where</Th><Th context="ledger">Who</Th>
+                    <Th context="ledger">State</Th><Th context="ledger">What was observed</Th><Th context="ledger">How, and its limits</Th><Th context="ledger">Actions</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -195,6 +197,7 @@ export default function LedgerPage() {
           <div className="flex flex-wrap items-center gap-3 border-t border-[var(--color-border)] px-4 py-3 text-xs text-[var(--color-text-muted)]">
             <span className="min-w-0 flex-1">Each entry keeps the message’s identity, who acted, every step, and what was observed. Entries are chained by hash, so a changed or missing entry is detectable.</span>
             <button type="button" onClick={() => void check()} disabled={chain.busy} className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-semibold text-[var(--color-text)] disabled:opacity-60"><Hash className="h-4 w-4" aria-hidden="true" /> {chain.busy ? 'Checking…' : 'Check the chain'}</button>
+            <Tip label="Check the chain" />
             <ExportEvidence window={window} />
           </div>
           {chain.result?.isValid && <p role="status" className="flex items-start gap-2 px-4 pb-3 text-sm"><ShieldCheck className="mt-0.5 h-4 w-4 text-[var(--color-success)]" aria-hidden="true" /><span><b>Chain verified</b> — {chain.result.eventsChecked.toLocaleString()} events, unbroken.</span></p>}
@@ -205,10 +208,10 @@ export default function LedgerPage() {
       </div>
 
       <section aria-labelledby="reading-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-        <h2 id="reading-title" className="text-base font-semibold">Reading the evidence</h2>
+        <h2 id="reading-title" className="text-base font-semibold">Reading the evidence<Tip label="section:Reading the evidence" /></h2>
         <table className="mt-2 w-full">
           <caption className="sr-only">What each observation permits</caption>
-          <thead><tr><th scope="col" className={th}>What was observed</th><th scope="col" className={th}>It permits</th><th scope="col" className={th}>It does not permit</th></tr></thead>
+          <thead><tr><Th context="ledger">What was observed</Th><Th context="ledger">It permits</Th><Th context="ledger">It does not permit</Th></tr></thead>
           <tbody>
             <tr className="border-t border-[var(--color-border)]"><td className={td}>Accepted by the cloud</td><td className={td}>“The send call succeeded.”</td><td className={td}>That it arrived, or was processed.</td></tr>
             <tr className="border-t border-[var(--color-border)]"><td className={td}>Did not return</td><td className={td}>“It did not come back to dead-letter in the window.”</td><td className={td}>That the consumer finished its work.</td></tr>

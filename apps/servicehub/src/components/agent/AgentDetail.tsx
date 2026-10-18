@@ -18,7 +18,8 @@ const kindWord = { watch: 'Watch', decide: 'Decide', act: 'Act', maintain: 'Main
  * this panel never gives it back (ADR-0016 D3), so it names a place instead of offering a button.
  */
 export interface AgentLinks {
-  readonly resume: { readonly to: string; readonly label: string; readonly where: string }
+  /** Where the 4.2.0 shell says to resume. Not needed where the page offers Resume itself (`resume` on `Detail`). */
+  readonly resume?: { readonly to: string; readonly label: string; readonly where: string }
   readonly ledger: string
 }
 
@@ -58,8 +59,8 @@ export function Detail({ agent, onPause, pausing, notAllowed, links, resume }: {
               </>
             ) : (
               <>
-                <p className="mt-1 text-[#92400e]">Its cycles are skipped, so it will not act. Nothing it already did is undone. Resume it from {links ? links.resume.where : 'Home’s agent bar'}.</p>
-                <Link to={links ? links.resume.to : '/'} className="mt-2 inline-block font-semibold text-[var(--color-primary-700)] hover:underline">{links ? links.resume.label : 'Go to Home to resume ›'}</Link>
+                <p className="mt-1 text-[#92400e]">Its cycles are skipped, so it will not act. Nothing it already did is undone. Resume it from {links?.resume ? links.resume.where : 'Home’s agent bar'}.</p>
+                <Link to={links?.resume ? links.resume.to : '/'} className="mt-2 inline-block font-semibold text-[var(--color-primary-700)] hover:underline">{links?.resume ? links.resume.label : 'Go to Home to resume ›'}</Link>
               </>
             )}
           </div>

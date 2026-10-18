@@ -158,7 +158,7 @@ describe('the Dead-letter messages tab (unit D3)', () => {
     expect(await screen.findByRole('heading', { name: 'Recorded dead-letter messages (showing 1 of 200)' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Look now' })).toBeInTheDocument()
     expect(screen.getAllByRole('note').some((n) => /what ServiceHub recorded when you last looked/.test(n.textContent ?? ''))).toBe(true)
-    expect(within(screen.getByRole('table')).getByText('Recorded', { selector: 'span' })).toBeInTheDocument()
+    expect(within(screen.getByRole('table')).getByText('Recorded', { selector: 'td span' })).toBeInTheDocument()
   })
 
   it('empty states say which kind of empty it is', async () => {

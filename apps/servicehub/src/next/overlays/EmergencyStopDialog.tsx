@@ -9,6 +9,7 @@ import { setEmergencyStop } from '../../lib/api/settings'
 import { formatWhen } from '../../lib/format'
 import { permission } from '../../lib/permissions'
 import type { NextOverlayBodyProps } from './registry'
+import { Tip } from '../components/Tip'
 
 type Tone = 'stops' | 'maybe' | 'stays'
 const what: readonly { tone: Tone; title: string; note: string }[] = [
@@ -59,7 +60,7 @@ export default function EmergencyStopDialog({ close }: NextOverlayBodyProps) {
 
       {!on && (
         <section aria-label="What stops">
-          <h3 className="mb-1.5 text-sm font-bold">What stops</h3>
+          <h3 className="mb-1.5 text-sm font-bold">What stops<Tip label="section:What stops" /></h3>
           <ul className="divide-y divide-[var(--color-border)] rounded-xl border border-[var(--color-border)]">
             {what.map((w) => (
               <li key={w.title} className="flex items-start gap-3 px-3 py-2 text-sm">
@@ -72,10 +73,12 @@ export default function EmergencyStopDialog({ close }: NextOverlayBodyProps) {
       )}
 
       <div className="space-y-1.5 text-sm">
-        <label htmlFor="stop-why" className="block font-bold">{on ? 'Why is it safe to resume?' : 'Why (recorded, and sent to your notification channels)'}</label>
+        <label htmlFor="stop-why" className="inline-block font-bold">{on ? 'Why is it safe to resume?' : 'Why (recorded, and sent to your notification channels)'}</label>
+        <Tip label="dialog:Why" />
         <input id="stop-why" value={reason} onChange={(e) => setReason(e.target.value)} placeholder={on ? 'recorded with your name' : 'e.g. Payment gateway outage; holding replays'}
           className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2" />
-        <label htmlFor="stop-word" className="block font-bold">Type {word} to confirm</label>
+        <label htmlFor="stop-word" className="inline-block font-bold">Type {word} to confirm</label>
+        <Tip label="dialog:Typed word" />
         <input id="stop-word" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="off" className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 font-mono" />
         <p className="text-xs text-[var(--color-text-muted)]">Turning it back off also needs a person. If ServiceHub cannot read whether emergency stop is on, it behaves as if it is on.</p>
       </div>

@@ -9,6 +9,7 @@ import { useSettings } from '../../hooks/useSettings'
 import { permission } from '../../lib/permissions'
 import { ToolPageHeader } from '../components/ToolPageHeader'
 import { nextEntry, nextHref } from '../nav/navigation'
+import { Tip } from '../components/Tip'
 
 const tabs = [
   { id: 'connections', label: 'Connections' }, { id: 'notifications', label: 'Notifications' }, { id: 'access', label: 'Access' },
@@ -45,6 +46,7 @@ export default function ConfigurationPage() {
               className={`-mb-px border-b-2 px-1 py-2.5 text-sm font-semibold ${tab === t.id ? 'border-[var(--color-primary-600)] text-[var(--color-primary-700)]' : 'border-transparent text-[var(--color-text-muted)]'}`}>{t.label}</button>
           ))}
         </div>
+        <Tip label="Tabs" />
       </div>
 
       <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">

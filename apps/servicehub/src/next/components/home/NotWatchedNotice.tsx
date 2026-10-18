@@ -5,6 +5,7 @@ import { toProblem } from '../../../lib/api/client'
 import type { Me } from '../../../lib/api/identity'
 import type { CloudProvider } from '../../../lib/api/namespaces'
 import { permission } from '../../../lib/permissions'
+import { Tip } from '../Tip'
 
 /**
  * Shown when some component is not watched in the background (build-plan unit C1). It says why, from the cloud's own reason, and
@@ -43,6 +44,7 @@ export function NotWatchedNotice({ cloudName, provider, namespaceIds, me, onLook
         {look.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
         {look.isPending ? 'Looking…' : 'Look now'}
       </button>
+      <Tip label="Look now" />
     </div>
   )
 }

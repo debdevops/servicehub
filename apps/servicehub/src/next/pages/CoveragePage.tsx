@@ -3,6 +3,8 @@ import { usePagedList } from '../../hooks/usePagedList'
 import { useCoverage } from '../../hooks/useCoverage'
 import type { CloudKind, CoverageRow, SupportStatus } from '../../lib/api/coverage'
 import { toProblem } from '../../lib/api/client'
+import { Th } from '../components/Tip'
+import { Tip } from '../components/Tip'
 
 const clouds: readonly CloudKind[] = ['azure', 'aws', 'gcp']
 
@@ -25,16 +27,16 @@ function CloudTable({ name, rows }: { name: string; rows: readonly CoverageRow[]
   const { items, pager } = usePagedList(rows)
   return (
     <section aria-label={name} className="mb-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <h2 className="mb-3 text-base font-semibold text-[var(--color-text)]">{name}</h2>
+      <h2 className="mb-3 text-base font-semibold text-[var(--color-text)]">{name}<Tip label="section:Cloud coverage" /></h2>
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-y border-[var(--color-border)] bg-[var(--color-surface-muted)] text-xs text-[var(--color-text-muted)]">
-            <th scope="col" className="px-2 py-2 font-semibold">Component</th>
-            <th scope="col" className="px-2 py-2 font-semibold">Where it gets stuck</th>
-            <th scope="col" className="px-2 py-2 font-semibold">How ServiceHub finds it</th>
-            <th scope="col" className="px-2 py-2 font-semibold">How it moves on</th>
-            <th scope="col" className="px-2 py-2 font-semibold">Status</th>
-            <th scope="col" className="px-2 py-2 font-semibold">Note</th>
+            <Th context="coverage">Component</Th>
+            <Th context="coverage">Where it gets stuck</Th>
+            <Th context="coverage">How ServiceHub finds it</Th>
+            <Th context="coverage">How it moves on</Th>
+            <Th context="coverage">Status</Th>
+            <Th context="coverage">Note</Th>
           </tr>
         </thead>
         <tbody>
@@ -77,7 +79,7 @@ export default function CoveragePage() {
   const rows = data.rows
   return (
     <div className="px-6 py-5">
-      <h1 className="text-2xl font-semibold text-[var(--color-text)]">What ServiceHub covers</h1>
+      <h1 className="text-2xl font-semibold text-[var(--color-text)]">What ServiceHub covers<Tip label="page:What ServiceHub covers" /></h1>
       <p className="mt-1 text-sm text-[var(--color-text-muted)]">
         Every component, on every cloud: where failed messages end up, how ServiceHub finds them, and whether it can move them on.
       </p>
@@ -85,7 +87,7 @@ export default function CoveragePage() {
       <dl className="my-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {tiles.map((tile) => (
           <div key={tile.status} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-            <dt className="text-sm font-semibold text-[var(--color-text)]">{tile.label}</dt>
+            <dt className="flex items-center text-sm font-semibold text-[var(--color-text)]">{tile.label}<Tip label={tile.label} context="coverage" /></dt>
             <dd className="text-2xl font-bold tabular-nums text-[var(--color-text)]">{rows.filter((r) => r.status === tile.status).length}</dd>
             <dd className="text-xs text-[var(--color-text-muted)]">{tile.hint}</dd>
           </div>

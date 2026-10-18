@@ -125,14 +125,14 @@ describe('Auto Replay rules (unit E5)', () => {
     open('/next/azure/rules')
     await user.click(await screen.findByRole('button', { name: 'Manage Image retries' }))
     expect(await screen.findByRole('switch', { name: 'Image retries is off' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /New rule/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^New rule$|^\+?\s*New rule$/ })).toBeInTheDocument()
     expect(screen.getAllByText(/you need the Approver role/).length).toBeGreaterThan(0)
   })
 
   it('opens the new-rule form from the page, and from a failure’s link (?rule=)', async () => {
     const user = userEvent.setup()
     open('/next/azure/rules')
-    await user.click(await screen.findByRole('button', { name: /New rule/ }))
+    await user.click(await screen.findByRole('button', { name: /^New rule$|^\+?\s*New rule$/ }))
     expect(await screen.findByRole('form', { name: 'New rule' })).toBeInTheDocument()
     open('/next/azure/rules?rule=h1')
     expect((await screen.findAllByRole('form', { name: 'New rule' })).length).toBeGreaterThan(0)
@@ -141,7 +141,7 @@ describe('Auto Replay rules (unit E5)', () => {
   it('makes rules only after a confirmation, and says when there was nothing to make', async () => {
     const user = userEvent.setup()
     open('/next/azure/rules')
-    await user.click(await screen.findByRole('button', { name: /Auto generate rules/ }))
+    await user.click(await screen.findByRole('button', { name: /^Auto generate rules$/ }))
     expect(rulesApi.generateRules).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Yes, make them' }))
     expect(await screen.findByText(/Nothing to make/)).toBeInTheDocument()

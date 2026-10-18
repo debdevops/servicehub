@@ -1,29 +1,35 @@
-import { useEffect } from 'react'
-import { Link, NavLink, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, NavLink, Outlet, useParams } from 'react-router-dom'
 import { onRequestComponents, sidebarComponents, useCoverage } from '../../hooks/useCoverage'
 import { useComponents } from '../../hooks/useComponents'
 import { HeaderStatus } from '../components/HeaderStatus'
 import { OverlayHost } from '../components/OverlayHost'
 import { StopBand } from '../components/StopBand'
+import { useNextShortcuts } from '../lib/useNextShortcuts'
 import { cloudHeaderClass, cloudLabel, cloudOf, cloudScopes, parseScope, type CloudScope } from '../lib/clouds'
 import { NEXT_ROOT, nextEntriesIn, nextEntry, nextHref, type NextPage } from '../nav/navigation'
+import type { ColumnHelp } from '../../content/columns'
+import { Tip } from '../components/Tip'
 
 const linkBase = 'flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]'
 const linkOn = 'bg-[var(--color-primary-50)] font-semibold text-[var(--color-primary-700)]'
 const groupTitle = 'mx-2.5 mb-1 mt-4 text-xs font-bold text-[var(--color-text)]'
 
-function MenuLink({ to, end, children }: { to: string; end?: boolean; children: React.ReactNode }) {
+/** A menu link with its (i) beside it: hovering the (i) says what the page is, in the words of the navigation array itself. */
+function MenuLink({ to, end, children, help }: { to: string; end?: boolean; children: React.ReactNode; help?: ColumnHelp }) {
   return (
-    <NavLink to={to} end={end} className={({ isActive }) => `${linkBase} ${isActive ? linkOn : ''}`}>
-      {children}
-    </NavLink>
+    <div className="flex items-center">
+      <NavLink to={to} end={end} className={({ isActive }) => `${linkBase} min-w-0 flex-1 ${isActive ? linkOn : ''}`}>
+        {children}
+      </NavLink>
+      {help && <Tip help={help} />}
+    </div>
   )
 }
 
 /** The red number beside a tool link. Nothing is drawn for zero or for a count that has not been read. */
 function Badge({ count, label }: { count: number | null; label: string }) {
   if (!count) return null
-  return <span className="ml-auto rounded-full bg-red-600 px-1.5 text-[11px] font-bold text-white" aria-label={`${count} ${label}`}>{count}</span>
+  return <span className="ml-auto rounded-full bg-red-600 px-1.5 text-[11px] font-bold text-white" aria-label={`${count} ${label}`} title="How many items are waiting for a person. It is the same number as on the page, from the same read.">{count}</span>
 }
 
 /**
@@ -39,16 +45,7 @@ function Badge({ count, label }: { count: number | null; label: string }) {
  */
 export function NextLayout() {
   const params = useParams()
-  const navigate = useNavigate()
-  const { pathname } = useLocation()
-  // ⌘K / Ctrl-K opens Search from anywhere in the shell (F7).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); navigate(nextHref(nextEntry('search'), {}, pathname)) }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [navigate, pathname])
+  useNextShortcuts() // ⌘K, ?, / and R (content/shortcuts.ts)
   // `configuration` and `coverage` are not clouds: on those pages the menu shows every cloud's components.
   const scope: CloudScope = parseScope(params.cloud)
   const cloud = cloudOf(scope)
@@ -69,11 +66,9 @@ export function NextLayout() {
   return (
     <div className="min-h-screen bg-[var(--color-surface-muted)]">
       <header className={`flex h-[var(--header-height)] items-center gap-4 px-5 text-white ${cloudHeaderClass[scope]}`}>
-        <span className="text-lg font-bold">ServiceHub</span>
+        <span className="text-lg font-bold">ServiceHub <span className="font-semibold text-white/80">5.0.0</span></span>
         <span className="text-sm font-semibold">{cloudLabel[scope]}</span>
-        <span className="rounded-md bg-white/15 px-2.5 py-1 text-xs font-semibold">5.0.0 layout · preview</span>
         <HeaderStatus />
-        <Link to="/" className="rounded-md bg-white/15 px-2.5 py-1 text-xs font-semibold hover:bg-white/25">Back to 4.2.0</Link>
       </header>
       <StopBand />
 
@@ -91,15 +86,16 @@ export function NextLayout() {
                 </Link>
               </li>
             ))}
+            <li className="flex items-center"><Tip label="menu:Cloud" /></li>
           </ul>
 
-          <MenuLink to={home} end>Home</MenuLink>
+          <MenuLink to={home} end help={{ title: scope === 'all' ? 'All clouds' : 'Home', text: nextEntry(scope === 'all' ? 'home-all' : 'home').description }}>Home</MenuLink>
 
-          <h2 className={groupTitle}>PaaS Components</h2>
+          <h2 className={groupTitle}>PaaS Components<Tip label="menu:PaaS Components" /></h2>
           <ul>
             {sidebarComponents(rows, cloud).map((row) => (
               <li key={row.componentKey}>
-                <MenuLink to={nextHref(nextEntry('component-list'), { cloud: row.cloud, component: row.componentKey })}>
+                <MenuLink to={nextHref(nextEntry('component-list'), { cloud: row.cloud, component: row.componentKey })} help={{ title: row.name, text: `Failed messages end up in: ${row.stuckPlace}. ${row.statusWords}.${row.note ? ` ${row.note}.` : ''} Open it to see your connections to ${row.name}.` }}>
                   {row.name}
                   {row.status === 'beingValidated' && <span className="ml-auto text-[11px] text-[var(--color-warning)]">Not yet validated</span>}
                 </MenuLink>
@@ -107,21 +103,24 @@ export function NextLayout() {
             ))}
           </ul>
 
-          <h2 className={groupTitle}>Later (On request)</h2>
+          <h2 className={groupTitle}>Later (On request)<Tip label="menu:Later" /></h2>
           <ul>
             {onRequestComponents(rows, cloud).map((row) => (
-              <li key={row.componentKey} className={`${linkBase} text-[var(--color-text-muted)] hover:bg-transparent`}>
-                {row.name}
-                <span className="ml-auto rounded border border-[var(--color-border)] px-1.5 text-[11px]">On request</span>
+              <li key={row.componentKey} className="flex items-center">
+                <span className={`${linkBase} min-w-0 flex-1 text-[var(--color-text-muted)] hover:bg-transparent`}>
+                  {row.name}
+                  <span className="ml-auto rounded border border-[var(--color-border)] px-1.5 text-[11px]">On request</span>
+                </span>
+                <Tip help={{ title: row.name, text: `${row.name} is not built yet. It is built only if someone asks for it, so nothing here depends on it.` }} />
               </li>
             ))}
           </ul>
 
-          <h2 className={groupTitle}>Operational Tools</h2>
+          <h2 className={groupTitle}>Operational Tools<Tip label="menu:Operational Tools" /></h2>
           <ul>
             {tools.map((entry) => (
               <li key={entry.id}>
-                <MenuLink to={nextHref(entry, { cloud: scope })}>
+                <MenuLink to={nextHref(entry, { cloud: scope })} help={{ title: entry.label, text: entry.description }}>
                   <entry.icon className="h-4 w-4 shrink-0" />
                   {entry.label}
                   {entry.badge === 'needsYou' && <Badge count={badges?.needsYou ?? null} label="need your attention" />}
@@ -134,7 +133,7 @@ export function NextLayout() {
           <ul className="mt-4 border-t border-[var(--color-border)] pt-3">
             {reference.map((entry) => (
               <li key={entry.id}>
-                <MenuLink to={nextHref(entry)}>
+                <MenuLink to={nextHref(entry)} help={{ title: entry.label, text: entry.description }}>
                   <entry.icon className="h-4 w-4 shrink-0" />
                   {entry.label}
                 </MenuLink>

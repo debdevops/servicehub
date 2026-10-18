@@ -10,6 +10,7 @@ import { cloudLabel } from '../../lib/clouds'
 import { outcomeFootnote, recoveryWindows, type RecoveryWindowId } from '../../lib/words'
 import { nextEntry, nextHref } from '../../nav/navigation'
 import { ReplayTable } from '../ReplayTable'
+import { Tip } from '../Tip'
 
 const field = 'rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm'
 
@@ -23,7 +24,7 @@ const asEnding = (v: string | null) => endings.find((e) => e.id !== '' && e.id =
 function Tile({ title, children, note }: { title: string; children: React.ReactNode; note: string }) {
   return (
     <section aria-label={title} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <h2 className="text-sm font-semibold">{title}</h2>
+      <h2 className="flex items-center text-sm font-semibold">{title}<Tip label={title} /></h2>
       <p className="text-3xl font-bold leading-tight">{children}</p>
       <p className="text-xs text-[var(--color-text-muted)]">{note}</p>
     </section>
@@ -75,12 +76,12 @@ export function RecoveryTab({ component: c, canProve }: { component: ConnectedCo
           <select aria-label="Period" className={field} value={window} onChange={(e) => change({ window: e.target.value === '7d' ? null : e.target.value })}>
             {recoveryWindows.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
           </select>
-        </label>
+        </label><Tip label="Period:" />
         <label className="flex items-center gap-2 text-sm">Outcome
           <select aria-label="Outcome" className={field} value={ending ?? ''} onChange={(e) => change({ ending: e.target.value || null })}>
             {endings.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}
           </select>
-        </label>
+        </label><Tip label="Outcome:" />
         {filtering && <button type="button" onClick={() => change({ ending: null })} className="text-sm font-semibold text-[var(--color-primary-700)]">Clear filters</button>}
       </div>
 
@@ -103,7 +104,7 @@ export function RecoveryTab({ component: c, canProve }: { component: ConnectedCo
 
       <section aria-labelledby="rec-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-          <h2 id="rec-title" className="text-base font-semibold">Replays on this component</h2>
+          <h2 id="rec-title" className="text-base font-semibold">Replays on this component<Tip label="section:Replays on this component" /></h2>
           <Link to={nextHref(nextEntry('replays'), { cloud: c.cloud })} className="text-xs font-semibold text-[var(--color-primary-700)]">Open Replay history →</Link>
         </div>
         {replays.isError ? null : replays.isPending ? (

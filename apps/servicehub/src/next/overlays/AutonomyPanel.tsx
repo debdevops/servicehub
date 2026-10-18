@@ -5,8 +5,9 @@ import { useCoverage } from '../../hooks/useCoverage'
 import { fetchAuthority } from '../../lib/api/signatures'
 import { evidenceSentence } from '../lib/words'
 import type { NextOverlayBodyProps } from './registry'
+import { Th } from '../components/Tip'
+import { Tip } from '../components/Tip'
 
-const th = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
 const td = 'px-3 py-2.5 align-top text-sm'
 const pct = (r: number) => `${Math.round(r * 100)}%`
 const Item = ({ tone, title, note }: { tone: 'ok' | 'warn'; title: string; note: string }) => (
@@ -35,10 +36,10 @@ export default function AutonomyPanel(_props: NextOverlayBodyProps) { // eslint-
       <p className="rounded-xl border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-3.5 py-2.5 text-sm"><b>It is not “a few approvals”.</b> The Agent earns the right from <b>verified</b> results for one kind of failure on one cloud. Approving a message that then comes back does not count.</p>
 
       <section aria-label="The ladder">
-        <h3 className="mb-1.5 text-sm font-bold">The ladder</h3>
+        <h3 className="mb-1.5 text-sm font-bold">The ladder<Tip label="section:The ladder" /></h3>
         <table className="w-full border border-[var(--color-border)]">
           <caption className="sr-only">The levels and what each takes</caption>
-          <thead><tr className="bg-[var(--color-surface-muted)]"><th scope="col" className={th}>Level</th><th scope="col" className={th}>What the Agent does</th><th scope="col" className={th}>What it takes</th></tr></thead>
+          <thead><tr className="bg-[var(--color-surface-muted)]"><Th>Level</Th><Th>What the Agent does</Th><Th>What it takes</Th></tr></thead>
           <tbody>
             <tr className="border-t border-[var(--color-border)]"><td className={`${td} font-semibold`}>L3 Approve</td><td className={td}>Prepares the replay. <b>A person approves each message.</b></td><td className={td}>Where every new kind of failure starts</td></tr>
             <tr className="border-t border-[var(--color-border)]"><td className={`${td} font-semibold`}>L4 Standing</td><td className={td}>Replays that kind <b>without asking each time</b>, within its limits.</td><td className={td}>{standing}</td></tr>
@@ -48,7 +49,7 @@ export default function AutonomyPanel(_props: NextOverlayBodyProps) { // eslint-
       </section>
 
       <section aria-label="What it depends on">
-        <h3 className="mb-1.5 text-sm font-bold">What it depends on</h3>
+        <h3 className="mb-1.5 text-sm font-bold">What it depends on<Tip label="section:What it depends on" /></h3>
         <ul className="divide-y divide-[var(--color-border)] rounded-xl border border-[var(--color-border)]">
           <Item tone="ok" title="Counted per kind of failure, on one cloud" note="Trust earned for one never carries to another" />
           <Item tone="ok" title="Only verified results count" note="Unverified, returned and failed results add nothing" />
@@ -59,10 +60,10 @@ export default function AutonomyPanel(_props: NextOverlayBodyProps) { // eslint-
       </section>
 
       <section aria-label="Which clouds can earn it">
-        <h3 className="mb-1.5 text-sm font-bold">Which clouds can earn it</h3>
+        <h3 className="mb-1.5 text-sm font-bold">Which clouds can earn it<Tip label="section:Which clouds can earn it" /></h3>
         <table className="w-full border border-[var(--color-border)]">
           <caption className="sr-only">Which components can earn autonomy</caption>
-          <thead><tr className="bg-[var(--color-surface-muted)]"><th scope="col" className={th}>Component</th><th scope="col" className={th}>Can it earn L4 and L5?</th><th scope="col" className={th}>Why</th></tr></thead>
+          <thead><tr className="bg-[var(--color-surface-muted)]"><Th>Component</Th><Th>Can it earn L4 and L5?</Th><Th>Why</Th></tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} className="border-t border-[var(--color-border)]">
@@ -77,7 +78,7 @@ export default function AutonomyPanel(_props: NextOverlayBodyProps) { // eslint-
       </section>
 
       <section aria-label="What takes it away">
-        <h3 className="mb-1.5 text-sm font-bold">What takes it away</h3>
+        <h3 className="mb-1.5 text-sm font-bold">What takes it away<Tip label="section:What takes it away" /></h3>
         <ul className="divide-y divide-[var(--color-border)] rounded-xl border border-[var(--color-border)]">
           <Item tone="warn" title="A duplicate" note="Straight back to approval" />
           <Item tone="warn" title="The verified rate drops" note="Back to approval" />
@@ -87,7 +88,7 @@ export default function AutonomyPanel(_props: NextOverlayBodyProps) { // eslint-
       </section>
 
       <section aria-label="Even at L4, the Agent is limited by">
-        <h3 className="mb-1 text-sm font-bold">Even at L4, the Agent is limited by</h3>
+        <h3 className="mb-1 text-sm font-bold">Even at L4, the Agent is limited by<Tip label="section:Even at L4, the Agent is limited by" /></h3>
         <p className="text-sm">Rate limits, a cap on how often the same failure may come back, a circuit breaker that stops a rule that keeps failing, and the emergency stop. How long it takes is how long it takes to collect the verified fixes for that kind of failure: it is a count, not a date.</p>
       </section>
     </div>

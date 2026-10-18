@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { componentTabs } from '../../nav/navigation'
+import { Tip } from '../Tip'
 
 /**
  * The tabs of one connection's page. A tab is a view of this page (`?tab=`), not a place of its own, so each is a link and the URL
@@ -23,6 +24,7 @@ export function DetailTabs({ basePath, active, hasStuck, deadLetterCount }: { ba
           </Link>
         )
       })}
+      <Tip label="Tabs" />
     </nav>
   )
 }

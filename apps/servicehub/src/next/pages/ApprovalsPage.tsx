@@ -14,8 +14,9 @@ import { permission } from '../../lib/permissions'
 import { ToolPageHeader } from '../components/ToolPageHeader'
 import { cloudLabel, cloudOf, parseScope } from '../lib/clouds'
 import { roleWords } from '../lib/words'
+import { Th, ThHidden } from '../components/Tip'
+import { Tip } from '../components/Tip'
 
-const th = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
 const td = 'px-3 py-2.5 align-top text-sm'
 /** An address carries the ticked ids; this many keeps it well inside what every browser and proxy accepts. */
 const MAX_REVIEW = 100
@@ -80,7 +81,7 @@ export default function ApprovalsPage() {
         <>
           <section aria-labelledby="waiting-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
             <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
-              <h2 id="waiting-title" className="text-base font-semibold">Waiting for approval ({items.length})</h2>
+              <h2 id="waiting-title" className="text-base font-semibold">Waiting for approval ({items.length})<Tip label="section:Waiting for approval" /></h2>
               {chosen.length > 0 && (blocked || tooMany
                 ? <span className="text-xs text-[var(--color-text-muted)]">{tooMany ? `Review up to ${MAX_REVIEW} at a time.` : mayOn(blocked!).reason}</span>
                 : <Link to={reviewSelected} className="rounded-lg bg-[var(--color-primary-600)] px-3.5 py-2 text-sm font-semibold text-white">Review {chosen.length} selected…</Link>)}
@@ -93,14 +94,14 @@ export default function ApprovalsPage() {
                   <caption className="sr-only">Replays waiting for approval</caption>
                   <thead>
                     <tr>
-                      <th scope="col" className="w-8 px-3 py-2">
+                      <ThHidden className="w-8 px-3 py-2">
                         <input type="checkbox" className="h-4 w-4" checked={allTicked} aria-label={`Select all ${items.length} waiting replays`}
                           onChange={() => setTicked(allTicked ? new Set() : new Set(items.map(idOf)))} />
-                      </th>
-                      {scope === 'all' && <th scope="col" className={th}>Cloud</th>}
-                      <th scope="col" className={th}>Message</th><th scope="col" className={th}>Component</th><th scope="col" className={th}>Entity</th>
-                      <th scope="col" className={th}>Reason</th><th scope="col" className={th}>Why the Agent asked</th><th scope="col" className={th}>Waiting</th>
-                      <th scope="col" className={th}>Owner (notification channel)</th><th scope="col" className={th}>Actions</th>
+                      </ThHidden>
+                      {scope === 'all' && <Th context="attention">Cloud</Th>}
+                      <Th context="attention">Message</Th><Th context="attention">Component</Th><Th context="attention">Entity</Th>
+                      <Th context="attention">Reason</Th><Th context="attention">Why the Agent asked</Th><Th context="attention">Waiting</Th>
+                      <Th context="attention">Owner (notification channel)</Th><Th context="attention">Actions</Th>
                     </tr>
                   </thead>
                   <tbody>
@@ -137,7 +138,7 @@ export default function ApprovalsPage() {
           </section>
 
           <section aria-labelledby="less-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-            <h2 id="less-title" className="text-base font-semibold">How to be asked less often</h2>
+            <h2 id="less-title" className="text-base font-semibold">How to be asked less often<Tip label="section:How to be asked less often" /></h2>
             <p className="mt-2 text-sm">
               The Agent stops asking about a kind of failure once that fix has proved itself: enough verified replays, at a high enough success rate. That can only happen on a component that can reach Verified.
               {manual > 0 && ` ${manual === items.length ? 'Every item here is' : `${manual} of these ${manual === 1 ? 'is' : 'are'}`} on a component that cannot, so a person decides every replay there.`}

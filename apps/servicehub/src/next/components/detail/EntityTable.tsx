@@ -6,8 +6,9 @@ import type { ConnectedComponent, Count } from '../../../lib/api/components'
 import { formatWhen } from '../../../lib/format'
 import { entityRows, fullName } from '../../lib/entityRows'
 import { countWords, recordedWords } from '../../lib/words'
+import { Th, ThHidden } from '../Tip'
+import { Tip } from '../Tip'
 
-const th = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
 const td = 'px-3 py-2.5 align-top text-sm'
 
 /**
@@ -31,7 +32,7 @@ export function EntityTable({ component, active, detail }: {
 
   return (
     <section aria-labelledby="places-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-      <h2 id="places-title" className="px-4 pt-4 text-base font-semibold">Queues, topics and subscriptions</h2>
+      <h2 id="places-title" className="px-4 pt-4 text-base font-semibold">Queues, topics and subscriptions<Tip label="section:Queues, topics and subscriptions" /></h2>
       {component.entities.length === 0 ? (
         <p className="px-4 py-6 text-sm text-[var(--color-text-muted)]">
           {component.reachable ? 'No queue or subscription is listed for this connection.' : 'Its places cannot be listed until it can be reached.'}
@@ -42,15 +43,15 @@ export function EntityTable({ component, active, detail }: {
             <caption className="sr-only">Queues, topics and subscriptions of {component.name}</caption>
             <thead>
               <tr>
-                <th className={th}>Entity</th>
-                <th className={th}>Type</th>
-                {showStore && <th className={th}>Dead-letter place</th>}
-                {showActive && <th className={th}>Active</th>}
-                <th className={th}>In dead-letter now</th>
-                {showRecorded && <th className={th}>Recorded</th>}
-                <th className={th}>Needs you</th>
-                <th className={th}>{showRecorded ? 'Last look' : 'Last observed'}</th>
-                <th className={th}><span className="sr-only">Actions</span></th>
+                <Th>Entity</Th>
+                <Th>Type</Th>
+                {showStore && <Th>Dead-letter place</Th>}
+                {showActive && <Th>Active</Th>}
+                <Th>In dead-letter now</Th>
+                {showRecorded && <Th>Recorded</Th>}
+                <Th>Needs you</Th>
+                <Th label={showRecorded ? 'Last look' : 'Last observed'}>{showRecorded ? 'Last look' : 'Last observed'}</Th>
+                <ThHidden><span className="sr-only">Actions</span></ThHidden>
               </tr>
             </thead>
             <tbody>

@@ -7,6 +7,8 @@ import { nextEntry, nextHref } from '../../nav/navigation'
 import { Pager } from '../../../components/ui/Pager'
 import { usePagedList } from '../../../hooks/usePagedList'
 import { countWords, recordedWords, statusWords } from '../../lib/words'
+import { Th, ThHidden } from '../Tip'
+import { Tip } from '../Tip'
 
 const th = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
 const td = 'px-3 py-2.5 align-top text-sm text-[var(--color-text)]'
@@ -27,13 +29,13 @@ function EntityTable({ component: c, showRecorded, now, detail }: {
       <table className="w-full" aria-label={`Places in ${c.name} ${c.componentName}`}>
         <thead>
           <tr>
-            <th className={th}>Queues and subscriptions ({c.entities.length})</th>
-            <th className={th}>Type</th>
-            <th className={th}>In dead-letter now</th>
-            {showRecorded && <th className={th}>Recorded</th>}
-            <th className={th}>Needs you</th>
-            <th className={th}>{showRecorded ? 'Last look' : 'Last observed'}</th>
-            <th className={th}><span className="sr-only">View</span></th>
+            <Th label="Queues and subscriptions">Queues and subscriptions ({c.entities.length})</Th>
+            <Th>Type</Th>
+            <Th>In dead-letter now</Th>
+            {showRecorded && <Th>Recorded</Th>}
+            <Th>Needs you</Th>
+            <Th label={showRecorded ? 'Last look' : 'Last observed'}>{showRecorded ? 'Last look' : 'Last observed'}</Th>
+            <ThHidden><span className="sr-only">View</span></ThHidden>
           </tr>
         </thead>
         <tbody>
@@ -78,12 +80,13 @@ export function ComponentTable({ components, cloudName, canConnect = true, lookN
   return (
     <section aria-labelledby="components-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-        <h2 id="components-title" className="text-base font-semibold">{cloudName} PaaS components ({components.length})</h2>
+        <h2 id="components-title" className="text-base font-semibold">{cloudName} PaaS components ({components.length})<Tip label="section:Components" /></h2>
         <div className="flex items-center gap-2">
           {lookNow}
           <Link to={nextHref(nextEntry('connect'), {}, pathname)} aria-disabled={!canConnect} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-primary-600)] px-3.5 py-2 text-xs font-bold text-white hover:bg-[var(--color-primary-700)]">
             <Plus className="h-4 w-4" aria-hidden="true" /> Connect a component
           </Link>
+          <Tip label="Connect a component" />
         </div>
       </div>
 
@@ -96,16 +99,16 @@ export function ComponentTable({ components, cloudName, canConnect = true, lookN
           <table className="w-full border-t border-[var(--color-border)]">
             <thead>
               <tr>
-                <th className={`${th} w-8`}><span className="sr-only">Expand</span></th>
-                <th className={th}>Name</th>
-                <th className={th}>Type</th>
-                <th className={th}>Connection</th>
-                <th className={th}>Status</th>
-                <th className={th}>In dead-letter now</th>
-                {showRecorded && <th className={th}>Recorded</th>}
-                <th className={th}>Needs you</th>
-                <th className={th}>{showRecorded ? 'Last look' : 'Last observed'}</th>
-                <th className={th}>Actions</th>
+                <ThHidden className={`${th} w-8`}><span className="sr-only">Expand</span></ThHidden>
+                <Th>Name</Th>
+                <Th>Type</Th>
+                <Th>Connection</Th>
+                <Th>Status</Th>
+                <Th>In dead-letter now</Th>
+                {showRecorded && <Th>Recorded</Th>}
+                <Th>Needs you</Th>
+                <Th label={showRecorded ? 'Last look' : 'Last observed'}>{showRecorded ? 'Last look' : 'Last observed'}</Th>
+                <Th>Actions</Th>
               </tr>
             </thead>
             {pageRows.map((c) => {

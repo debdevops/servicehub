@@ -3,15 +3,17 @@ import { useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { useOverlayTitle } from '../../components/overlays/overlayTitle'
 import { nextHelpAnswers } from '../content/help'
+import { nextShortcuts } from '../content/shortcuts'
 import { cloudOf, parseScope } from '../lib/clouds'
 import { nextEntry, nextHref } from '../nav/navigation'
 import type { NextOverlayBodyProps } from './registry'
+import { Tip } from '../components/Tip'
 
 /**
  * Help (build-plan unit F6; design `d09-help`), at `?panel=help`: "How do I…" with a search box, over whatever you were doing. Each answer is
  * a few sentences and a link to the page that does it; `?topic=<id>` opens on that answer. Content is `next/content/help.ts`.
  * **Not yet here:** the per-cloud step-by-step guides (their screenshots are the 4.2.0 screens and are re-shot at the release, unit I3)
- * and the keyboard shortcuts.
+
  */
 export default function HelpPanel(_props: NextOverlayBodyProps) { // eslint-disable-line @typescript-eslint/no-unused-vars
   const [params] = useSearchParams()
@@ -34,7 +36,7 @@ export default function HelpPanel(_props: NextOverlayBodyProps) { // eslint-disa
         <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search help…" className="w-full bg-transparent outline-none" />
       </label>
       <section aria-label="How do I…">
-        <h3 className="mb-1 text-sm font-bold">How do I…</h3>
+        <h3 className="mb-1 text-sm font-bold">How do I…<Tip label="section:How do I…" /></h3>
         {shown.length === 0 ? <p className="text-[var(--color-text-muted)]">Nothing matches “{q}”. Try fewer words.</p> : (
           <ul className="divide-y divide-[var(--color-border)] rounded-xl border border-[var(--color-border)]">
             {shown.map((a) => (
@@ -51,8 +53,19 @@ export default function HelpPanel(_props: NextOverlayBodyProps) { // eslint-disa
           </ul>
         )}
       </section>
+      <section aria-label="Keyboard">
+        <h3 className="mb-1 text-sm font-bold">Keyboard<Tip label="section:Keyboard" /></h3>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+          {nextShortcuts.map((k) => (
+            <div key={k.keys} className="contents">
+              <dt><kbd className="rounded border border-[var(--color-border)] bg-[var(--color-surface-muted)] px-1.5 py-0.5 font-mono text-xs">{k.keys}</kbd></dt>
+              <dd className="text-[var(--color-text-muted)]">{k.does}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
       <section aria-label="More">
-        <h3 className="mb-1 text-sm font-bold">More</h3>
+        <h3 className="mb-1 text-sm font-bold">More<Tip label="section:More" /></h3>
         <p className="flex flex-wrap gap-x-4 gap-y-1 font-semibold text-[var(--color-primary-700)]">
           <Link to={nextHref(nextEntry('coverage'))} className="hover:underline">What ServiceHub covers →</Link>
           <Link to={nextHref(nextEntry('security'), {}, pathname)} className="hover:underline">Security and data →</Link>

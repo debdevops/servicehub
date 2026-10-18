@@ -5,8 +5,9 @@ import type { ConnectedComponent } from '../../../lib/api/components'
 import { auditActionWords } from '../../../lib/auditWords'
 import { formatWhen } from '../../../lib/format'
 import { usePageSize } from '../../../lib/pageSize'
+import { Th } from '../Tip'
+import { Tip } from '../Tip'
 
-const th = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
 const td = 'px-3 py-2.5 align-top text-sm'
 const field = 'rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm'
 
@@ -49,12 +50,12 @@ export function AuditTab({ component: c }: { component: ConnectedComponent }) {
             <option value="">All</option>
             {actionChoices.map(([id, words]) => <option key={id} value={id}>{words}</option>)}
           </select>
-        </label>
+        </label><Tip label="Action:" />
         {action && <button type="button" onClick={() => change({ action: null })} className="text-sm font-semibold text-[var(--color-primary-700)]">Clear filters</button>}
       </div>
 
       <section aria-labelledby="audit-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-        <h2 id="audit-title" className="px-4 pt-4 text-base font-semibold">What happened here</h2>
+        <h2 id="audit-title" className="px-4 pt-4 text-base font-semibold">What happened here<Tip label="section:What happened here" /></h2>
         {audit.isError ? (
           <p role="alert" className="px-4 py-6 text-sm text-red-800">The audit trail could not be read. Nothing is shown rather than a list that may be missing what happened.</p>
         ) : audit.isPending ? (
@@ -65,7 +66,7 @@ export function AuditTab({ component: c }: { component: ConnectedComponent }) {
           <div className="mt-3 overflow-x-auto">
             <table className="w-full border-t border-[var(--color-border)]">
               <caption className="sr-only">What happened on {c.name}, newest first</caption>
-              <thead><tr><th className={th}>When</th><th className={th}>Who</th><th className={th}>What</th><th className={th}>Entity</th><th className={th}>Result</th><th className={th}>Detail</th></tr></thead>
+              <thead><tr><Th>When</Th><Th>Who</Th><Th>What</Th><Th>Entity</Th><Th>Result</Th><Th>Detail</Th></tr></thead>
               <tbody>
                 {items.map((a) => {
                   const failed = a.outcome === 'Failure'

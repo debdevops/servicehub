@@ -2,8 +2,8 @@ import { Link } from 'react-router-dom'
 import type { ReplayListItem } from '../../lib/api/replay'
 import { entityLabel } from '../lib/entityRows'
 import { outcomeTone, outcomeWords } from '../lib/words'
+import { Th } from './Tip'
 
-const th = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
 const td = 'px-3 py-2.5 align-top text-sm'
 
 /**
@@ -21,8 +21,8 @@ export function ReplayTable({ items, caption, openHref, fmt, connection }: {
         <caption className="sr-only">{caption}</caption>
         <thead>
           <tr>
-            <th className={th}>Message</th>{connection && <th className={th}>Connection</th>}<th className={th}>Entity</th><th className={th}>Replayed by</th>
-            <th className={th}>When</th><th className={th}>Outcome</th><th className={th}>What was observed</th><th className={th}>Actions</th>
+            <Th context="replays">Message</Th>{connection && <Th context="replays">Connection</Th>}<Th context="replays">Entity</Th><Th context="replays">Replayed by</Th>
+            <Th context="replays">When</Th><Th context="replays">Outcome</Th><Th context="replays">What was observed</Th><Th context="replays">Actions</Th>
           </tr>
         </thead>
         <tbody>

@@ -17,8 +17,10 @@ import { ruleTitle } from '../../lib/ruleName'
 import { ToolPageHeader } from '../components/ToolPageHeader'
 import { cloudLabel, cloudOf, parseScope } from '../lib/clouds'
 import { nextEntry, nextHref } from '../nav/navigation'
+import { Th } from '../components/Tip'
+import { StatTile as Tile } from '../components/StatTile'
+import { Tip } from '../components/Tip'
 
-const th = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
 const td = 'px-3 py-2.5 align-top text-sm'
 const rulesKey = (p: CloudProvider) => ['rules', p] as const
 
@@ -118,18 +120,22 @@ export default function RulesPage() {
 
           <section aria-labelledby="rules-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
             <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
-              <h2 id="rules-title" className="text-base font-semibold">Rules</h2>
+              <h2 id="rules-title" className="text-base font-semibold">Rules<Tip label="section:Rules table" /></h2>
               <div className="flex flex-wrap items-center gap-2">
                 {!cloud && providers.length > 1 && (
+                  <>
                   <label className="flex items-center gap-2 text-sm"><span className="text-[var(--color-text-muted)]">New rule on:</span>
                     <select value={target ?? ''} onChange={(e) => setPick(e.target.value as CloudProvider)} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-sm">
                       {providers.map((p) => <option key={p} value={p}>{cloudLabel[p]}</option>)}
                     </select>
-                  </label>
+                  </label><Tip label="New rule on:" />
+                  </>
                 )}
                 <button type="button" disabled={!mayCreate.allowed || target === null} onClick={() => setConfirmGenerate(true)} title={mayCreate.reason ?? 'Make rules for your most common failures that no rule covers yet'}
                   className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900 disabled:opacity-50"><Sparkles className="h-4 w-4" aria-hidden="true" /> Auto generate rules</button>
+                <Tip label="Auto generate rules" />
                 {!creating && <button type="button" disabled={target === null} onClick={() => setCreating(true)} className="flex items-center gap-1.5 rounded-lg bg-[var(--color-primary-600)] px-3.5 py-2 text-sm font-semibold text-white"><Plus className="h-4 w-4" aria-hidden="true" /> New rule</button>}
+                {!creating && <Tip label="New rule" />}
               </div>
             </div>
             <div className="px-4"><NotAllowed reason={mayCreate.reason} /></div>
@@ -166,9 +172,9 @@ export default function RulesPage() {
                   <caption className="sr-only">Auto Replay rules</caption>
                   <thead>
                     <tr>
-                      {!cloud && <th scope="col" className={th}>Cloud</th>}
-                      <th scope="col" className={th}>Rule</th><th scope="col" className={th}>Matches reason</th><th scope="col" className={th}>Where</th><th scope="col" className={th}>Pace</th>
-                      <th scope="col" className={th}>Waits</th><th scope="col" className={th}>State</th><th scope="col" className={th}>Result so far</th><th scope="col" className={th}>Last replay</th><th scope="col" className={th}>Actions</th>
+                      {!cloud && <Th context="rules">Cloud</Th>}
+                      <Th context="rules">Rule</Th><Th context="rules">Matches reason</Th><Th context="rules">Where</Th><Th context="rules">Pace</Th>
+                      <Th context="rules">Waits</Th><Th context="rules">State</Th><Th context="rules">Result so far</Th><Th context="rules">Last replay</Th><Th context="rules">Actions</Th>
                     </tr>
                   </thead>
                   <tbody>
@@ -219,11 +225,3 @@ export default function RulesPage() {
   )
 }
 
-function Tile({ icon, title, note, children }: { icon: React.ReactNode; title: string; note: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <span className="rounded-full bg-[var(--color-surface-muted)] p-2.5">{icon}</span>
-      <div><p className="text-sm font-semibold">{title}</p><p className="text-2xl font-bold">{children}</p><p className="text-xs text-[var(--color-text-muted)]">{note}</p></div>
-    </div>
-  )
-}

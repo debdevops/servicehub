@@ -14,18 +14,19 @@ import { environmentMeta } from '../provider/scopeChoice'
 import { InfoTip } from '../ui/InfoTip'
 import { RetryLink } from '../ui/RetryLink'
 import { TabBar } from '../ui/TabBar'
-import { IncidentTimeline } from './SignatureStory'
+import { IncidentTimeline, type StoryLinks } from './SignatureStory'
 
 /**
  * Where a signature's detail sends you. The 4.2.0 Advanced page passes nothing and keeps its own addresses; the 5.0.0 shell passes its
- * own. `incident: false` hides the Incident tab there until the Evidence ledger exists in that shell (unit E7), because its links
- * lead to the 4.2.0 ledger.
+ * own. `incident: false` hides the Incident tab there; the 5.0.0 shell shows it and gives it its own addresses (`story`).
  */
 export interface SignatureLinks {
   readonly messages: (s: Signature) => string | null
   readonly ledger: (s: Signature) => string
   readonly rule: (s: Signature) => string
   readonly incident: boolean
+  /** Where the Incident tab's links go, when it is shown. */
+  readonly story?: StoryLinks
 }
 
 export function Detail({ s, days, now, onClose, links }: { s: Signature; days: number; now: Date; onClose: () => void; links?: SignatureLinks }) {
@@ -56,7 +57,7 @@ export function Detail({ s, days, now, onClose, links }: { s: Signature; days: n
           { id: 'summary', label: 'Summary', count: 'none', help: sectionHelp.tabs.summary },
           { id: 'incident', label: 'Incident', count: 'none', help: sectionHelp.tabs.incident },
         ]} />}
-      {view === 'incident' ? <div className="px-4 py-4 text-[13px]"><IncidentTimeline hash={s.signatureHash} provider={s.provider} /></div> : (
+      {view === 'incident' ? <div className="px-4 py-4 text-[13px]"><IncidentTimeline hash={s.signatureHash} provider={s.provider} links={links?.story} /></div> : (
       <div className="space-y-4 px-4 py-4 text-[13px]">
         <div>
           <p className="text-[15px] font-bold">{s.exampleError ?? 'No error text was recorded'}</p>

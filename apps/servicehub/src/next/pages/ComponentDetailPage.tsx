@@ -25,6 +25,7 @@ import { cloudLabel, cloudOf, parseScope } from '../lib/clouds'
 import { countsWords, credentialWords, homeTotals, lookingAtOne, statusWords } from '../lib/words'
 import { componentTabs, nextEntry, nextHref } from '../nav/navigation'
 import { NextPlaceholderPage } from './NextPlaceholderPage'
+import { Tip } from '../components/Tip'
 
 const n = (value: number) => value.toLocaleString('en-US')
 const small = 'text-xs text-[var(--color-text-muted)]'
@@ -32,7 +33,7 @@ const small = 'text-xs text-[var(--color-text-muted)]'
 function Tile({ title, children, tone }: { title: string; children: React.ReactNode; tone?: string }) {
   return (
     <section aria-label={title} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <h2 className="text-sm font-semibold">{title}</h2>
+      <h2 className="flex items-center text-sm font-semibold">{title}<Tip label={title} context="tile" /></h2>
       <div className={tone}>{children}</div>
     </section>
   )
@@ -116,7 +117,7 @@ function Detail({ cloudKey: cloud, componentKey, namespaceId }: { cloudKey: NonN
             <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${status.tone === 'bad' ? 'bg-red-50 text-red-700' : status.tone === 'warn' ? 'bg-amber-50 text-amber-800' : 'bg-green-50 text-green-800'}`}>
               {c.needsYou > 0 ? `Needs you (${c.needsYou})` : status.text}
             </span>
-          </h1>
+          <Tip label="page:Component detail" /></h1>
           <p className="text-sm text-[var(--color-text-muted)]">{c.componentName}{place ? ` · ${place}` : ''} · <span className="capitalize">{c.environment}</span></p>
         </div>
         <div className="flex gap-3">
@@ -134,6 +135,7 @@ function Detail({ cloudKey: cloud, componentKey, namespaceId }: { cloudKey: NonN
       <div className="flex flex-wrap items-end justify-between gap-3">
         <DetailTabs basePath={here} active={tab} hasStuck={hasStuck} deadLetterCount={deadLetterCount} />
         <Link to={`${nextHref(nextEntry('send'), {}, pathname)}&ns=${encodeURIComponent(namespaceId)}`} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 py-2 text-xs font-bold hover:bg-[var(--color-surface-muted)]">Send a test message</Link>
+        <Tip label="Send a test message" />
       </div>
 
       {tab === 'dead-letters' ? (
@@ -194,7 +196,7 @@ function Detail({ cloudKey: cloud, componentKey, namespaceId }: { cloudKey: NonN
             </div>
             <div className="space-y-4">
               <section aria-labelledby="info-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-                <h2 id="info-title" className="mb-2 text-base font-semibold">Component information</h2>
+                <h2 id="info-title" className="mb-2 text-base font-semibold">Component information<Tip label="section:Component information" /></h2>
                 <dl>
                   <Info2 label="Name">{c.name}</Info2>
                   <Info2 label="Type">{c.componentName}</Info2>

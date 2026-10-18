@@ -15,8 +15,10 @@ import { cloudLabel, cloudOf, parseScope } from '../lib/clouds'
 import { entityLabel } from '../lib/entityRows'
 import { countWords, homeTotals } from '../lib/words'
 import { nextEntry, nextHref } from '../nav/navigation'
+import { Th } from '../components/Tip'
+import { StatTile as Tile } from '../components/StatTile'
+import { Tip } from '../components/Tip'
 
-const th = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
 const td = 'px-3 py-2.5 align-top text-sm'
 const n = (v: number) => v.toLocaleString('en-US')
 
@@ -122,28 +124,28 @@ export default function ActivePage() {
             {clouds.map((k) => {
               const t = activeTile(k)
               return (
-                <Tile key={k} icon={<Boxes className="h-5 w-5 text-[var(--color-primary-700)]" aria-hidden="true" />} title={`Active on ${cloudLabel[k]}`}
+                <Tile key={k} icon={<Boxes className="h-5 w-5 text-[var(--color-primary-700)]" aria-hidden="true" />} title={`Active on ${cloudLabel[k]}`} tip="Active on cloud"
                   value={t.value === null ? 'Can’t count here' : n(t.value) + (t.approx ? ' (approx)' : '')}
                   note={t.value === null ? `${t.places} ${t.places === 1 ? 'place' : 'places'}, none counted` : `${t.approx ? 'Approximate' : 'Exact'} · waiting to be processed`} />
               )
             })}
             {cloud && (() => {
               const first = homeTotals(comps).first
-              return <Tile icon={<Inbox className="h-5 w-5 text-red-600" aria-hidden="true" />} title={first.label === 'In dead-letter now' ? 'In dead-letter now' : 'Dead letters recorded'}
+              return <Tile icon={<Inbox className="h-5 w-5 text-red-600" aria-hidden="true" />} title={first.label === 'In dead-letter now' ? 'In dead-letter now' : 'Dead letters recorded'} context="active"
                 value={first.value === null ? 'Can’t read' : n(first.value) + (first.approximate ? ' (approx)' : '')} note={`Across ${comps.length} ${comps.length === 1 ? 'component' : 'components'}`} />
             })()}
           </div>
 
           <section aria-labelledby="by-entity" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-            <h2 id="by-entity" className="px-4 pt-4 text-base font-semibold">Active messages by entity</h2>
+            <h2 id="by-entity" className="px-4 pt-4 text-base font-semibold">Active messages by entity<Tip label="section:Active messages by entity" /></h2>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <caption className="sr-only">Active messages by entity</caption>
                 <thead>
                   <tr>
-                    {scope === 'all' && <th scope="col" className={th}>Cloud</th>}
-                    <th scope="col" className={th}>Entity</th><th scope="col" className={th}>Component</th><th scope="col" className={th}>Type</th>
-                    <th scope="col" className={th}>Active</th><th scope="col" className={th}>In dead-letter now</th><th scope="col" className={th}>Last observed</th><th scope="col" className={th}>Actions</th>
+                    {scope === 'all' && <Th context="active">Cloud</Th>}
+                    <Th context="active">Entity</Th><Th context="active">Component</Th><Th context="active">Type</Th>
+                    <Th context="active">Active</Th><Th context="active">In dead-letter now</Th><Th context="active">Last observed</Th><Th context="active">Actions</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -173,7 +175,7 @@ export default function ActivePage() {
           {browsing && (
             <section aria-label="Browse active messages" className="space-y-2">
               <div className="flex items-center justify-between">
-                <h2 className="text-base font-semibold">Browsing active messages</h2>
+                <h2 className="text-base font-semibold">Browsing active messages<Tip label="section:Browsing active messages" /></h2>
                 <button type="button" onClick={stopBrowsing} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-sm font-semibold">Close browser</button>
               </div>
               <Browser rows={browseRows} deadLetterHref={dlHref} />
@@ -181,11 +183,11 @@ export default function ActivePage() {
           )}
 
           <section aria-labelledby="can-show" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-            <h2 id="can-show" className="px-4 pt-4 text-base font-semibold">What this page can show on each cloud</h2>
+            <h2 id="can-show" className="px-4 pt-4 text-base font-semibold">What this page can show on each cloud<Tip label="section:What this page can show on each cloud" /></h2>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <caption className="sr-only">What this page can show on each cloud</caption>
-                <thead><tr><th scope="col" className={th}>Cloud</th><th scope="col" className={th}>Counts</th><th scope="col" className={th}>Browsing</th><th scope="col" className={th}>Why</th></tr></thead>
+                <thead><tr><Th context="active">Cloud</Th><Th context="active">Counts</Th><Th context="active">Browsing</Th><Th context="active">Why</Th></tr></thead>
                 <tbody>
                   {abilities.map((a) => (
                     <tr key={a.key} className="border-t border-[var(--color-border)]">
@@ -212,11 +214,3 @@ export default function ActivePage() {
   )
 }
 
-function Tile({ icon, title, value, note }: { icon: React.ReactNode; title: string; value: string; note: string }) {
-  return (
-    <div className="flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <span className="rounded-full bg-[var(--color-surface-muted)] p-2.5">{icon}</span>
-      <div><p className="text-sm font-semibold">{title}</p><p className="text-2xl font-bold">{value}</p><p className="text-xs text-[var(--color-text-muted)]">{note}</p></div>
-    </div>
-  )
-}

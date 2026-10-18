@@ -5,6 +5,8 @@ import { fetchSignatures, fetchSignatureTrust } from '../../../lib/api/signature
 import type { CloudProvider } from '../../../lib/api/namespaces'
 import { trustWords } from '../../../lib/trustWords'
 import { nextEntry, nextHref } from '../../nav/navigation'
+import { Th } from '../Tip'
+import { Tip } from '../Tip'
 
 const ROWS = 4
 const tone = { yes: 'bg-green-50 text-green-800', 'not yet': 'bg-amber-50 text-amber-800', no: 'bg-red-50 text-red-700' } as const
@@ -37,7 +39,7 @@ export function SignaturePanel({ provider, cloudName, notWatched, recorded, inDe
   return (
     <section aria-labelledby="signatures-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
       <div className="mb-2 flex items-center justify-between">
-        <h2 id="signatures-title" className="text-base font-semibold">{title}</h2>
+        <h2 id="signatures-title" className="text-base font-semibold">{title}<Tip label="section:Failure signatures" /></h2>
         <Link to={nextHref(nextEntry('signatures'), { cloud: provider })} className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--color-primary-700)]">
           View all <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
         </Link>
@@ -52,7 +54,7 @@ export function SignaturePanel({ provider, cloudName, notWatched, recorded, inDe
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs font-semibold text-[var(--color-text-muted)]">
-              <th className="py-1.5 pr-2">Signature</th><th className="px-2">Count</th><th className="px-2">Components</th><th className="pl-2">Agent may act</th>
+              <Th>Signature</Th><Th>Count</Th><Th>Components</Th><Th>Agent may act</Th>
             </tr>
           </thead>
           <tbody>

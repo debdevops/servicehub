@@ -1,6 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Bot, Check, OctagonAlert, Pause as PauseIcon } from 'lucide-react'
-import type { ReactNode } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { Detail, type AgentLinks } from '../../components/agent/AgentDetail'
 import { healthTone, healthWord } from '../../components/agent/AgentRow'
@@ -15,8 +14,10 @@ import { permission } from '../../lib/permissions'
 import { ToolPageHeader } from '../components/ToolPageHeader'
 import { parseScope } from '../lib/clouds'
 import { nextEntry, nextHref } from '../nav/navigation'
+import { Th } from '../components/Tip'
+import { StatTile as Tile } from '../components/StatTile'
+import { Tip } from '../components/Tip'
 
-const th = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
 const td = 'px-3 py-2.5 align-top text-sm'
 
 /** An agent that needs a look: its cycles fail or degrade, or none has finished for well over its cadence. Paused is a choice, not a fault. */
@@ -56,7 +57,6 @@ export default function AgentsPage() {
   const healthy = all.filter((a) => a.health === 'healthy' && !a.late).length
   const links: AgentLinks = {
     ledger: nextHref(nextEntry('ledger'), { cloud: scope }),
-    resume: { to: '/', label: 'Open Home to resume ›', where: 'the agent bar on the 4.2.0 Home' },
   }
 
   return (
@@ -84,11 +84,11 @@ export default function AgentsPage() {
 
           <div className={`grid gap-4 ${selected ? 'xl:grid-cols-[minmax(0,1fr)_400px]' : ''}`}>
             <section aria-labelledby="agents-title" className="min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-              <h2 id="agents-title" className="px-4 pt-4 text-base font-semibold">Agents</h2>
+              <h2 id="agents-title" className="px-4 pt-4 text-base font-semibold">Agents<Tip label="section:Agents table" /></h2>
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <caption className="sr-only">Agents registered in this build</caption>
-                  <thead><tr><th scope="col" className={th}>Agent</th><th scope="col" className={th}>What it does</th><th scope="col" className={th}>State</th><th scope="col" className={th}>Last cycle</th><th scope="col" className={th}>Acts on messages?</th><th scope="col" className={th}>Actions</th></tr></thead>
+                  <thead><tr><Th context="agents">Agent</Th><Th context="agents">What it does</Th><Th context="agents">State</Th><Th context="agents">Last cycle</Th><Th context="agents">Acts on messages?</Th><Th context="agents">Actions</Th></tr></thead>
                   <tbody>
                     {shown.map((a) => (
                       <tr key={a.id} aria-selected={a.id === selectedId} className={`border-t border-[var(--color-border)] ${a.id === selectedId ? 'bg-[var(--color-primary-50)]' : ''}`}>
@@ -135,11 +135,3 @@ export default function AgentsPage() {
   )
 }
 
-function Tile({ icon, title, note, children }: { icon: ReactNode; title: string; note: string; children: ReactNode }) {
-  return (
-    <div className="flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <span className="rounded-full bg-[var(--color-surface-muted)] p-2.5">{icon}</span>
-      <div><p className="text-sm font-semibold">{title}</p><p className="text-2xl font-bold">{children}</p><p className="text-xs text-[var(--color-text-muted)]">{note}</p></div>
-    </div>
-  )
-}

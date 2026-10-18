@@ -1,7 +1,8 @@
 import { useOverlayTitle } from '../../components/overlays/overlayTitle'
 import type { NextOverlayBodyProps } from './registry'
+import { Th } from '../components/Tip'
+import { Tip } from '../components/Tip'
 
-const th = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
 const td = 'px-3 py-2.5 align-top text-sm'
 
 /**
@@ -16,10 +17,10 @@ export default function SecurityPanel(_props: NextOverlayBodyProps) { // eslint-
   return (
     <div className="space-y-5 text-sm">
       <section aria-label="What ServiceHub keeps on this machine">
-        <h3 className="mb-1.5 text-sm font-bold">What ServiceHub keeps on this machine</h3>
+        <h3 className="mb-1.5 text-sm font-bold">What ServiceHub keeps on this machine<Tip label="section:What ServiceHub keeps on this machine" /></h3>
         <table className="w-full border border-[var(--color-border)]">
           <caption className="sr-only">What ServiceHub keeps, how, and for how long</caption>
-          <thead><tr className="bg-[var(--color-surface-muted)]"><th scope="col" className={th}>What</th><th scope="col" className={th}>How it is kept</th><th scope="col" className={th}>For how long</th></tr></thead>
+          <thead><tr className="bg-[var(--color-surface-muted)]"><Th>What</Th><Th>How it is kept</Th><Th>For how long</Th></tr></thead>
           <tbody>
             <tr className="border-t border-[var(--color-border)]"><td className={td}>Connection strings and keys</td><td className={td}>Encrypted. The key can be rotated. Never shown again after you save it</td><td className={td}>Until you delete the connection</td></tr>
             <tr className="border-t border-[var(--color-border)]"><td className={td}>A message’s fingerprint</td><td className={td}>A hash of the body, so a replay can be recognised</td><td className={td}>As long as the ledger</td></tr>
@@ -30,10 +31,10 @@ export default function SecurityPanel(_props: NextOverlayBodyProps) { // eslint-
       </section>
 
       <section aria-label="What ServiceHub can do in your cloud">
-        <h3 className="mb-1.5 text-sm font-bold">What ServiceHub can do in your cloud</h3>
+        <h3 className="mb-1.5 text-sm font-bold">What ServiceHub can do in your cloud<Tip label="section:What ServiceHub can do in your cloud" /></h3>
         <table className="w-full border border-[var(--color-border)]">
           <caption className="sr-only">The rights ServiceHub uses</caption>
-          <thead><tr className="bg-[var(--color-surface-muted)]"><th scope="col" className={th}>Right</th><th scope="col" className={th}>Lets ServiceHub</th></tr></thead>
+          <thead><tr className="bg-[var(--color-surface-muted)]"><Th>Right</Th><Th>Lets ServiceHub</Th></tr></thead>
           <tbody>
             <tr className="border-t border-[var(--color-border)]"><td className={td}>Read</td><td className={td}>See dead-letter messages and counts. Never changes a message</td></tr>
             <tr className="border-t border-[var(--color-border)]"><td className={td}>Replay</td><td className={td}>Put one message back, on approval or by a rule you made, through the same safety checks every time</td></tr>
@@ -42,7 +43,7 @@ export default function SecurityPanel(_props: NextOverlayBodyProps) { // eslint-
       </section>
 
       <section aria-label="What stops it">
-        <h3 className="mb-1 text-sm font-bold">What stops it</h3>
+        <h3 className="mb-1 text-sm font-bold">What stops it<Tip label="section:What stops it" /></h3>
         <p>Emergency stop halts everything ServiceHub would do on its own. A person can still replay one message. It cannot recall a move the cloud itself has already started.</p>
       </section>
 

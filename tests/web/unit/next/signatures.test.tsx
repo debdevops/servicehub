@@ -20,7 +20,7 @@ vi.mock('@/lib/api/identity', async (o) => ({ ...(await o<typeof identityApi>())
 vi.mock('@/lib/api/agents', async (o) => ({ ...(await o<typeof agentsApi>()), fetchAgents: vi.fn() }))
 vi.mock('@/lib/api/settings', async (o) => ({ ...(await o<typeof settingsApi>()), fetchEmergencyStop: vi.fn() }))
 vi.mock('@/lib/api/pendingWork', async (o) => ({ ...(await o<typeof pendingApi>()), fetchPendingWork: vi.fn() }))
-vi.mock('@/lib/api/signatures', async (o) => ({ ...(await o<typeof signaturesApi>()), fetchSignatures: vi.fn(), fetchSignatureTrust: vi.fn() }))
+vi.mock('@/lib/api/signatures', async (o) => ({ ...(await o<typeof signaturesApi>()), fetchSignatures: vi.fn(), fetchSignatureTrust: vi.fn(), fetchIncident: vi.fn(), fetchTrace: vi.fn() }))
 
 const at = '2026-10-18T10:00:00Z'
 const trust = (over: Partial<signaturesApi.SignatureTrust> = {}): signaturesApi.SignatureTrust => ({
@@ -98,15 +98,46 @@ describe('Failure signatures (unit E6)', () => {
     await waitFor(() => expect(lastQuery()?.namespaceId).toBeUndefined())
   })
 
-  it('opens a signature’s detail with this shell’s addresses, and no Incident tab until the ledger exists', async () => {
+  it('opens a signature’s detail with this shell’s addresses', async () => {
     const user = userEvent.setup()
     open('/next/azure/signatures')
     await user.click(await screen.findByRole('button', { name: 'View LockLost' }))
     const detail = await screen.findByRole('complementary', { name: 'Signature details' })
-    expect(within(detail).queryByRole('tab', { name: /Incident/ })).not.toBeInTheDocument()
     expect(within(detail).getByRole('link', { name: /See the 6 messages/ })).toHaveAttribute('href', '/next/azure/c/service-bus/ns-azure?tab=dead-letters&reason=LockLost')
     expect(within(detail).getByRole('link', { name: /Create an auto-replay rule/ })).toHaveAttribute('href', '/next/azure/rules?rule=h1')
     expect(within(detail).getByRole('link', { name: /Ledger entries/ })).toHaveAttribute('href', '/next/azure/ledger')
+  })
+
+  it('shows the Incident tab, whose Evidence links open this shell’s ledger on that entry', async () => {
+    const user = userEvent.setup()
+    vi.mocked(signaturesApi.fetchIncident).mockResolvedValue({
+      signatureHash: 'h1', provider: 'azure', reason: 'LockLost', firstSeenAt: at, lastSeenAt: at, messages: 6, stillStuck: 4, replays: 18, stayedFixed: 18, cameBackAfterReplay: 0,
+      timeline: [{ at, kind: 'replayed', text: 'Replayed 3 messages', entryId: 'e9', dlqMessageId: 7 }],
+    })
+    open('/next/azure/signatures')
+    await user.click(await screen.findByRole('button', { name: 'View LockLost' }))
+    const detail = await screen.findByRole('complementary', { name: 'Signature details' })
+    await user.click(within(detail).getByText('Incident'))
+    expect(await within(detail).findByRole('link', { name: 'Evidence ›' })).toHaveAttribute('href', '/next/azure/ledger?entry=e9&window=all')
+  })
+
+  it('traces a correlation id across clouds from recorded sightings, with links into this shell and no live look', async () => {
+    const user = userEvent.setup()
+    vi.mocked(signaturesApi.fetchTrace).mockResolvedValue({
+      correlationId: 'order-42', clouds: ['azure'], note: '',
+      hops: [{ at, kind: 'dead_lettered', place: { provider: 'azure', namespaceName: 'orders-sb', environment: 'dev' }, entity: 'orders-queue', dlqMessageId: 7, namespaceId: 'ns-azure', detail: null, entryId: 'e9', messageId: 'm-7' }],
+    })
+    const { router } = open('/next/azure/signatures')
+    await user.click(await screen.findByRole('radio', { name: 'Trace a message' }))
+    expect(router.state.location.search).toBe('?view=trace')
+    expect(signaturesApi.fetchTrace).not.toHaveBeenCalled() // nothing is looked up until a person asks
+    await user.type(screen.getByLabelText('Correlation id'), 'order-42')
+    await user.click(screen.getByRole('button', { name: 'Trace' }))
+    expect(await screen.findByRole('link', { name: 'Evidence ›' })).toHaveAttribute('href', '/next/azure/ledger?entry=e9&window=all')
+    expect(screen.getByRole('link', { name: 'Open ›' }).getAttribute('href')).toContain('dialog=message&id=7')
+    expect(signaturesApi.fetchTrace).toHaveBeenCalledWith('order-42')
+    await user.click(screen.getByRole('radio', { name: 'Signatures' }))
+    await waitFor(() => expect(router.state.location.search).toBe(''))
   })
 
   it('shows an error, not an empty table, when the read fails; and says so when none was recorded', async () => {

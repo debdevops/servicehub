@@ -7,11 +7,17 @@ import type { ColumnHelp } from '../../content/columns'
  * A small (i) that explains the thing beside it, wherever it is placed.
  *
  * It opens on click or keyboard (Enter/Space) — not hover only, so it works on touch and for keyboard users — and closes on Esc,
- * a click elsewhere, or the same button again. The note is drawn in a portal so a table's scroll container can never clip it.
+ * a click elsewhere, or the same button again. With `hover` (the 5.0.0 shell) it also opens while the pointer rests on it, or while it has
+ * keyboard focus, and closes when the pointer leaves; a click still pins it open. The note is drawn in a portal so a table's scroll container can never clip it.
  * It changes nothing and takes no focus away from the page.
  */
-export function InfoTip({ help, className = '' }: { help: ColumnHelp; className?: string }) {
-  const [open, setOpen] = useState(false)
+export function InfoTip({ help, className = '', hover = false }: { help: ColumnHelp; className?: string; hover?: boolean }) {
+  const [pinned, setPinned] = useState(false)
+  const [near, setNear] = useState(false)
+  const leaving = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const open = pinned || near
+  const enter = () => { if (!hover) return; clearTimeout(leaving.current); setNear(true) }
+  const leave = () => { if (!hover) return; clearTimeout(leaving.current); leaving.current = setTimeout(() => setNear(false), 120) }
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
   const button = useRef<HTMLButtonElement>(null)
   const id = useId()
@@ -28,11 +34,12 @@ export function InfoTip({ help, className = '' }: { help: ColumnHelp; className?
     const close = (e: Event) => {
       if (e instanceof KeyboardEvent && e.key !== 'Escape') return
       if (e instanceof MouseEvent && (button.current?.contains(e.target as Node) || (e.target as HTMLElement).closest?.(`[data-infotip="${id}"]`))) return
-      setOpen(false)
+      setPinned(false)
+      setNear(false)
     }
     document.addEventListener('mousedown', close)
     document.addEventListener('keydown', close)
-    window.addEventListener('scroll', () => setOpen(false), { once: true, capture: true })
+    window.addEventListener('scroll', () => { setPinned(false); setNear(false) }, { once: true, capture: true })
     return () => {
       document.removeEventListener('mousedown', close)
       document.removeEventListener('keydown', close)
@@ -47,7 +54,11 @@ export function InfoTip({ help, className = '' }: { help: ColumnHelp; className?
         aria-label={`About ${help.title}`}
         aria-expanded={open}
         aria-controls={open ? id : undefined}
-        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o) }}
+        onClick={(e) => { e.stopPropagation(); setPinned((o) => !o) }}
+        onMouseEnter={enter}
+        onMouseLeave={leave}
+        onFocus={enter}
+        onBlur={leave}
         className={`-my-1 ml-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full align-middle text-[#6b7280] transition-colors hover:text-[var(--color-primary-600)] focus-visible:text-[var(--color-primary-600)] ${open ? 'text-[var(--color-primary-600)]' : ''} ${className}`}
       >
         <Info className="h-3.5 w-3.5" aria-hidden="true" />
@@ -57,6 +68,8 @@ export function InfoTip({ help, className = '' }: { help: ColumnHelp; className?
           id={id}
           data-infotip={id}
           role="note"
+          onMouseEnter={enter}
+          onMouseLeave={leave}
           style={{ position: 'fixed', top: pos.top, left: pos.left, width: 288, zIndex: 60 }}
           className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3.5 text-left normal-case tracking-normal shadow-[0_10px_30px_rgba(0,0,0,0.14)]"
         >

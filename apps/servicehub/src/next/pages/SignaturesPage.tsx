@@ -1,8 +1,9 @@
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Fingerprint, Search, TrendingUp, ThumbsDown, ThumbsUp } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { Detail, type SignatureLinks } from '../../components/advanced/SignatureDetail'
+import { TraceView, type StoryLinks } from '../../components/advanced/SignatureStory'
 import { Pager } from '../../components/ui/Pager'
 import { useComponents } from '../../hooks/useComponents'
 import { fetchSignatures, fetchSignatureTrust, type Signature, type SignatureTab, type SignatureTrust } from '../../lib/api/signatures'
@@ -13,8 +14,10 @@ import { reasonParam } from '../../lib/urlState'
 import { ToolPageHeader } from '../components/ToolPageHeader'
 import { cloudLabel, cloudOf, parseScope } from '../lib/clouds'
 import { nextEntry, nextHref } from '../nav/navigation'
+import { Th } from '../components/Tip'
+import { StatTile as Tile } from '../components/StatTile'
+import { Tip } from '../components/Tip'
 
-const th = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
 const td = 'px-3 py-2.5 align-top text-sm'
 const field = 'rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-sm'
 const keyOf = (s: Signature) => `${s.provider}:${s.signatureHash}`
@@ -75,8 +78,15 @@ export default function SignaturesPage() {
   const filtering = tab !== 'all' || !!namespaceId || !!q
 
   // Where the detail sends you, in this shell: the connection that holds the messages, the ledger (E7), and the rule form.
+  // The Incident tab and Trace a message link to evidence in this shell's ledger and to a message in its Message dialog.
+  const story: StoryLinks = {
+    evidence: (entryId) => `${nextHref(nextEntry('ledger'), { cloud: cloud ?? 'all' })}?entry=${encodeURIComponent(entryId)}&window=all`,
+    message: (_namespaceId, dlqMessageId) => `${pathname}?${new URLSearchParams({ ...Object.fromEntries(params), dialog: 'message', id: String(dlqMessageId) })}`,
+  }
+  const tracing = params.get('view') === 'trace'
   const links: SignatureLinks = {
-    incident: false,
+    incident: true,
+    story,
     ledger: (s) => nextHref(nextEntry('ledger'), { cloud: s.provider }),
     rule: (s) => `${nextHref(nextEntry('rules'), { cloud: s.provider })}?rule=${encodeURIComponent(s.signatureHash)}`,
     messages: (s) => {
@@ -97,7 +107,16 @@ export default function SignaturesPage() {
       <ToolPageHeader scope={scope} title="Failure signatures" updatedAtMs={list.dataUpdatedAt} onRefresh={() => void client.invalidateQueries({ queryKey: ['next', 'signatures-page'] })}
         lookingAt={`Each kind of failure ServiceHub has seen ${scope === 'all' ? 'on every connected cloud' : `on ${cloudLabel[scope]}`}: is it still happening, does replaying it help, and may the Agent fix it alone?`} />
 
-      {list.isError ? (
+      <div role="radiogroup" aria-label="Page view" className="flex w-fit rounded-lg bg-[var(--color-surface-muted)] p-0.5 text-sm">
+        {([['list', 'Signatures'], ['trace', 'Trace a message']] as const).map(([id, label]) => (
+          <button key={id} type="button" role="radio" aria-checked={(id === 'trace') === tracing} onClick={() => change({ view: id === 'trace' ? 'trace' : null, signature: null })}
+            className={`rounded-md px-3 py-1 font-semibold ${(id === 'trace') === tracing ? 'bg-[var(--color-surface)] shadow-sm' : 'text-[var(--color-text-muted)]'}`}>{label}</button>
+        ))}
+      </div>
+
+      {tracing ? (
+        <TraceView links={story} />
+      ) : list.isError ? (
         <p role="alert" className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">Failure signatures could not be read. Nothing is shown rather than a list that may be incomplete.</p>
       ) : list.isPending ? (
         <p role="status" className="text-sm text-[var(--color-text-muted)]">Loading…</p>
@@ -115,34 +134,36 @@ export default function SignaturesPage() {
               <select className={field} value={namespaceId ?? ''} onChange={(e) => change({ connection: e.target.value || null })}>
                 <option value="">all</option>{connections.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
               </select>
-            </label>
+            </label><Tip label="Connection:" />
             <label className="flex items-center gap-2 text-sm"><span className="text-[var(--color-text-muted)]">Window:</span>
               <select className={field} value={String(days)} onChange={(e) => change({ days: e.target.value === '7' ? null : e.target.value })}>
                 <option value="7">last 7 days</option><option value="14">last 14 days</option><option value="30">last 30 days</option>
               </select>
-            </label>
+            </label><Tip label="Window:" />
             <label className="flex items-center gap-2 text-sm"><span className="text-[var(--color-text-muted)]">Sort:</span>
               <select className={field} value={sort} onChange={(e) => change({ sort: e.target.value === 'messages' ? null : e.target.value })}>
                 <option value="messages">most messages</option><option value="recent">most recent</option>
               </select>
-            </label>
+            </label><Tip label="Sort:" />
             <label className="relative block">
               <span className="sr-only">Search signatures</span>
               <Search className="pointer-events-none absolute left-2.5 top-2 h-4 w-4 text-[var(--color-text-muted)]" aria-hidden="true" />
-              <input type="search" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Reason, error or queue…" className={`${field} w-64 pl-8`} />
+              <input type="search" data-shortcut="filter" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Reason, error or queue…" className={`${field} w-64 pl-8`} />
             </label>
+            <Tip label="Search" />
             {filtering && <button type="button" onClick={() => { setDraft(''); change({ tab: null, connection: null, q: null }) }} className="text-sm font-semibold text-[var(--color-primary-700)]">Clear filters</button>}
           </div>
 
           <div className="flex items-start gap-4">
             <section aria-labelledby="sigs-title" className="min-w-0 flex-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
-              <h2 id="sigs-title" className="px-4 pt-4 text-base font-semibold">Signatures</h2>
+              <h2 id="sigs-title" className="px-4 pt-4 text-base font-semibold">Signatures<Tip label="section:Signatures" /></h2>
               <div role="tablist" aria-label="Signature views" className="flex gap-5 border-b border-[var(--color-border)] px-4">
                 {tabs.map((t) => (
                   <button key={t.id} role="tab" type="button" aria-selected={tab === t.id} onClick={() => change({ tab: t.id === 'all' ? null : t.id })}
                     className={`-mb-px border-b-2 px-1 py-2.5 text-sm font-semibold ${tab === t.id ? 'border-[var(--color-primary-600)] text-[var(--color-primary-700)]' : 'border-transparent text-[var(--color-text-muted)]'}`}>{t.label} ({t.n ?? 0})</button>
                 ))}
               </div>
+              <Tip label="Tabs" />
               {rows.length === 0 ? (
                 <p className="px-4 py-6 text-sm text-[var(--color-text-muted)]">{filtering ? 'Nothing matches these filters.' : 'No failure has been recorded yet. ServiceHub records failures where it can look on its own; a cloud it does not watch has none to group until you press Look now.'}</p>
               ) : (
@@ -151,9 +172,9 @@ export default function SignaturesPage() {
                     <caption className="sr-only">Failure signatures</caption>
                     <thead>
                       <tr>
-                        {scope === 'all' && <th scope="col" className={th}>Cloud</th>}
-                        <th scope="col" className={th}>Signature</th><th scope="col" className={th}>Connection</th><th scope="col" className={th}>Still in queue</th>
-                        <th scope="col" className={th}>Does replay help?</th><th scope="col" className={th}>Level</th><th scope="col" className={th}>Agent may act</th><th scope="col" className={th}>Why</th><th scope="col" className={th}>Actions</th>
+                        {scope === 'all' && <Th>Cloud</Th>}
+                        <Th>Signature</Th><Th>Connection</Th><Th>Still in queue</Th>
+                        <Th>Does replay help?</Th><Th>Level</Th><Th>Agent may act</Th><Th>Why</Th><Th>Actions</Th>
                       </tr>
                     </thead>
                     <tbody>
@@ -189,10 +210,10 @@ export default function SignaturesPage() {
           </div>
 
           <section aria-labelledby="levels-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-            <h2 id="levels-title" className="text-base font-semibold">Levels <Link to={nextHref(nextEntry('autonomy'), {}, pathname)} className="ml-2 text-sm font-semibold text-[var(--color-primary-700)] hover:underline">How autonomy is earned →</Link></h2>
+            <h2 id="levels-title" className="text-base font-semibold">Levels<Tip label="section:Levels" /> <Link to={nextHref(nextEntry('autonomy'), {}, pathname)} className="ml-2 text-sm font-semibold text-[var(--color-primary-700)] hover:underline">How autonomy is earned →</Link></h2>
             <table className="mt-2 w-full">
               <caption className="sr-only">What each level lets the Agent do</caption>
-              <thead><tr><th scope="col" className={th}>Level</th><th scope="col" className={th}>The Agent</th></tr></thead>
+              <thead><tr><Th>Level</Th><Th>The Agent</Th></tr></thead>
               <tbody>
                 <tr className="border-t border-[var(--color-border)]"><td className={`${td} font-semibold`}>L3 · Asks first</td><td className={td}>Prepares the replay and asks a person first. Where a cloud cannot confirm a fix held, or in Production, it stays here.</td></tr>
                 <tr className="border-t border-[var(--color-border)]"><td className={`${td} font-semibold`}>L4 · Standing</td><td className={td}>Auto Replay rules may replay this kind without asking, and keep checking it still works. Earned from verified fixes at a high success rate (see each row’s Why).</td></tr>
@@ -206,11 +227,3 @@ export default function SignaturesPage() {
   )
 }
 
-function Tile({ icon, title, note, children }: { icon: ReactNode; title: string; note: string; children: ReactNode }) {
-  return (
-    <div className="flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <span className="rounded-full bg-[var(--color-surface-muted)] p-2.5">{icon}</span>
-      <div><p className="text-sm font-semibold">{title}</p><p className="text-2xl font-bold">{children}</p><p className="text-xs text-[var(--color-text-muted)]">{note}</p></div>
-    </div>
-  )
-}

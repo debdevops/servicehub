@@ -14,8 +14,9 @@ import { NotFoundPage } from '../../pages/NotFoundPage'
 import { cloudLabel, cloudOf, parseScope } from '../lib/clouds'
 import { countWords, statusWords } from '../lib/words'
 import { nextEntry, nextHref } from '../nav/navigation'
+import { Th } from '../components/Tip'
+import { Tip } from '../components/Tip'
 
-const th = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
 const td = 'px-3 py-3 align-top text-sm'
 const tone = { bad: 'bg-red-50 text-red-700', warn: 'bg-amber-50 text-amber-800', ok: 'bg-green-50 text-green-800' } as const
 
@@ -64,7 +65,7 @@ function List({ cloud, componentKey }: { cloud: CloudKind; componentKey: string 
             <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
             <span aria-current="page" className="font-semibold text-[var(--color-primary-700)]">{row.name}</span>
           </nav>
-          <h1 className="text-2xl font-bold">{row.name}</h1>
+          <h1 className="text-2xl font-bold">{row.name}<Tip label="page:Component" /></h1>
         </div>
         <div className="flex gap-3">
           <aside aria-label="What you’re looking at" className="flex max-w-xl gap-2.5 rounded-xl border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] p-3 text-sm">
@@ -80,10 +81,11 @@ function List({ cloud, componentKey }: { cloud: CloudKind; componentKey: string 
 
       <section aria-labelledby="list-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-          <h2 id="list-title" className="text-base font-semibold">{row.name} connections ({mine.length})</h2>
+          <h2 id="list-title" className="text-base font-semibold">{row.name} connections ({mine.length})<Tip label="section:Connections table" /></h2>
           <Link to={connect} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-primary-600)] px-3.5 py-2 text-xs font-bold text-white hover:bg-[var(--color-primary-700)]">
             <Plus className="h-4 w-4" aria-hidden="true" /> Connect a {row.name} connection
           </Link>
+          <Tip label="Connect a component" />
         </div>
 
         {components.isError ? (
@@ -98,16 +100,16 @@ function List({ cloud, componentKey }: { cloud: CloudKind; componentKey: string 
               <caption className="sr-only">{row.name} connections on {cloudName}</caption>
               <thead>
                 <tr>
-                  <th className={th}>Connection</th>
-                  {showPlace && <th className={th}>Region / project</th>}
-                  <th className={th}>Environment</th>
-                  <th className={th}>Connection status</th>
-                  <th className={th}>Status</th>
-                  <th className={th}>Queues and subscriptions</th>
-                  <th className={th}>In dead-letter now</th>
-                  <th className={th}>Needs you</th>
-                  <th className={th}>Last observed</th>
-                  <th className={th}>Actions</th>
+                  <Th>Connection</Th>
+                  {showPlace && <Th>Region / project</Th>}
+                  <Th>Environment</Th>
+                  <Th>Connection status</Th>
+                  <Th>Status</Th>
+                  <Th>Queues and subscriptions</Th>
+                  <Th>In dead-letter now</Th>
+                  <Th>Needs you</Th>
+                  <Th>Last observed</Th>
+                  <Th>Actions</Th>
                 </tr>
               </thead>
               <tbody>

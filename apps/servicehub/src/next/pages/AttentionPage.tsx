@@ -11,6 +11,8 @@ import { ToolPageHeader } from '../components/ToolPageHeader'
 import { AttentionTable, type AttentionTab } from '../components/home/AttentionTable'
 import { cloudLabel, cloudOf, parseScope } from '../lib/clouds'
 import { familyWords } from '../lib/words'
+import { StatTile as Tile } from '../components/StatTile'
+import { Tip } from '../components/Tip'
 
 const typeOf = (i: PendingWorkItem) => i.type ?? (i.kind === 'unresolved' ? 'handOff' : 'approval')
 const needsAPerson = (i: PendingWorkItem) => i.kind === 'approval' || i.kind === 'unresolved'
@@ -108,23 +110,17 @@ export default function AttentionPage() {
   )
 }
 
-function Tile({ icon, title, value, note }: { icon: ReactNode; title: string; value: string; note: string }) {
-  return (
-    <div className="flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <span className="rounded-full bg-[var(--color-surface-muted)] p-2.5">{icon}</span>
-      <div><p className="text-sm font-semibold">{title}</p><p className="text-2xl font-bold">{value}</p><p className="text-xs text-[var(--color-text-muted)]">{note}</p></div>
-    </div>
-  )
-}
 
 function Filter({ label, value, onChange, all, children }: { label: string; value: string; onChange: (v: string) => void; all: string; children: ReactNode }) {
   return (
+    <>
     <label className="flex items-center gap-2 text-sm">
       <span className="text-[var(--color-text-muted)]">{label}:</span>
       <select value={value} onChange={(e) => onChange(e.target.value)} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-sm">
         <option value="">{all}</option>
         {children}
       </select>
-    </label>
+    </label><Tip label={`${label}:`} />
+    </>
   )
 }

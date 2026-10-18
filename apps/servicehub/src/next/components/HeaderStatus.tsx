@@ -4,6 +4,7 @@ import { useAgents } from '../../hooks/useAgents'
 import { useMe } from '../../hooks/useIdentity'
 import { nextEntry, nextHref } from '../nav/navigation'
 import { useStopState } from '../lib/useStopState'
+import { Tip } from './Tip'
 import { agentState, roleWords } from '../lib/words'
 
 const dot = { running: 'bg-green-400', paused: 'bg-amber-400', 'partly-paused': 'bg-amber-400', unknown: 'bg-slate-400' } as const
@@ -30,6 +31,7 @@ export function HeaderStatus() {
           <span className="block text-xs font-semibold">{agent.title}</span>
           <span className="block text-[11px] text-white/75">{agent.detail}</span>
         </span>
+        <Tip label="header:Agent" className="text-white/80 hover:text-white" />
       </div>
 
       <Link
@@ -39,16 +41,20 @@ export function HeaderStatus() {
         <OctagonAlert className="h-3.5 w-3.5" aria-hidden="true" />
         {on ? 'Emergency stop is ON' : 'Emergency stop'}
       </Link>
+      <Tip label="header:Emergency stop" className="text-white/80 hover:text-white" />
 
       <Link to={nextHref(nextEntry('search'), {}, pathname)} aria-label="Search" className="inline-flex items-center gap-1.5 rounded-md bg-white/15 px-2.5 py-1.5 text-xs font-semibold hover:bg-white/25">
         <Search className="h-3.5 w-3.5" aria-hidden="true" /> Search <kbd className="text-[10px] opacity-75">⌘K</kbd>
       </Link>
+      <Tip label="header:Search" className="text-white/80 hover:text-white" />
 
       <Link to={nextHref(nextEntry('help'), {}, pathname)} className="inline-flex items-center gap-1.5 rounded-md bg-white/15 px-2.5 py-1.5 text-xs font-semibold hover:bg-white/25">
         <CircleHelp className="h-3.5 w-3.5" aria-hidden="true" /> Help
       </Link>
+      <Tip label="header:Help" className="text-white/80 hover:text-white" />
 
       <span className="rounded-md bg-white/15 px-2.5 py-1.5 text-xs font-semibold">Role: {role ?? '…'}</span>
+      <Tip label="header:Role" className="text-white/80 hover:text-white" />
     </div>
   )
 }

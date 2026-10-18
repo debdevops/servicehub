@@ -16,6 +16,7 @@ import { SignaturePanel } from '../components/home/SignaturePanel'
 import { Tiles } from '../components/home/Tiles'
 import { cloudLabel, cloudOf, parseScope } from '../lib/clouds'
 import { homeTotals, lookingAt } from '../lib/words'
+import { Tip } from '../components/Tip'
 
 /**
  * Home for one cloud (build-plan unit C1; designs `azure-home`, `aws-home`, `gcp-home`). Every number comes from the one component
@@ -51,7 +52,7 @@ function CloudHome({ cloud }: { cloud: CloudKind }) {
     <div className="space-y-4 px-6 py-5">
       <div className="grid gap-4 xl:grid-cols-[1fr_auto]">
         <div>
-          <h1 className="text-2xl font-bold">{cloudName} Dashboard</h1>
+          <h1 className="text-2xl font-bold">{cloudName} Dashboard<Tip label="page:Home" /></h1>
           <p className="text-sm text-[var(--color-text-muted)]">Monitor and manage dead-letter messages across supported {cloudName} PaaS components.</p>
         </div>
         <div className="flex gap-3">

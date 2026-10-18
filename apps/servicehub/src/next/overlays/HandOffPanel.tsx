@@ -14,6 +14,7 @@ import { cloudLabel } from '../lib/clouds'
 import { entityLabel } from '../lib/entityRows'
 import { familyWords } from '../lib/words'
 import type { NextOverlayBodyProps } from './registry'
+import { Tip } from '../components/Tip'
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return <div className="flex gap-4 border-b border-[var(--color-border)] py-2 text-sm"><dt className="w-32 shrink-0 text-[var(--color-text-muted)]">{label}</dt><dd className="min-w-0 break-words font-semibold">{children}</dd></div>
@@ -86,22 +87,22 @@ export default function HandOffPanel({ close }: NextOverlayBodyProps) {
       </dl>
 
       <section aria-label="What you can do">
-        <h3 className="mb-2 text-sm font-bold">What you can do</h3>
+        <h3 className="mb-2 text-sm font-bold">What you can do<Tip label="section:What you can do" /></h3>
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="rounded-xl border border-[var(--color-border)] p-3 text-sm">
-            <p className="font-bold">Replay it again</p>
+            <p className="flex items-center font-bold">Replay it again<Tip label="choice:Replay it again" /></p>
             <p className="mt-1 text-xs text-[var(--color-text-muted)]">Opens the Replay preview. Only useful if the cause was fixed.</p>
             {item.dlqMessageId !== null && mayReplay.allowed
               ? <Link to={`${pathname}?dialog=replay&id=${item.dlqMessageId}`} className="mt-2 inline-block rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)]">Replay…</Link>
               : <p className="mt-2 text-xs text-[var(--color-text-muted)]">{mayReplay.reason ?? 'There is no message to replay.'}</p>}
           </div>
           <div className="rounded-xl border border-[var(--color-border)] p-3 text-sm">
-            <p className="font-bold">Mark as settled</p>
+            <p className="flex items-center font-bold">Mark as settled<Tip label="choice:Mark as settled" /></p>
             <p className="mt-1 text-xs text-[var(--color-text-muted)]">You dealt with it outside ServiceHub. Give a reason; it is recorded.</p>
             {!settling && <button type="button" onClick={() => setSettling(true)} disabled={!may.allowed} title={may.reason ?? undefined} className="mt-2 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-amber-900 disabled:opacity-50">Mark as settled…</button>}
           </div>
           <div className="rounded-xl border border-[var(--color-border)] p-3 text-sm">
-            <p className="font-bold">Leave it</p>
+            <p className="flex items-center font-bold">Leave it<Tip label="choice:Leave it" /></p>
             <p className="mt-1 text-xs text-[var(--color-text-muted)]">It stays in the queue and stays on this list.</p>
             <button type="button" onClick={close} className="mt-2 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold">Leave it</button>
           </div>
@@ -124,7 +125,7 @@ export default function HandOffPanel({ close }: NextOverlayBodyProps) {
       </section>
 
       <section aria-label="What happened so far">
-        <h3 className="mb-2 text-sm font-bold">What happened so far</h3>
+        <h3 className="mb-2 text-sm font-bold">What happened so far<Tip label="section:What happened so far" /></h3>
         {entry.isError ? <p className="text-sm text-[var(--color-text-muted)]">The steps could not be read.</p>
           : events.length === 0 ? <p className="text-sm text-[var(--color-text-muted)]">{entry.isPending ? 'Reading the steps…' : 'No steps are recorded.'}</p>
           : (

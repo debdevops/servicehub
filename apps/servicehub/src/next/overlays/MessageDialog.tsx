@@ -15,6 +15,8 @@ import { findTrace, traceLink } from '../../lib/trace'
 import { entityLabel } from '../lib/entityRows'
 import { messageIdOf } from '../lib/messageId'
 import type { NextOverlayBodyProps } from './registry'
+import { Th } from '../components/Tip'
+import { Tip } from '../components/Tip'
 
 type Tab = 'summary' | 'body' | 'properties' | 'history'
 const tabs: readonly { id: Tab; label: string }[] = [
@@ -77,7 +79,7 @@ export default function MessageDialog({ close }: NextOverlayBodyProps) {
         <div className="grid gap-6 lg:grid-cols-2">
           <div className="space-y-4">
             <section aria-label="Why it failed">
-              <h3 className="mb-1 text-sm font-bold">Why it failed</h3>
+              <h3 className="mb-1 text-sm font-bold">Why it failed<Tip label="section:Why it failed" /></h3>
               <dl>
                 <Row label="Reason">{m.deadLetterReason ?? 'No reason recorded'}</Row>
                 <Row label="Description">{m.deadLetterErrorDescription ?? '—'}</Row>
@@ -91,7 +93,7 @@ export default function MessageDialog({ close }: NextOverlayBodyProps) {
           </div>
           <div className="space-y-4">
             <section aria-label="Message properties">
-              <h3 className="mb-1 text-sm font-bold">Message details</h3>
+              <h3 className="mb-1 text-sm font-bold">Message details<Tip label="section:Message details" /></h3>
               <dl>
                 <Row label="Message ID"><span className="font-mono text-xs">{m.messageId}</span></Row>
                 <Row label="Sequence number">{m.sequenceNumber.toLocaleString('en-US')}</Row>
@@ -109,10 +111,10 @@ export default function MessageDialog({ close }: NextOverlayBodyProps) {
       {tab === 'properties' && <Properties json={d.applicationPropertiesJson} />}
       {tab === 'history' && (
         <section aria-label="History">
-          <h3 className="mb-1 text-sm font-bold">History</h3>
+          <h3 className="mb-1 text-sm font-bold">History<Tip label="section:History" /></h3>
           <table className="w-full text-sm">
             <caption className="sr-only">What happened to this message</caption>
-            <thead><tr className="bg-[var(--color-surface-muted)] text-left text-xs font-semibold text-[var(--color-text-muted)]"><th className="px-3 py-2">When</th><th className="px-3 py-2">What</th></tr></thead>
+            <thead><tr className="bg-[var(--color-surface-muted)] text-left text-xs font-semibold text-[var(--color-text-muted)]"><Th>When</Th><Th>What</Th></tr></thead>
             <tbody>{history.map((h, i) => <tr key={i} className="border-t border-[var(--color-border)]"><td className="whitespace-nowrap px-3 py-2">{formatWhen(h.at, now)}</td><td className="px-3 py-2">{h.what}</td></tr>)}</tbody>
           </table>
         </section>
@@ -125,7 +127,7 @@ export default function MessageDialog({ close }: NextOverlayBodyProps) {
         {link && <a href={link} target="_blank" rel="noreferrer" className="rounded-lg border border-[var(--color-border)] px-3.5 py-2 text-sm font-semibold hover:bg-[var(--color-surface-muted)]">Open the trace</a>}
         {/* A held replay is answered by Review; replaying it here would be a second door to the same decision. */}
         {!held && m.status === 'active' && (mayReplay.allowed
-          ? <Link to={`${pathname}?dialog=replay&id=${m.id}`} className="rounded-lg bg-[var(--color-primary-600)] px-3.5 py-2 text-sm font-bold text-white hover:bg-[var(--color-primary-700)]">Replay…</Link>
+          ? <Link to={`${pathname}?dialog=replay&id=${m.id}`} data-shortcut="replay" className="rounded-lg bg-[var(--color-primary-600)] px-3.5 py-2 text-sm font-bold text-white hover:bg-[var(--color-primary-700)]">Replay…</Link>
           : <span title={mayReplay.reason ?? undefined} className="text-sm text-[var(--color-text-muted)]">Needs an Operator to replay</span>)}
         {held && held.kind === 'approval' && (may.allowed
           ? <Link to={`${pathname}?dialog=review&entry=${encodeURIComponent(held.entryId ?? held.id)}`} className="rounded-lg bg-[var(--color-primary-600)] px-3.5 py-2 text-sm font-bold text-white hover:bg-[var(--color-primary-700)]">Review…</Link>

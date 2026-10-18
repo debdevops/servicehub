@@ -5,10 +5,11 @@ import type { Me } from '../../../lib/api/identity'
 import { formatWhen } from '../../../lib/format'
 import { permission } from '../../../lib/permissions'
 import { entityLabel } from '../../lib/entityRows'
+import { Th } from '../Tip'
+import { Tip } from '../Tip'
 
 const PREVIEW = 5
 
-const th = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
 const td = 'px-3 py-2.5 align-top text-sm'
 
 /**
@@ -29,7 +30,7 @@ export function MessagesPreview({ namespaceId, watched, me, tabHref }: { namespa
   return (
     <section aria-labelledby="preview-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-        <h2 id="preview-title" className="text-base font-semibold">{title}</h2>
+        <h2 id="preview-title" className="text-base font-semibold">{title}<Tip label="section:Newest dead-letter messages" /></h2>
         <Link to={tabHref} className="text-xs font-semibold text-[var(--color-primary-700)]">Open the Dead-letter messages tab →</Link>
       </div>
       {list.isError ? (
@@ -43,7 +44,7 @@ export function MessagesPreview({ namespaceId, watched, me, tabHref }: { namespa
           <table className="w-full border-t border-[var(--color-border)]">
             <caption className="sr-only">The newest dead-letter messages of this connection</caption>
             <thead>
-              <tr><th className={th}>Message</th><th className={th}>Entity</th><th className={th}>Reason</th><th className={th}>Deliveries</th><th className={th}>{watched ? 'Detected' : 'Recorded'}</th><th className={th}>State</th><th className={th}>Actions</th></tr>
+              <tr><Th>Message</Th><Th>Entity</Th><Th>Reason</Th><Th>Deliveries</Th><Th label={watched ? 'Detected' : 'Recorded'}>{watched ? 'Detected' : 'Recorded'}</Th><Th>State</Th><Th>Actions</Th></tr>
             </thead>
             <tbody>
               {items.map((m) => {

@@ -14,6 +14,8 @@ import { AttentionTable } from '../components/home/AttentionTable'
 import { cloudLabel } from '../lib/clouds'
 import { cloudFacts, homeTotals, noTotalSentence } from '../lib/words'
 import { nextEntry, nextHref } from '../nav/navigation'
+import { Th } from '../components/Tip'
+import { Tip } from '../components/Tip'
 
 const ORDER: readonly CloudKind[] = ['azure', 'aws', 'gcp']
 const dot = { good: 'bg-green-600', caution: 'bg-amber-500', none: 'bg-slate-300' } as const
@@ -33,12 +35,12 @@ function CloudCard({ cloud, components, covered }: { cloud: CloudKind; component
   return (
     <section aria-label={cloudLabel[cloud]} className={`rounded-xl border border-t-4 border-[var(--color-border)] bg-[var(--color-surface)] p-4 ${accent[cloud]}`}>
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold">{cloudLabel[cloud]}</h2>
+        <h2 className="flex items-center text-lg font-bold">{cloudLabel[cloud]}<Tip label="section:Cloud card" /></h2>
         <Link to={nextHref(nextEntry('home'), { cloud })} aria-label={`Open ${cloudLabel[cloud]}`} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">Open</Link>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-4">
         <div>
-          <p className="text-sm font-semibold">{first.label}</p>
+          <p className="flex items-center text-sm font-semibold">{first.label}<Tip label={first.label} context="tile" /></p>
           <p className="text-3xl font-bold leading-tight" data-testid={`first-${cloud}`}>
             {first.value === null ? <span className="text-lg font-semibold">{first.unreadable ? 'Can’t read' : 'Not looked yet'}</span> : first.value.toLocaleString('en-US')}
             {first.value !== null && first.approximate && <span className="ml-1.5 text-sm font-normal text-[var(--color-text-muted)]">(approx)</span>}
@@ -46,13 +48,13 @@ function CloudCard({ cloud, components, covered }: { cloud: CloudKind; component
           <p className="text-xs text-[var(--color-text-muted)]">{first.recorded !== null ? `${first.recorded.toLocaleString('en-US')} recorded at last look` : sub}</p>
         </div>
         <div>
-          <p className="text-sm font-semibold">Needs you</p>
+          <p className="flex items-center text-sm font-semibold">Needs you<Tip label="Needs you" context="tile" /></p>
           <p className="text-3xl font-bold leading-tight text-red-700" data-testid={`needs-${cloud}`}>{totals.needsYou}</p>
           <p className="text-xs text-[var(--color-text-muted)]">approvals: {totals.approvals}, hand-offs: {totals.handOffs}</p>
         </div>
       </div>
       <table className="mt-3 w-full text-sm" aria-label={`${cloudLabel[cloud]} components`}>
-        <thead><tr className="bg-[var(--color-surface-muted)] text-left text-xs font-semibold text-[var(--color-text-muted)]"><th className="px-2 py-1.5">Component</th><th className="px-2 py-1.5 text-right">Needs you</th></tr></thead>
+        <thead><tr className="bg-[var(--color-surface-muted)] text-left text-xs font-semibold text-[var(--color-text-muted)]"><Th>Component</Th><Th>Needs you</Th></tr></thead>
         <tbody>
           {shown.map((c) => (
             <tr key={`${c.namespaceId}:${c.componentKey}`} className="border-t border-[var(--color-border)]">
@@ -95,7 +97,7 @@ export default function AllCloudsPage() {
   return (
     <div className="space-y-4 px-6 py-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <h1 className="text-2xl font-bold">All clouds</h1>
+        <h1 className="text-2xl font-bold">All clouds<Tip label="page:All clouds" /></h1>
         <div className="flex gap-3">
           <aside aria-label="What you’re looking at" className="flex max-w-xl gap-2.5 rounded-xl border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] p-3 text-sm">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-primary-700)]" aria-hidden="true" />
@@ -117,16 +119,16 @@ export default function AllCloudsPage() {
           <div className="grid gap-3 md:grid-cols-3">
             <section aria-label="Needs your attention" className="flex items-start gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
               <span className="mt-1 grid h-10 w-10 place-items-center rounded-full bg-red-50" aria-hidden="true"><TriangleAlert className="h-5 w-5 text-red-600" /></span>
-              <div><h2 className="text-sm font-semibold">Needs your attention</h2><p className="text-3xl font-bold leading-tight" data-testid="all-needs-you">{totals.needsYou}</p>
+              <div><h2 className="flex items-center text-sm font-semibold">Needs your attention<Tip label="Needs your attention" /></h2><p className="text-3xl font-bold leading-tight" data-testid="all-needs-you">{totals.needsYou}</p>
                 <p className="text-xs text-[var(--color-text-muted)]">(approvals: {totals.approvals}, hand-offs: {totals.handOffs}) · across {clouds.length} {clouds.length === 1 ? 'cloud' : 'clouds'}</p></div>
             </section>
             <section aria-label="Pending approvals" className="flex items-start gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
               <span className="mt-1 grid h-10 w-10 place-items-center rounded-full bg-[var(--color-primary-50)]" aria-hidden="true"><Clock className="h-5 w-5 text-[var(--color-primary-700)]" /></span>
-              <div><h2 className="text-sm font-semibold">Pending approvals</h2><p className="text-3xl font-bold leading-tight" data-testid="all-approvals">{totals.approvals}</p><p className="text-xs text-[var(--color-text-muted)]">Require human approval</p></div>
+              <div><h2 className="flex items-center text-sm font-semibold">Pending approvals<Tip label="Pending approvals" /></h2><p className="text-3xl font-bold leading-tight" data-testid="all-approvals">{totals.approvals}</p><p className="text-xs text-[var(--color-text-muted)]">Require human approval</p></div>
             </section>
             <section aria-label="Connected" className="flex items-start gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
               <span className="mt-1 grid h-10 w-10 place-items-center rounded-full bg-[var(--color-primary-50)]" aria-hidden="true"><Cloud className="h-5 w-5 text-[var(--color-primary-700)]" /></span>
-              <div><h2 className="text-sm font-semibold">Connected</h2><p className="text-3xl font-bold leading-tight" data-testid="all-connected">{clouds.length} <span className="text-base font-semibold">{clouds.length === 1 ? 'cloud' : 'clouds'}</span></p><p className="text-xs text-[var(--color-text-muted)]">{rows.length} {rows.length === 1 ? 'component' : 'components'}</p></div>
+              <div><h2 className="flex items-center text-sm font-semibold">Connected<Tip label="Connected clouds" /></h2><p className="text-3xl font-bold leading-tight" data-testid="all-connected">{clouds.length} <span className="text-base font-semibold">{clouds.length === 1 ? 'cloud' : 'clouds'}</span></p><p className="text-xs text-[var(--color-text-muted)]">{rows.length} {rows.length === 1 ? 'component' : 'components'}</p></div>
             </section>
           </div>
 
