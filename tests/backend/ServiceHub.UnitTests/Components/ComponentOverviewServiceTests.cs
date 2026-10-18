@@ -159,6 +159,19 @@ public sealed class ComponentOverviewServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_readable_connection_with_no_queue_is_still_its_components_reachable_and_empty_not_missing()
+    {
+        var ns = Aws();
+        var service = await ServiceAsync(new() { [CloudProviderType.Aws] = Lists(ProviderCapabilities.Aws) }, null, ns);
+
+        var rows = (await service.GetAsync(Owner, null, null, default)).Components;
+
+        rows.Select(c => c.ComponentKey).Should().BeEquivalentTo("sqs", "sns");
+        rows.Should().OnlyContain(c => c.Reachable && c.Entities.Count == 0 && c.NeedsYou == 0);
+        rows.Should().OnlyContain(c => c.DeadLetters.Value == 0 && c.DeadLetters.Kind == CountKind.Approximate);
+    }
+
+    [Fact]
     public async Task One_unreadable_namespace_does_not_hide_the_others()
     {
         var bad = Azure("bad-ns");

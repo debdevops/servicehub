@@ -110,6 +110,9 @@ export default defineConfig({
     include: ['../../tests/web/unit/**/*.test.{ts,tsx}'],
     exclude: ['node_modules/**'],
     setupFiles: ['../../tests/web/support/setup.ts'],
+    // The default is 5 s. A whole screen rendered and then scanned by axe takes far longer when ~100 files run in parallel under coverage,
+    // and a timeout there says nothing about the screen (found 2026-10-18: two unrelated tests timed out only in the full run).
+    testTimeout: 20_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],

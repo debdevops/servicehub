@@ -1,6 +1,7 @@
 import { Bot, Check, CircleAlert, Clock, FileText, Search, TriangleAlert, X } from 'lucide-react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { useMe } from '../../hooks/useIdentity'
+import { PAGE_SIZES, usePageSize } from '../../lib/pageSize'
 import { permission } from '../../lib/permissions'
 import { UnlockHint } from '../UnlockHint'
 import { NotAllowed } from '../ui/NotAllowed'
@@ -49,7 +50,7 @@ export default function ApproveModal({ close }: OverlayBodyProps) {
   useEffect(() => { if (unresolvedNow) setWasUnresolved(true) }, [unresolvedNow])
   const [unticked, setUnticked] = useState<ReadonlySet<string>>(new Set())
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE)
+  const [pageSize, setPageSize] = usePageSize()
   const [progress, setProgress] = useState(0)
   const [declining, setDeclining] = useState(false)
   const [why, setWhy] = useState('')
@@ -394,9 +395,8 @@ function MessagePanel({ dlqMessageId }: { dlqMessageId: number | null }) {
   )
 }
 
-/** Rows per page — 5 fits a short window without scrolling, 10 is the default. Every message can still be ticked at once, on any page. */
-const PAGE_SIZES = [5, 10, 20, 50] as const
-const DEFAULT_PAGE_SIZE = 10
+// Rows per page are the app's own (`usePageSize`: 10, 25 or 50, 25 by default) — every grid pages the same way. Every message can still
+// be ticked at once, on any page.
 
 /** One row per waiting replay, named by what a person recognises: the message's own id, its queue and what failed. */
 function Items({ items, unticked, onToggle, selectedId, onPick, sameEntity }: { items: readonly PendingWorkItem[]; unticked: ReadonlySet<string>; onToggle: (id: string) => void; selectedId: string; onPick: (id: string) => void; sameEntity: string | null }) {

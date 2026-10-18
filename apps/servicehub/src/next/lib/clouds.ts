@@ -22,3 +22,14 @@ export function parseScope(segment: string | undefined): CloudScope {
 export function cloudOf(scope: CloudScope): CloudKind | null {
   return scope === 'all' ? null : scope
 }
+
+/**
+ * The header's own colour per cloud (the three Home designs differ on purpose). Colour only: nothing is decided from it (R4).
+ * `all` and the non-cloud pages keep ServiceHub's own.
+ */
+export const cloudHeaderClass: Readonly<Record<CloudScope, string>> = {
+  all: 'bg-[var(--color-primary-900)]',
+  azure: 'bg-[#0b2f63]',
+  aws: 'bg-[#4a2310]',
+  gcp: 'bg-[#0f4a2b]',
+}

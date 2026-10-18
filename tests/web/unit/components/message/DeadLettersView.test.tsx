@@ -74,7 +74,7 @@ describe('the Dead letters view', () => {
       ['', 'When', 'Queue or topic', 'Message', 'Failed because', 'Tries', 'Waiting', 'Size', 'Actions'],
     )
     expect(within(table).getAllByRole('row')).toHaveLength(3)
-    expect(lastQuery()).toMatchObject({ provider: 'azure', status: 'active', pageSize: 10, page: 1 })
+    expect(lastQuery()).toMatchObject({ provider: 'azure', status: 'active', pageSize: 25, page: 1 })
     expect(screen.getByRole('heading', { name: /Azure — Dead letters/ })).toBeInTheDocument()
   })
 

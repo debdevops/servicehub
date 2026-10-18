@@ -1,3 +1,5 @@
+import { Pager } from '../../components/ui/Pager'
+import { usePagedList } from '../../hooks/usePagedList'
 import { useCoverage } from '../../hooks/useCoverage'
 import type { CloudKind, CoverageRow, SupportStatus } from '../../lib/api/coverage'
 import { toProblem } from '../../lib/api/client'
@@ -20,6 +22,7 @@ const tiles: readonly { readonly status: SupportStatus; readonly label: string; 
 ]
 
 function CloudTable({ name, rows }: { name: string; rows: readonly CoverageRow[] }) {
+  const { items, pager } = usePagedList(rows)
   return (
     <section aria-label={name} className="mb-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
       <h2 className="mb-3 text-base font-semibold text-[var(--color-text)]">{name}</h2>
@@ -35,7 +38,7 @@ function CloudTable({ name, rows }: { name: string; rows: readonly CoverageRow[]
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {items.map((row) => (
             <tr key={row.id} className="border-b border-[var(--color-border)] align-top text-[var(--color-text)]">
               <th scope="row" className="px-2 py-2 font-semibold">{row.name}</th>
               <td className="px-2 py-2">{row.stuckPlace}</td>
@@ -49,6 +52,7 @@ function CloudTable({ name, rows }: { name: string; rows: readonly CoverageRow[]
           ))}
         </tbody>
       </table>
+      <Pager {...pager} label={name} />
     </section>
   )
 }

@@ -101,9 +101,7 @@ public sealed class ComponentOverviewService : IComponentOverviewService
             if (entities is null)
             {
                 // Unreadable: no entities are known, so one row per component this adapter covers says so, with no numbers.
-                var keys = ComponentCatalog.All
-                    .Where(c => c.Provider == ns.Provider && c.Detection == DetectionKind.Store && c.Status == SupportStatus.Supported)
-                    .DistinctBy(c => c.ComponentKey).ToList();
+                var keys = CoveredBy(ns);
                 for (var i = 0; i < keys.Count; i++)
                 {
                     // Pending work is not split by component here (no entity is known), so it is shown once, on the first row.
@@ -120,6 +118,18 @@ public sealed class ComponentOverviewService : IComponentOverviewService
                 .Where(e => CloudEntityKinds.Of(e) is "queue" or "subscription" && !targets.Contains(e.Name))
                 .OrderBy(e => CloudEntityKinds.Of(e), StringComparer.Ordinal).ThenBy(e => e.Name, StringComparer.Ordinal)
                 .ToList();
+
+            if (holders.Count == 0)
+            {
+                // Connected and readable, but holding no queue or subscription: it is still connected, so its components are shown
+                // (reachable, no entities) rather than vanishing as if nothing had been connected.
+                foreach (var d in CoveredBy(ns))
+                {
+                    result.Add(Row(ns, kind, d, caps, [], [], null, now, unreadable: false));
+                }
+
+                continue;
+            }
 
             foreach (var group in holders.GroupBy(e => ComponentCatalog.ForEntity(ns.Provider, CloudEntityKinds.Of(e))?.ComponentKey ?? UnknownComponentKey))
             {
@@ -148,6 +158,11 @@ public sealed class ComponentOverviewService : IComponentOverviewService
 
         return [.. result.OrderBy(c => c.Cloud).ThenBy(c => c.Name, StringComparer.Ordinal).ThenBy(c => c.ComponentKey, StringComparer.Ordinal)];
     }
+
+    /// <summary>The components the catalogue says this connection's adapter covers, one per component key.</summary>
+    private static List<ComponentDescriptor> CoveredBy(Namespace ns) => ComponentCatalog.All
+        .Where(c => c.Provider == ns.Provider && c.Detection == DetectionKind.Store && c.Status == SupportStatus.Supported)
+        .DistinctBy(c => c.ComponentKey).ToList();
 
     private static bool Matches(PendingWorkItem item, ComponentEntity entity) =>
         string.Equals(item.Entity, entity.Parent is null ? entity.Name : $"{entity.Parent}{SubscriptionSegment}{entity.Name}", StringComparison.Ordinal)

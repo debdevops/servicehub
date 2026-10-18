@@ -76,24 +76,24 @@ export const nextNavigation: readonly NextEntry[] = [
   {
     kind: 'page', id: 'home-all', label: 'All clouds', path: '',
     description: 'Every connected cloud side by side, each in its own terms, and everything waiting for a person.',
-    icon: LayoutGrid, group: 'home', unit: 'C2', design: 'p02-all-clouds-home', built: false,
+    icon: LayoutGrid, group: 'home', unit: 'C2', design: 'p02-all-clouds-home', built: true,
   },
   {
     kind: 'page', id: 'home', label: 'Home', path: ':cloud',
     description: 'One cloud: what is in dead-letter, what needs you, and each connected component.',
-    icon: Home, group: 'home', unit: 'C1', design: 'azure-home', built: false,
+    icon: Home, group: 'home', unit: 'C1', design: 'azure-home', built: true,
   },
 
   // ── Components — the list itself comes from the coverage catalogue ────────────────────────────
   {
     kind: 'page', id: 'component-list', label: 'Component', path: ':cloud/c/:component',
     description: 'Every connection of one component type on this cloud.',
-    icon: Boxes, group: 'component', unit: 'D1', design: 'p04-azure-service-bus-list', built: false,
+    icon: Boxes, group: 'component', unit: 'D1', design: 'p04-azure-service-bus-list', built: true,
   },
   {
     kind: 'page', id: 'component-detail', label: 'Component detail', path: ':cloud/c/:component/:namespaceId',
     description: 'One connection: its queues, topics and subscriptions, its dead-letter messages, and what was done about them.',
-    icon: Inbox, group: 'component', unit: 'D2', design: 'azure-service-bus-detail', built: false,
+    icon: Inbox, group: 'component', unit: 'D2', design: 'azure-service-bus-detail', built: true,
   },
 
   // ── Operational tools, in menu order ──────────────────────────────────────────────────────────
@@ -179,7 +179,7 @@ export const nextNavigation: readonly NextEntry[] = [
   {
     kind: 'dialog', id: 'message', label: 'Message', value: 'message',
     description: 'One message in full: why it failed, its body, properties and history. Read-only.',
-    icon: Inbox, group: 'contextual', unit: 'D3', design: 'd07-message-full-view', built: false,
+    icon: Inbox, group: 'contextual', unit: 'D3', design: 'd07-message-full-view', built: true,
   },
   {
     kind: 'dialog', id: 'emergency-stop', label: 'Emergency stop', value: 'emergency-stop',
@@ -218,13 +218,13 @@ export interface ComponentTab {
 }
 
 export const componentTabs: readonly ComponentTab[] = [
-  { value: 'overview', label: 'Overview', unit: 'D2', design: 'azure-service-bus-detail', built: false },
-  { value: 'dead-letters', label: 'Dead-letter messages', unit: 'D3', design: 'p05a-service-bus-dead-letters', built: false },
+  { value: 'overview', label: 'Overview', unit: 'D2', design: 'azure-service-bus-detail', built: true },
+  { value: 'dead-letters', label: 'Dead-letter messages', unit: 'D3', design: 'p05a-service-bus-dead-letters', built: true },
   { value: 'stuck', label: 'Stuck messages', unit: 'G5', design: 'p05b-service-bus-stuck', built: false },
-  { value: 'recovery', label: 'Recovery', unit: 'D4', design: 'p05c-service-bus-recovery', built: false },
-  { value: 'access', label: 'Access', unit: 'D5', design: 'p05d-service-bus-access', built: false },
-  { value: 'configuration', label: 'Configuration', unit: 'D6', design: 'p05e-service-bus-configuration', built: false },
-  { value: 'audit', label: 'Audit', unit: 'D7', design: 'p05f-service-bus-audit', built: false },
+  { value: 'recovery', label: 'Recovery', unit: 'D4', design: 'p05c-service-bus-recovery', built: true },
+  { value: 'access', label: 'Access', unit: 'D5', design: 'p05d-service-bus-access', built: true },
+  { value: 'configuration', label: 'Configuration', unit: 'D6', design: 'p05e-service-bus-configuration', built: true },
+  { value: 'audit', label: 'Audit', unit: 'D7', design: 'p05f-service-bus-audit', built: true },
 ]
 
 export function isNextPage(entry: NextEntry): entry is NextPage {

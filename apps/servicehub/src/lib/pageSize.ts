@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 
 /** Every grid pages with the same choices and the same default, so no two screens disagree about "a page". */
 export const PAGE_SIZES = [10, 25, 50] as const
-export const DEFAULT_PAGE_SIZE = 10
+export const DEFAULT_PAGE_SIZE = 25
 const KEY = 'servicehub.pageSize'
 
 const read = (): number => {

@@ -16,6 +16,7 @@ import { deadLetterKeys } from '../../hooks/useDeadLetters'
 import { replayKeys } from '../../hooks/useReplay'
 import { Skeleton } from '../ui/Skeleton'
 import { RetryLink } from '../ui/RetryLink'
+import { usePagedList } from '../../hooks/usePagedList'
 import { Pager } from '../ui/Pager'
 import { sectionHelp } from '../../content/sections'
 
@@ -209,9 +210,7 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
 
 /** What is about to be sent, and where to — one row per message, so a person can check before anything runs. */
 function SelectedMessages({ ids, heldBack }: { ids: readonly number[]; heldBack: readonly number[] }) {
-  const PAGE_SIZE = 10
-  const [page, setPage] = useState(1)
-  const pageIds = ids.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const { items: pageIds, pager } = usePagedList(ids)
   const namespaces = useNamespaces().data ?? []
   const results = useQueries({ queries: pageIds.map((id) => ({ queryKey: ['dead-letter', id], queryFn: () => fetchDeadLetter(id), staleTime: 30_000 })) })
   const held = new Set(heldBack)
@@ -226,7 +225,7 @@ function SelectedMessages({ ids, heldBack }: { ids: readonly number[]; heldBack:
   }
   return (
     <section aria-label="Messages that will be replayed">
-      <Collapsible title="Where each one goes" help={sectionHelp.bulk.where} summary={ids.length > PAGE_SIZE ? `${ids.length.toLocaleString()} messages, ${PAGE_SIZE} a page, grouped by failure reason` : 'grouped by failure reason'}>
+      <Collapsible title="Where each one goes" help={sectionHelp.bulk.where} summary={ids.length > pager.pageSize ? `${ids.length.toLocaleString()} messages, ${pager.pageSize} a page, grouped by failure reason` : 'grouped by failure reason'}>
         <div className="relative overflow-x-auto rounded-xl border border-[var(--color-border)]">
           <table className="w-full text-left text-[12.5px]">
             <caption className="sr-only">Selected messages, grouped by failure reason, and where each will be sent back</caption>
@@ -273,7 +272,7 @@ function SelectedMessages({ ids, heldBack }: { ids: readonly number[]; heldBack:
             )}
           </table>
         </div>
-        <Pager page={page} pageSize={PAGE_SIZE} total={ids.length} onPage={setPage} />
+        <Pager {...pager} label="messages to replay" />
       </Collapsible>
     </section>
   )

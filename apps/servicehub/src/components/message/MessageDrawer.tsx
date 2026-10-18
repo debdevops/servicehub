@@ -279,7 +279,7 @@ function Colored({ line }: { line: string }) {
  * marked, or — when the error names a field the body does not have — a `+ "field": missing` line sits where it
  * should be. You cannot judge a replay without seeing the payload. Only the stored preview is shown, and it says so.
  */
-function BodyBlock({ detail, field }: { detail: DeadLetterDetail; field: string | null }) {
+export function BodyBlock({ detail, field }: { detail: DeadLetterDetail; field: string | null }) {
   const text = detail.bodyPreview
   const parses = text !== null && !detail.bodyIsPreview && isJson(text)
   const [raw, setRaw] = useState(false)
@@ -458,7 +458,7 @@ function Details({ detail, now }: { detail: DeadLetterDetail; now: Date }) {
   )
 }
 
-function Properties({ json }: { json: string | null }) {
+export function Properties({ json }: { json: string | null }) {
   let entries: [string, unknown][] = []
   if (json) {
     try {

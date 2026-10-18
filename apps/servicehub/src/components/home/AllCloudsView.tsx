@@ -5,6 +5,8 @@ import { useNavigate } from 'react-router-dom'
 import { CapabilityLine } from './CapabilityLine'
 import { RecordedLine } from './RecordedLine'
 import { InfoTip } from '../ui/InfoTip'
+import { Pager } from '../ui/Pager'
+import { usePagedList } from '../../hooks/usePagedList'
 import { widgetHelp } from '../../content/widgets'
 import { environmentMeta, groupByCloudEnvironment, cloudColor } from '../provider/scopeChoice'
 import { useProviderScope } from '../provider/providerScope'
@@ -187,7 +189,13 @@ function NamespaceByCloudTable({
   const look = useLookAtDeadLetters()
   const byId = new Map(namespaces.map((n) => [n.id, n]))
   const fleetRows = fleet?.namespaces ?? []
-  const tree = groupByCloudEnvironment(fleetRows)
+  // Paged like every grid: the order is the grouped one (cloud, then environment, worst first), cut into pages, then grouped again for
+  // display. The counts in the group headings are of the whole fleet, never of the page.
+  const full = groupByCloudEnvironment(fleetRows)
+  const { items: pageRows, pager } = usePagedList(full.flatMap((c) => c.environments.flatMap((e) => e.items)))
+  const tree = groupByCloudEnvironment(pageRows)
+  const totalIn = (provider: CloudProvider, env?: string) =>
+    full.find((c) => c.provider === provider)?.environments.filter((e) => env === undefined || e.env === env).reduce((n, e) => n + e.items.length, 0) ?? 0
 
   const openNamespace = (provider: CloudProvider, id: string) => {
     select(provider)
@@ -217,7 +225,7 @@ function NamespaceByCloudTable({
             </tr>
           </thead>
           {tree.map(({ provider, environments }) => {
-            const count = environments.reduce((n, e) => n + e.items.length, 0)
+            const count = totalIn(provider)
             const fleetCloud = fleet?.clouds.find((c) => c.provider === provider)
             const cloudTraits = traitsOf(namespaces.filter((n) => n.provider === provider), fleetCloud)
             return (
@@ -245,7 +253,7 @@ function NamespaceByCloudTable({
                           <span className="flex items-center gap-2 text-[10.5px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
                             <span aria-hidden="true" className="inline-block h-2 w-2 rounded-full" style={{ background: meta.dot }} />
                             {meta.label}
-                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal ${meta.chip}`}>{items.length}</span>
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal ${meta.chip}`}>{totalIn(provider, env)}</span>
                           </span>
                         </th>
                       </tr>
@@ -285,6 +293,7 @@ function NamespaceByCloudTable({
           })}
         </table>
       </div>
+      <Pager {...pager} label="namespaces" />
     </div>
   )
 }

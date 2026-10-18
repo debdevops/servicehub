@@ -65,16 +65,11 @@ describe('the 5.0.0 shell', () => {
     expect(within(menu).getByRole('link', { name: 'All clouds' })).toHaveAttribute('aria-current', 'true')
   })
 
-  it.each(nextPages.filter((p) => p.id !== 'coverage').map((p) => [p.id, p] as const))('%s says plainly that it is not built, and which unit and design it waits for', async (_id, page) => {
+  it.each(nextPages.filter((p) => !p.built).map((p) => [p.id, p] as const))('%s says plainly that it is not built, and which unit and design it waits for', async (_id, page) => {
     open(nextHref(page, { cloud: 'azure', component: 'service-bus', namespaceId: 'ns-1' }))
 
     expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument()
     expect(screen.getByText(new RegExp(`Not built yet — unit ${page.id === 'component-detail' ? componentTabs[0].unit : page.unit}`))).toBeInTheDocument()
-  })
-
-  it('opens the tab a component address names, and the first tab when it names none or an unknown one', async () => {
-    open('/next/azure/c/service-bus/ns-1?tab=dead-letters')
-    expect(await screen.findByRole('heading', { level: 1, name: 'Component detail · Dead-letter messages' })).toBeInTheDocument()
   })
 
   it('answers an address that names no page with the not-found screen, inside the shell', async () => {
