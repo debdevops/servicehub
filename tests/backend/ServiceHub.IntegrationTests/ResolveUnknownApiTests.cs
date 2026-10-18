@@ -82,6 +82,21 @@ public sealed class ResolveUnknownApiTests
     }
 
     [Fact]
+    public async Task An_attempt_with_no_answer_is_a_hand_off_on_its_component_with_the_outcome_unknown_family()
+    {
+        var (host, _, _, _) = await Unresolved();
+        using var _h = host;
+
+        var items = (await Json(await host.Client.GetAsync("/api/v1/pending-work"))).GetProperty("items").EnumerateArray()
+            .Where(i => i.GetProperty("kind").GetString() == "unresolved").ToList();
+
+        var item = items.Should().ContainSingle().Subject;
+        item.GetProperty("componentKey").GetString().Should().Be("service-bus");
+        item.GetProperty("type").GetString().Should().Be("handOff");
+        item.GetProperty("family").GetString().Should().Be("outcomeUnknown");
+    }
+
+    [Fact]
     public async Task A_viewer_is_refused_by_the_server_and_nothing_changes_while_an_admin_can_resolve_it()
     {
         var (host, log, id, entry) = await Unresolved();

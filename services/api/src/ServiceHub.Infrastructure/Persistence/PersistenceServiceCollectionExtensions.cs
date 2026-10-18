@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ServiceHub.Core.Components;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Security;
 
@@ -79,6 +80,7 @@ public static class PersistenceServiceCollectionExtensions
         services.TryAddScoped<IDlqObserverAttestationService, DlqObserver.DlqObserverAttestationService>();
         services.TryAddSingleton<DlqObserver.DeadLetterViewTracker>();
         services.TryAddScoped<IFleetOverviewService, Fleet.FleetOverviewService>();
+        services.TryAddScoped<IComponentOverviewService, Components.ComponentOverviewService>();
         services.TryAddScoped<IBulkOperationService, BulkOperations.BulkOperationService>();
         services.TryAddScoped<IRulesService, Rules.RulesService>();
         services.TryAddScoped<ISignaturesService, Signatures.SignaturesService>();

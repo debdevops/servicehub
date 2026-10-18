@@ -25,7 +25,7 @@ public sealed class CoverageEndpointTests
     [Fact]
     public void The_endpoint_returns_the_whole_catalogue()
     {
-        var result = new FleetController(Mock.Of<IFleetOverviewService>()).Coverage();
+        var result = new FleetController(Mock.Of<IFleetOverviewService>(), Mock.Of<IComponentOverviewService>()).Coverage();
 
         result.Should().BeOfType<OkObjectResult>().Which.Value.Should().BeSameAs(CoverageResponse.Current);
     }

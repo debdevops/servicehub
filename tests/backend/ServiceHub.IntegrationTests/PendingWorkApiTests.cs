@@ -89,6 +89,22 @@ public sealed class PendingWorkApiTests
     }
 
     [Fact]
+    public async Task An_approval_says_which_component_it_is_on_that_it_is_an_approval_and_its_reasons_family()
+    {
+        var (host, _, _) = await Held(1);
+        using var _h = host;
+        await RunAutoReplay(host);
+
+        var item = (await Json(await host.Client.GetAsync("/api/v1/pending-work"))).GetProperty("items")[0];
+
+        item.GetProperty("componentKey").GetString().Should().Be("sqs");
+        item.GetProperty("type").GetString().Should().Be("approval");
+        // The rule has earned no autonomy yet, so the gate stops there first; the family is looked up from the code, camelCase, never stored.
+        item.GetProperty("reasonCode").GetString().Should().Be("AUTONOMY_GRANT_INSUFFICIENT");
+        item.GetProperty("family").GetString().Should().Be("policyBlocked");
+    }
+
+    [Fact]
     public async Task A_namespace_outside_the_callers_allow_list_is_not_counted()
     {
         var (host, _, ns) = await Held(1);

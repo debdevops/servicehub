@@ -33,9 +33,9 @@ export const DEMO_WATCH_MS = 30_000
 export const REAL_WATCH_HOURS = 24
 
 export const capabilities: Readonly<Record<CloudProvider, ProviderCapabilities>> = {
-  azure: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: false, supportsScheduledMessages: true, supportsRepeatablePeek: true, supportsRecoveryMarker: true, canProveDlqAbsence: true, supportsTopics: true, supportsSubscriptions: true, notes: 'Purge is not supported — the SDK has no reliable single-message delete by sequence number.' },
-  aws: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: true, supportsScheduledMessages: false, supportsRepeatablePeek: false, supportsRecoveryMarker: true, canProveDlqAbsence: false, supportsTopics: true, supportsSubscriptions: true, notes: 'SQS has no non-destructive peek, so every look is a receive.' },
-  gcp: { supportsMessageCounts: false, supportsManualDeadLetter: false, supportsPurge: true, supportsScheduledMessages: false, supportsRepeatablePeek: false, supportsRecoveryMarker: true, canProveDlqAbsence: false, supportsTopics: true, supportsSubscriptions: true, notes: 'Pub/Sub has no count API; every pull counts as a delivery attempt.' },
+  azure: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: false, supportsScheduledMessages: true, supportsRepeatablePeek: true, supportsRecoveryMarker: true, canProveDlqAbsence: true, supportsTopics: true, supportsSubscriptions: true, countsAreApproximate: false, notes: 'Purge is not supported — the SDK has no reliable single-message delete by sequence number.' },
+  aws: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: true, supportsScheduledMessages: false, supportsRepeatablePeek: false, supportsRecoveryMarker: true, canProveDlqAbsence: false, supportsTopics: true, supportsSubscriptions: true, countsAreApproximate: true, notes: 'SQS has no non-destructive peek, so every look is a receive.' },
+  gcp: { supportsMessageCounts: false, supportsManualDeadLetter: false, supportsPurge: true, supportsScheduledMessages: false, supportsRepeatablePeek: false, supportsRecoveryMarker: true, canProveDlqAbsence: false, supportsTopics: true, supportsSubscriptions: true, countsAreApproximate: false, notes: 'Pub/Sub has no count API; every pull counts as a delivery attempt.' },
 }
 
 /** The few invented people who appear in the demo's history. `you` is whoever is looking at it. */

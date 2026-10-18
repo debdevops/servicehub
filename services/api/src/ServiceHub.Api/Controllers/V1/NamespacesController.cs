@@ -656,14 +656,7 @@ public sealed class NamespacesController : ApiControllerBase
     /// The contract's three words. An adapter may describe an entity in its own service's terms ("sns topic"); the API
     /// answers in queue, topic or subscription — a screen indexes its wording by these and must never meet a fourth.
     /// </summary>
-    internal static string Kind(CloudEntity entity)
-    {
-        var raw = entity.EntityType.Trim().ToLowerInvariant();
-        return raw.Contains("subscription", StringComparison.Ordinal) ? "subscription"
-            : raw.Contains("topic", StringComparison.Ordinal) ? "topic"
-            : raw.Contains("queue", StringComparison.Ordinal) ? "queue"
-            : raw;
-    }
+    internal static string Kind(CloudEntity entity) => CloudEntityKinds.Of(entity);
 
     private NamespaceResponse ToResponse(Namespace ns) => new(
         ns.Id,

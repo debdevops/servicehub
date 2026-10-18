@@ -75,6 +75,10 @@ namespace ServiceHub.Core.Models;
 /// for all three current providers — Azure Service Bus subscriptions, SNS subscriptions (AWS),
 /// and Pub/Sub subscriptions (GCP).
 /// </param>
+/// <param name="CountsAreApproximate">
+/// Whether the counts the provider reports are the cloud's own estimates rather than exact numbers. True for AWS SQS, whose
+/// attributes are named <c>ApproximateNumberOfMessages</c>. A screen shows such a count as approximate, never as exact.
+/// </param>
 public sealed record ProviderCapabilities(
     bool SupportsMessageCounts,
     bool SupportsManualDeadLetter,
@@ -85,7 +89,8 @@ public sealed record ProviderCapabilities(
     bool SupportsRecoveryMarker,
     bool CanProveDlqAbsence,
     bool SupportsTopics = true,
-    bool SupportsSubscriptions = true)
+    bool SupportsSubscriptions = true,
+    bool CountsAreApproximate = false)
 {
     /// <summary>Capabilities of Microsoft Azure Service Bus.</summary>
     public static readonly ProviderCapabilities Azure = new(
@@ -107,7 +112,8 @@ public sealed record ProviderCapabilities(
         SupportsRepeatablePeek: false,
         Notes: "Scheduled messages are not supported — SQS only offers DelaySeconds (max 15 minutes) at send time. Repeated/live polling is also not supported — SQS has no non-destructive peek, so every call is a receive that counts toward the queue's maxReceiveCount.",
         SupportsRecoveryMarker: true,
-        CanProveDlqAbsence: false);
+        CanProveDlqAbsence: false,
+        CountsAreApproximate: true);
 
     /// <summary>Capabilities of Google Cloud Pub/Sub.</summary>
     public static readonly ProviderCapabilities Gcp = new(

@@ -21,6 +21,12 @@ export interface PendingWorkItem {
   readonly reasonCode: string
   readonly reason: string
   readonly since: string
+  /** The component the item is on (`sqs`, `service-bus`…); null for a rule or an agent, or when the catalogue has none. */
+  readonly componentKey?: string | null
+  /** `approval` waits for yes or no; `handOff` is an attempt with no recorded answer; null for a rule or an agent. */
+  readonly type?: 'approval' | 'handOff' | null
+  /** The stop reason's family (`policyBlocked`, `unverified`…), looked up from `reasonCode`; null when unknown. */
+  readonly family?: string | null
 }
 
 export interface PendingWorkPage {

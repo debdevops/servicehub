@@ -29,6 +29,8 @@ export interface ProviderCapabilities {
   readonly canProveDlqAbsence: boolean
   readonly supportsTopics: boolean
   readonly supportsSubscriptions: boolean
+  /** True when the cloud's own counts are estimates (SQS): show them as approximate, never exact. The API always sends it; older fixtures may not. */
+  readonly countsAreApproximate?: boolean
   readonly notes: string
 }
 

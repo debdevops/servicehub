@@ -70,6 +70,10 @@ public sealed class DlqScanner
     // Up to 50 batches of PeekBatchSize (5,000 messages per entity per scan). A scan that ends full at
     // the cap has not seen the whole queue and says so.
     private const int MaxScanBatchesPerEntity = 50;
+
+    /// <summary>The most messages one scan records per entity. A scan that ends full at this has not seen the whole queue.</summary>
+    internal const int MaxMessagesPerEntityScan = PeekBatchSize * MaxScanBatchesPerEntity;
+
     private const int LookupChunk = 400;
     private const string SubscriptionPathSegment = "/subscriptions/";
     private const string NotWatchedReason = "Looking at a message there counts as a delivery attempt, so it is not watched automatically.";
