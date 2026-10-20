@@ -10,7 +10,7 @@ import { NEXT_ROOT, nextEntriesIn, nextEntry, nextHref, type NextPage } from '..
 import type { ColumnHelp } from '../../content/columns'
 import { Tip } from '../components/Tip'
 
-const linkBase = 'flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]'
+const linkBase = 'flex min-h-9 items-center py-1 gap-2.5 rounded-lg px-2.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-surface-muted)]'
 const linkOn = 'bg-[var(--color-primary-50)] font-semibold text-[var(--color-primary-700)]'
 const groupTitle = 'mx-2.5 mb-1 mt-4 text-xs font-bold text-[var(--color-text)]'
 
@@ -97,7 +97,7 @@ export function NextLayout() {
               <li key={row.componentKey}>
                 <MenuLink to={nextHref(nextEntry('component-list'), { cloud: row.cloud, component: row.componentKey })} help={{ title: row.name, text: `Failed messages end up in: ${row.stuckPlace}. ${row.statusWords}.${row.note ? ` ${row.note}.` : ''} Open it to see your connections to ${row.name}.` }}>
                   {row.name}
-                  {row.status === 'beingValidated' && <span className="ml-auto text-[11px] text-amber-800">Not yet validated</span>}
+                  {row.status === 'beingValidated' && <span className="ml-auto shrink-0 whitespace-nowrap text-[11px] text-amber-800">Not yet validated</span>}
                 </MenuLink>
               </li>
             ))}
@@ -108,8 +108,8 @@ export function NextLayout() {
             {onRequestComponents(rows, cloud).map((row) => (
               <li key={row.componentKey} className="flex items-center">
                 <span className={`${linkBase} min-w-0 flex-1 text-[var(--color-text-muted)] hover:bg-transparent`}>
-                  {row.name}
-                  <span className="ml-auto rounded border border-[var(--color-border)] px-1.5 text-[11px]">On request</span>
+                  <span className="min-w-0">{row.name}</span>
+                  <span className="ml-auto shrink-0 whitespace-nowrap rounded border border-[var(--color-border)] px-1.5 text-[11px]">On request</span>
                 </span>
                 <Tip help={{ title: row.name, text: `${row.name} is not built yet. It is built only if someone asks for it, so nothing here depends on it.` }} />
               </li>

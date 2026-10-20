@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as agents from '@/lib/api/agents'
 import * as identity from '@/lib/api/identity'
 import * as namespacesApi from '@/lib/api/namespaces'
+import * as pendingApi from '@/lib/api/pendingWork'
 import type { CloudProvider, Namespace } from '@/lib/api/namespaces'
 import * as settings from '@/lib/api/settings'
 import { enterDemo, leaveDemo } from '@/lib/demo/state'
@@ -14,6 +15,8 @@ vi.mock('@/lib/api/namespaces')
 vi.mock('@/lib/api/settings')
 vi.mock('@/lib/api/agents')
 vi.mock('@/lib/api/identity')
+// In demo mode an unmocked read would lazy-load the demo world, and that import could land after the environment is torn down.
+vi.mock('@/lib/api/pendingWork')
 
 const ns = (provider: CloudProvider): Namespace =>
   ({ id: `${provider}-1`, name: `${provider}-1`, provider, lastConnectionTestSucceeded: null }) as Namespace
@@ -45,6 +48,7 @@ describe('AppLayout — the banner slot orders emergency before demo when both a
     leaveDemo()
     vi.mocked(namespacesApi.fetchNamespaces).mockResolvedValue([ns('azure')])
     vi.mocked(agents.fetchAgents).mockResolvedValue([])
+    vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 } as unknown as Awaited<ReturnType<typeof pendingApi.fetchPendingWork>>)
     vi.mocked(identity.fetchMe).mockResolvedValue({
       ownerId: 'o', authMethod: 'session', actor: { identity: 's', kind: 'user', label: 'l', isSession: true }, effectiveRole: 'Admin',
     })

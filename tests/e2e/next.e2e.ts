@@ -106,3 +106,19 @@ test.describe('5.0.0 shell: the keyboard and the guides', () => {
     await expect(dialog.locator('#help-guide-aws')).toHaveAttribute('open', '')
   })
 })
+
+test.describe('5.0.0 shell: the left menu', () => {
+  // Found on the live app: a long name ("Kinesis, DynamoDB streams") ran into its "On request" chip because rows had a fixed height.
+  for (const scope of ['azure', 'aws', 'gcp'] as const) {
+    test(`${scope}: no menu row lets its text spill out, at a narrow window too`, async ({ page }) => {
+      await page.setViewportSize({ width: 1100, height: 700 })
+      await enterDemo(page)
+      await open(page, `/next/${scope}`)
+      // A row that is too short for its wrapped text lets the text spill out of it (scrollHeight > clientHeight).
+      const overlaps = await page.evaluate(() => Array.from(document.querySelectorAll('aside li a, aside li > span, nav li a, nav li > span'))
+        .filter((el) => el.scrollHeight > el.clientHeight + 1)
+        .map((el) => el.textContent ?? ''))
+      expect(overlaps).toEqual([])
+    })
+  }
+})
