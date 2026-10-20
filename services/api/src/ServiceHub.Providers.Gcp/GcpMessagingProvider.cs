@@ -186,6 +186,57 @@ public sealed class GcpMessagingProvider : ICloudMessagingProvider
     }
 
     /// <inheritdoc/>
+    /// <remarks>Subscriptions only (<c>topic/subscription</c>): a Pub/Sub topic's limits are not read.</remarks>
+    public async Task<Result<IReadOnlyList<EntitySetting>?>> GetEntitySettingsAsync(Guid namespaceId, string name, string kind, CancellationToken ct)
+    {
+        if (kind != "subscription")
+            return Result<IReadOnlyList<EntitySetting>?>.Success(null);
+
+        var nsResult = await _namespaceRepository.GetByIdAsync(namespaceId, ct).ConfigureAwait(false);
+        if (nsResult.IsFailure)
+            return Result.Failure<IReadOnlyList<EntitySetting>?>(nsResult.Error);
+
+        var ns = nsResult.Value;
+        var slash = name.LastIndexOf('/');
+        if (string.IsNullOrWhiteSpace(ns.GcpProjectId) || slash < 0)
+            return Result.Failure<IReadOnlyList<EntitySetting>?>(Error.Validation(
+                "GCP.PubSub.NoProjectId", "A GCP project and a 'topic/subscription' name are required."));
+
+        try
+        {
+            var id = name[(slash + 1)..];
+            var client = await _clientFactory.GetSubscriberClientAsync(ns, id, ct).ConfigureAwait(false);
+            var sub = await _resiliencePipeline.ExecuteAsync(
+                async token => await client.GetSubscriptionAsync(new SubscriptionName(ns.GcpProjectId, id), token).ConfigureAwait(false),
+                ct).ConfigureAwait(false);
+            return Result<IReadOnlyList<EntitySetting>?>.Success(BuildSubscriptionSettings(sub));
+        }
+        catch (Grpc.Core.RpcException ex) when (ex.StatusCode == Grpc.Core.StatusCode.NotFound)
+        {
+            return Result.Failure<IReadOnlyList<EntitySetting>?>(Error.NotFound("GCP.PubSub.SubscriptionNotFound", $"Subscription '{name}' was not found."));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Could not read subscription settings for namespace {NamespaceId}", namespaceId);
+            return Result.Failure<IReadOnlyList<EntitySetting>?>(Error.ExternalService("GCP.PubSub.SettingsFailed", ex.Message));
+        }
+    }
+
+    internal static IReadOnlyList<EntitySetting> BuildSubscriptionSettings(Google.Cloud.PubSub.V1.Subscription sub)
+    {
+        var settings = new List<EntitySetting>
+        {
+            new("Acknowledgement deadline", $"{sub.AckDeadlineSeconds} seconds"),
+        };
+        if (sub.MessageRetentionDuration is { } retention)
+            settings.Add(new("Message retention", retention.Seconds % 86400 == 0 ? $"{retention.Seconds / 86400} days" : $"{retention.Seconds} seconds"));
+        if (sub.DeadLetterPolicy is { MaxDeliveryAttempts: > 0 } dead)
+            settings.Add(new("Maximum delivery attempts", dead.MaxDeliveryAttempts.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        settings.Add(new("Message ordering", sub.EnableMessageOrdering ? "On" : "Off"));
+        return settings;
+    }
+
+    /// <inheritdoc/>
     public async Task<Result<IReadOnlyList<CloudEntity>>> ListEntitiesAsync(Guid namespaceId, CancellationToken ct)
     {
         var nsResult = await _namespaceRepository.GetByIdAsync(namespaceId, ct).ConfigureAwait(false);

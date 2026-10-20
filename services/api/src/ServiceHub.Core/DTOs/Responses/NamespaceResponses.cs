@@ -89,3 +89,14 @@ public sealed record EntityResponse(
 /// <param name="NamespaceId">The namespace listed.</param>
 /// <param name="Entities">The entities found.</param>
 public sealed record EntityListResponse(Guid NamespaceId, IReadOnlyList<EntityResponse> Entities);
+
+/// <summary>One limit or setting of an entity, in the cloud's own words.</summary>
+/// <param name="Label">What the cloud calls it.</param>
+/// <param name="Value">The value as text, with its unit.</param>
+public sealed record EntitySettingResponse(string Label, string Value);
+
+/// <summary>An entity's limits and settings.</summary>
+/// <param name="Name">The entity's name.</param>
+/// <param name="Kind">queue, topic or subscription.</param>
+/// <param name="Settings">The settings read, or null when this cloud does not read them for this kind of entity.</param>
+public sealed record EntitySettingsResponse(string Name, string Kind, IReadOnlyList<EntitySettingResponse>? Settings);

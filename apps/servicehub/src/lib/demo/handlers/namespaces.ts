@@ -1,4 +1,4 @@
-import type { DeadLetterLook, DlqObserver, EntityKind, EntityList, NamespaceStats } from '../../api/namespaces'
+import type { DeadLetterLook, DlqObserver, EntityKind, EntityList, EntitySettings, NamespaceStats } from '../../api/namespaces'
 import { look } from '../world/actions'
 import { activeIn, nsOf } from '../world/derive'
 import { people } from '../world/seed'
@@ -43,6 +43,11 @@ export const namespaces: readonly Route[] = [
         .filter((e) => !params.kind || e.kind === params.kind)
         .map((e) => ({ ...e, deadLetterMessages: counts && e.kind !== 'topic' ? activeIn(w, ns.id, e.name).length : null })),
     }
+  }],
+  // A demo has no cloud to read limits from, and inventing a lock duration would be a made-up fact: it says "not read".
+  ['get', /^\/namespaces\/([^/]+)\/entities\/settings$/, (m, { w, params }): EntitySettings => {
+    if (!w.namespaces.some((n) => n.id === m[1])) notFound('namespace')
+    return { name: String(params.name ?? ''), kind: String(params.kind ?? 'queue') as EntityKind, settings: null }
   }],
   ['post', /^\/namespaces\/([^/]+)\/dead-letters\/look$/, (m, { w, now }): DeadLetterLook => {
     const ns = nsOf(w, m[1]) ?? notFound('namespace')

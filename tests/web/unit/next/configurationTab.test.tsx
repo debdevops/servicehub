@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as agentsApi from '@/lib/api/agents'
@@ -19,7 +20,7 @@ vi.mock('@/lib/api/identity', async (o) => ({ ...(await o<typeof identityApi>())
 vi.mock('@/lib/api/agents', async (o) => ({ ...(await o<typeof agentsApi>()), fetchAgents: vi.fn() }))
 vi.mock('@/lib/api/settings', async (o) => ({ ...(await o<typeof settingsApi>()), fetchEmergencyStop: vi.fn(), fetchSettings: vi.fn() }))
 vi.mock('@/lib/api/pendingWork', async (o) => ({ ...(await o<typeof pendingApi>()), fetchPendingWork: vi.fn() }))
-vi.mock('@/lib/api/namespaces', async (o) => ({ ...(await o<typeof namespacesApi>()), fetchNamespace: vi.fn(), fetchEntities: vi.fn(), fetchNamespaces: vi.fn(), fetchDlqObserver: vi.fn() }))
+vi.mock('@/lib/api/namespaces', async (o) => ({ ...(await o<typeof namespacesApi>()), fetchNamespace: vi.fn(), fetchEntities: vi.fn(), fetchNamespaces: vi.fn(), fetchDlqObserver: vi.fn(), fetchEntitySettings: vi.fn() }))
 
 const at = '2026-10-18T09:00:00Z'
 const ok = '/next/azure/c/service-bus/ns-azure?tab=configuration'
@@ -61,13 +62,42 @@ describe('the Configuration tab (unit D6)', () => {
     expect(within(table).getByRole('row', { name: /payments-topic \/ sub-1/ })).toHaveTextContent('Its own dead-letter place, not a separate one')
   })
 
-  it('draws no column for a setting it does not read, and says which are not read yet', async () => {
+  it('draws no column of dashes for the limits: they are read per place, only when asked', async () => {
     open()
     const table = await screen.findByRole('table')
     for (const never of ['Max deliveries', 'Lock duration', 'Time to live', 'Sessions', 'Dead-letter on expiry']) {
       expect(within(table).queryByRole('columnheader', { name: never }), never).not.toBeInTheDocument()
     }
-    expect(screen.getByText(/The limits each place holds .* are not read yet, so they are not shown\./)).toBeInTheDocument()
+    expect(namespacesApi.fetchEntitySettings).not.toHaveBeenCalled()
+    expect(screen.getByText(/Press Show limits on a place to read its limits/)).toBeInTheDocument()
+  })
+
+  it('Show limits reads one place from the cloud and shows exactly what came back', async () => {
+    vi.mocked(namespacesApi.fetchEntitySettings).mockResolvedValue({ name: 'orders-queue', kind: 'queue', settings: [{ label: 'Lock duration', value: '30 seconds' }, { label: 'Maximum delivery count', value: '10' }] })
+    open(component({ entities: [entity({ name: 'orders-queue' })] }))
+    const row = await screen.findByRole('row', { name: /orders-queue/ })
+    await userEvent.setup().click(within(row).getByRole('button', { name: 'Show limits' }))
+    expect(await within(row).findByText('30 seconds')).toBeInTheDocument()
+    expect(within(row).getByText('Maximum delivery count')).toBeInTheDocument()
+    expect(namespacesApi.fetchEntitySettings).toHaveBeenCalledTimes(1)
+    expect(namespacesApi.fetchEntitySettings).toHaveBeenCalledWith('ns-azure', 'orders-queue', 'queue')
+  })
+
+  it('a cloud that does not read them for this kind of place says so, rather than showing nothing', async () => {
+    vi.mocked(namespacesApi.fetchEntitySettings).mockResolvedValue({ name: 'orders-queue', kind: 'queue', settings: null })
+    open(component({ entities: [entity({ name: 'orders-queue' })] }))
+    const row = await screen.findByRole('row', { name: /orders-queue/ })
+    await userEvent.setup().click(within(row).getByRole('button', { name: 'Show limits' }))
+    expect(await within(row).findByText('Not read for this kind of place')).toBeInTheDocument()
+  })
+
+  it('says it could not read them, and offers to try again', async () => {
+    vi.mocked(namespacesApi.fetchEntitySettings).mockRejectedValue(new Error('down'))
+    open(component({ entities: [entity({ name: 'orders-queue' })] }))
+    const row = await screen.findByRole('row', { name: /orders-queue/ })
+    await userEvent.setup().click(within(row).getByRole('button', { name: 'Show limits' }))
+    expect(await within(row).findByRole('alert')).toHaveTextContent('Could not be read')
+    expect(within(row).getByRole('button', { name: 'Try again' })).toBeInTheDocument()
   })
 
   it('says ServiceHub never changes what the cloud holds', async () => {

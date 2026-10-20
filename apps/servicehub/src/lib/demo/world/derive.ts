@@ -210,7 +210,7 @@ export function pendingOf(w: World, scope: Scope & { reason?: string }): Pending
       const ns = nsOf(w, rule.namespaceId)
       items.push({
         kind: 'rule', id: `demo-rule-${rule.id}`, entryId: null, agentId: null, dlqMessageId: null, namespaceId: ns.id, namespaceName: ns.displayName, provider: ns.provider, environment: ns.environment,
-        entity: rule.entityName, deadLetterReason: rule.reason, ruleId: rule.id, ruleName: rule.name, reasonCode: 'CIRCUIT_BREAKER_TRIPPED', reason: rule.disabledDetail ?? 'It stopped itself because its replays were not staying fixed.', since: rule.updatedAt ?? ns.createdAt,
+        entity: rule.entityName, deadLetterReason: rule.reason, ruleId: rule.id, ruleName: rule.name, reasonCode: 'RULE_CIRCUIT_BREAKER', reason: rule.disabledDetail ?? 'It stopped itself because its replays were not staying fixed.', since: rule.updatedAt ?? ns.createdAt,
       })
     }
   }

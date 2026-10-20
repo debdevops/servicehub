@@ -589,6 +589,47 @@ public sealed class NamespacesController : ApiControllerBase
         return Ok(new EntityListResponse(id, items));
     }
 
+    /// <summary>
+    /// Reads one entity's limits and settings (lock or visibility timeout, time to live, maximum deliveries) from the cloud.
+    /// <c>settings</c> is null when the cloud does not read them for this kind of entity: "not read", never an empty list.
+    /// </summary>
+    [HttpGet("{id:guid}/entities/settings")]
+    [ProducesResponseType(typeof(EntitySettingsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> EntitySettings(Guid id, [FromQuery] string? name, [FromQuery] string? kind, CancellationToken cancellationToken)
+    {
+        var wanted = kind?.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(name) || wanted is null || !EntityKinds.Contains(wanted))
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed,
+                $"'name' is required and 'kind' must be one of: {string.Join(", ", EntityKinds)}.");
+        }
+
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        var ns = found.Value;
+        if (!_router.IsRegistered(ns.Provider))
+        {
+            return NoAdapter(ns);
+        }
+
+        var read = await _router.Resolve(ns.Provider).GetEntitySettingsAsync(ns.Id, name.Trim(), wanted, cancellationToken);
+        if (read.IsFailure)
+        {
+            return Problem(read.Error);
+        }
+
+        return Ok(new EntitySettingsResponse(
+            name.Trim(),
+            wanted,
+            read.Value?.Select(s => new EntitySettingResponse(s.Label, s.Value)).ToList()));
+    }
+
     private async Task<Listing> ListEntitiesAsync(Guid id, CancellationToken cancellationToken)
     {
         var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);

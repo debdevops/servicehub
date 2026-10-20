@@ -42,6 +42,14 @@ beforeEach(() => {
 })
 
 describe('Help (unit F6)', () => {
+  it('carries the per-cloud step-by-step guides, opened by ?topic=guide-<cloud>', async () => {
+    open('/next/azure?panel=help&topic=guide-aws')
+    const panel = await screen.findByRole('dialog')
+    const summary = await within(panel).findByText(/AWS/, { selector: 'summary' })
+    expect(summary.closest('details')).toHaveAttribute('open')
+    expect(within(panel).getByText(/re-shot|4\.2\.0 layout/)).toBeInTheDocument()
+  })
+
   it('opens from the header, filters its answers as you type, and links to pages in the cloud you are on', async () => {
     const user = userEvent.setup()
     open('/next/azure')

@@ -87,6 +87,99 @@ public sealed class AzureMessagingProvider : ICloudMessagingProvider
 
     /// <inheritdoc/>
     /// <remarks>
+    /// Reads the entity's own properties through the cached admin client (one call): the list path returns counts only.
+    /// A subscription is addressed by its full path (<c>topic/subscriptions/subscription</c>), as <see cref="ListEntitiesAsync"/> names it.
+    /// </remarks>
+    public async Task<Result<IReadOnlyList<EntitySetting>?>> GetEntitySettingsAsync(Guid namespaceId, string name, string kind, CancellationToken ct)
+    {
+        var nsResult = await _namespaceRepository.GetByIdAsync(namespaceId, ct).ConfigureAwait(false);
+        if (nsResult.IsFailure)
+            return Result.Failure<IReadOnlyList<EntitySetting>?>(nsResult.Error);
+
+        var ns = nsResult.Value;
+        if (ns.ConnectionString is null)
+            return Result.Failure<IReadOnlyList<EntitySetting>?>(Error.Validation(
+                ErrorCodes.Namespace.ConnectionStringRequired,
+                "Namespace does not have a connection string configured."));
+
+        var unprotectResult = _connectionStringProtector.Unprotect(ns.ConnectionString);
+        if (unprotectResult.IsFailure)
+            return Result.Failure<IReadOnlyList<EntitySetting>?>(unprotectResult.Error);
+
+        try
+        {
+            var wrapper = _clientCache.GetOrCreate(ns.Id, unprotectResult.Value);
+            switch (kind)
+            {
+                case "queue":
+                {
+                    var queue = await wrapper.GetQueueAsync(name, ct).ConfigureAwait(false);
+                    if (queue.IsFailure)
+                        return Result.Failure<IReadOnlyList<EntitySetting>?>(queue.Error);
+                    var q = queue.Value;
+                    return Result<IReadOnlyList<EntitySetting>?>.Success(new List<EntitySetting>
+                    {
+                        new("Maximum delivery count", q.MaxDeliveryCount.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                        new("Lock duration", DescribeSpan(q.LockDuration)),
+                        new("Default message time to live", DescribeSpan(q.DefaultMessageTimeToLive)),
+                        new("Sessions required", q.RequiresSession ? "Yes" : "No"),
+                    });
+                }
+                case "subscription":
+                {
+                    var parts = name.Split("/subscriptions/", 2, StringSplitOptions.None);
+                    if (parts.Length != 2)
+                        return Result.Failure<IReadOnlyList<EntitySetting>?>(Error.Validation(
+                            ErrorCodes.ValidationFailed, "A subscription name is 'topic/subscriptions/subscription'."));
+                    var subscription = await wrapper.GetSubscriptionAsync(parts[0], parts[1], ct).ConfigureAwait(false);
+                    if (subscription.IsFailure)
+                        return Result.Failure<IReadOnlyList<EntitySetting>?>(subscription.Error);
+                    var sub = subscription.Value;
+                    var settings = new List<EntitySetting>
+                    {
+                        new("Maximum delivery count", sub.MaxDeliveryCount.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                        new("Lock duration", DescribeSpan(sub.LockDuration)),
+                        new("Default message time to live", DescribeSpan(sub.DefaultMessageTimeToLive)),
+                        new("Dead-letter on message expiry", sub.EnableDeadLetteringOnMessageExpiration ? "Yes" : "No"),
+                        new("Sessions required", sub.RequiresSession ? "Yes" : "No"),
+                    };
+                    if (!string.IsNullOrEmpty(sub.ForwardTo))
+                        settings.Add(new("Forwards to", sub.ForwardTo));
+                    if (!string.IsNullOrEmpty(sub.ForwardDeadLetteredMessagesTo))
+                        settings.Add(new("Forwards dead letters to", sub.ForwardDeadLetteredMessagesTo));
+                    return Result<IReadOnlyList<EntitySetting>?>.Success(settings);
+                }
+                default:
+                    // A topic holds nothing itself; its settings are not read.
+                    return Result<IReadOnlyList<EntitySetting>?>.Success(null);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Failed to read entity settings for Azure namespace {NamespaceId}", namespaceId);
+            return Result.Failure<IReadOnlyList<EntitySetting>?>(Error.ExternalService(
+                ErrorCodes.Namespace.ConnectionFailed, ex.Message));
+        }
+    }
+
+    /// <summary>Service Bus reports "never" as a span of about 10,675,199 days; say that, not the number.</summary>
+    internal static string DescribeSpan(TimeSpan span)
+    {
+        if (span >= TimeSpan.FromDays(365 * 100))
+            return "No limit";
+        if (span.TotalSeconds < 120 && span.TotalSeconds == Math.Floor(span.TotalSeconds))
+            return $"{(int)span.TotalSeconds} seconds";
+        if (span.TotalMinutes < 120 && span.TotalMinutes == Math.Floor(span.TotalMinutes))
+            return $"{(int)span.TotalMinutes} minutes";
+        if (span.TotalHours < 48 && span.TotalHours == Math.Floor(span.TotalHours))
+            return $"{(int)span.TotalHours} hours";
+        return span.TotalDays >= 1 && span.TotalDays == Math.Floor(span.TotalDays)
+            ? $"{(int)span.TotalDays} days"
+            : span.ToString("c", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
     /// Enumerates queues, topics, and subscriptions via the cached
     /// <see cref="IServiceBusClientWrapper"/> for the namespace. Subscription entities are
     /// named with their full path (<c>topic/subscriptions/subscription</c>).

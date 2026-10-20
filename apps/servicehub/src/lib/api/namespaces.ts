@@ -135,6 +135,24 @@ export async function fetchEntities(id: string, kind?: EntityKind): Promise<Enti
   return (await api.get<EntityList>(`/namespaces/${id}/entities`, { params: kind ? { kind } : undefined })).data
 }
 
+/** One limit of an entity, in the cloud's own words ("Lock duration", "30 seconds"). */
+export interface EntitySetting {
+  readonly label: string
+  readonly value: string
+}
+
+/** `settings` is null when the cloud does not read limits for this kind of entity: "not read", never an empty list. */
+export interface EntitySettings {
+  readonly name: string
+  readonly kind: EntityKind
+  readonly settings: readonly EntitySetting[] | null
+}
+
+/** Read from the cloud on demand, one entity at a time (some clouds need a call per entity), not with the list. */
+export async function fetchEntitySettings(id: string, name: string, kind: EntityKind): Promise<EntitySettings> {
+  return (await api.get<EntitySettings>(`/namespaces/${id}/entities/settings`, { params: { name, kind } })).data
+}
+
 /** What one "look now" found. `countsAsDeliveryAttempt` is true where looking was a receive (no repeatable peek). */
 export interface DeadLetterLook {
   readonly outcome: 'looked' | 'failed'

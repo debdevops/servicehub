@@ -372,6 +372,74 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
         }
     }
 
+    /// <inheritdoc/>
+    /// <remarks>Queues only: SQS holds the limits as queue attributes. SNS topics and subscriptions are not read.</remarks>
+    public async Task<Result<IReadOnlyList<EntitySetting>?>> GetEntitySettingsAsync(Guid namespaceId, string name, string kind, CancellationToken ct)
+    {
+        if (kind != "queue")
+            return Result<IReadOnlyList<EntitySetting>?>.Success(null);
+
+        var nsResult = await _namespaceRepository.GetByIdAsync(namespaceId, ct).ConfigureAwait(false);
+        if (nsResult.IsFailure)
+            return Result.Failure<IReadOnlyList<EntitySetting>?>(nsResult.Error);
+
+        try
+        {
+            var sqs = _clientFactory.GetSqsClient(nsResult.Value);
+            var url = await _resiliencePipeline.ExecuteAsync(
+                async token => await sqs.GetQueueUrlAsync(new GetQueueUrlRequest { QueueName = name }, token).ConfigureAwait(false),
+                ct).ConfigureAwait(false);
+            var attrs = await _resiliencePipeline.ExecuteAsync(
+                async token => await sqs.GetQueueAttributesAsync(new GetQueueAttributesRequest
+                {
+                    QueueUrl = url.QueueUrl,
+                    AttributeNames = new List<string> { "VisibilityTimeout", "MessageRetentionPeriod", "DelaySeconds", "RedrivePolicy", "FifoQueue" }
+                }, token).ConfigureAwait(false),
+                ct).ConfigureAwait(false);
+
+            return Result<IReadOnlyList<EntitySetting>?>.Success(BuildQueueSettings(attrs.Attributes));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Could not read queue settings for namespace {NamespaceId}", namespaceId);
+            return Result.Failure<IReadOnlyList<EntitySetting>?>(Error.ExternalService("AWS.SQS.SettingsFailed", ex.Message));
+        }
+    }
+
+    internal static IReadOnlyList<EntitySetting> BuildQueueSettings(IReadOnlyDictionary<string, string>? attributes)
+    {
+        var settings = new List<EntitySetting>();
+        if (attributes is null)
+            return settings;
+
+        static string Seconds(string v) => long.TryParse(v, out var n) ? $"{n} seconds" : v;
+        static string Retention(string v) =>
+            long.TryParse(v, out var n) && n % 86400 == 0 ? $"{n / 86400} days" : Seconds(v);
+
+        if (attributes.TryGetValue("VisibilityTimeout", out var vt))
+            settings.Add(new("Visibility timeout", Seconds(vt)));
+        if (attributes.TryGetValue("MessageRetentionPeriod", out var mr))
+            settings.Add(new("Message retention", Retention(mr)));
+        if (attributes.TryGetValue("DelaySeconds", out var ds))
+            settings.Add(new("Delivery delay", Seconds(ds)));
+        if (attributes.TryGetValue("FifoQueue", out var fifo))
+            settings.Add(new("First-in first-out", string.Equals(fifo, "true", StringComparison.OrdinalIgnoreCase) ? "Yes" : "No"));
+        if (attributes.TryGetValue("RedrivePolicy", out var redrive) && !string.IsNullOrWhiteSpace(redrive))
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(redrive);
+                if (doc.RootElement.TryGetProperty("maxReceiveCount", out var max) && max.TryGetInt64(out var count))
+                    settings.Add(new("Maximum receives before dead-letter", count.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+            }
+            catch (System.Text.Json.JsonException)
+            {
+            }
+        }
+
+        return settings;
+    }
+
     private static string? ParseRedriveTargetName(GetQueueAttributesResponse attrs)
     {
         if (attrs.Attributes is null ||

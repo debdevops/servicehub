@@ -5,6 +5,7 @@ using ServiceHub.Core.DTOs.Responses;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Core.Models;
 using ServiceHub.Providers.Azure;
 using ServiceHub.Core.Constants;
 using ServiceHub.Core.Results;
@@ -432,4 +433,51 @@ public sealed class AzureMessagingProviderTests
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task GetEntitySettingsAsync_ForAQueue_ReadsTheLimitsInPlainWords()
+    {
+        var ns = BuildNamespace();
+        var wrapper = new Mock<IServiceBusClientWrapper>();
+        wrapper.Setup(w => w.GetQueueAsync("orders", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<QueueRuntimePropertiesDto>.Success(BuildQueue("orders", 1, 0)));
+        var cache = new Mock<IServiceBusClientCache>();
+        cache.Setup(c => c.GetOrCreate(ns.Id, PlainConnectionString)).Returns(wrapper.Object);
+        var provider = BuildProvider(repo: BuildRepo(ns).Object, protector: BuildProtector().Object, clientCache: cache.Object);
+
+        var result = await provider.GetEntitySettingsAsync(ns.Id, "orders", "queue", CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeEquivalentTo(new[]
+        {
+            new EntitySetting("Maximum delivery count", "10"),
+            new EntitySetting("Lock duration", "30 seconds"),
+            new EntitySetting("Default message time to live", "14 days"),
+            new EntitySetting("Sessions required", "No"),
+        }, o => o.WithStrictOrdering());
+    }
+
+    [Fact]
+    public async Task GetEntitySettingsAsync_ForATopic_SaysNotRead()
+    {
+        var ns = BuildNamespace();
+        var provider = BuildProvider(repo: BuildRepo(ns).Object, protector: BuildProtector().Object);
+
+        var result = await provider.GetEntitySettingsAsync(ns.Id, "payments", "topic", CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(30, "30 seconds")]
+    [InlineData(300, "5 minutes")]
+    [InlineData(7200, "2 hours")]
+    [InlineData(1209600, "14 days")]
+    public void DescribeSpan_UsesTheLargestWholeUnit(int seconds, string expected) =>
+        AzureMessagingProvider.DescribeSpan(TimeSpan.FromSeconds(seconds)).Should().Be(expected);
+
+    [Fact]
+    public void DescribeSpan_ForServiceBusNeverValue_SaysNoLimit() =>
+        AzureMessagingProvider.DescribeSpan(TimeSpan.MaxValue).Should().Be("No limit");
 }

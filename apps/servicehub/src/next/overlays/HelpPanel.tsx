@@ -1,5 +1,5 @@
 import { Search } from 'lucide-react'
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { useOverlayTitle } from '../../components/overlays/overlayTitle'
 import { nextHelpAnswers } from '../content/help'
@@ -8,11 +8,15 @@ import { cloudOf, parseScope } from '../lib/clouds'
 import { nextEntry, nextHref } from '../nav/navigation'
 import type { NextOverlayBodyProps } from './registry'
 import { Tip } from '../components/Tip'
+import { guideClouds, guideTopic } from '../../content/guides/links'
+
+// The guide text is large; it loads only when Help opens (the 4.2.0 `GuideView` and generated guides, moved not rewritten).
+const StepByStep = lazy(() => import('./StepByStep'))
 
 /**
  * Help (build-plan unit F6; design `d09-help`), at `?panel=help`: "How do I…" with a search box, over whatever you were doing. Each answer is
  * a few sentences and a link to the page that does it; `?topic=<id>` opens on that answer. Content is `next/content/help.ts`.
- * **Not yet here:** the per-cloud step-by-step guides (their screenshots are the 4.2.0 screens and are re-shot at the release, unit I3)
+ * The per-cloud step-by-step guides are the 4.2.0 ones; their screenshots are the 4.2.0 screens and are re-shot at the release (unit I3).
 
  */
 export default function HelpPanel(_props: NextOverlayBodyProps) { // eslint-disable-line @typescript-eslint/no-unused-vars
@@ -52,6 +56,13 @@ export default function HelpPanel(_props: NextOverlayBodyProps) { // eslint-disa
             ))}
           </ul>
         )}
+      </section>
+      <section aria-label="Step by step">
+        <h3 className="mb-1 text-sm font-bold">Step by step<Tip label="section:Step by step" /></h3>
+        <p className="mb-2 text-[var(--color-text-muted)]">Connecting a cloud and reading its screens, one guide per cloud. The pictures show the 4.2.0 layout until they are re-shot for 5.0.0; the steps and the credentials they ask for are the same.</p>
+        <Suspense fallback={<p className="text-[var(--color-text-muted)]">Loading the guides…</p>}>
+          <StepByStep topic={topic} clouds={guideClouds} topicOf={guideTopic} />
+        </Suspense>
       </section>
       <section aria-label="Keyboard">
         <h3 className="mb-1 text-sm font-bold">Keyboard<Tip label="section:Keyboard" /></h3>
