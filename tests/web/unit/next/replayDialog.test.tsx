@@ -81,7 +81,7 @@ describe('Replay dialog (unit F2)', () => {
   })
 
   it('keeps the button, disabled, when replay is blocked — it is never hidden', async () => {
-    vi.mocked(replayApi.fetchReplayProposal).mockResolvedValue(proposal({ canExecute: false, verdict: 'Block', blockedCode: 'EMERGENCY_STOP_ACTIVE', checks: [{ id: 'stop', label: 'Emergency stop is off', state: 'failed', detail: null }] }))
+    vi.mocked(replayApi.fetchReplayProposal).mockResolvedValue(proposal({ canExecute: false, verdict: 'Deny', blockedCode: 'EMERGENCY_STOP_ACTIVE', checks: [{ id: 'stop', label: 'Emergency stop is off', state: 'blocked', detail: null }] }))
     open('/next/azure?dialog=replay&id=7')
     for (const b of await screen.findAllByRole('button', { name: 'Replay 1 message' })) expect(b).toBeDisabled()
   })

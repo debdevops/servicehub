@@ -1,11 +1,14 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+// @ts-expect-error -- the app has no Node type definitions; vitest runs in Node
+import { readdirSync, readFileSync, statSync } from 'node:fs'
+// @ts-expect-error -- same
+import { join } from 'node:path'
 import { helpFor, labels } from '@/next/content/info'
 import { abilities } from '@/next/lib/roles'
 
+declare const __dirname: string
 const SRC = join(__dirname, '../../../../apps/servicehub/src/next')
-const files = (dir: string): string[] => readdirSync(dir).flatMap((f) => (statSync(join(dir, f)).isDirectory() ? files(join(dir, f)) : f.endsWith('.tsx') || f.endsWith('.ts') ? [join(dir, f)] : []))
+const files = (dir: string): string[] => (readdirSync(dir) as string[]).flatMap((f) => (statSync(join(dir, f)).isDirectory() ? files(join(dir, f)) : f.endsWith('.tsx') || f.endsWith('.ts') ? [join(dir, f)] : []))
 const sources = files(SRC).map((f) => ({ f: f.replace(SRC, 'next'), text: readFileSync(f, 'utf8') as string }))
 
 /** The label (and its context) of every literal `<Th>`, `<Th label>`, `<Info label>` and `<Labelled label>` in the shell. */
