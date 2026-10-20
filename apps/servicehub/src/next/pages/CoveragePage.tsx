@@ -10,8 +10,8 @@ const clouds: readonly CloudKind[] = ['azure', 'aws', 'gcp']
 
 /** How a status is tinted. The words come from the server (`statusWords`), so the screen and the README say the same thing. */
 const statusTone: Readonly<Record<SupportStatus, string>> = {
-  supported: 'bg-[var(--color-success-light)] text-[var(--color-success)]',
-  beingValidated: 'bg-[var(--color-warning-light)] text-[var(--color-warning)]',
+  supported: 'bg-[var(--color-success-light)] text-green-800',
+  beingValidated: 'bg-[var(--color-warning-light)] text-amber-800',
   onRequest: 'bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]',
   notSupported: 'bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]',
 }

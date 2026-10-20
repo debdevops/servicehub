@@ -44,7 +44,7 @@ export function HeaderStatus() {
       <Tip label="header:Emergency stop" className="text-white/80 hover:text-white" />
 
       <Link to={nextHref(nextEntry('search'), {}, pathname)} aria-label="Search" className="inline-flex items-center gap-1.5 rounded-md bg-white/15 px-2.5 py-1.5 text-xs font-semibold hover:bg-white/25">
-        <Search className="h-3.5 w-3.5" aria-hidden="true" /> Search <kbd className="text-[10px] opacity-75">⌘K</kbd>
+        <Search className="h-3.5 w-3.5" aria-hidden="true" /> Search <kbd className="text-[10px]">⌘K</kbd>
       </Link>
       <Tip label="header:Search" className="text-white/80 hover:text-white" />
 

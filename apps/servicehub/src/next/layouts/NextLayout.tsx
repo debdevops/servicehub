@@ -97,7 +97,7 @@ export function NextLayout() {
               <li key={row.componentKey}>
                 <MenuLink to={nextHref(nextEntry('component-list'), { cloud: row.cloud, component: row.componentKey })} help={{ title: row.name, text: `Failed messages end up in: ${row.stuckPlace}. ${row.statusWords}.${row.note ? ` ${row.note}.` : ''} Open it to see your connections to ${row.name}.` }}>
                   {row.name}
-                  {row.status === 'beingValidated' && <span className="ml-auto text-[11px] text-[var(--color-warning)]">Not yet validated</span>}
+                  {row.status === 'beingValidated' && <span className="ml-auto text-[11px] text-amber-800">Not yet validated</span>}
                 </MenuLink>
               </li>
             ))}
