@@ -100,3 +100,25 @@ public sealed record EntitySettingResponse(string Label, string Value);
 /// <param name="Kind">queue, topic or subscription.</param>
 /// <param name="Settings">The settings read, or null when this cloud does not read them for this kind of entity.</param>
 public sealed record EntitySettingsResponse(string Name, string Kind, IReadOnlyList<EntitySettingResponse>? Settings);
+
+/// <summary>A place a non-message component keeps its failures (a state machine, a workflow).</summary>
+public sealed record SourcePlaceResponse(string Id, string Name, string Kind, string? ConsoleUrl);
+
+/// <summary>
+/// Whether a connection can read a component that is not a message store, and its places. <c>available</c> false carries the reason
+/// ("Not enabled: ..."); it is a state, not an error. Nothing here can be sent back to a cloud.
+/// </summary>
+public sealed record ComponentSourceResponse(
+    string ComponentKey, bool Available, string? Reason, bool ReasonInList, IReadOnlyList<SourcePlaceResponse> Places);
+
+/// <summary>One failed run or delivery. <c>reasonCode</c> is null when the list did not read it.</summary>
+public sealed record FailedItemResponse(
+    string Id, string Place, DateTimeOffset? AtUtc, string Status, string? ReasonCode, string Summary, string Copy, string? ConsoleUrl);
+
+/// <summary>Failed items, newest first. <c>reachedLimit</c> says there are more than were returned.</summary>
+public sealed record FailedItemsResponse(string ComponentKey, IReadOnlyList<FailedItemResponse> Items, bool ReachedLimit);
+
+/// <summary>One failed item in full, redacted. <c>item</c> is null when the cloud no longer has it.</summary>
+public sealed record FailedItemDetailResponse(
+    FailedItemResponse? Item, string? Reason, string? Cause, DateTimeOffset? StartedUtc, DateTimeOffset? StoppedUtc);
+

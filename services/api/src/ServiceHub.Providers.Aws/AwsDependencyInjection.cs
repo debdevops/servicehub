@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using ServiceHub.Core.Components;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Providers.Aws.Components;
 
 namespace ServiceHub.Providers.Aws;
 
@@ -36,6 +38,9 @@ public static class AwsDependencyInjection
         // Register the provider as ICloudMessagingProvider (TryAddEnumerable prevents duplicates).
         services.TryAddEnumerable(
             ServiceDescriptor.Scoped<ICloudMessagingProvider, AwsMessagingProvider>());
+
+        // Components that are not message stores: read-only sources, one line each (PLAN-PLUG-AND-PLAY-COMPONENTS).
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IComponentSource, StepFunctionsSource>());
 
         // Reads the DLQ observer's log (DynamoDB) so a canary's arrival can be confirmed (unit 4.2, ADR-0011).
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IDlqObserverLogReader, DlqObserver.DynamoDbObserverLogReader>());

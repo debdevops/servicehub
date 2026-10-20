@@ -1,5 +1,6 @@
 using Amazon.DynamoDBv2;
 using Amazon.SQS;
+using Amazon.StepFunctions;
 using Amazon.SimpleNotificationService;
 using ServiceHub.Core.Entities;
 
@@ -34,6 +35,12 @@ public interface IAwsClientFactory
     /// <param name="ns">The namespace whose credentials and region to use.</param>
     /// <returns>An <see cref="IAmazonDynamoDB"/> client ready for use.</returns>
     IAmazonDynamoDB GetDynamoDbClient(Namespace ns);
+
+    /// <summary>
+    /// Creates or returns a cached <see cref="IAmazonStepFunctions"/> client. Read-only use: list, describe, get.
+    /// </summary>
+    /// <param name="ns">The namespace whose credentials and region to use.</param>
+    IAmazonStepFunctions GetStepFunctionsClient(Namespace ns);
 
     /// <summary>
     /// Disposes and removes any cached SQS/SNS clients for the given namespace, e.g. when

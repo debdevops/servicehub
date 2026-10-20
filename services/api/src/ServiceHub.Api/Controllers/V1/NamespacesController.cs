@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Security;
+using ServiceHub.Core.Components;
 using ServiceHub.Core.Constants;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
@@ -38,15 +39,17 @@ public sealed class NamespacesController : ApiControllerBase
     private readonly INamespaceRepository _namespaces;
     private readonly IAuditTrail _audit;
     private readonly ICloudProviderRouter _router;
+    private readonly IComponentSourceRouter _sources;
     private readonly ILogger<NamespacesController> _logger;
 
     /// <summary>Creates the controller.</summary>
     public NamespacesController(
-        INamespaceRepository namespaces, IAuditTrail audit, ICloudProviderRouter router, ILogger<NamespacesController> logger)
+        INamespaceRepository namespaces, IAuditTrail audit, ICloudProviderRouter router, IComponentSourceRouter sources, ILogger<NamespacesController> logger)
     {
         _namespaces = namespaces ?? throw new ArgumentNullException(nameof(namespaces));
         _audit = audit ?? throw new ArgumentNullException(nameof(audit));
         _router = router ?? throw new ArgumentNullException(nameof(router));
+        _sources = sources ?? throw new ArgumentNullException(nameof(sources));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -628,6 +631,102 @@ public sealed class NamespacesController : ApiControllerBase
             name.Trim(),
             wanted,
             read.Value?.Select(s => new EntitySettingResponse(s.Label, s.Value)).ToList()));
+    }
+
+    /// <summary>
+    /// Whether this connection can read a component that is not a message store (failed runs, failed deliveries), and its places.
+    /// Read-only. When the credential cannot read it, <c>available</c> is false and <c>reason</c> says why.
+    /// </summary>
+    [HttpGet("{id:guid}/components/{componentKey}/source")]
+    [ProducesResponseType(typeof(ComponentSourceResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ComponentSource(Guid id, string componentKey, CancellationToken cancellationToken)
+    {
+        var resolved = await ResolveSourceAsync(id, componentKey, cancellationToken);
+        if (resolved.Failure is not null)
+        {
+            return resolved.Failure;
+        }
+
+        var (ns, source) = (resolved.Namespace!, resolved.Source!);
+        var access = await source.ValidateAccessAsync(ns, cancellationToken);
+        if (access.IsFailure)
+        {
+            return Ok(new ComponentSourceResponse(source.ComponentKey, false, access.Error.Message, source.Capabilities.ReasonInList, []));
+        }
+
+        var places = await source.ListPlacesAsync(ns, cancellationToken);
+        return places.IsFailure
+            ? Ok(new ComponentSourceResponse(source.ComponentKey, false, places.Error.Message, source.Capabilities.ReasonInList, []))
+            : Ok(new ComponentSourceResponse(
+                source.ComponentKey, true, null, source.Capabilities.ReasonInList,
+                [.. places.Value.Select(p => new SourcePlaceResponse(p.Id, p.Name, p.Kind, p.ConsoleUrl))]));
+    }
+
+    /// <summary>Failed runs or deliveries of a component that is not a message store, newest first and capped. Read-only.</summary>
+    [HttpGet("{id:guid}/components/{componentKey}/failed")]
+    [ProducesResponseType(typeof(FailedItemsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ComponentFailed(Guid id, string componentKey, [FromQuery] string? place, CancellationToken cancellationToken)
+    {
+        var resolved = await ResolveSourceAsync(id, componentKey, cancellationToken);
+        if (resolved.Failure is not null)
+        {
+            return resolved.Failure;
+        }
+
+        var read = await resolved.Source!.ListFailedAsync(resolved.Namespace!, string.IsNullOrWhiteSpace(place) ? null : place, cancellationToken);
+        return read.IsFailure
+            ? Problem(read.Error)
+            : Ok(new FailedItemsResponse(resolved.Source.ComponentKey, [.. read.Value.Items.Select(ToResponse)], read.Value.ReachedLimit));
+    }
+
+    /// <summary>One failed item in full, redacted. Read-only. The id is a query value because clouds use paths and colons in theirs.</summary>
+    [HttpGet("{id:guid}/components/{componentKey}/failed/detail")]
+    [ProducesResponseType(typeof(FailedItemDetailResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ComponentFailedDetail(Guid id, string componentKey, [FromQuery] string? itemId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(itemId))
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "'itemId' is required.");
+        }
+
+        var resolved = await ResolveSourceAsync(id, componentKey, cancellationToken);
+        if (resolved.Failure is not null)
+        {
+            return resolved.Failure;
+        }
+
+        var read = await resolved.Source!.GetFailedAsync(resolved.Namespace!, itemId.Trim(), cancellationToken);
+        if (read.IsFailure)
+        {
+            return Problem(read.Error);
+        }
+
+        return Ok(read.Value is null
+            ? new FailedItemDetailResponse(null, null, null, null, null)
+            : new FailedItemDetailResponse(ToResponse(read.Value.Item), read.Value.Reason, read.Value.Cause, read.Value.StartedUtc, read.Value.StoppedUtc));
+    }
+
+    private static FailedItemResponse ToResponse(FailedItem i) =>
+        new(i.Id, i.Place, i.AtUtc, i.Status, i.ReasonCode, i.Summary, i.Copy.ToString().ToLowerInvariant(), i.ConsoleUrl);
+
+    private readonly record struct ResolvedSource(Namespace? Namespace, IComponentSource? Source, IActionResult? Failure);
+
+    private async Task<ResolvedSource> ResolveSourceAsync(Guid id, string componentKey, CancellationToken cancellationToken)
+    {
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return new ResolvedSource(null, null, Problem(found.Error));
+        }
+
+        var source = _sources.Find(componentKey, found.Value.Provider);
+        return source is null
+            ? new ResolvedSource(null, null, Problem(StatusCodes.Status404NotFound, ErrorCodes.NotFound, $"No reader is registered for '{componentKey}' on this connection."))
+            : new ResolvedSource(found.Value, source, null);
     }
 
     private async Task<Listing> ListEntitiesAsync(Guid id, CancellationToken cancellationToken)
