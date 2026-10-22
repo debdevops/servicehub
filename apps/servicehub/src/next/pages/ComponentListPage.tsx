@@ -16,6 +16,7 @@ import { countWords, statusWords } from '../lib/words'
 import { nextEntry, nextHref } from '../nav/navigation'
 import { Th } from '../components/Tip'
 import { Tip } from '../components/Tip'
+import { RunsConnections } from './RunsComponentPage'
 
 const td = 'px-3 py-3 align-top text-sm'
 const tone = { bad: 'bg-red-50 text-red-700', warn: 'bg-amber-50 text-amber-800', ok: 'bg-green-50 text-green-800' } as const
@@ -31,7 +32,11 @@ const placeOf = (ns: Namespace | undefined) => ns?.awsRegion ?? ns?.gcpProjectId
 export default function ComponentListPage() {
   const params = useParams()
   const cloud = cloudOf(parseScope(params.cloud))
-  return cloud === null || !params.component ? <NotFoundPage /> : <List cloud={cloud} componentKey={params.component} />
+  const coverage = useCoverage()
+  if (cloud === null || !params.component) return <NotFoundPage />
+  if (coverage.isPending) return <p role="status" className="px-6 py-6 text-sm text-[var(--color-text-muted)]">Loading…</p>
+  const runs = coverage.data?.rows.find((r) => r.cloud === cloud && r.componentKey === params.component && r.inSidebar && r.detection === 'runs')
+  return runs ? <RunsConnections cloud={cloud} row={runs} /> : <List cloud={cloud} componentKey={params.component} />
 }
 
 function List({ cloud, componentKey }: { cloud: CloudKind; componentKey: string }) {

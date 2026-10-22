@@ -1,7 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using ServiceHub.Core.Components;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Providers.Gcp.Components;
 
 namespace ServiceHub.Providers.Gcp;
 
@@ -38,6 +40,9 @@ public static class GcpDependencyInjection
         // Registering the reader claims nothing by itself: a namespace is attested only by a confirmed canary.
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IDlqObserverLogReader, DlqObserver.FirestoreObserverLogReader>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IDeadLetterReturnCheck, DlqObserver.PubSubObserverSubscriptionCheck>()); // ADR-0018
+
+        // Components that are not message stores: read-only sources, one line each (PLAN-PLUG-AND-PLAY-COMPONENTS).
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IComponentSource, WorkflowsSource>());
 
         // Register the GCP health check so the /health/dependencies endpoint validates Pub/Sub
         // connectivity. Tagged "dependencies", not "ready" — an unreachable GCP namespace is an

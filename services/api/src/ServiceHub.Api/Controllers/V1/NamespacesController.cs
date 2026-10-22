@@ -660,7 +660,8 @@ public sealed class NamespacesController : ApiControllerBase
             ? Ok(new ComponentSourceResponse(source.ComponentKey, false, places.Error.Message, source.Capabilities.ReasonInList, []))
             : Ok(new ComponentSourceResponse(
                 source.ComponentKey, true, null, source.Capabilities.ReasonInList,
-                [.. places.Value.Select(p => new SourcePlaceResponse(p.Id, p.Name, p.Kind, p.ConsoleUrl))]));
+                [.. places.Value.Items.Select(p => new SourcePlaceResponse(p.Id, p.Name, p.Kind, p.ConsoleUrl))],
+                places.Value.ReachedLimit, places.Value.Incomplete));
     }
 
     /// <summary>Failed runs or deliveries of a component that is not a message store, newest first and capped. Read-only.</summary>
@@ -678,7 +679,7 @@ public sealed class NamespacesController : ApiControllerBase
         var read = await resolved.Source!.ListFailedAsync(resolved.Namespace!, string.IsNullOrWhiteSpace(place) ? null : place, cancellationToken);
         return read.IsFailure
             ? Problem(read.Error)
-            : Ok(new FailedItemsResponse(resolved.Source.ComponentKey, [.. read.Value.Items.Select(ToResponse)], read.Value.ReachedLimit));
+            : Ok(new FailedItemsResponse(resolved.Source.ComponentKey, [.. read.Value.Items.Select(ToResponse)], read.Value.ReachedLimit, read.Value.Incomplete));
     }
 
     /// <summary>One failed item in full, redacted. Read-only. The id is a query value because clouds use paths and colons in theirs.</summary>

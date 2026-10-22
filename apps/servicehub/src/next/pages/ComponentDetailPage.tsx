@@ -25,6 +25,7 @@ import { cloudLabel, cloudOf, parseScope } from '../lib/clouds'
 import { countsWords, credentialWords, homeTotals, lookingAtOne, statusWords } from '../lib/words'
 import { componentTabs, nextEntry, nextHref } from '../nav/navigation'
 import { NextPlaceholderPage } from './NextPlaceholderPage'
+import { RunsComponentPage } from './RunsComponentPage'
 import { Tip } from '../components/Tip'
 
 const n = (value: number) => value.toLocaleString('en-US')
@@ -51,7 +52,13 @@ function Info2({ label, children }: { label: string; children: React.ReactNode }
 export default function ComponentDetailPage() {
   const params = useParams()
   const cloud = cloudOf(parseScope(params.cloud))
-  return cloud === null || !params.component || !params.namespaceId ? <NotFoundPage /> : <Detail cloudKey={cloud} componentKey={params.component} namespaceId={params.namespaceId} />
+  const coverage = useCoverage()
+  if (cloud === null || !params.component || !params.namespaceId) return <NotFoundPage />
+  if (coverage.isPending) return <p role="status" className="px-6 py-6 text-sm text-[var(--color-text-muted)]">Loading…</p>
+  // A component that is not a message store keeps its failures as runs or deliveries: its page is chosen by what the catalogue says it
+  // detects, not by its name (PLAN-PLUG-AND-PLAY-COMPONENTS §3.3).
+  const runs = coverage.data?.rows.find((r) => r.cloud === cloud && r.componentKey === params.component && r.inSidebar && r.detection === 'runs')
+  return runs ? <RunsComponentPage cloud={cloud} row={runs} namespaceId={params.namespaceId} /> : <Detail cloudKey={cloud} componentKey={params.component} namespaceId={params.namespaceId} />
 }
 
 function Detail({ cloudKey: cloud, componentKey, namespaceId }: { cloudKey: NonNullable<ReturnType<typeof cloudOf>>; componentKey: string; namespaceId: string }) {

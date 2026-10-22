@@ -16,10 +16,10 @@ describe('the coverage list the demo answers with', () => {
     expect(pattern.test('/fleet/coverage/x')).toBe(false)
   })
 
-  it('lists the five components 5.0.0 puts in the menu, in order, per cloud', () => {
+  it('lists the seven components 5.0.0 puts in the menu, in order, per cloud', () => {
     expect(sidebarComponents(answer.rows, 'azure').map((r) => r.name)).toEqual(['Service Bus', 'Storage Queues'])
-    expect(sidebarComponents(answer.rows, 'aws').map((r) => r.name)).toEqual(['SQS', 'SNS'])
-    expect(sidebarComponents(answer.rows, 'gcp').map((r) => r.name)).toEqual(['Pub/Sub'])
+    expect(sidebarComponents(answer.rows, 'aws').map((r) => r.name)).toEqual(['SQS', 'SNS', 'Step Functions'])
+    expect(sidebarComponents(answer.rows, 'gcp').map((r) => r.name)).toEqual(['Pub/Sub', 'Workflows'])
   })
 
   it('never offers a replay on a row that is not supported, and lets only a provable row earn autonomy', () => {

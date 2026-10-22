@@ -109,14 +109,14 @@ public sealed record SourcePlaceResponse(string Id, string Name, string Kind, st
 /// ("Not enabled: ..."); it is a state, not an error. Nothing here can be sent back to a cloud.
 /// </summary>
 public sealed record ComponentSourceResponse(
-    string ComponentKey, bool Available, string? Reason, bool ReasonInList, IReadOnlyList<SourcePlaceResponse> Places);
+    string ComponentKey, bool Available, string? Reason, bool ReasonInList, IReadOnlyList<SourcePlaceResponse> Places, bool PlacesReachedLimit = false, bool PlacesIncomplete = false);
 
 /// <summary>One failed run or delivery. <c>reasonCode</c> is null when the list did not read it.</summary>
 public sealed record FailedItemResponse(
     string Id, string Place, DateTimeOffset? AtUtc, string Status, string? ReasonCode, string Summary, string Copy, string? ConsoleUrl);
 
-/// <summary>Failed items, newest first. <c>reachedLimit</c> says there are more than were returned.</summary>
-public sealed record FailedItemsResponse(string ComponentKey, IReadOnlyList<FailedItemResponse> Items, bool ReachedLimit);
+/// <summary>Failed items, newest first. <c>reachedLimit</c> says there are more than were returned; <c>incomplete</c> says part of the read failed or timed out.</summary>
+public sealed record FailedItemsResponse(string ComponentKey, IReadOnlyList<FailedItemResponse> Items, bool ReachedLimit, bool Incomplete);
 
 /// <summary>One failed item in full, redacted. <c>item</c> is null when the cloud no longer has it.</summary>
 public sealed record FailedItemDetailResponse(

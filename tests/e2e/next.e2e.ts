@@ -122,3 +122,61 @@ test.describe('5.0.0 shell: the left menu', () => {
     })
   }
 })
+
+test.describe('5.0.0 shell: a component that is not a message store (Step Functions)', () => {
+  test('its list, its failed runs, one run opened, and its Access tab work in the demo, with axe clean', async ({ page }) => {
+    const failed: string[] = []
+    page.on('pageerror', (e) => failed.push(e.message))
+    await enterDemo(page)
+
+    await open(page, '/next/aws/c/step-functions')
+    await sound(page, 'step-functions list')
+    expect(await violations(page), 'list').toEqual([])
+    await page.getByRole('link', { name: /^View / }).first().click()
+
+    await expect(page.getByRole('table', { name: /Failed Step Functions runs/ })).toBeVisible()
+    await sound(page, 'step-functions page')
+    expect(await violations(page), 'failed runs').toEqual([])
+    // Read-only: nothing on the page offers to run, replay or purge a run.
+    await expect(page.getByRole('region').getByRole('button', { name: /replay|re-run|redrive|purge|retry/i })).toHaveCount(0)
+
+    await page.getByRole('button', { name: /^Show details of / }).first().click()
+    await expect(page.getByRole('heading', { name: 'Failed: run-1', exact: false }).first()).toBeVisible()
+    await expect(page.getByText(/Reason/).first()).toBeVisible()
+    expect(await violations(page), 'run opened').toEqual([])
+
+    await page.getByRole('link', { name: 'Access', exact: true }).click()
+    await expect(page.getByText('Can read Step Functions')).toBeVisible()
+    expect(await violations(page), 'access').toEqual([])
+    expect(failed).toEqual([])
+  })
+
+  test('Workflows on Google Cloud: list, failed runs, one run opened, axe clean', async ({ page }) => {
+    const failed: string[] = []
+    page.on('pageerror', (e) => failed.push(e.message))
+    await enterDemo(page)
+
+    await open(page, '/next/gcp/c/workflows')
+    await sound(page, 'workflows list')
+    await page.getByRole('link', { name: /^View / }).first().click()
+
+    await expect(page.getByRole('table', { name: /Failed Workflows runs/ })).toBeVisible()
+    await expect(page.getByText('Cancelled', { exact: true }).first()).toBeVisible()
+    await sound(page, 'workflows page')
+    expect(await violations(page), 'workflows failed runs').toEqual([])
+    await page.getByRole('button', { name: /^Show details of / }).first().click()
+    await expect(page.getByText(/HTTP server responded with error code 503|Error in step/).first()).toBeVisible()
+    expect(await violations(page), 'workflows run opened').toEqual([])
+    expect(failed).toEqual([])
+  })
+
+  test('it is in the AWS menu and not under Later (On request)', async ({ page }) => {
+    await enterDemo(page)
+    await open(page, '/next/aws')
+    const menu = page.getByRole('navigation', { name: 'ServiceHub' })
+    await expect(menu.getByRole('link', { name: /Step Functions/ })).toBeVisible()
+    await expect(menu.locator('li', { hasText: 'On request' }).getByText('Step Functions')).toHaveCount(0)
+    await open(page, '/next/gcp')
+    await expect(page.getByRole('navigation', { name: 'ServiceHub' }).getByRole('link', { name: /Workflows/ })).toBeVisible()
+  })
+})

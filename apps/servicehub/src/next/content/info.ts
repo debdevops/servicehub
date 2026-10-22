@@ -276,6 +276,16 @@ export const labels: Readonly<Record<string, ColumnHelp>> = {
   'Look now': h('Look now', 'Read what is in the dead-letter queues right now and keep it. Reading a queue on some clouds can count as a delivery, so this runs only when you press it.'),
   'Tabs': h('Tabs', 'Each tab shows one aspect of this connection. The address changes with the tab, so you can share or bookmark it.'),
 
+  // ── Components that are not message stores (failed runs, failed deliveries) ───────────────────────
+  'Summary': h('Summary', 'One plain line about the failed run: how it ended, and its name in the cloud. The reason is read when you open the run, so the list never costs a call per row.'),
+  'Reason@runs': h('Reason', 'The error the run ended with, as the cloud recorded it. It is read when you open the run. A run that was aborted by a person has none.'),
+  'Place': h('Place', 'Where the failures are kept: for Step Functions, one state machine. Choose one to read only its runs, which is faster and cheaper on a busy account.'),
+  'section:Failed runs': h('Failed runs', 'Runs that ended badly, newest first: failed, timed out or aborted. ServiceHub only reads them. To run one again, use the cloud’s own console: this version moves nothing on.'),
+  'section:Run detail': h('Run detail', 'One run in full: how it ended, the error and the cause it recorded, and when it started and stopped. Anything that looked like a secret is hidden. Its input and output are never read.'),
+  'section:Not enabled': h('Not enabled', 'This connection’s credential cannot read this component, so nothing is shown rather than a list that might be wrong. The reason says which permission is missing.'),
+  'section:Component access': h('Access', 'Whether this connection can read this component, how it signs in, and the read-only permissions it needs.'),
+  'section:Run connections': h('Connections', 'Your connections on this cloud. Each is asked whether its credential may read this component, so a connection that cannot is shown with the reason instead of being hidden.'),
+
   // ── Header and menu ──────────────────────────────────────────────────────────────────────────
   'header:Agent': h('The Agent', 'Whether ServiceHub’s acting agents are running, partly paused, or paused. It is judged from their real cycles, never from what they say about themselves.'),
   'header:Emergency stop': h('Emergency stop', 'Stops every replay ServiceHub would do on its own, on every cloud, at once. A person can still replay one message. It needs a reason and a typed word.'),

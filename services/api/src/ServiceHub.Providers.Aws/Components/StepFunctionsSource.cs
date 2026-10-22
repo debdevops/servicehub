@@ -64,14 +64,14 @@ public sealed class StepFunctionsSource : IComponentSource
     }
 
     /// <inheritdoc />
-    public async Task<Result<IReadOnlyList<SourcePlace>>> ListPlacesAsync(Namespace ns, CancellationToken ct)
+    public async Task<Result<SourcePlacesPage>> ListPlacesAsync(Namespace ns, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ns);
         try
         {
             var machines = await ListMachinesAsync(ns, ct).ConfigureAwait(false);
-            return Result.Success<IReadOnlyList<SourcePlace>>(
-                [.. machines.Items.Select(m => new SourcePlace(m.StateMachineArn, m.Name, "state machine", MachineLink(ns, m.StateMachineArn)))]);
+            return Result.Success(new SourcePlacesPage(
+                [.. machines.Items.Select(m => new SourcePlace(m.StateMachineArn, m.Name, "state machine", MachineLink(ns, m.StateMachineArn)))], machines.More));
         }
         catch (OperationCanceledException)
         {
@@ -80,7 +80,7 @@ public sealed class StepFunctionsSource : IComponentSource
 #pragma warning disable CA1031
         catch (Exception ex)
         {
-            return Result.Failure<IReadOnlyList<SourcePlace>>(Fail(ex));
+            return Result.Failure<SourcePlacesPage>(Fail(ex));
         }
 #pragma warning restore CA1031
     }
@@ -89,6 +89,14 @@ public sealed class StepFunctionsSource : IComponentSource
     public async Task<Result<FailedItemsPage>> ListFailedAsync(Namespace ns, string? placeId, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(ns);
+        if (placeId is not null && !IsStateMachineArn(ns, placeId))
+        {
+            return Result.Failure<FailedItemsPage>(Error.Validation("AWS.StepFunctions.InvalidPlace", "That is not a state machine in this connection's region."));
+        }
+
+        // The whole listing shares one time budget. Running out of it is not the caller cancelling: it returns what was read.
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        budget.CancelAfter(ComponentSourceLimits.ListingBudget);
         try
         {
             var client = _clients.GetStepFunctionsClient(ns);
@@ -96,7 +104,7 @@ public sealed class StepFunctionsSource : IComponentSource
             List<string> arns;
             if (placeId is null)
             {
-                var machines = await ListMachinesAsync(ns, ct).ConfigureAwait(false);
+                var machines = await ListMachinesAsync(ns, budget.Token).ConfigureAwait(false);
                 arns = [.. machines.Items.Take(MaxMachinesPerListing).Select(m => m.StateMachineArn)];
                 reached = machines.Items.Count > MaxMachinesPerListing || machines.More;
             }
@@ -105,37 +113,43 @@ public sealed class StepFunctionsSource : IComponentSource
                 arns = [placeId];
             }
 
-            var found = new List<FailedItem>();
-            foreach (var arn in arns)
+            var reads = arns.SelectMany(arn => Statuses.Select(status => (Arn: arn, Status: status))).ToList();
+            var results = await SourceReads.RunAsync(
+                reads, (r, token) => ReadOneAsync(ns, client, r.Arn, r.Status, token), Fail, new Read([], false), budget.Token, ct).ConfigureAwait(false);
+
+            var incomplete = results.Any(r => r.Failed);
+            if (results.Count > 0 && results.All(r => r.Failed))
             {
-                foreach (var status in Statuses)
-                {
-                    var response = await client.ListExecutionsAsync(
-                        new ListExecutionsRequest { StateMachineArn = arn, StatusFilter = status, MaxResults = ComponentSourceLimits.MaxFailedItems }, ct).ConfigureAwait(false);
-                    reached |= !string.IsNullOrEmpty(response.NextToken);
-                    foreach (var e in response.Executions)
-                    {
-                        found.Add(new FailedItem(
-                            e.ExecutionArn, arn, Utc(e.StopDate), status, ReasonCode: null,
-                            $"{Words(status)}: {e.Name}", CopyKind.None, ExecutionLink(ns, e.ExecutionArn)));
-                    }
-                }
+                return Result.Failure<FailedItemsPage>(results.Select(r => r.Error).FirstOrDefault(e => e is not null) ?? Error.ExternalService("AWS.StepFunctions.ReadFailed", "Step Functions could not be read."));
             }
 
-            var ordered = found.OrderByDescending(i => i.AtUtc ?? DateTimeOffset.MinValue).ToList();
+            reached |= results.Any(r => r.Value.More);
+            var ordered = results.SelectMany(r => r.Value.Items).OrderByDescending(i => i.AtUtc ?? DateTimeOffset.MinValue).ToList();
             reached |= ordered.Count > ComponentSourceLimits.MaxFailedItems;
-            return Result.Success(new FailedItemsPage([.. ordered.Take(ComponentSourceLimits.MaxFailedItems)], reached));
+            return Result.Success(new FailedItemsPage([.. ordered.Take(ComponentSourceLimits.MaxFailedItems)], reached, incomplete));
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            throw;
+            return Result.Failure<FailedItemsPage>(Error.ExternalService("AWS.StepFunctions.ReadTimedOut", "Reading Step Functions took too long. Try one state machine."));
         }
 #pragma warning disable CA1031
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return Result.Failure<FailedItemsPage>(Fail(ex));
         }
 #pragma warning restore CA1031
+    }
+
+    private sealed record Read(IReadOnlyList<FailedItem> Items, bool More);
+
+    private async Task<Read> ReadOneAsync(Namespace ns, IAmazonStepFunctions client, string arn, string status, CancellationToken ct)
+    {
+        var response = await client.ListExecutionsAsync(
+            new ListExecutionsRequest { StateMachineArn = arn, StatusFilter = status, MaxResults = ComponentSourceLimits.MaxFailedItems }, ct).ConfigureAwait(false);
+        var items = response.Executions
+            .Select(e => new FailedItem(e.ExecutionArn, arn, Utc(e.StopDate), status, ReasonCode: null, $"{Words(status)}: {Clean(e.Name)}", CopyKind.None, ExecutionLink(ns, e.ExecutionArn)))
+            .ToList();
+        return new Read(items, !string.IsNullOrEmpty(response.NextToken));
     }
 
     /// <inheritdoc />
@@ -143,12 +157,17 @@ public sealed class StepFunctionsSource : IComponentSource
     {
         ArgumentNullException.ThrowIfNull(ns);
         ArgumentException.ThrowIfNullOrWhiteSpace(itemId);
+        if (!IsExecutionArn(ns, itemId))
+        {
+            return Result.Failure<FailedItemDetail?>(Error.Validation("AWS.StepFunctions.InvalidItem", "That is not an execution in this connection's region."));
+        }
+
         try
         {
             var e = await _clients.GetStepFunctionsClient(ns).DescribeExecutionAsync(new DescribeExecutionRequest { ExecutionArn = itemId }, ct).ConfigureAwait(false);
             var status = e.Status?.Value ?? "UNKNOWN";
             var item = new FailedItem(
-                e.ExecutionArn, e.StateMachineArn, Utc(e.StopDate), status, Clean(e.Error), $"{Words(status)}: {e.Name}", CopyKind.None, ExecutionLink(ns, e.ExecutionArn));
+                e.ExecutionArn, e.StateMachineArn, Utc(e.StopDate), status, Clean(e.Error), $"{Words(status)}: {Clean(e.Name)}", CopyKind.None, ExecutionLink(ns, e.ExecutionArn));
 
             // Cause is free text a workflow wrote: it is redacted before it leaves this source. Input and output are never read.
             return Result.Success<FailedItemDetail?>(new FailedItemDetail(item, Clean(e.Error), Clean(e.Cause), Utc(e.StartDate), Utc(e.StopDate)));
@@ -190,13 +209,33 @@ public sealed class StepFunctionsSource : IComponentSource
     private static string? Clean(string? text) =>
         string.IsNullOrWhiteSpace(text) ? null : LogRedactor.SanitiseForLog(LogRedactor.Redact(text));
 
-    private static string Region(Namespace ns) => string.IsNullOrWhiteSpace(ns.AwsRegion) ? "us-east-1" : ns.AwsRegion;
+    private static string Region(Namespace ns) => string.IsNullOrWhiteSpace(ns.AwsRegion) ? "us-east-1" : ns.AwsRegion.Trim();
+
+    // The ARN's partition is aws, aws-cn or aws-us-gov. Only a Step Functions ARN in this connection's own region is read.
+    private static bool IsStateMachineArn(Namespace ns, string arn) => IsArn(ns, arn, "stateMachine");
+
+    private static bool IsExecutionArn(Namespace ns, string arn) => IsArn(ns, arn, "execution");
+
+    private static bool IsArn(Namespace ns, string arn, string resource)
+    {
+        var parts = arn.Split(':');
+        return parts.Length >= 7 && parts[0] == "arn" && parts[1].StartsWith("aws", StringComparison.Ordinal) && parts[2] == "states"
+            && string.Equals(parts[3], Region(ns), StringComparison.OrdinalIgnoreCase) && parts[5] == resource && arn.Length <= 1024;
+    }
+
+    private static string ConsoleHost(Namespace ns)
+    {
+        var region = Region(ns);
+        return region.StartsWith("cn-", StringComparison.Ordinal) ? $"{region}.console.amazonaws.cn"
+            : region.StartsWith("us-gov-", StringComparison.Ordinal) ? $"{region}.console.amazonaws-us-gov.com"
+            : $"{region}.console.aws.amazon.com";
+    }
 
     private static string MachineLink(Namespace ns, string arn) =>
-        $"https://{Region(ns)}.console.aws.amazon.com/states/home?region={Region(ns)}#/statemachines/view/{Uri.EscapeDataString(arn)}";
+        $"https://{ConsoleHost(ns)}/states/home?region={Region(ns)}#/statemachines/view/{Uri.EscapeDataString(arn)}";
 
     private static string ExecutionLink(Namespace ns, string arn) =>
-        $"https://{Region(ns)}.console.aws.amazon.com/states/home?region={Region(ns)}#/v2/executions/details/{Uri.EscapeDataString(arn)}";
+        $"https://{ConsoleHost(ns)}/states/home?region={Region(ns)}#/v2/executions/details/{Uri.EscapeDataString(arn)}";
 
     private static Error Fail(Exception ex) => ex is AmazonStepFunctionsException { ErrorCode: "AccessDeniedException" or "AccessDenied" or "UnrecognizedClientException" }
         ? Error.Forbidden("AWS.StepFunctions.NotEnabled",

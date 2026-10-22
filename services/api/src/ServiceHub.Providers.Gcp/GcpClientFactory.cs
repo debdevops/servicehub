@@ -2,6 +2,8 @@ using System.Collections.Concurrent;
 using Google.Apis.Auth.OAuth2;
 using Google.Cloud.Firestore;
 using Google.Cloud.PubSub.V1;
+using Google.Cloud.Workflows.Executions.V1;
+using Google.Cloud.Workflows.V1;
 using Grpc.Auth;
 using Grpc.Core;
 using Microsoft.Extensions.Logging;
@@ -35,6 +37,11 @@ namespace ServiceHub.Providers.Gcp;
 /// </remarks>
 public sealed class GcpClientFactory : IGcpClientFactory
 {
+    // Pub/Sub keeps its own narrow scope. A component that reads another Google service asks for the scope that service needs, and what the
+    // key may then do is still decided by the roles it was granted (a read-only role in the docs).
+    private static readonly string[] PubSubScopes = ["https://www.googleapis.com/auth/pubsub"];
+    private static readonly string[] WorkflowsScopes = ["https://www.googleapis.com/auth/cloud-platform"];
+
     private readonly IConnectionStringProtector _protector;
     private readonly ILogger<GcpClientFactory> _logger;
 
@@ -47,6 +54,8 @@ public sealed class GcpClientFactory : IGcpClientFactory
     private readonly ConcurrentDictionary<string, (SubscriberServiceApiClient Client, ChannelBase Channel)> _subscriberCache = new();
     private readonly ConcurrentDictionary<Guid, (PublisherServiceApiClient Client, ChannelBase Channel)> _topicAdminCache = new();
     private readonly ConcurrentDictionary<Guid, FirestoreDb> _firestoreCache = new();
+    private readonly ConcurrentDictionary<Guid, (WorkflowsClient Client, ChannelBase Channel)> _workflowsCache = new();
+    private readonly ConcurrentDictionary<Guid, (ExecutionsClient Client, ChannelBase Channel)> _executionsCache = new();
 
     /// <summary>
     /// Initialises a new instance of <see cref="GcpClientFactory"/>.
@@ -159,6 +168,40 @@ public sealed class GcpClientFactory : IGcpClientFactory
     }
 
     /// <inheritdoc/>
+    public async Task<WorkflowsClient> GetWorkflowsClientAsync(Namespace ns, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(ns);
+
+        if (_workflowsCache.TryGetValue(ns.Id, out var cached))
+            return cached.Client;
+
+        var credential = await ResolveCredentialAsync(ns, WorkflowsScopes).ConfigureAwait(false);
+        var builder = new WorkflowsClientBuilder { ChannelCredentials = credential.ToChannelCredentials() };
+        var client = await builder.BuildAsync(ct).ConfigureAwait(false);
+
+        _workflowsCache.TryAdd(ns.Id, (client, builder.LastCreatedChannel));
+        _logger.LogDebug("Created WorkflowsClient for project {ProjectId}", LogRedactor.SanitiseForLog(GetProjectId(ns)));
+        return client;
+    }
+
+    /// <inheritdoc/>
+    public async Task<ExecutionsClient> GetExecutionsClientAsync(Namespace ns, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(ns);
+
+        if (_executionsCache.TryGetValue(ns.Id, out var cached))
+            return cached.Client;
+
+        var credential = await ResolveCredentialAsync(ns, WorkflowsScopes).ConfigureAwait(false);
+        var builder = new ExecutionsClientBuilder { ChannelCredentials = credential.ToChannelCredentials() };
+        var client = await builder.BuildAsync(ct).ConfigureAwait(false);
+
+        _executionsCache.TryAdd(ns.Id, (client, builder.LastCreatedChannel));
+        _logger.LogDebug("Created ExecutionsClient for project {ProjectId}", LogRedactor.SanitiseForLog(GetProjectId(ns)));
+        return client;
+    }
+
+    /// <inheritdoc/>
     public async Task RemoveClientAsync(Guid namespaceId, CancellationToken cancellationToken = default)
     {
         var prefix = $"{namespaceId}:";
@@ -212,6 +255,16 @@ public sealed class GcpClientFactory : IGcpClientFactory
             }
         }
 
+        if (_workflowsCache.TryRemove(namespaceId, out var workflowsEntry))
+        {
+            await ShutDownAsync(workflowsEntry.Channel, "Workflows", namespaceId, linkedCts.Token).ConfigureAwait(false);
+        }
+
+        if (_executionsCache.TryRemove(namespaceId, out var executionsEntry))
+        {
+            await ShutDownAsync(executionsEntry.Channel, "Workflow executions", namespaceId, linkedCts.Token).ConfigureAwait(false);
+        }
+
         if (_firestoreCache.TryRemove(namespaceId, out _))
         {
             // FirestoreDb exposes no Shutdown/Dispose of its own to await — its underlying gRPC
@@ -222,6 +275,19 @@ public sealed class GcpClientFactory : IGcpClientFactory
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    private async Task ShutDownAsync(ChannelBase channel, string what, Guid namespaceId, CancellationToken ct)
+    {
+        _logger.LogInformation("Shutting down {What} client channel for namespace {NamespaceId}", what, namespaceId);
+        try
+        {
+            await channel.ShutdownAsync().WaitAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error shutting down {What} client channel for namespace {NamespaceId}", what, namespaceId);
+        }
+    }
 
     private string GetProjectId(Namespace ns)
     {
@@ -246,8 +312,9 @@ public sealed class GcpClientFactory : IGcpClientFactory
             "Set GcpProjectId or include 'projectId=...' in the connection string.");
     }
 
-    private async Task<GoogleCredential> ResolveCredentialAsync(Namespace ns)
+    private async Task<GoogleCredential> ResolveCredentialAsync(Namespace ns, string[]? scopes = null)
     {
+        scopes ??= PubSubScopes;
         switch (ns.AuthType)
         {
             // GcpServiceAccount = Service Account JSON key stored in connection string
@@ -267,8 +334,10 @@ public sealed class GcpClientFactory : IGcpClientFactory
                 try
                 {
                     using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(unprotected.Value));
-                    var credential = GoogleCredential.FromStream(stream)
-                        .CreateScoped(["https://www.googleapis.com/auth/pubsub"]);
+                    // The stored key is a service-account key by contract; naming that type makes any other kind of credential file fail closed.
+                    var credential = CredentialFactory.FromStream<ServiceAccountCredential>(stream)
+                        .ToGoogleCredential()
+                        .CreateScoped(scopes);
 
                     _logger.LogDebug("Resolved Service Account credential for namespace {NamespaceId}", ns.Id);
                     return credential;
@@ -285,7 +354,7 @@ public sealed class GcpClientFactory : IGcpClientFactory
             {
                 _logger.LogDebug("Using Application Default Credentials for namespace {NamespaceId}", ns.Id);
                 var adc = await GoogleCredential.GetApplicationDefaultAsync().ConfigureAwait(false);
-                return adc.CreateScoped(["https://www.googleapis.com/auth/pubsub"]);
+                return adc.CreateScoped(scopes);
             }
 
             // Fail closed: any other auth type is a configuration error — never borrow

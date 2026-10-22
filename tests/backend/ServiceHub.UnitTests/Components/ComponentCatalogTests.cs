@@ -34,8 +34,8 @@ public sealed class ComponentCatalogTests
             .Should().OnlyContain(c => c.Status == SupportStatus.Supported || c.Status == SupportStatus.BeingValidated);
 
         ComponentCatalog.Sidebar(CloudKind.Azure).Select(c => c.ComponentKey).Should().Equal("service-bus", "storage-queues");
-        ComponentCatalog.Sidebar(CloudKind.Aws).Select(c => c.ComponentKey).Should().Equal("sqs", "sns");
-        ComponentCatalog.Sidebar(CloudKind.Gcp).Select(c => c.ComponentKey).Should().Equal("pubsub");
+        ComponentCatalog.Sidebar(CloudKind.Aws).Select(c => c.ComponentKey).Should().Equal("sqs", "sns", "step-functions");
+        ComponentCatalog.Sidebar(CloudKind.Gcp).Select(c => c.ComponentKey).Should().Equal("pubsub", "workflows");
     }
 
     [Fact]

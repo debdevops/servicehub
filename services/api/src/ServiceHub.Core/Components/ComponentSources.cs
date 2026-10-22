@@ -12,6 +12,9 @@ public static class ComponentSourceLimits
 
     /// <summary>The most failed items one listing returns. A listing that stopped here says so (<see cref="FailedItemsPage.ReachedLimit"/>).</summary>
     public const int MaxFailedItems = 100;
+
+    /// <summary>The longest one listing may spend reading a cloud. A listing that runs out of time returns what it has, marked incomplete.</summary>
+    public static readonly TimeSpan ListingBudget = TimeSpan.FromSeconds(20);
 }
 
 /// <summary>What a source can honestly read. A <c>false</c> is never exceeded; the conformance kit checks it.</summary>
@@ -26,6 +29,12 @@ public sealed record ComponentSourceCapabilities(bool ReasonInList, bool ReadsPa
 /// <param name="ConsoleUrl">A link to the cloud's own console, or null.</param>
 public sealed record SourcePlace(string Id, string Name, string Kind, string? ConsoleUrl);
 
+/// <summary>
+/// A page of places. <see cref="ReachedLimit"/> says there are more than were returned; <see cref="Incomplete"/> says part of the read
+/// failed or ran out of time (a cloud whose places are spread over regions can lose one region and still answer for the rest).
+/// </summary>
+public sealed record SourcePlacesPage(IReadOnlyList<SourcePlace> Items, bool ReachedLimit, bool Incomplete = false);
+
 /// <summary>One failed run or delivery. A read model: nothing in it can be sent back to a cloud.</summary>
 /// <param name="Id">Stable id the cloud uses for the item.</param>
 /// <param name="Place">The <see cref="SourcePlace.Id"/> it belongs to.</param>
@@ -38,8 +47,11 @@ public sealed record SourcePlace(string Id, string Name, string Kind, string? Co
 public sealed record FailedItem(
     string Id, string Place, DateTimeOffset? AtUtc, string Status, string? ReasonCode, string Summary, CopyKind Copy, string? ConsoleUrl);
 
-/// <summary>A page of failed items, newest first. <see cref="ReachedLimit"/> says there are more than were returned.</summary>
-public sealed record FailedItemsPage(IReadOnlyList<FailedItem> Items, bool ReachedLimit);
+/// <summary>
+/// A page of failed items, newest first. <see cref="ReachedLimit"/> says there are more than were returned.
+/// <see cref="Incomplete"/> says part of the read failed or ran out of time, so the page may be missing items that exist.
+/// </summary>
+public sealed record FailedItemsPage(IReadOnlyList<FailedItem> Items, bool ReachedLimit, bool Incomplete = false);
 
 /// <summary>One item in full. <see cref="Reason"/> and <see cref="Cause"/> are redacted before they leave the source.</summary>
 public sealed record FailedItemDetail(FailedItem Item, string? Reason, string? Cause, DateTimeOffset? StartedUtc, DateTimeOffset? StoppedUtc);
@@ -67,7 +79,7 @@ public interface IComponentSource
     Task<Result> ValidateAccessAsync(Namespace ns, CancellationToken ct);
 
     /// <summary>The places, capped at <see cref="ComponentSourceLimits.MaxPlaces"/>.</summary>
-    Task<Result<IReadOnlyList<SourcePlace>>> ListPlacesAsync(Namespace ns, CancellationToken ct);
+    Task<Result<SourcePlacesPage>> ListPlacesAsync(Namespace ns, CancellationToken ct);
 
     /// <summary>Failed items, newest first, capped at <see cref="ComponentSourceLimits.MaxFailedItems"/>. A null <paramref name="placeId"/> means every place.</summary>
     Task<Result<FailedItemsPage>> ListFailedAsync(Namespace ns, string? placeId, CancellationToken ct);
