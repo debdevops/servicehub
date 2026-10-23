@@ -189,6 +189,25 @@ export function noTotalSentence(clouds: readonly { readonly name: string; readon
   return `${said}, so adding them would give a number that means nothing. Each cloud keeps its own.`
 }
 
+export interface AcrossClouds {
+  /** The summed dead-letter count, or null when the clouds' numbers are not the same kind and so cannot honestly be added (R5). */
+  readonly value: number | null
+  readonly sub: string
+}
+
+/**
+ * The "In dead-letter now" tile across clouds. It is a sum only when every connected cloud reports an exact count; the moment one
+ * is approximate, reports none, or could not be read, the tile says the numbers are kept per cloud rather than add unlike things.
+ */
+export function acrossClouds(clouds: readonly { readonly components: readonly ConnectedComponent[] }[]): AcrossClouds {
+  const label = clouds.length === 1 ? 'cloud' : 'clouds'
+  if (clouds.length > 0 && clouds.every(({ components }) => numberKind(components) === 'exact')) {
+    const value = clouds.flatMap(({ components }) => components).reduce((sum, c) => sum + (c.deadLetters.value ?? 0), 0)
+    return { value, sub: `Across ${clouds.length} ${label} · latest values read by ServiceHub` }
+  }
+  return { value: null, sub: clouds.length === 0 ? 'No cloud connected' : `Counted per cloud: ${clouds.length} ${label} do not count alike` }
+}
+
 export interface CloudFacts {
   readonly watched: { readonly text: string; readonly good: boolean }
   readonly counts: { readonly text: string; readonly good: boolean }

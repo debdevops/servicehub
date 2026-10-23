@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { Cloud, Clock, Info, RefreshCw, TriangleAlert } from 'lucide-react'
+import { Cloud, Clock, Info, Mail, RefreshCw, TriangleAlert } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Pager } from '../../components/ui/Pager'
 import { useComponents } from '../../hooks/useComponents'
@@ -12,7 +12,7 @@ import type { CloudKind } from '../../lib/api/coverage'
 import { formatWhen } from '../../lib/format'
 import { AttentionTable } from '../components/home/AttentionTable'
 import { cloudLabel } from '../lib/clouds'
-import { cloudFacts, homeTotals, noTotalSentence } from '../lib/words'
+import { acrossClouds, cloudFacts, countWords, homeTotals, noTotalSentence, recordedWords } from '../lib/words'
 import { nextEntry, nextHref } from '../nav/navigation'
 import { Th } from '../components/Tip'
 import { Tip } from '../components/Tip'
@@ -53,23 +53,31 @@ function CloudCard({ cloud, components, covered }: { cloud: CloudKind; component
           <p className="text-xs text-[var(--color-text-muted)]">approvals: {totals.approvals}, hand-offs: {totals.handOffs}</p>
         </div>
       </div>
-      <table className="mt-3 w-full text-sm" aria-label={`${cloudLabel[cloud]} components`}>
-        <thead><tr className="bg-[var(--color-surface-muted)] text-left text-xs font-semibold text-[var(--color-text-muted)]"><Th>Component</Th><Th>Needs you</Th></tr></thead>
+      <table className="mt-4 w-full text-sm" aria-label={`${cloudLabel[cloud]} components`}>
+        <thead><tr className="bg-[var(--color-surface-muted)] text-left text-xs font-semibold text-[var(--color-text-muted)]"><Th>Component</Th><Th>Dead-letter</Th><Th>Needs you</Th><Th>Status</Th></tr></thead>
         <tbody>
-          {shown.map((c) => (
-            <tr key={`${c.namespaceId}:${c.componentKey}`} className="border-t border-[var(--color-border)]">
-              <td className="px-2 py-2"><span className="font-semibold">{c.name}</span> <span className="text-[var(--color-text-muted)]">{c.componentName}</span>{!c.reachable && <span className="ml-2 text-xs font-semibold text-amber-800">Can’t reach</span>}</td>
-              <td className="px-2 py-2 text-right font-semibold text-red-700">{c.needsYou}</td>
-            </tr>
-          ))}
+          {shown.map((c) => {
+            const status = !c.reachable ? { text: 'Can’t reach', cls: 'text-red-700', dot: 'bg-red-600' } : c.deadLetters.kind === 'notRead' ? { text: 'Not read yet', cls: 'text-[var(--color-text-muted)]', dot: 'bg-slate-400' } : { text: 'Connected', cls: 'text-green-700', dot: 'bg-green-600' }
+            return (
+              <tr key={`${c.namespaceId}:${c.componentKey}`} className="border-t border-[var(--color-border)]">
+                <td className="px-2 py-2"><span className="block font-semibold">{c.name}</span><span className="block text-xs text-[var(--color-text-muted)]">{c.componentName}</span></td>
+                <td className="px-2 py-2">{c.deadLetters.kind === 'notReported' ? recordedWords(c.recorded) : countWords(c.deadLetters)}</td>
+                <td className={`px-2 py-2 font-semibold ${c.needsYou > 0 ? 'text-red-700' : ''}`}>{c.needsYou}</td>
+                <td className="px-2 py-2"><span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${status.cls}`}><span aria-hidden="true" className={`h-2 w-2 rounded-full ${status.dot}`} />{status.text}</span></td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
       <Pager {...pager} label={`${cloudLabel[cloud]} components`} />
-      <ul className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5">
-        <Fact {...facts.watched} />
-        <Fact {...facts.counts} />
-        <li className="flex items-center gap-2 text-sm"><span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${dot[facts.evidence.tone]}`} />{facts.evidence.text}</li>
-      </ul>
+      <div className="mt-4 rounded-lg bg-[var(--color-surface-muted)] p-3">
+        <h3 className="flex items-center text-sm font-semibold">How ServiceHub works with {cloudLabel[cloud]}<Tip label="section:How ServiceHub works" /></h3>
+        <ul className="mt-2 space-y-1.5">
+          <Fact {...facts.watched} />
+          <Fact {...facts.counts} />
+          <li className="flex items-center gap-2 text-sm"><span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${dot[facts.evidence.tone]}`} />{facts.evidence.text}</li>
+        </ul>
+      </div>
     </section>
   )
 }
@@ -88,6 +96,7 @@ export default function AllCloudsPage() {
   const rows = components.data?.components ?? []
   const clouds = ORDER.map((cloud) => ({ cloud, name: cloudLabel[cloud], components: rows.filter((c) => c.cloud === cloud) })).filter((c) => c.components.length > 0)
   const totals = homeTotals(rows)
+  const across = acrossClouds(clouds)
   const reason = noTotalSentence(clouds)
   const refresh = () => {
     void client.invalidateQueries({ queryKey: ['components'] })
@@ -116,7 +125,7 @@ export default function AllCloudsPage() {
         <p role="status" className="text-sm text-[var(--color-text-muted)]">Loading…</p>
       ) : (
         <>
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <section aria-label="Needs your attention" className="flex items-start gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
               <span className="mt-1 grid h-10 w-10 place-items-center rounded-full bg-red-50" aria-hidden="true"><TriangleAlert className="h-5 w-5 text-red-600" /></span>
               <div><h2 className="flex items-center text-sm font-semibold">Needs your attention<Tip label="Needs your attention" /></h2><p className="text-3xl font-bold leading-tight" data-testid="all-needs-you">{totals.needsYou}</p>
@@ -126,9 +135,13 @@ export default function AllCloudsPage() {
               <span className="mt-1 grid h-10 w-10 place-items-center rounded-full bg-[var(--color-primary-50)]" aria-hidden="true"><Clock className="h-5 w-5 text-[var(--color-primary-700)]" /></span>
               <div><h2 className="flex items-center text-sm font-semibold">Pending approvals<Tip label="Pending approvals" /></h2><p className="text-3xl font-bold leading-tight" data-testid="all-approvals">{totals.approvals}</p><p className="text-xs text-[var(--color-text-muted)]">Require human approval</p></div>
             </section>
+            <section aria-label="In dead-letter now" className="flex items-start gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+              <span className="mt-1 grid h-10 w-10 place-items-center rounded-full bg-[var(--color-primary-50)]" aria-hidden="true"><Mail className="h-5 w-5 text-[var(--color-primary-700)]" /></span>
+              <div><h2 className="flex items-center text-sm font-semibold">In dead-letter now<Tip label="In dead-letter now" context="tile" /></h2><p className="text-3xl font-bold leading-tight" data-testid="all-dead-letter">{across.value === null ? <span className="text-lg font-semibold">Counted per cloud</span> : across.value.toLocaleString('en-US')}</p><p className="text-xs text-[var(--color-text-muted)]">{across.sub}</p></div>
+            </section>
             <section aria-label="Connected" className="flex items-start gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
               <span className="mt-1 grid h-10 w-10 place-items-center rounded-full bg-[var(--color-primary-50)]" aria-hidden="true"><Cloud className="h-5 w-5 text-[var(--color-primary-700)]" /></span>
-              <div><h2 className="flex items-center text-sm font-semibold">Connected<Tip label="Connected clouds" /></h2><p className="text-3xl font-bold leading-tight" data-testid="all-connected">{clouds.length} <span className="text-base font-semibold">{clouds.length === 1 ? 'cloud' : 'clouds'}</span></p><p className="text-xs text-[var(--color-text-muted)]">{rows.length} {rows.length === 1 ? 'component' : 'components'}</p></div>
+              <div><h2 className="flex items-center text-sm font-semibold">Connected<Tip label="Connected clouds" /></h2><p className="text-3xl font-bold leading-tight" data-testid="all-connected">{clouds.length} <span className="text-base font-semibold">{clouds.length === 1 ? 'cloud' : 'clouds'}</span></p><p className="text-xs text-[var(--color-text-muted)]">{rows.length} {rows.length === 1 ? 'component' : 'components'} connected</p></div>
             </section>
           </div>
 

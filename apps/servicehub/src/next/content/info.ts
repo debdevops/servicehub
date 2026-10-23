@@ -123,6 +123,8 @@ export const labels: Readonly<Record<string, ColumnHelp>> = {
   'Hand-offs': h('Hand-offs', 'Things ServiceHub stopped on and will not retry by itself, for example an attempt whose outcome was never recorded. A person decides what happens next.'),
   'Oldest': h('Oldest', 'How long the longest-waiting item has been waiting, and which message it is.'),
   'Pending approvals': h('Pending approvals', 'Replays the Agent has prepared and is holding until a person says yes or no. Nothing is sent until someone approves.'),
+  'section:How ServiceHub works': h('How ServiceHub works', 'Three plain facts about this cloud, from what is connected: whether ServiceHub looks by itself or only when you press Look now, whether the cloud reports message counts, and how far a replay can be proved.'),
+  'Dead-letter': h('Dead-letter', 'Messages in this component’s dead-letter places. Exact where the cloud counts exactly, “(approx)” where it estimates, and what ServiceHub recorded at the last look where the cloud reports no counts.'),
   'In dead-letter now@tile': h('In dead-letter now', 'Messages in dead-letter places right now on this cloud. A cloud that does not report counts shows “Dead letters recorded” instead.'),
   'Dead letters recorded': h('Dead letters recorded', 'What ServiceHub kept the last time you pressed Look now. This cloud cannot be read in the background, so this is a snapshot.'),
   'Connected clouds': h('Connected clouds', 'How many clouds ServiceHub is connected to.'),

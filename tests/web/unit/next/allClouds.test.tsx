@@ -59,7 +59,8 @@ describe('Home for all clouds (unit C2)', () => {
     expect(await screen.findByTestId('all-needs-you')).toHaveTextContent('7') // 1 + 4 + 2
     expect(screen.getByTestId('all-approvals')).toHaveTextContent('5') // 1 + 3 + 1
     expect(screen.getByTestId('all-connected')).toHaveTextContent('3 clouds')
-    expect(screen.getByText('3 components')).toBeInTheDocument()
+    expect(screen.getByText('3 components connected')).toBeInTheDocument()
+    expect(screen.getByTestId('all-dead-letter')).toHaveTextContent('Counted per cloud') // AWS approximate, GCP reports none
 
     expect(screen.getByTestId('first-azure')).toHaveTextContent('12')
     expect(screen.getByTestId('first-aws')).toHaveTextContent('8,700(approx)')
@@ -68,6 +69,12 @@ describe('Home for all clouds (unit C2)', () => {
     expect(screen.queryByText(/8,849|8,712|12 \+ /)).not.toBeInTheDocument() // 12 + 8,700 + 137 is never drawn
 
     expect(screen.getByRole('note')).toHaveTextContent('No total across clouds. Azure counts are exact, AWS counts are approximate, and Google Cloud reports none')
+  })
+
+  it('the dead-letter tile sums only when every cloud counts exactly', async () => {
+    open([azure(), { ...azure(), namespaceId: 'ns-az2', cloud: 'azure' }])
+    expect(await screen.findByTestId('all-dead-letter')).toHaveTextContent('24')
+    expect(screen.getByText('Across 1 cloud · latest values read by ServiceHub')).toBeInTheDocument()
   })
 
   it('each card says how it is watched, whether it counts, and what a replay can reach — from its own data', async () => {
