@@ -100,8 +100,8 @@ export function ComponentTable({ components, cloudName, canConnect = true, lookN
             <thead>
               <tr>
                 <ThHidden className={`${th} w-8`}><span className="sr-only">Expand</span></ThHidden>
-                <Th>Name</Th>
-                <Th>Type</Th>
+                <Th>Component</Th>
+                <Th>Connection name</Th>
                 <Th>Connection</Th>
                 <Th>Status</Th>
                 <Th>In dead-letter now</Th>
@@ -123,8 +123,8 @@ export function ComponentTable({ components, cloudName, canConnect = true, lookN
                         {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
                       </button>
                     </td>
-                    <td className={`${td} font-semibold`}>{c.name}</td>
-                    <td className={td}>{c.componentName}</td>
+                    <td className={`${td} font-semibold`}>{c.componentName}</td>
+                    <td className={td}>{c.name}</td>
                     <td className={td}>
                       {c.reachable
                         ? <><span className="font-semibold text-green-700">Connected</span><span className="block text-xs text-[var(--color-text-muted)]">{c.canSend ? 'Read + Send' : 'Read only'}</span></>

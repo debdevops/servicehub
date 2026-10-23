@@ -53,6 +53,7 @@ export const labels: Readonly<Record<string, ColumnHelp>> = {
   'Status': h('Status', 'How ServiceHub stands with this: whether anything needs you, or whether it cannot be reached.'),
   'Status@coverage': h('Status', 'How far ServiceHub’s support goes. Supported: seen working on a real cloud. Being validated: built, but no recorded live run yet, so replay outcomes end Unverified. On request: built only if someone asks.'),
   'Queues and subscriptions': h('Queues and subscriptions', 'How many places in this connection hold messages. Topics are not counted: a topic holds nothing itself.'),
+  'Connection name': h('Connection name', 'The connection this component is read through: the name you gave it when you connected it.'),
   'Name': h('Name', 'The name you gave this connection when you connected it.'),
   'Counts': h('Counts', 'How far the cloud’s message counts can be trusted. Exact: the real number. Approximate: an estimate, as SQS gives. Can’t count here: the cloud reports no count.'),
   'Browsing': h('Browsing', 'Whether ServiceHub can open the messages still waiting. Yes only where looking changes nothing. On a cloud where every look counts as a delivery attempt it says No, so ServiceHub never looks.'),
