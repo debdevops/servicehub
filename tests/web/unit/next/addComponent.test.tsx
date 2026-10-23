@@ -69,15 +69,49 @@ describe('Add a component (one dialog: choose, connect, bring in)', () => {
     const d = await dialog()
     expect(await d.findByText('Acme Payments')).toBeInTheDocument()
     expect(d.getByText(/never asks for a key/)).toBeInTheDocument()
-    // Every cloud is listed, not just the one the page is on; a cloud with no connection says so and still names what it can bring in.
-    expect(d.getByRole('region', { name: 'AWS components' })).toBeInTheDocument()
-    expect(d.getByRole('region', { name: 'Azure components' })).toHaveTextContent(/Connect Azure first/)
-    expect(d.getByRole('region', { name: 'Google Cloud components' })).toHaveTextContent(/It can bring in: Pub\/Sub/)
+    // Every cloud has its own tab, not just the one the page is on; a cloud with no connection says so and still names what it can bring in.
+    expect(d.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Azure', 'AWS', 'Google Cloud'])
+    await userEvent.click(d.getByRole('tab', { name: 'Google Cloud' }))
+    expect(d.getByRole('tabpanel', { name: 'Google Cloud' })).toHaveTextContent(/It can bring in: Pub\/Sub/)
+    await userEvent.click(d.getByRole('tab', { name: 'Azure' }))
+    expect(d.getByRole('tabpanel', { name: 'Azure' })).toHaveTextContent(/Connect Azure first/)
+    await userEvent.click(d.getByRole('tab', { name: 'AWS' }))
     expect(await d.findByRole('checkbox', { name: 'SQS (Supported)' })).toBeChecked()
     expect(d.getByRole('checkbox', { name: 'SQS (Supported)' })).toBeDisabled()
     expect(d.getByRole('checkbox', { name: 'Kinesis, DynamoDB streams (On request)' })).toBeDisabled()
     expect(d.getByRole('checkbox', { name: 'Step Functions (Not yet validated)' })).toBeEnabled()
     expect(d.getByRole('button', { name: 'Add 0 components' })).toBeDisabled()
+  })
+
+  it('has one tab per cloud: the cloud you are on is selected, switching shows that cloud only, and each says what it holds', async () => {
+    open('/next/aws?dialog=add-component')
+    const d = await dialog()
+    const aws = await d.findByRole('tab', { name: 'AWS' })
+    const azure = d.getByRole('tab', { name: 'Azure' })
+    const gcp = d.getByRole('tab', { name: 'Google Cloud' })
+    expect(aws).toHaveAttribute('aria-selected', 'true')
+    expect(azure).toHaveAttribute('aria-selected', 'false')
+    expect(await d.findByText(/1 on · 1 on request/)).toBeInTheDocument()
+    expect(d.queryByRole('tabpanel', { name: 'Azure' })).not.toBeInTheDocument()
+
+    await userEvent.click(azure)
+    expect(azure).toHaveAttribute('aria-selected', 'true')
+    expect(aws).toHaveAttribute('aria-selected', 'false')
+    expect(d.getByRole('tabpanel', { name: 'Azure' })).toBeVisible()
+    expect(d.queryByRole('checkbox', { name: 'SQS (Supported)' })).not.toBeInTheDocument()
+    await userEvent.click(gcp)
+    expect(d.getByRole('tabpanel', { name: 'Google Cloud' })).toBeVisible()
+  })
+
+  it('a tick on a tab that is then switched away is kept and counted on its tab', async () => {
+    open('/next/aws?dialog=add-component')
+    const d = await dialog()
+    await userEvent.click(await d.findByRole('checkbox', { name: 'Step Functions (Not yet validated)' }))
+    await userEvent.click(d.getByRole('tab', { name: 'Azure' }))
+    expect(d.getByRole('tab', { name: /^AWS/ })).toHaveTextContent('1')
+    expect(d.getByRole('button', { name: 'Add 1 component' })).toBeEnabled()
+    await userEvent.click(d.getByRole('tab', { name: /^AWS/ }))
+    expect(d.getByRole('checkbox', { name: 'Step Functions (Not yet validated)' })).toBeChecked()
   })
 
   it('ticking opens the row in place with its prerequisites, a copyable policy and a read-only check', async () => {

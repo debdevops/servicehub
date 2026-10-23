@@ -59,12 +59,15 @@ export default function AddComponentDialog({ close }: NextOverlayBodyProps) {
   const aws = useCloud('aws', all, wanted)
   const gcp = useCloud('gcp', all, wanted)
   const byCloud = { azure, aws, gcp }
-  const sections = (first ? [first, ...CLOUDS.filter((c) => c !== first)] : CLOUDS).map((c) => byCloud[c])
+  const sections = CLOUDS.map((c) => byCloud[c]) // a fixed order, so the tabs never reshuffle
 
   const [desired, setDesired] = useState<Readonly<Record<string, boolean>>>({})
   const [checks, setChecks] = useState<Readonly<Record<string, CheckState>>>({})
   const [outcomes, setOutcomes] = useState<Readonly<Record<string, Outcome>>>({})
   const [saving, setSaving] = useState(false)
+  // One tab per cloud, starting on the cloud the page or connection is on. A tab that is switched away keeps its ticks.
+  const [tab, setTab] = useState<CloudKind | null>(null)
+  const active = tab ?? first ?? CLOUDS[0]!
 
   if (namespaces.isPending) return <p role="status" className="text-sm text-[var(--color-text-muted)]">Loading…</p>
 
@@ -109,8 +112,23 @@ export default function AddComponentDialog({ close }: NextOverlayBodyProps) {
       <p className="text-xs text-[var(--color-text-muted)]">Adding a component never asks for a key. It switches on what that cloud’s connection can already see. Nothing is created or changed in your cloud.</p>
       {!may.allowed && <NotAllowed reason={may.reason} />}
 
+      <div role="tablist" aria-label="Cloud" className="flex gap-1 border-b border-[var(--color-border)]">
+        {sections.map((s) => {
+          const pending = rows.filter((r) => r.s === s && ((r.entry.canToggle && r.entry.state === 'off' && wantedOn(r)) || (r.entry.canToggle && r.entry.state === 'on' && !wantedOn(r)))).length
+          const selected = s.cloud === active
+          return (
+            <button key={s.cloud} type="button" role="tab" id={`add-component-tab-${s.cloud}`} aria-selected={selected} aria-controls={`add-component-${s.cloud}`}
+              onClick={() => setTab(s.cloud)}
+              className={`-mb-px rounded-t-lg border border-b-0 px-4 py-2 text-sm font-semibold ${selected ? 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary-700)]' : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]'}`}>
+              {cloudLabel[s.cloud]}
+              {pending > 0 && <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-[11px] text-blue-800" aria-label={`${pending} to change`}>{pending}</span>}
+            </button>
+          )
+        })}
+      </div>
+
       {sections.map((s) => (
-        <CloudSection key={s.cloud} s={s} pathname={pathname} coverageNames={coverageNames(coverage.data?.rows ?? [], s.cloud)}
+        <CloudSection key={s.cloud} s={s} pathname={pathname} active={s.cloud === active} coverageNames={coverageNames(coverage.data?.rows ?? [], s.cloud)}
           disabled={!may.allowed || saving || finished} wantedOn={wantedOn} checks={checks} outcomes={outcomes}
           onToggle={(id, v) => setDesired((d) => ({ ...d, [id]: v }))} onCheck={runCheck} />
       ))}
@@ -145,18 +163,23 @@ function coverageNames(rows: readonly { cloud: CloudKind; componentKey: string; 
     .map((r) => (r.status === 'onRequest' ? `${r.name} (on request)` : r.name))
 }
 
-function CloudSection({ s, pathname, coverageNames: names, disabled, wantedOn, checks, outcomes, onToggle, onCheck }: {
-  s: CloudData; pathname: string; coverageNames: readonly string[]; disabled: boolean
+function CloudSection({ s, pathname, active, coverageNames: names, disabled, wantedOn, checks, outcomes, onToggle, onCheck }: {
+  s: CloudData; pathname: string; active: boolean; coverageNames: readonly string[]; disabled: boolean
   wantedOn: (r: { entry: ComponentEntry; id: string }) => boolean
   checks: Readonly<Record<string, CheckState>>; outcomes: Readonly<Record<string, Outcome>>
   onToggle: (id: string, value: boolean) => void; onCheck: (namespaceId: string, key: string) => void
 }) {
   const { connection, connections, list } = s
+  const entries = list.data?.components ?? []
+  const onCount = entries.filter((e) => e.state === 'on' || e.state === 'alwaysOn').length
+  const request = entries.filter((e) => e.state === 'unavailable').length
+  const summary = !connection ? 'no connection yet' : list.data ? `${onCount} on${request > 0 ? ` · ${request} on request` : ''}` : 'reading…'
   return (
-    <section aria-label={`${cloudLabel[s.cloud]} components`} className="space-y-2">
+    <section role="tabpanel" id={`add-component-${s.cloud}`} aria-labelledby={`add-component-tab-${s.cloud}`} hidden={!active} className="space-y-2">
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-primary-50)] px-3 py-2 text-sm">
         <h3 className="flex items-center font-semibold">{cloudLabel[s.cloud]}<Tip label="addc:cloud-section" /></h3>
-        {connection ? (
+        <span className="text-xs text-[var(--color-text-muted)]">{summary}</span>
+        {connection && (
           <>
             <span>using your existing connection <strong>{connection.displayName ?? connection.name}</strong></span><Tip label="addc:connection" />
             {connections.length > 1 && (
@@ -168,8 +191,6 @@ function CloudSection({ s, pathname, coverageNames: names, disabled, wantedOn, c
               </span>
             )}
           </>
-        ) : (
-          <span className="text-[var(--color-text-muted)]">no connection yet</span>
         )}
       </div>
 
