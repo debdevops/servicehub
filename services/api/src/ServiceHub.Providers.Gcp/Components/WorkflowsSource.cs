@@ -123,7 +123,8 @@ public sealed partial class WorkflowsSource : IComponentSource
             return Result.Failure<FailedItemsPage>(NoProject());
         }
 
-        if (placeId is not null && !IsWorkflowName(ns, placeId))
+        var place = placeId is null ? null : InOwnProject(ns, placeId, execution: false);
+        if (placeId is not null && place is null)
         {
             return Result.Failure<FailedItemsPage>(Error.Validation("GCP.Workflows.InvalidPlace", "That is not a workflow in this connection's project."));
         }
@@ -149,7 +150,7 @@ public sealed partial class WorkflowsSource : IComponentSource
             }
             else
             {
-                workflows = [placeId];
+                workflows = [place!];
             }
 
             var reads = workflows.SelectMany(w => States.Select(state => (Workflow: w, State: state))).ToList();
@@ -193,14 +194,15 @@ public sealed partial class WorkflowsSource : IComponentSource
             return Result.Failure<FailedItemDetail?>(NoProject());
         }
 
-        if (!IsExecutionName(ns, itemId))
+        var own = InOwnProject(ns, itemId, execution: true);
+        if (own is null)
         {
             return Result.Failure<FailedItemDetail?>(Error.Validation("GCP.Workflows.InvalidItem", "That is not an execution in this connection's project."));
         }
 
         try
         {
-            var read = await _reader.GetExecutionAsync(ns, itemId, ct).ConfigureAwait(false);
+            var read = await _reader.GetExecutionAsync(ns, own, ct).ConfigureAwait(false);
             if (read is null)
             {
                 return Result.Success<FailedItemDetail?>(null);
@@ -259,14 +261,31 @@ public sealed partial class WorkflowsSource : IComponentSource
     [GeneratedRegex(@"^projects/(?<p>[^/]+)/locations/(?<l>[^/]+)/workflows/(?<w>[^/]+)(?:/executions/(?<e>[^/]+))?$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
     private static partial Regex NameRegex();
 
-    private static bool IsWorkflowName(Namespace ns, string name) => Matches(ns, name, execution: false);
-
-    private static bool IsExecutionName(Namespace ns, string name) => Matches(ns, name, execution: true);
-
-    private static bool Matches(Namespace ns, string name, bool execution)
+    // Google lists workflows as projects/{project id}/... but names an execution by the project NUMBER (projects/1078147762303/...), while a
+    // connection stores the id. A name is accepted when its project segment is this connection's id or any number, and it is then REWRITTEN
+    // to the connection's own project id before anything is read, so the read can only ever happen in this connection's project. (A number
+    // that belongs to another project reads that name in OUR project, finds nothing, and never touches the other one.) Any other id is refused.
+    private static string? InOwnProject(Namespace ns, string name, bool execution)
     {
         var m = name.Length <= 1024 ? NameRegex().Match(name) : Match.Empty;
-        return m.Success && string.Equals(m.Groups["p"].Value, ProjectOf(ns), StringComparison.OrdinalIgnoreCase) && m.Groups["e"].Success == execution;
+        if (!m.Success || m.Groups["e"].Success != execution)
+        {
+            return null;
+        }
+
+        var segment = m.Groups["p"].Value;
+        var project = ProjectOf(ns);
+        if (project is null)
+        {
+            return null;
+        }
+
+        if (string.Equals(segment, project, StringComparison.OrdinalIgnoreCase))
+        {
+            return name;
+        }
+
+        return segment.Length > 0 && segment.All(char.IsAsciiDigit) ? $"projects/{project}{name[(name.IndexOf('/', "projects/".Length))..]}" : null;
     }
 
     private static string ShortName(string name) => name[(name.LastIndexOf('/') + 1)..];

@@ -130,6 +130,36 @@ public sealed class WorkflowsSourceTests : ComponentSourceConformance
         page.Incomplete.Should().BeTrue();
     }
 
+    private static Namespace ProjectNamed(string project) =>
+        Namespace.Create(project, "{\"type\":\"service_account\"}", provider: CloudProviderType.Gcp, gcpProjectId: project).Value;
+
+    [Fact]
+    public async Task Google_names_an_execution_by_the_project_number_and_it_is_always_read_in_the_connections_own_project()
+    {
+        // Found on a real project: workflows are listed as projects/{id}/..., but an execution comes back as projects/{number}/....
+        var ns = ProjectNamed("proj-num");
+        const string Numbered = "projects/1078147762303/locations/us-central1/workflows/orders/executions/run-1";
+        const string Own = "projects/proj-num/locations/us-central1/workflows/orders/executions/run-1";
+        var at = new DateTimeOffset(2026, 10, 1, 0, 0, 0, TimeSpan.Zero);
+        _google.Detail = new ExecutionRead(new ExecutionRef(Numbered, "FAILED", at, at), "{\"message\":\"boom\"}", "step main");
+
+        var detail = (await _source.GetFailedAsync(ns, Numbered, default)).Value;
+
+        detail.Should().NotBeNull();
+        _google.NamesAsked.Should().Equal(Own); // the read is rewritten to the connection's own project id, and the number is never sent
+        detail!.Item.ConsoleUrl.Should().Contain("project=proj-num");
+    }
+
+    [Fact]
+    public async Task A_numeric_project_in_a_place_is_also_rewritten_and_a_non_numeric_other_project_is_still_refused()
+    {
+        var ns = ProjectNamed("proj-place");
+
+        (await _source.ListFailedAsync(ns, "projects/123/locations/us-central1/workflows/orders", default)).IsSuccess.Should().BeTrue();
+        _google.NamesAsked.Should().OnlyContain(n => n.StartsWith("projects/proj-place/", StringComparison.Ordinal), "a number is rewritten to the connection's own project id");
+        (await _source.ListFailedAsync(ns, "projects/not-mine/locations/us-central1/workflows/orders", default)).IsFailure.Should().BeTrue();
+    }
+
     [Theory]
     [InlineData("projects/other/locations/us-central1/workflows/orders")]
     [InlineData("projects/my-proj/locations/us-central1/workflows/orders/executions/run-1")]
@@ -207,6 +237,7 @@ public sealed class WorkflowsSourceTests : ComponentSourceConformance
         public Task<Listing<ExecutionRef>> ListExecutionsAsync(Namespace ns, string workflowName, string state, int max, CancellationToken ct) =>
             Run("ListExecutions", ct, () =>
             {
+                NamesAsked.Add(workflowName);
                 if (state == FailExecutionsState)
                 {
                     throw new RpcException(new Status(StatusCode.Unavailable, "throttled"));
@@ -216,8 +247,14 @@ public sealed class WorkflowsSourceTests : ComponentSourceConformance
                 return new Listing<ExecutionRef>([.. all.Take(max)], all.Count > max);
             });
 
-        public Task<ExecutionRead?> GetExecutionAsync(Namespace ns, string executionName, CancellationToken ct) =>
-            Run("GetExecution", ct, () => Detail);
+        /// <summary>The names Google was actually asked about, so a test can see what was sent.</summary>
+        public List<string> NamesAsked { get; } = [];
+
+        public Task<ExecutionRead?> GetExecutionAsync(Namespace ns, string executionName, CancellationToken ct)
+        {
+            NamesAsked.Add(executionName);
+            return Run("GetExecution", ct, () => Detail);
+        }
 
         private Task<T> Run<T>(string call, CancellationToken ct, Func<T> answer)
         {
