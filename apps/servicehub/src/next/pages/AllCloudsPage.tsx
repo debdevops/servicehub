@@ -11,6 +11,7 @@ import type { ConnectedComponent } from '../../lib/api/components'
 import type { CloudKind } from '../../lib/api/coverage'
 import { formatWhen } from '../../lib/format'
 import { AttentionTable } from '../components/home/AttentionTable'
+import { HowItWorks } from '../components/home/HowItWorks'
 import { cloudLabel } from '../lib/clouds'
 import { acrossClouds, cloudFacts, countWords, homeTotals, noTotalSentence, recordedWords } from '../lib/words'
 import { nextEntry, nextHref } from '../nav/navigation'
@@ -18,12 +19,7 @@ import { Th } from '../components/Tip'
 import { Tip } from '../components/Tip'
 
 const ORDER: readonly CloudKind[] = ['azure', 'aws', 'gcp']
-const dot = { good: 'bg-green-600', caution: 'bg-amber-500', none: 'bg-slate-300' } as const
 const accent: Readonly<Record<CloudKind, string>> = { azure: 'border-t-blue-600', aws: 'border-t-orange-500', gcp: 'border-t-green-600' }
-
-function Fact({ text, good }: { text: string; good: boolean }) {
-  return <li className="flex items-center gap-2 text-sm"><span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${good ? 'bg-green-600' : 'bg-slate-300'}`} />{text}</li>
-}
 
 /** One cloud, in its own terms (build-plan unit C2). Nothing here is added to another cloud's numbers (R5). */
 function CloudCard({ cloud, components, covered }: { cloud: CloudKind; components: readonly ConnectedComponent[]; covered: Parameters<typeof cloudFacts>[1] }) {
@@ -70,14 +66,7 @@ function CloudCard({ cloud, components, covered }: { cloud: CloudKind; component
         </tbody>
       </table>
       <Pager {...pager} label={`${cloudLabel[cloud]} components`} />
-      <div className="mt-4 rounded-lg bg-[var(--color-surface-muted)] p-3">
-        <h3 className="flex items-center text-sm font-semibold">How ServiceHub works with {cloudLabel[cloud]}<Tip label="section:How ServiceHub works" /></h3>
-        <ul className="mt-2 space-y-1.5">
-          <Fact {...facts.watched} />
-          <Fact {...facts.counts} />
-          <li className="flex items-center gap-2 text-sm"><span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${dot[facts.evidence.tone]}`} />{facts.evidence.text}</li>
-        </ul>
-      </div>
+      <div className="mt-4"><HowItWorks cloudName={cloudLabel[cloud]} components={components} covered={covered} /></div>
     </section>
   )
 }

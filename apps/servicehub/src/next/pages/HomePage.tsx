@@ -11,6 +11,7 @@ import { NotFoundPage } from '../../pages/NotFoundPage'
 import { AttentionTable } from '../components/home/AttentionTable'
 import { ComponentTable } from '../components/home/ComponentTable'
 import { EvidencePanel } from '../components/home/EvidencePanel'
+import { HowItWorks } from '../components/home/HowItWorks'
 import { NotWatchedNotice } from '../components/home/NotWatchedNotice'
 import { SignaturePanel } from '../components/home/SignaturePanel'
 import { Tiles } from '../components/home/Tiles'
@@ -77,11 +78,12 @@ function CloudHome({ cloud }: { cloud: CloudKind }) {
       ) : (
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_26rem]">
           <div className="min-w-0 space-y-4">
-            <Tiles totals={totals} observedAtUtc={components.data.generatedAtUtc} cloudName={cloudName} />
+            <Tiles totals={totals} observedAtUtc={components.data.generatedAtUtc} cloudName={cloudName} reachable={rows.filter((c) => c.reachable).length} />
             {unwatched.length > 0 && <NotWatchedNotice cloudName={cloudName} provider={cloud} namespaceIds={lookIds} me={me.data} onLook={refresh} />}
             <ComponentTable components={rows} cloudName={cloudName} />
           </div>
           <div className="space-y-4">
+            <HowItWorks cloudName={cloudName} components={rows} covered={covered} />
             <SignaturePanel provider={cloud} cloudName={cloudName} notWatched={unwatched.length > 0} recorded={totals.first.recorded ?? (totals.first.label === 'Dead letters recorded' ? totals.first.value : null)} inDeadLetter={totals.first.label === 'In dead-letter now' ? totals.first.value : null} />
             <EvidencePanel cloudName={cloudName} rows={covered} />
           </div>
