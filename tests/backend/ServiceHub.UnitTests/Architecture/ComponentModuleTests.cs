@@ -42,10 +42,22 @@ public sealed class ComponentModuleTests
         var offenders = SourceFiles()
             .SelectMany(f => File.ReadLines(f.FullName).Select((line, i) => (f.Name, Line: i + 1, Text: line.TrimStart())))
             .Where(l => !l.Text.StartsWith("//", StringComparison.Ordinal) && ChangesACloud.IsMatch(l.Text))
+            // The one HTTP door the Azure sources share. Its request is built with HttpMethod.Get and nothing else; the next test holds that.
+            .Where(l => !(l.Name == "AzureRestClient.cs" && l.Text.Contains("_http.SendAsync(request", StringComparison.Ordinal)))
             .Select(l => $"{l.Name}:{l.Line}: {l.Text}")
             .ToList();
 
         offenders.Should().BeEmpty("a component source only lists, describes and gets. Moving work on goes through DlqReplayService and the gate (rule 11)");
+    }
+
+    [Fact]
+    public void The_azure_http_door_can_only_get()
+    {
+        var text = StripComments(File.ReadAllText(SourceFiles().Single(f => f.Name == "AzureRestClient.cs").FullName));
+
+        Regex.Matches(text, @"HttpMethod\.(\w+)").Select(m => m.Groups[1].Value).Should().OnlyContain(v => v == "Get", "the Azure sources read; a POST or DELETE would be a second door");
+        Regex.Matches(text, @"\bnew HttpRequestMessage\(").Should().ContainSingle("there is exactly one place a request is made");
+        text.Should().NotContain("Content =", "a request that reads carries no body");
     }
 
     [Fact]

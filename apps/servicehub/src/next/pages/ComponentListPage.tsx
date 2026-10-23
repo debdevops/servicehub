@@ -7,7 +7,7 @@ import { useCoverage } from '../../hooks/useCoverage'
 import { useNamespaces } from '../../hooks/useNamespaces'
 import { usePagedList } from '../../hooks/usePagedList'
 import type { ConnectedComponent } from '../../lib/api/components'
-import type { CloudKind } from '../../lib/api/coverage'
+import { readsOnDemand, type CloudKind } from '../../lib/api/coverage'
 import type { Namespace } from '../../lib/api/namespaces'
 import { formatWhen } from '../../lib/format'
 import { NotFoundPage } from '../../pages/NotFoundPage'
@@ -35,7 +35,7 @@ export default function ComponentListPage() {
   const coverage = useCoverage()
   if (cloud === null || !params.component) return <NotFoundPage />
   if (coverage.isPending) return <p role="status" className="px-6 py-6 text-sm text-[var(--color-text-muted)]">Loading…</p>
-  const runs = coverage.data?.rows.find((r) => r.cloud === cloud && r.componentKey === params.component && r.inSidebar && r.detection === 'runs')
+  const runs = coverage.data?.rows.find((r) => r.cloud === cloud && r.componentKey === params.component && r.inSidebar && readsOnDemand(r.detection))
   return runs ? <RunsConnections cloud={cloud} row={runs} /> : <List cloud={cloud} componentKey={params.component} />
 }
 

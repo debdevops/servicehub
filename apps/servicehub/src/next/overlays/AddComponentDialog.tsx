@@ -8,7 +8,7 @@ import { componentKeys, useComponentList } from '../../hooks/useComponentEnablem
 import { useCoverage } from '../../hooks/useCoverage'
 import { toProblem } from '../../lib/api/client'
 import { checkComponent, setComponent, type ComponentCheck, type ComponentEntry } from '../../lib/api/componentEnablement'
-import type { CloudKind } from '../../lib/api/coverage'
+import { readsOnDemand, type CloudKind, type DetectionKind } from '../../lib/api/coverage'
 import type { Namespace } from '../../lib/api/namespaces'
 import { permission } from '../../lib/permissions'
 import { NotAllowed } from '../../components/ui/NotAllowed'
@@ -157,10 +157,10 @@ export default function AddComponentDialog({ close }: NextOverlayBodyProps) {
 }
 
 /** The components a cloud can bring in, from the catalogue, for a cloud with no connection yet (nothing can be read without one). */
-function coverageNames(rows: readonly { cloud: CloudKind; componentKey: string; name: string; status: string; detection: string }[], cloud: CloudKind): string[] {
+function coverageNames(rows: readonly { cloud: CloudKind; componentKey: string; name: string; status: string; detection: DetectionKind }[], cloud: CloudKind): string[] {
   const seen = new Set<string>()
   return rows
-    .filter((r) => r.cloud === cloud && r.status !== 'notSupported' && (r.detection === 'store' || r.detection === 'runs') && !seen.has(r.componentKey) && seen.add(r.componentKey))
+    .filter((r) => r.cloud === cloud && r.status !== 'notSupported' && (r.detection === 'store' || readsOnDemand(r.detection)) && !seen.has(r.componentKey) && seen.add(r.componentKey))
     .map((r) => (r.status === 'onRequest' ? `${r.name} (on request)` : r.name))
 }
 

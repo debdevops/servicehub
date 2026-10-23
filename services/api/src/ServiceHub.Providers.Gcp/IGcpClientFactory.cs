@@ -1,5 +1,6 @@
 using Google.Cloud.Firestore;
 using Google.Cloud.PubSub.V1;
+using EventarcClient = Google.Cloud.Eventarc.V1.EventarcClient;
 using Google.Cloud.Workflows.Executions.V1;
 using Google.Cloud.Workflows.V1;
 using ServiceHub.Core.Entities;
@@ -65,6 +66,13 @@ public interface IGcpClientFactory
     /// <param name="ns">The namespace containing project ID and credentials.</param>
     /// <param name="ct">Cancellation token.</param>
     Task<ExecutionsClient> GetExecutionsClientAsync(Namespace ns, CancellationToken ct);
+
+    /// <summary>
+    /// Returns an <see cref="EventarcClient"/> for listing and reading Eventarc triggers. Read-only use: list and get.
+    /// </summary>
+    /// <param name="ns">The namespace containing project ID and credentials.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task<EventarcClient> GetEventarcClientAsync(Namespace ns, CancellationToken ct);
 
     /// <summary>
     /// Shuts down and removes any cached publisher/subscriber/topic-admin clients for the

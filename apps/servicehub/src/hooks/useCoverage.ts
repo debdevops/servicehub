@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { fetchCoverage, type CloudKind, type CoverageRow } from '../lib/api/coverage'
+import { fetchCoverage, readsOnDemand, type CloudKind, type CoverageRow } from '../lib/api/coverage'
 import type { EnabledComponent } from '../lib/api/componentEnablement'
 
 export const coverageKeys = { all: ['coverage'] as const }
@@ -10,7 +10,7 @@ export function useCoverage() {
 }
 
 /**
- * The components the menu lists for a cloud: one per component, in catalogue order. A component that is read on demand (a run history)
+ * The components the menu lists for a cloud: one per component, in catalogue order. A component that is read on demand (a run history or failed records)
  * is listed only where someone ticked it in Add a component; a message store is listed for every connected cloud, as before.
  */
 export function sidebarComponents(rows: readonly CoverageRow[], cloud: CloudKind | null, enabled: readonly EnabledComponent[] = []): readonly CoverageRow[] {
@@ -19,7 +19,7 @@ export function sidebarComponents(rows: readonly CoverageRow[], cloud: CloudKind
     (r) =>
       r.inSidebar &&
       (cloud === null || r.cloud === cloud) &&
-      (r.detection !== 'runs' || enabled.some((e) => e.cloud === r.cloud && e.componentKey === r.componentKey)) &&
+      (!readsOnDemand(r.detection) || enabled.some((e) => e.cloud === r.cloud && e.componentKey === r.componentKey)) &&
       !seen.has(r.componentKey) &&
       seen.add(r.componentKey),
   )

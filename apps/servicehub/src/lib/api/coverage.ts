@@ -3,7 +3,14 @@ import { api } from './client'
 /** A cloud as a heading. Nothing may decide behaviour from it — that comes from `class` and the flags below (R4). */
 export type CloudKind = 'azure' | 'aws' | 'gcp'
 export type SupportStatus = 'supported' | 'beingValidated' | 'onRequest' | 'notSupported'
-export type DetectionKind = 'none' | 'store' | 'runs' | 'signal'
+export type DetectionKind = 'none' | 'store' | 'runs' | 'records' | 'signal'
+
+/**
+ * Whether a component is read on demand (a run history or a store of failed records) instead of watched like a message store. These are
+ * the components a person ticks in Add a component, and the menu lists one only where it is on. The server decides it
+ * (`ComponentAccessRules.ReadsOnDemand`); this is the one place the web asks the same question.
+ */
+export const readsOnDemand = (detection: DetectionKind): boolean => detection === 'runs' || detection === 'records'
 export type RecoverabilityClass =
   | 'r0Unknown' | 'r1ReplayableProvable' | 'r2ReplayableUnproven' | 'r3CloudRedriveOnly' | 'r4PointerOnly' | 'r5DetectOnly' | 'r6NotRecoverable'
 

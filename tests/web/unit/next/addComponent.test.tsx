@@ -129,6 +129,43 @@ describe('Add a component (one dialog: choose, connect, bring in)', () => {
     expect(enablementApi.setComponent).not.toHaveBeenCalled()
   })
 
+  it('lists a failed-records component beside the run histories, tickable, with the Entra step an Azure connection needs', async () => {
+    const azure = { ...aws, id: 'ns-3', name: 'globex-entra', displayName: 'Globex Azure', provider: 'azure', authType: 'defaultAzureCredential', awsRegion: null } as unknown as namespacesApi.Namespace
+    vi.mocked(namespacesApi.fetchNamespaces).mockResolvedValue([azure])
+    vi.mocked(enablementApi.fetchComponentList).mockResolvedValue({
+      namespaceId: 'ns-3', connectionName: 'Globex Azure', cloud: 'Azure',
+      components: [
+        entry({ componentKey: 'service-bus', name: 'Service Bus', state: 'alwaysOn' }),
+        entry({
+          componentKey: 'event-grid', name: 'Event Grid', status: 'beingValidated', statusWords: 'Not yet validated', state: 'off', canToggle: true, stuckPlace: 'Dead-letter blobs',
+          what: 'Events Event Grid could not deliver.', appears: 'Appears in the menu as Event Grid. Read only.', needs: 'Reader, and Storage Blob Data Reader.',
+          steps: ['Use an Azure connection that signs in with Entra.', 'Press Check access.'], snippets: [{ label: 'Grant the reader role', text: 'az role assignment create --role Reader' }],
+          permissions: ['Reader', 'Storage Blob Data Reader'],
+        }),
+      ],
+    })
+    open('/next/azure?dialog=add-component')
+    const d = await dialog()
+
+    const box = await d.findByRole('checkbox', { name: 'Event Grid (Not yet validated)' })
+    expect(box).toBeEnabled()
+    await userEvent.click(box)
+    expect(d.getByText('Use an Azure connection that signs in with Entra.')).toBeInTheDocument()
+    expect(d.getByText('az role assignment create --role Reader')).toBeInTheDocument()
+    expect(d.getByRole('button', { name: 'Add 1 component' })).toBeEnabled()
+  })
+
+  it('a cloud with no connection still names a failed-records component it can bring in', async () => {
+    const eventGrid = { ...coverageRows[0]!, id: 'event-grid.dead-letter-blobs', componentKey: 'event-grid', cloud: 'azure' as const, cloudName: 'Azure', name: 'Event Grid', detection: 'records' as const, status: 'beingValidated' as const, statusWords: 'Being validated', inSidebar: true }
+    vi.mocked(coverageApi.fetchCoverage).mockResolvedValue({ rows: [...coverageRows, eventGrid] })
+    open('/next/aws?dialog=add-component')
+    const d = await dialog()
+
+    await userEvent.click(await d.findByRole('tab', { name: 'Azure' }))
+
+    expect(d.getByRole('tabpanel', { name: 'Azure' })).toHaveTextContent(/It can bring in:.*Event Grid/)
+  })
+
   it('Add saves the ticked row, says so on the row, and Done closes', async () => {
     vi.mocked(enablementApi.setComponent).mockResolvedValue({ ...list.components[1]!, state: 'on' })
     open('/next/aws?dialog=add-component')

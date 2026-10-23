@@ -22,9 +22,9 @@ const tabs = [{ value: 'failed', label: 'failed' }, { value: 'access', label: 'A
 const NOT_ENABLED = 'Not enabled'
 
 /**
- * One connection of a component that is not a message store: Step Functions, and later Workflows, Logic Apps, Event Grid
- * (PLAN-PLUG-AND-PLAY-COMPONENTS §3.3). The tabs come from the catalogue row's `detection`, not from the component's name: a `runs`
- * component has Failed runs and Access, and nothing here is written for one service. A connection that cannot read the component
+ * One connection of a component that is not a message store: Step Functions, Workflows, Logic Apps, Event Grid, Eventarc and stream
+ * failures (PLAN-PLUG-AND-PLAY-COMPONENTS §3.3). The tabs come from the catalogue row's `detection`, not from the component's name: a
+ * `runs` or `records` component has its failed items and Access, and nothing here is written for one service. A connection that cannot read the component
  * says why, with the permissions it lacks, rather than showing an empty list that reads as "nothing is wrong".
  */
 export function RunsComponentPage({ cloud, row, namespaceId }: { cloud: CloudKind; row: CoverageRow; namespaceId: string }) {
@@ -94,7 +94,7 @@ export function RunsComponentPage({ cloud, row, namespaceId }: { cloud: CloudKin
           <p className="mt-2 text-xs text-[var(--color-text-muted)]">ServiceHub asks for read permissions only. It never starts, stops or changes anything here.</p>
         </section>
       ) : source.data.available ? (
-        <FailedRunsTab namespaceId={namespaceId} componentKey={row.componentKey} source={source.data} componentName={row.name} />
+        <FailedRunsTab namespaceId={namespaceId} componentKey={row.componentKey} source={source.data} row={row} />
       ) : (
         <section aria-labelledby="not-enabled-title" role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
           <h2 id="not-enabled-title" className="mb-1 text-base font-semibold">{NOT_ENABLED}<Tip label="section:Not enabled" /></h2>

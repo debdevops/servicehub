@@ -29,6 +29,30 @@ describe('the coverage list the demo answers with', () => {
     expect(sidebarComponents(answer.rows, 'aws', [{ namespaceId: 'g', cloud: 'gcp', componentKey: 'workflows' }]).map((r) => r.name)).toEqual(['SQS', 'SNS'])
   })
 
+  it('lists a failed-records component (Event Grid, Eventarc, stream failures) only where it was ticked, like a run history', () => {
+    const ticked = [
+      { namespaceId: 'z', cloud: 'azure' as const, componentKey: 'event-grid' },
+      { namespaceId: 'a', cloud: 'aws' as const, componentKey: 'aws-streams' },
+      { namespaceId: 'g', cloud: 'gcp' as const, componentKey: 'eventarc' },
+    ]
+    expect(sidebarComponents(answer.rows, 'azure', ticked).map((r) => r.name)).toEqual(['Service Bus', 'Storage Queues', 'Event Grid'])
+    expect(sidebarComponents(answer.rows, 'aws', ticked).map((r) => r.name)).toEqual(['SQS', 'SNS', 'Kinesis, DynamoDB streams'])
+    expect(sidebarComponents(answer.rows, 'gcp', ticked).map((r) => r.name)).toEqual(['Pub/Sub', 'Eventarc'])
+    expect(sidebarComponents(answer.rows, null, ticked).map((r) => r.componentKey)).toEqual(expect.arrayContaining(['event-grid', 'aws-streams', 'eventarc']))
+  })
+
+  it('keeps all four components that used to be on request out of that state, and being validated', () => {
+    for (const id of ['event-grid.dead-letter-blobs', 'logic-apps.failed-runs', 'aws-streams.failure-records', 'eventarc.undelivered']) {
+      const row = answer.rows.find((r) => r.id === id)!
+      expect(row.status, id).toBe('beingValidated')
+      expect(row.statusWords, id).toBe('Being validated')
+      expect(row.inSidebar, id).toBe(true)
+      expect(row.movesOnBy, id).toBe('Handed to a person')
+    }
+    expect(answer.rows.filter((r) => r.detection === 'records').map((r) => r.componentKey).sort()).toEqual(['aws-streams', 'event-grid', 'eventarc'])
+    expect(answer.rows.find((r) => r.id === 'eventarc.undelivered')!.detectionWords).toBe('Reads the failed records the service keeps')
+  })
+
   it('never offers a replay on a row that is not supported, and lets only a provable row earn autonomy', () => {
     for (const row of answer.rows) {
       if (row.status !== 'supported') expect(row.offersReplay || row.offersCloudRedrive, row.id).toBe(false)

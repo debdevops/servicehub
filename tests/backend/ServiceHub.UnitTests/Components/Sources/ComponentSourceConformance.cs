@@ -53,11 +53,13 @@ public abstract class ComponentSourceConformance
     protected abstract void ArrangeCancellationAware();
 
     [Fact]
-    public void It_serves_a_catalogue_component_that_is_not_a_message_store()
+    public void It_serves_a_catalogue_component_that_is_read_on_demand_not_a_message_store()
     {
         ComponentCatalog.All.Should().Contain(
-            c => c.ComponentKey == Source.ComponentKey && c.Cloud == ComponentCatalog.CloudOf(Source.Provider) && c.Detection != DetectionKind.Store,
-            "a source is registered for a catalogue row, and a message-store row keeps its messaging adapter");
+            c => c.ComponentKey == Source.ComponentKey && c.Cloud == ComponentCatalog.CloudOf(Source.Provider) && ComponentAccessRules.ReadsOnDemand(c),
+            "a source is registered for a run-history or failed-records row, and a message-store row keeps its messaging adapter");
+        ComponentCatalog.All.Where(c => c.ComponentKey == Source.ComponentKey).Should().OnlyContain(c => c.Provider == Source.Provider,
+            "the catalogue row names the adapter the source reads with");
     }
 
     [Fact]
@@ -94,7 +96,7 @@ public abstract class ComponentSourceConformance
 
         if (!Source.Capabilities.ReadsPayload)
         {
-            failed.Items.Should().OnlyContain(i => i.Copy == CopyKind.None, "ReadsPayload is false, so no item may claim a payload ServiceHub can show");
+            failed.Items.Should().OnlyContain(i => i.Copy != CopyKind.Held, "ReadsPayload is false, so no item may claim a payload ServiceHub can show (a pointer to the original is not the payload)");
         }
     }
 

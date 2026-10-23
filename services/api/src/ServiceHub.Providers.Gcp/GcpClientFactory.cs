@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using Google.Apis.Auth.OAuth2;
+using EventarcClient = Google.Cloud.Eventarc.V1.EventarcClient;
+using EventarcClientBuilder = Google.Cloud.Eventarc.V1.EventarcClientBuilder;
 using Google.Cloud.Firestore;
 using Google.Cloud.PubSub.V1;
 using Google.Cloud.Workflows.Executions.V1;
@@ -40,7 +42,7 @@ public sealed class GcpClientFactory : IGcpClientFactory
     // Pub/Sub keeps its own narrow scope. A component that reads another Google service asks for the scope that service needs, and what the
     // key may then do is still decided by the roles it was granted (a read-only role in the docs).
     private static readonly string[] PubSubScopes = ["https://www.googleapis.com/auth/pubsub"];
-    private static readonly string[] WorkflowsScopes = ["https://www.googleapis.com/auth/cloud-platform"];
+    private static readonly string[] WorkflowsScopes = ["https://www.googleapis.com/auth/cloud-platform"]; // Eventarc asks for the same one.
 
     private readonly IConnectionStringProtector _protector;
     private readonly ILogger<GcpClientFactory> _logger;
@@ -56,6 +58,7 @@ public sealed class GcpClientFactory : IGcpClientFactory
     private readonly ConcurrentDictionary<Guid, FirestoreDb> _firestoreCache = new();
     private readonly ConcurrentDictionary<Guid, (WorkflowsClient Client, ChannelBase Channel)> _workflowsCache = new();
     private readonly ConcurrentDictionary<Guid, (ExecutionsClient Client, ChannelBase Channel)> _executionsCache = new();
+    private readonly ConcurrentDictionary<Guid, (EventarcClient Client, ChannelBase Channel)> _eventarcCache = new();
 
     /// <summary>
     /// Initialises a new instance of <see cref="GcpClientFactory"/>.
@@ -202,6 +205,23 @@ public sealed class GcpClientFactory : IGcpClientFactory
     }
 
     /// <inheritdoc/>
+    public async Task<EventarcClient> GetEventarcClientAsync(Namespace ns, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(ns);
+
+        if (_eventarcCache.TryGetValue(ns.Id, out var cached))
+            return cached.Client;
+
+        var credential = await ResolveCredentialAsync(ns, WorkflowsScopes).ConfigureAwait(false);
+        var builder = new EventarcClientBuilder { ChannelCredentials = credential.ToChannelCredentials() };
+        var client = await builder.BuildAsync(ct).ConfigureAwait(false);
+
+        _eventarcCache.TryAdd(ns.Id, (client, builder.LastCreatedChannel));
+        _logger.LogDebug("Created EventarcClient for project {ProjectId}", LogRedactor.SanitiseForLog(GetProjectId(ns)));
+        return client;
+    }
+
+    /// <inheritdoc/>
     public async Task RemoveClientAsync(Guid namespaceId, CancellationToken cancellationToken = default)
     {
         var prefix = $"{namespaceId}:";
@@ -263,6 +283,11 @@ public sealed class GcpClientFactory : IGcpClientFactory
         if (_executionsCache.TryRemove(namespaceId, out var executionsEntry))
         {
             await ShutDownAsync(executionsEntry.Channel, "Workflow executions", namespaceId, linkedCts.Token).ConfigureAwait(false);
+        }
+
+        if (_eventarcCache.TryRemove(namespaceId, out var eventarcEntry))
+        {
+            await ShutDownAsync(eventarcEntry.Channel, "Eventarc", namespaceId, linkedCts.Token).ConfigureAwait(false);
         }
 
         if (_firestoreCache.TryRemove(namespaceId, out _))

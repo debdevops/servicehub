@@ -41,6 +41,7 @@ public static class AwsDependencyInjection
 
         // Components that are not message stores: read-only sources, one line each (PLAN-PLUG-AND-PLAY-COMPONENTS).
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IComponentSource, StepFunctionsSource>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IComponentSource, StreamsSource>());
 
         // Reads the DLQ observer's log (DynamoDB) so a canary's arrival can be confirmed (unit 4.2, ADR-0011).
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IDlqObserverLogReader, DlqObserver.DynamoDbObserverLogReader>());

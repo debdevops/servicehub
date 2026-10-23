@@ -758,7 +758,7 @@ public sealed class NamespacesController : ApiControllerBase
 
         // Only a component read on demand can be ticked here. A message store is watched on every connection (removing the connection
         // removes it), and a component nothing reads yet cannot be switched on.
-        if (row.Detection != DetectionKind.Runs || ComponentAccessRules.Of(row) is not (ComponentAccess.SameConnection or ComponentAccess.OwnCredential))
+        if (!ComponentAccessRules.ReadsOnDemand(row) || ComponentAccessRules.Of(row) is not (ComponentAccess.SameConnection or ComponentAccess.OwnCredential))
         {
             return Problem(StatusCodes.Status409Conflict, ErrorCodes.CapabilityUnavailable, $"{row.Name} cannot be ticked or unticked here.");
         }
@@ -819,7 +819,7 @@ public sealed class NamespacesController : ApiControllerBase
         var access = ComponentAccessRules.Of(row);
         var setup = ComponentAccessRules.SetupFor(row.ComponentKey);
         var alwaysOn = ComponentAccessRules.IsAlwaysOn(row);
-        var toggleable = row.Detection == DetectionKind.Runs && access is ComponentAccess.SameConnection or ComponentAccess.OwnCredential;
+        var toggleable = ComponentAccessRules.ReadsOnDemand(row) && access is ComponentAccess.SameConnection or ComponentAccess.OwnCredential;
         var state = access switch
         {
             ComponentAccess.Included => "included",

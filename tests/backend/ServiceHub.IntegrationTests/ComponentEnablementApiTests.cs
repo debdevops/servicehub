@@ -21,11 +21,17 @@ public sealed class ComponentEnablementApiTests
 {
     private sealed class FakeSource : IComponentSource
     {
+        public FakeSource(string key = "step-functions", CloudProviderType provider = CloudProviderType.Aws)
+        {
+            ComponentKey = key;
+            Provider = provider;
+        }
+
         public Result Access { get; set; } = Result.Success();
 
-        public string ComponentKey => "step-functions";
+        public string ComponentKey { get; }
 
-        public CloudProviderType Provider => CloudProviderType.Aws;
+        public CloudProviderType Provider { get; }
 
         public ComponentSourceCapabilities Capabilities => new(ReasonInList: false, ReadsPayload: false);
 
@@ -49,7 +55,7 @@ public sealed class ComponentEnablementApiTests
             Task.FromResult(Result.Success<IReadOnlyList<CloudEntity>>([]));
     }
 
-    private static (DeadLettersApiTests.Handle Host, FakeSource Source) Host()
+    private static (DeadLettersApiTests.Handle Host, FakeSource Source) Host(params FakeSource[] more)
     {
         var source = new FakeSource();
         var root = new ServiceHubApiFactory();
@@ -62,8 +68,26 @@ public sealed class ComponentEnablementApiTests
 
             services.AddSingleton<ICloudMessagingProvider>(new NoAwsMessaging());
             services.AddSingleton<IComponentSource>(source);
+            foreach (var extra in more)
+            {
+                services.AddSingleton<IComponentSource>(extra);
+            }
         }));
         return (new DeadLettersApiTests.Handle(root, factory), source);
+    }
+
+    /// <summary>The real providers, but no component sources: what an install that registered none would show.</summary>
+    private static DeadLettersApiTests.Handle HostWithoutSources()
+    {
+        var root = new ServiceHubApiFactory();
+        var factory = root.WithWebHostBuilder(b => b.ConfigureServices(services =>
+        {
+            foreach (var d in services.Where(d => d.ServiceType == typeof(IComponentSource)).ToList())
+            {
+                services.Remove(d);
+            }
+        }));
+        return new DeadLettersApiTests.Handle(root, factory);
     }
 
     private static async Task<JsonElement> Json(HttpResponseMessage response, HttpStatusCode expected)
@@ -106,7 +130,13 @@ public sealed class ComponentEnablementApiTests
         sfn.GetProperty("permissions").EnumerateArray().Select(p => p.GetString()).Should().Contain("states:ListExecutions");
         sfn.GetProperty("snippets").EnumerateArray().Should().NotBeEmpty("the policy is copy-ready");
         Entry(list, "lambda-eventbridge").GetProperty("state").GetString().Should().Be("included");
-        Entry(list, "aws-streams").GetProperty("state").GetString().Should().Be("unavailable");
+        var streams = Entry(list, "aws-streams");
+        streams.GetProperty("state").GetString().Should().Be("off", "stream failures are built now, so the component can be ticked");
+        streams.GetProperty("access").GetString().Should().Be("sameConnection");
+        streams.GetProperty("canToggle").GetBoolean().Should().BeTrue();
+        streams.GetProperty("status").GetString().Should().Be("beingValidated");
+        streams.GetProperty("permissions").EnumerateArray().Select(p => p.GetString()).Should().Contain(["lambda:ListEventSourceMappings", "sqs:ReceiveMessage"]);
+        streams.GetProperty("steps").EnumerateArray().Select(p => p.GetString()).Should().Contain(x => x!.Contains("Check access"));
     }
 
     [Fact]
@@ -168,7 +198,7 @@ public sealed class ComponentEnablementApiTests
         var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
 
         (await Put(host.Client, aws, "sqs", false)).StatusCode.Should().Be(HttpStatusCode.Conflict);
-        (await Put(host.Client, aws, "aws-streams", true)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await Put(host.Client, aws, "aws-streams", true)).StatusCode.Should().Be(HttpStatusCode.Conflict, "no reader is registered for it in this host");
         (await Put(host.Client, aws, "no-such-component", true)).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
@@ -185,6 +215,79 @@ public sealed class ComponentEnablementApiTests
         check.GetProperty("ok").GetBoolean().Should().BeFalse();
         check.GetProperty("reason").GetString().Should().Contain("states:ListStateMachines");
         check.GetProperty("permissions").EnumerateArray().Should().HaveCount(3);
+        (await Json(await host.Client.GetAsync("/api/v1/namespaces/components/enabled"), HttpStatusCode.OK)).EnumerateArray().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_failure_record_component_is_ticked_checked_and_listed_in_the_menu_like_a_run_history()
+    {
+        var streams = new FakeSource("aws-streams");
+        var (host, _) = Host(streams);
+        using var _h = host;
+        var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
+
+        var on = await Json(await Put(host.Client, aws, "aws-streams", true), HttpStatusCode.OK);
+
+        on.GetProperty("state").GetString().Should().Be("on");
+        var enabled = await Json(await host.Client.GetAsync("/api/v1/namespaces/components/enabled"), HttpStatusCode.OK);
+        enabled.EnumerateArray().Should().ContainSingle().Which.GetProperty("componentKey").GetString().Should().Be("aws-streams");
+        var check = await Json(await host.Client.PostAsync($"/api/v1/namespaces/{aws}/enabled-components/aws-streams/check", null), HttpStatusCode.OK);
+        check.GetProperty("ok").GetBoolean().Should().BeTrue();
+        check.GetProperty("permissions").EnumerateArray().Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task A_failure_record_component_whose_check_fails_is_not_added_and_says_why()
+    {
+        var streams = new FakeSource("aws-streams") { Access = Result.Failure(Error.Forbidden("AWS.Streams.NotEnabled", "Not enabled for this connection: needs sqs:ReceiveMessage.")) };
+        var (host, _) = Host(streams);
+        using var _h = host;
+        var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
+
+        var problem = await Json(await Put(host.Client, aws, "aws-streams", true), HttpStatusCode.Conflict);
+
+        problem.GetProperty("detail").GetString().Should().Contain("Not added").And.Contain("sqs:ReceiveMessage");
+        (await Json(await host.Client.GetAsync("/api/v1/namespaces/components/enabled"), HttpStatusCode.OK)).EnumerateArray().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task The_azure_components_are_listed_as_off_and_tickable_with_their_entra_prerequisites()
+    {
+        using var host = HostWithoutSources();
+        var azure = await DeadLettersApiTests.Connect(host.Client, "azure");
+
+        var list = await Json(await host.Client.GetAsync($"/api/v1/namespaces/{azure}/components"), HttpStatusCode.OK);
+
+        list.GetProperty("cloud").GetString().Should().Be("Azure");
+        foreach (var key in new[] { "logic-apps", "event-grid" })
+        {
+            var entry = Entry(list, key);
+            entry.GetProperty("access").GetString().Should().Be("sameConnection");
+            entry.GetProperty("state").GetString().Should().Be("off");
+            entry.GetProperty("canToggle").GetBoolean().Should().BeTrue();
+            entry.GetProperty("status").GetString().Should().Be("beingValidated");
+            entry.GetProperty("steps").EnumerateArray().Select(p => p.GetString()).Should().Contain(x => x!.Contains("Entra"));
+            entry.GetProperty("steps").EnumerateArray().Select(p => p.GetString()).Should().Contain(x => x!.Contains("Check access"));
+            entry.GetProperty("permissions").EnumerateArray().Should().NotBeEmpty();
+        }
+
+        Entry(list, "service-bus").GetProperty("state").GetString().Should().Be("alwaysOn");
+        (await Put(host.Client, azure, "logic-apps", true)).StatusCode.Should().Be(HttpStatusCode.Conflict, "no reader is registered in this host");
+    }
+
+    [Fact]
+    public async Task A_service_bus_connection_string_connection_cannot_pass_the_azure_check_with_the_real_sources()
+    {
+        var root = new ServiceHubApiFactory();
+        using var host = new DeadLettersApiTests.Handle(root, root);
+        var azure = await DeadLettersApiTests.Connect(host.Client, "azure");
+
+        var check = await Json(await host.Client.PostAsync($"/api/v1/namespaces/{azure}/enabled-components/logic-apps/check", null), HttpStatusCode.OK);
+
+        check.GetProperty("ok").GetBoolean().Should().BeFalse();
+        check.GetProperty("reason").GetString().Should().StartWith("Not enabled").And.Contain("Entra");
+        var tick = await Json(await Put(host.Client, azure, "event-grid", true), HttpStatusCode.Conflict);
+        tick.GetProperty("detail").GetString().Should().Contain("Not added").And.Contain("Entra");
         (await Json(await host.Client.GetAsync("/api/v1/namespaces/components/enabled"), HttpStatusCode.OK)).EnumerateArray().Should().BeEmpty();
     }
 }

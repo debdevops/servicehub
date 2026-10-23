@@ -26,6 +26,12 @@ public enum DetectionKind
 
     /// <summary>A metric or a state only. There is nothing to read back.</summary>
     Signal = 3,
+
+    /// <summary>
+    /// Reads failed records a service keeps in a place that is not a message queue (dead-letter blobs, undelivered events, failure
+    /// records that point at the original). Read on demand through an <see cref="IComponentSource"/>, like <see cref="Runs"/>.
+    /// </summary>
+    Records = 4,
 }
 
 /// <summary>Is the failed work kept anywhere ServiceHub can read?</summary>

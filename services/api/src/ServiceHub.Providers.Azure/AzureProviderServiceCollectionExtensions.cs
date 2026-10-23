@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using ServiceHub.Core.Components;
 using ServiceHub.Core.Interfaces;
+using ServiceHub.Providers.Azure.Components;
 using ServiceHub.Providers.Azure.ServiceBus;
 
 namespace ServiceHub.Providers.Azure;
@@ -28,6 +30,14 @@ public static class AzureProviderServiceCollectionExtensions
         // TryAddEnumerable: the router receives every registered provider, and a second call
         // must not register Azure twice.
         services.TryAddEnumerable(ServiceDescriptor.Scoped<ICloudMessagingProvider, AzureMessagingProvider>());
+
+        // Components that are not message stores: read-only sources over Azure Resource Manager and Blob storage, one line each
+        // (PLAN-PLUG-AND-PLAY-COMPONENTS). They sign in with the connection's own Entra identity and refuse a connection string.
+        services.AddHttpClient("servicehub-azure-rest", c => c.Timeout = TimeSpan.FromSeconds(30))
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(5) });
+        services.TryAddSingleton<IAzureRestClient>(sp => new AzureRestClient(sp.GetRequiredService<IHttpClientFactory>().CreateClient("servicehub-azure-rest")));
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IComponentSource, LogicAppsSource>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IComponentSource, EventGridSource>());
 
         // Tagged "dependencies", not "ready": an unreachable Azure namespace is an external broker
         // outage, and must never flip /health/ready to Unhealthy and pull the instance out of

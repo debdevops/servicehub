@@ -35,6 +35,15 @@ async function violations(page: Page) {
   return result.violations.map((v) => `${v.id} (${v.impact}): ${v.help}\n  ${v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join('\n  ')}`)
 }
 
+/**
+ * Axe on what a page itself draws, leaving out the shell's header: the header's colours are the cloud brand colours and have their own
+ * checks. Used by the tests of the four components that were on request, so a header colour does not hide a defect in their pages.
+ */
+async function contentViolations(page: Page) {
+  const result = await new AxeBuilder({ page }).exclude('header').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze()
+  return result.violations.map((v) => `${v.id} (${v.impact}): ${v.help}\n  ${v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join('\n  ')}`)
+}
+
 test.describe('5.0.0 shell: every page opens with content', () => {
   for (const scope of scopes) {
     test(`${scope}: pages`, async ({ page }) => {
@@ -168,6 +177,97 @@ test.describe('5.0.0 shell: a component that is not a message store (Step Functi
     await expect(page.getByText(/HTTP server responded with error code 503|Error in step/).first()).toBeVisible()
     expect(await violations(page), 'workflows run opened').toEqual([])
     expect(failed).toEqual([])
+  })
+
+  test('Logic Apps on Azure: list, failed runs by Azure’s own words, one run opened, axe clean', async ({ page }) => {
+    const failed: string[] = []
+    page.on('pageerror', (e) => failed.push(e.message))
+    await enterDemo(page)
+
+    await open(page, '/next/azure/c/logic-apps')
+    await sound(page, 'logic-apps list')
+    await page.getByRole('link', { name: /^View / }).first().click()
+
+    await expect(page.getByRole('table', { name: /Failed Logic Apps runs/ })).toBeVisible()
+    await expect(page.getByText('Timed out', { exact: true }).first()).toBeVisible()
+    await expect(page.getByText('Cancelled', { exact: true }).first()).toBeVisible()
+    await sound(page, 'logic-apps page')
+    expect(await contentViolations(page), 'logic apps failed runs').toEqual([])
+    await expect(page.getByRole('region').getByRole('button', { name: /replay|re-run|resubmit|redrive|purge|retry/i })).toHaveCount(0)
+    await page.getByRole('button', { name: /^Show details of / }).first().click()
+    await expect(page.getByText(/Send_to_warehouse|waited longer than/).first()).toBeVisible()
+    expect(await contentViolations(page), 'logic apps run opened').toEqual([])
+    expect(failed).toEqual([])
+  })
+
+  test('Event Grid on Azure: failed records, a dead-lettered event opened with earliest and latest, axe clean', async ({ page }) => {
+    const failed: string[] = []
+    page.on('pageerror', (e) => failed.push(e.message))
+    await enterDemo(page)
+
+    await open(page, '/next/azure/c/event-grid')
+    await sound(page, 'event-grid list')
+    await page.getByRole('link', { name: /^View / }).first().click()
+
+    await expect(page.getByRole('table', { name: /Failed Event Grid records/ })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /Failed records/ })).toBeVisible()
+    await expect(page.getByText('Dead-lettered', { exact: true }).first()).toBeVisible()
+    await sound(page, 'event-grid page')
+    expect(await contentViolations(page), 'event grid records').toEqual([])
+    await expect(page.getByText(/does not move work on for Event Grid/)).toBeVisible()
+    await page.getByRole('button', { name: /^Show details of / }).first().click()
+    await expect(page.getByText('MaxDeliveryAttemptsExceeded').first()).toBeVisible()
+    await expect(page.getByText('Earliest', { exact: true })).toBeVisible()
+    await expect(page.getByText('Latest', { exact: true })).toBeVisible()
+    expect(await contentViolations(page), 'event grid record opened').toEqual([])
+    expect(failed).toEqual([])
+  })
+
+  test('Kinesis and DynamoDB stream failures on AWS: each record says it points at the original, axe clean', async ({ page }) => {
+    const failed: string[] = []
+    page.on('pageerror', (e) => failed.push(e.message))
+    await enterDemo(page)
+
+    await open(page, '/next/aws/c/aws-streams')
+    await sound(page, 'aws-streams list')
+    await page.getByRole('link', { name: /^View / }).first().click()
+
+    await expect(page.getByRole('table', { name: /Failed Kinesis, DynamoDB streams records/ })).toBeVisible()
+    await expect(page.getByText('Points at the original, which may have expired.').first()).toBeVisible()
+    await sound(page, 'aws-streams page')
+    expect(await contentViolations(page), 'stream failures').toEqual([])
+    await page.getByRole('button', { name: /^Show details of / }).first().click()
+    await expect(page.getByText(/sequence 4959 to 4961/).first()).toBeVisible()
+    expect(await contentViolations(page), 'stream failure opened').toEqual([])
+    expect(failed).toEqual([])
+  })
+
+  test('Eventarc on Google Cloud: undelivered events, one opened, axe clean', async ({ page }) => {
+    const failed: string[] = []
+    page.on('pageerror', (e) => failed.push(e.message))
+    await enterDemo(page)
+
+    await open(page, '/next/gcp/c/eventarc')
+    await sound(page, 'eventarc list')
+    await page.getByRole('link', { name: /^View / }).first().click()
+
+    await expect(page.getByRole('table', { name: /Failed Eventarc records/ })).toBeVisible()
+    await expect(page.getByText('Undelivered', { exact: true }).first()).toBeVisible()
+    await sound(page, 'eventarc page')
+    expect(await contentViolations(page), 'eventarc records').toEqual([])
+    await page.getByRole('button', { name: /^Show details of / }).first().click()
+    await expect(page.getByText(/HTTP 503 from the Cloud Run service/).first()).toBeVisible()
+    expect(await contentViolations(page), 'eventarc record opened').toEqual([])
+    expect(failed).toEqual([])
+  })
+
+  test('all four components that were on request are in their cloud’s menu', async ({ page }) => {
+    await enterDemo(page)
+    for (const [scope, names] of [['azure', [/Event Grid/, /Logic Apps/]], ['aws', [/Kinesis, DynamoDB streams/]], ['gcp', [/Eventarc/]]] as const) {
+      await open(page, `/next/${scope}`)
+      const menu = page.getByRole('navigation', { name: 'ServiceHub' })
+      for (const name of names) await expect(menu.getByRole('link', { name })).toBeVisible()
+    }
   })
 
   test('it is in the AWS menu, and the menu has no Later (On request) section', async ({ page }) => {

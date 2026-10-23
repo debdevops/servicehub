@@ -18,6 +18,7 @@ import { useCoverage } from '../../hooks/useCoverage'
 import { useMe } from '../../hooks/useIdentity'
 import { useEntities, useNamespace } from '../../hooks/useNamespaces'
 import { toProblem } from '../../lib/api/client'
+import { readsOnDemand } from '../../lib/api/coverage'
 import type { ConnectedComponent, Count } from '../../lib/api/components'
 import { formatWhen } from '../../lib/format'
 import { NotFoundPage } from '../../pages/NotFoundPage'
@@ -57,7 +58,7 @@ export default function ComponentDetailPage() {
   if (coverage.isPending) return <p role="status" className="px-6 py-6 text-sm text-[var(--color-text-muted)]">Loading…</p>
   // A component that is not a message store keeps its failures as runs or deliveries: its page is chosen by what the catalogue says it
   // detects, not by its name (PLAN-PLUG-AND-PLAY-COMPONENTS §3.3).
-  const runs = coverage.data?.rows.find((r) => r.cloud === cloud && r.componentKey === params.component && r.inSidebar && r.detection === 'runs')
+  const runs = coverage.data?.rows.find((r) => r.cloud === cloud && r.componentKey === params.component && r.inSidebar && readsOnDemand(r.detection))
   return runs ? <RunsComponentPage cloud={cloud} row={runs} namespaceId={params.namespaceId} /> : <Detail cloudKey={cloud} componentKey={params.component} namespaceId={params.namespaceId} />
 }
 

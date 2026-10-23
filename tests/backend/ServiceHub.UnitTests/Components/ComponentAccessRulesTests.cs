@@ -24,7 +24,7 @@ public sealed class ComponentAccessRulesTests
     [Fact]
     public void A_component_read_on_demand_names_the_permissions_its_check_tests_and_a_step_to_run_it()
     {
-        foreach (var row in ComponentCatalog.All.Where(r => r.Detection == DetectionKind.Runs && ComponentAccessRules.Of(r) == ComponentAccess.SameConnection))
+        foreach (var row in ComponentCatalog.All.Where(r => ComponentAccessRules.ReadsOnDemand(r) && ComponentAccessRules.Of(r) == ComponentAccess.SameConnection))
         {
             var setup = ComponentAccessRules.SetupFor(row.ComponentKey)!;
             setup.Permissions.Should().NotBeEmpty($"{row.Name}: Check access reports against these");
@@ -47,7 +47,7 @@ public sealed class ComponentAccessRulesTests
         var always = ComponentCatalog.All.Where(ComponentAccessRules.IsAlwaysOn).Select(c => c.ComponentKey).Distinct().Order().ToList();
 
         always.Should().Equal("pubsub", "service-bus", "sns", "sqs");
-        ComponentCatalog.All.Where(c => c.Detection == DetectionKind.Runs).Should().OnlyContain(c => !ComponentAccessRules.IsAlwaysOn(c),
+        ComponentCatalog.All.Where(ComponentAccessRules.ReadsOnDemand).Should().OnlyContain(c => !ComponentAccessRules.IsAlwaysOn(c),
             "a run history is read on demand, so it is ticked, never assumed");
     }
 
@@ -57,5 +57,103 @@ public sealed class ComponentAccessRulesTests
         ComponentCatalog.All.Where(c => c.Status == SupportStatus.OnRequest || c.Provider is null)
             .Where(c => ComponentAccessRules.SetupFor(c.ComponentKey)?.IncludedIn is null)
             .Should().OnlyContain(c => ComponentAccessRules.Of(c) == ComponentAccess.NotBuildable);
+    }
+
+    private static readonly string[] BuiltOnDemand = ["step-functions", "workflows", "logic-apps", "event-grid", "aws-streams", "eventarc"];
+
+    [Theory]
+    [InlineData(DetectionKind.Runs, true)]
+    [InlineData(DetectionKind.Records, true)]
+    [InlineData(DetectionKind.Store, false)]
+    [InlineData(DetectionKind.Signal, false)]
+    [InlineData(DetectionKind.None, false)]
+    public void Only_run_histories_and_failed_records_are_read_on_demand(DetectionKind kind, bool expected)
+    {
+        var row = ComponentCatalog.All.First() with { Detection = kind };
+
+        ComponentAccessRules.ReadsOnDemand(row).Should().Be(expected);
+    }
+
+    [Fact]
+    public void Reads_on_demand_refuses_a_missing_row()
+    {
+        ((Action)(() => ComponentAccessRules.ReadsOnDemand(null!))).Should().Throw<ArgumentNullException>();
+        ((Action)(() => ComponentAccessRules.Of(null!))).Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void Every_component_read_on_demand_is_built_and_every_built_one_is_in_the_menu()
+    {
+        var rows = ComponentCatalog.All.Where(ComponentAccessRules.ReadsOnDemand).ToList();
+
+        rows.Select(r => r.ComponentKey).Should().BeEquivalentTo(BuiltOnDemand);
+        rows.Should().OnlyContain(r => r.Status == SupportStatus.BeingValidated, "none has a recorded live run yet, so none may claim Supported");
+        rows.Should().OnlyContain(r => r.InSidebar && r.Provider != null);
+        rows.Should().OnlyContain(r => ComponentAccessRules.Of(r) == ComponentAccess.SameConnection);
+    }
+
+    [Fact]
+    public void No_row_is_left_on_request_now_that_every_one_has_a_reader()
+    {
+        ComponentCatalog.All.Where(c => c.Status == SupportStatus.OnRequest).Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(CloudKind.Azure, "service-bus", "storage-queues", "event-grid", "logic-apps")]
+    [InlineData(CloudKind.Aws, "sqs", "sns", "lambda-eventbridge", "step-functions", "aws-streams")]
+    [InlineData(CloudKind.Gcp, "pubsub", "eventarc", "workflows")]
+    public void The_dialog_lists_every_component_of_a_cloud_once_in_catalogue_order(CloudKind cloud, params string[] keys)
+    {
+        ComponentAccessRules.Listed(cloud).Select(r => r.ComponentKey).Should().Equal(keys);
+    }
+
+    [Theory]
+    [InlineData("logic-apps", "Reader")]
+    [InlineData("event-grid", "Storage Blob Data Reader")]
+    [InlineData("aws-streams", "sqs:ReceiveMessage")]
+    [InlineData("eventarc", "roles/eventarc.viewer")]
+    public void The_new_components_name_the_permission_their_check_tests(string key, string permission)
+    {
+        var setup = ComponentAccessRules.SetupFor(key)!;
+
+        setup.Permissions.Should().Contain(permission);
+        setup.Steps.Last().Should().Contain("Check access");
+        setup.What.Should().NotBeNullOrWhiteSpace();
+        setup.Appears.Should().Contain("Read only");
+    }
+
+    [Theory]
+    [InlineData("logic-apps")]
+    [InlineData("event-grid")]
+    public void The_azure_components_tell_the_reader_which_connection_type_they_need(string key)
+    {
+        ComponentAccessRules.SetupFor(key)!.Steps.Should().Contain(s => s.Contains("Entra"), "a Service Bus connection string cannot read Resource Manager");
+        ComponentAccessRules.SetupFor(key)!.Snippets.Should().NotBeEmpty().And.OnlyContain(s => s.Text.StartsWith("az ", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void The_aws_streams_policy_is_valid_json_and_warns_about_the_redrive_policy()
+    {
+        var setup = ComponentAccessRules.SetupFor("aws-streams")!;
+
+        var policy = System.Text.Json.JsonDocument.Parse(setup.Snippets.Single().Text);
+        policy.RootElement.GetProperty("Statement").GetArrayLength().Should().Be(2);
+        setup.Steps.Should().Contain(s => s.Contains("redrive", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void The_step_functions_policy_is_valid_json_too()
+    {
+        var policy = System.Text.Json.JsonDocument.Parse(ComponentAccessRules.SetupFor("step-functions")!.Snippets.Single().Text);
+
+        policy.RootElement.GetProperty("Statement")[0].GetProperty("Action").GetArrayLength().Should().Be(3);
+    }
+
+    [Fact]
+    public void A_key_with_no_written_setup_has_none_and_a_message_store_is_not_ticked()
+    {
+        ComponentAccessRules.SetupFor("no-such-key").Should().BeNull();
+        ComponentCatalog.All.Where(c => c.Detection == DetectionKind.Store && c.Status == SupportStatus.Supported)
+            .Should().OnlyContain(c => !ComponentAccessRules.ReadsOnDemand(c));
     }
 }

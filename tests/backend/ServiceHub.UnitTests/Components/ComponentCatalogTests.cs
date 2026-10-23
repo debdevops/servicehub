@@ -33,9 +33,9 @@ public sealed class ComponentCatalogTests
         ComponentCatalog.All.Where(c => c.InSidebar)
             .Should().OnlyContain(c => c.Status == SupportStatus.Supported || c.Status == SupportStatus.BeingValidated);
 
-        ComponentCatalog.Sidebar(CloudKind.Azure).Select(c => c.ComponentKey).Should().Equal("service-bus", "storage-queues");
-        ComponentCatalog.Sidebar(CloudKind.Aws).Select(c => c.ComponentKey).Should().Equal("sqs", "sns", "step-functions");
-        ComponentCatalog.Sidebar(CloudKind.Gcp).Select(c => c.ComponentKey).Should().Equal("pubsub", "workflows");
+        ComponentCatalog.Sidebar(CloudKind.Azure).Select(c => c.ComponentKey).Should().Equal("service-bus", "storage-queues", "event-grid", "logic-apps");
+        ComponentCatalog.Sidebar(CloudKind.Aws).Select(c => c.ComponentKey).Should().Equal("sqs", "sns", "step-functions", "aws-streams");
+        ComponentCatalog.Sidebar(CloudKind.Gcp).Select(c => c.ComponentKey).Should().Equal("pubsub", "eventarc", "workflows");
     }
 
     [Fact]
@@ -113,5 +113,78 @@ public sealed class ComponentCatalogTests
 
         lines.Should().HaveCount(ComponentCatalog.All.Count + 2, "a header, a rule, then one line per row");
         lines[2].Should().StartWith("| Azure | Service Bus | Dead-letter queue |");
+    }
+
+    [Theory]
+    [InlineData("event-grid.dead-letter-blobs", CloudKind.Azure, DetectionKind.Records, CloudProviderType.Azure)]
+    [InlineData("logic-apps.failed-runs", CloudKind.Azure, DetectionKind.Runs, CloudProviderType.Azure)]
+    [InlineData("aws-streams.failure-records", CloudKind.Aws, DetectionKind.Records, CloudProviderType.Aws)]
+    [InlineData("eventarc.undelivered", CloudKind.Gcp, DetectionKind.Records, CloudProviderType.Gcp)]
+    public void A_component_that_was_on_request_is_now_read_only_and_being_validated(string id, CloudKind cloud, DetectionKind detection, CloudProviderType provider)
+    {
+        var row = ComponentCatalog.Find(id)!;
+
+        row.Cloud.Should().Be(cloud);
+        row.Detection.Should().Be(detection);
+        row.Provider.Should().Be(provider);
+        row.Status.Should().Be(SupportStatus.BeingValidated, "it has been built and tested against a fake cloud, not seen on a real one");
+        row.InSidebar.Should().BeTrue();
+        row.MovesOnBy.Should().Be("Handed to a person");
+        row.Note.Should().Contain("Read only");
+        row.EvidenceRef.Should().BeNull();
+        row.Class.Should().Be(RecoverabilityClass.R0Unknown);
+        row.Class.OffersReplay().Should().BeFalse();
+        row.Class.OffersCloudRedrive().Should().BeFalse();
+        row.Facts.Path.Should().Be(RecoveryPathKind.None, "moving work on is not built for it");
+    }
+
+    [Fact]
+    public void A_failure_record_that_only_points_at_the_original_says_so()
+    {
+        var row = ComponentCatalog.Find("aws-streams.failure-records")!;
+
+        row.Facts.Copy.Should().Be(CopyKind.Pointer);
+        row.Note.Should().Contain("expires");
+    }
+
+    [Fact]
+    public void The_markdown_table_says_how_the_new_rows_are_found_and_that_they_are_being_validated()
+    {
+        var markdown = ComponentCatalog.ToMarkdown();
+
+        markdown.Should().Contain("Reads the failed records the service keeps");
+        markdown.Split('\n').Where(l => l.Contains("| Event Grid |") || l.Contains("| Logic Apps |") || l.Contains("| Eventarc |") || l.Contains("Kinesis, DynamoDB streams"))
+            .Should().HaveCount(4).And.OnlyContain(l => l.Contains("Being validated") && !l.Contains("On request"));
+    }
+
+    [Theory]
+    [InlineData(DetectionKind.None, "—")]
+    [InlineData(DetectionKind.Store, "Reads the place that holds the failed message")]
+    [InlineData(DetectionKind.Runs, "Reads the history of failed runs")]
+    [InlineData(DetectionKind.Records, "Reads the failed records the service keeps")]
+    [InlineData(DetectionKind.Signal, "A metric or a state only")]
+    public void Every_way_of_finding_something_has_plain_words(DetectionKind kind, string words)
+    {
+        ComponentCatalog.DetectionWords(kind).Should().Be(words);
+    }
+
+    [Theory]
+    [InlineData(SupportStatus.Supported, "Supported")]
+    [InlineData(SupportStatus.BeingValidated, "Being validated")]
+    [InlineData(SupportStatus.OnRequest, "On request")]
+    [InlineData(SupportStatus.NotSupported, "Not supported")]
+    public void Every_status_has_plain_words(SupportStatus status, string words)
+    {
+        ComponentCatalog.StatusWords(status).Should().Be(words);
+    }
+
+    [Fact]
+    public void The_sidebar_lists_one_entry_per_component_even_when_a_component_has_several_rows()
+    {
+        foreach (var cloud in Enum.GetValues<CloudKind>())
+        {
+            var keys = ComponentCatalog.Sidebar(cloud).Select(c => c.ComponentKey).ToList();
+            keys.Should().OnlyHaveUniqueItems();
+        }
     }
 }

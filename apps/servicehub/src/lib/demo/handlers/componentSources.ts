@@ -20,6 +20,10 @@ interface DemoComponent {
   readonly placeLink: (placeName: string) => string
   readonly runLink: (placeName: string, n: number) => string
   readonly places: readonly DemoPlace[]
+  /** One line for a row, when the cloud's words are not "State: run-N" (failed records, dead-lettered events). */
+  readonly summary?: (run: DemoRun, n: number) => string
+  /** Whether the failed work itself is held anywhere; a stream failure only points at the original. */
+  readonly copy?: 'none' | 'pointer' | 'held'
 }
 
 const REGION = 'eu-west-1'
@@ -27,6 +31,13 @@ const arn = (kind: string, rest: string) => `arn:aws:states:${REGION}:1234567890
 const awsLink = (path: string) => `https://${REGION}.console.aws.amazon.com/states/home?region=${REGION}#${path}`
 const gcpName = (rest: string) => `projects/globex-events/locations/europe-west1/workflows/${rest}`
 const gcpConsole = (rest: string) => `https://console.cloud.google.com/workflows/workflow/europe-west1/${rest}?project=globex-events`
+const SUB = '9d2f4c1e-5b7a-4e3d-8c6f-0a1b2c3d4e5f'
+const logicName = (rest: string) => `/subscriptions/${SUB}/resourceGroups/rg-globex/providers/Microsoft.Logic/workflows/${rest}`
+const portal = (resourceId: string) => `https://portal.azure.com/#@/resource${resourceId}/logicApp`
+const STREAM_IDS: Readonly<Record<string, string>> = { 'orders → process': '11111111-1111-1111-1111-111111111111', 'audit-log → audit': '22222222-2222-2222-2222-222222222222' }
+const lambdaConsole = (fn: string) => `https://${REGION}.console.aws.amazon.com/lambda/home?region=${REGION}#/functions/${fn}?tab=configure`
+const eventarcName = (rest: string) => `projects/globex-events/locations/europe-west1/triggers/${rest}`
+const eventarcConsole = (rest: string) => `https://console.cloud.google.com/eventarc/triggers/europe-west1/${rest}?project=globex-events`
 
 const components: Readonly<Record<string, DemoComponent>> = {
   'step-functions': {
@@ -44,6 +55,57 @@ const components: Readonly<Record<string, DemoComponent>> = {
         { state: 'FAILED', minutesAgo: 1500, reason: 'States.Runtime', cause: 'The input did not have the field $.orderId.' }] },
     ],
   },
+  'logic-apps': {
+    provider: 'azure', kind: 'logic app',
+    place: (n) => logicName(n), run: (p, i) => `${logicName(p)}/runs/0858${i}`,
+    placeLink: (p) => portal(logicName(p)),
+    runLink: (p) => portal(logicName(p)),
+    places: [
+      { name: 'order-intake', runs: [
+        { state: 'Failed', minutesAgo: 18, reason: 'ActionFailed', cause: "The action 'Send_to_warehouse' failed: 502 Bad Gateway." },
+        { state: 'TimedOut', minutesAgo: 205, reason: 'Timeout', cause: 'The run waited longer than its 24 hour limit for an approval.' }] },
+      { name: 'invoice-sync', runs: [
+        { state: 'Cancelled', minutesAgo: 700, reason: null, cause: null }] },
+    ],
+  },
+  'event-grid': {
+    provider: 'azure', kind: 'dead-letter container',
+    place: (n) => `blob://stgglobex/${n}`, run: (p, i) => `blob://stgglobex/${p}/orders/2026/10/01/e${i}.json`,
+    placeLink: () => 'https://portal.azure.com/#@/resource/subscriptions/9d2f4c1e-5b7a-4e3d-8c6f-0a1b2c3d4e5f/resourceGroups/rg-globex/providers/Microsoft.Storage/storageAccounts/stgglobex/overview',
+    runLink: () => '',
+    summary: (_r, n) => `Dead-lettered event: e${n}.json`,
+    places: [
+      { name: 'deadletter', runs: [
+        { state: 'DEAD_LETTERED', minutesAgo: 35, reason: 'MaxDeliveryAttemptsExceeded', cause: '3 delivery attempts; last outcome Probation; last HTTP status 500' },
+        { state: 'DEAD_LETTERED', minutesAgo: 260, reason: 'MaxDeliveryAttemptsExceeded', cause: '3 delivery attempts; last outcome Probation; last HTTP status 503' },
+        { state: 'DEAD_LETTERED', minutesAgo: 1900, reason: 'TTLExpired', cause: '1 delivery attempt; last outcome NotFound; last HTTP status 404' }] },
+    ],
+  },
+  'aws-streams': {
+    provider: 'aws', kind: 'stream consumer',
+    place: (n) => STREAM_IDS[n] ?? n, run: (p, i) => `${STREAM_IDS[p] ?? p}/msg-${i}`,
+    placeLink: () => lambdaConsole('process'),
+    runLink: () => lambdaConsole('process'),
+    copy: 'pointer',
+    summary: () => 'Failed batch of 3 records from shard shardId-000000000001 (RetryAttemptsExhausted)',
+    places: [
+      { name: 'orders → process', runs: [
+        { state: 'FAILED', minutesAgo: 9, reason: 'RetryAttemptsExhausted', cause: 'stream orders; shard shardId-000000000001; sequence 4959 to 4961; 3 records; invoked 3 times; function error Unhandled. The original records may have expired.' },
+        { state: 'FAILED', minutesAgo: 120, reason: 'RetryAttemptsExhausted', cause: 'stream orders; shard shardId-000000000001; sequence 4710 to 4712; 3 records; invoked 3 times; function error Unhandled. The original records may have expired.' }] },
+    ],
+  },
+  eventarc: {
+    provider: 'gcp', kind: 'trigger',
+    place: (n) => eventarcName(n), run: (p, i) => `${eventarcName(p)}#${100000 + i}`,
+    placeLink: (p) => eventarcConsole(p),
+    runLink: (p) => eventarcConsole(p),
+    summary: () => 'Undelivered event: google.cloud.pubsub.topic.v1.messagePublished',
+    places: [
+      { name: 'orders-to-fulfilment', runs: [
+        { state: 'UNDELIVERED', minutesAgo: 41, reason: 'HTTP 503 from the Cloud Run service', cause: 'tried 5 times; event type google.cloud.pubsub.topic.v1.messagePublished; from //pubsub.googleapis.com/projects/globex-events/topics/orders' },
+        { state: 'UNDELIVERED', minutesAgo: 380, reason: 'HTTP 503 from the Cloud Run service', cause: 'tried 5 times; event type google.cloud.pubsub.topic.v1.messagePublished; from //pubsub.googleapis.com/projects/globex-events/topics/orders' }] },
+    ],
+  },
   workflows: {
     provider: 'gcp', kind: 'workflow',
     place: (n) => gcpName(n), run: (p, i) => `${gcpName(p)}/executions/run-${i}`,
@@ -59,12 +121,14 @@ const components: Readonly<Record<string, DemoComponent>> = {
   },
 }
 
-const WORDS: Record<string, string> = { FAILED: 'Failed', TIMED_OUT: 'Timed out', ABORTED: 'Aborted', CANCELLED: 'Cancelled' }
+const WORDS: Record<string, string> = {
+  FAILED: 'Failed', TIMED_OUT: 'Timed out', ABORTED: 'Aborted', CANCELLED: 'Cancelled', Failed: 'Failed', TimedOut: 'Timed out', Cancelled: 'Cancelled',
+}
 
 function items(c: DemoComponent, now: number): FailedItem[] {
   return c.places.flatMap((p) => p.runs.map((r, i) => ({
     id: c.run(p.name, i + 1), place: c.place(p.name), atUtc: new Date(now - r.minutesAgo * MINUTE).toISOString(), status: r.state, reasonCode: null,
-    summary: `${WORDS[r.state] ?? r.state}: run-${i + 1}`, copy: 'none' as const, consoleUrl: c.runLink(p.name, i + 1),
+    summary: c.summary ? c.summary(r, i + 1) : `${WORDS[r.state] ?? r.state}: run-${i + 1}`, copy: c.copy ?? ('none' as const), consoleUrl: c.runLink(p.name, i + 1),
   }))).sort((a, b) => Date.parse(b.atUtc!) - Date.parse(a.atUtc!))
 }
 
@@ -93,7 +157,7 @@ export const componentSources: readonly Route[] = [
     const item = items(c, now).find((i) => i.id === id)
     if (!item) return { item: null, reason: null, cause: null, startedUtc: null, stoppedUtc: null }
     const place = c.places.find((p) => c.place(p.name) === item.place)!
-    const run = place.runs[Number(id.slice(id.lastIndexOf('run-') + 4)) - 1]!
+    const run = place.runs.find((_, n) => c.run(place.name, n + 1) === id)!
     return { item: { ...item, reasonCode: null }, reason: run.reason, cause: run.cause, startedUtc: new Date(Date.parse(item.atUtc!) - 2 * MINUTE).toISOString(), stoppedUtc: item.atUtc }
   }],
 ]
