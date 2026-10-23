@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react'
 import {
   Bot, Boxes, Cable, CircleHelp, Fingerprint, Hand, Home, Inbox, LayoutGrid, ListChecks, Play, Plus, RotateCcw, ScrollText, Search,
-  Send, Settings, ShieldCheck, Table2, Timer, TriangleAlert,
+  Plug, Send, Settings, ShieldCheck, Table2, Timer, TriangleAlert,
 } from 'lucide-react'
 
 /**
@@ -139,6 +139,11 @@ export const nextNavigation: readonly NextEntry[] = [
   },
 
   // ── Reference — not scoped to a cloud ─────────────────────────────────────────────────────────
+  {
+    kind: 'page', id: 'connections', label: 'Connections', path: 'connections',
+    description: 'Every cloud ServiceHub is connected to, on every provider: whether it can still reach it, how it signs in, and which components are on for it.',
+    icon: Plug, group: 'reference', unit: 'E10', design: 'p16-connections', built: true,
+  },
   {
     kind: 'page', id: 'configuration', label: 'Configuration', path: 'configuration',
     description: 'What ServiceHub is connected to, whom it tells, when it calls something stuck, and who may do what.',

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { CheckCircle2, Copy, Loader2, ShieldCheck, TriangleAlert, XCircle } from 'lucide-react'
 import { useMe } from '../../hooks/useIdentity'
 import { useNamespaces } from '../../hooks/useNamespaces'
@@ -29,13 +29,15 @@ type Outcome = { readonly ok: boolean; readonly message: string }
 
 export default function AddComponentDialog({ close }: NextOverlayBodyProps) {
   const { pathname } = useLocation()
-  const scoped = cloudOf(parseScope(pathname.split('/')[2]))
+  const wanted = useSearchParams()[0].get('ns') // opened from a connection's own row: that connection, whatever page this is
+  const namespaces = useNamespaces()
+  const named = (namespaces.data ?? []).find((n) => n.id === wanted)
+  const scoped = named?.provider ?? cloudOf(parseScope(pathname.split('/')[2]))
   const [picked, setPicked] = useState<CloudKind | null>(null)
   const cloud = scoped ?? picked
-  const namespaces = useNamespaces()
   const connections = (namespaces.data ?? []).filter((n) => n.provider === cloud)
   const [chosen, setChosen] = useState<string | null>(null)
-  const connection = connections.find((c) => c.id === chosen) ?? connections[0]
+  const connection = connections.find((c) => c.id === (chosen ?? named?.id)) ?? connections[0]
   const may = permission(useMe().data, 'Admin', 'add or remove a component', { namespaceId: connection?.id })
 
   if (cloud === null) {

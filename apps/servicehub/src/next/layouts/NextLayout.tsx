@@ -63,7 +63,9 @@ export function NextLayout() {
     : null
   const home = scope === 'all' ? NEXT_ROOT : nextHref(nextEntry('home'), { cloud: scope })
   const tools = nextEntriesIn('tool') as readonly NextPage[]
-  const reference = nextEntriesIn('reference') as readonly NextPage[]
+  // Connections is the first thing under Home: it is where every cloud is connected, so it must not sit at the bottom of a long menu.
+  const connections = nextEntry('connections') as NextPage
+  const reference = (nextEntriesIn('reference') as readonly NextPage[]).filter((e) => e.id !== 'connections')
 
   return (
     <div className="min-h-screen bg-[var(--color-surface-muted)]">
@@ -92,6 +94,10 @@ export function NextLayout() {
           </ul>
 
           <MenuLink to={home} end help={{ title: scope === 'all' ? 'All clouds' : 'Home', text: nextEntry(scope === 'all' ? 'home-all' : 'home').description }}>Home</MenuLink>
+          <MenuLink to={nextHref(connections)} help={{ title: connections.label, text: connections.description }}>
+            <connections.icon className="h-4 w-4 shrink-0" />
+            {connections.label}
+          </MenuLink>
 
           <h2 className={groupTitle}>PaaS Components<Tip label="menu:PaaS Components" /></h2>
           <ul>

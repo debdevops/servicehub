@@ -21,6 +21,7 @@ const SignaturesPage = lazy(() => import('./pages/SignaturesPage'))
 const LedgerPage = lazy(() => import('./pages/LedgerPage'))
 const AgentsPage = lazy(() => import('./pages/AgentsPage'))
 const ConfigurationPage = lazy(() => import('./pages/ConfigurationPage'))
+const ConnectionsPage = lazy(() => import('./pages/ConnectionsPage'))
 
 const loading = <p role="status" className="px-6 py-6 text-sm">Loading…</p>
 
@@ -56,6 +57,8 @@ function pageFor(entry: NextPage) {
       return <Suspense fallback={loading}><LedgerPage /></Suspense>
     case 'agents':
       return <Suspense fallback={loading}><AgentsPage /></Suspense>
+    case 'connections':
+      return <Suspense fallback={loading}><ConnectionsPage /></Suspense>
     case 'configuration':
       return <Suspense fallback={loading}><ConfigurationPage /></Suspense>
     default:

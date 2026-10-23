@@ -8,7 +8,7 @@ import { expect, test, type Page } from '@playwright/test'
  */
 const pages = ['', '/attention', '/approvals', '/active', '/replays', '/rules', '/signatures', '/ledger', '/agents'] as const
 const scopes = ['azure', 'aws', 'gcp', 'all'] as const
-const standalone = ['/next/configuration', '/next/coverage'] as const
+const standalone = ['/next/connections', '/next/configuration', '/next/coverage'] as const
 const overlays = ['help', 'security', 'autonomy', 'search'] as const
 
 async function enterDemo(page: Page) {
@@ -219,6 +219,27 @@ test.describe('5.0.0 shell: Add a component', () => {
     await expect(dialog.getByText(/Added\. It is on the menu now/)).toBeVisible()
     await dialog.getByRole('button', { name: 'Done' }).click()
     await expect(menu.getByRole('link', { name: /Step Functions/ })).toBeVisible()
+    expect(failed).toEqual([])
+  })
+})
+
+test.describe('5.0.0 shell: Connections', () => {
+  test('every provider’s connections are in one menu page, with their components, and axe is clean', async ({ page }) => {
+    const failed: string[] = []
+    page.on('pageerror', (e) => failed.push(e.message))
+    await enterDemo(page)
+    await open(page, '/next')
+    await page.getByRole('navigation', { name: 'ServiceHub' }).getByRole('link', { name: /^Connections/ }).click()
+    await expect(page.getByRole('heading', { level: 1, name: /Connections/ })).toBeVisible()
+    for (const cloud of ['Azure', 'AWS', 'Google Cloud']) {
+      await expect(page.getByRole('region', { name: `${cloud} connections` })).toBeVisible()
+    }
+    await expect(page.getByRole('region', { name: 'AWS connections' }).getByText(/Components on/).first()).toBeVisible()
+    await sound(page, 'connections')
+    expect(await violations(page), 'connections').toEqual([])
+    // From one connection's row the dialog opens on that connection.
+    await page.getByRole('link', { name: /^Add a component to / }).first().click()
+    await expect(page.getByRole('dialog', { name: 'Add a component' })).toBeVisible()
     expect(failed).toEqual([])
   })
 })
