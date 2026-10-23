@@ -152,7 +152,12 @@ export const nextNavigation: readonly NextEntry[] = [
 
   // ── Contextual — opened from a page ───────────────────────────────────────────────────────────
   {
-    kind: 'dialog', id: 'connect', label: 'Connect a component', value: 'connect',
+    kind: 'dialog', id: 'add-component', label: 'Add a component', value: 'add-component',
+    description: 'Tick the PaaS components to bring in on a cloud that is already connected. Each one says what it needs, and checks access before it is added.',
+    icon: Plus, group: 'contextual', unit: 'F9', design: 'd15-add-a-component-aws', built: true,
+  },
+  {
+    kind: 'dialog', id: 'connect', label: 'Connect a cloud', value: 'connect',
     description: 'Connect a cloud: one connection, one credential, then ServiceHub tests it and says what it can see.',
     icon: Plus, group: 'contextual', unit: 'F1', design: 'd01-connect-a-component', built: true,
   },

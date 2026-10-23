@@ -16,6 +16,7 @@ export const nextOverlayBodies: Readonly<Record<string, LazyExoticComponent<Comp
   message: lazy(() => import('./MessageDialog')),
   review: lazy(() => import('./ReviewDialog')),
   connect: lazy(() => import('./ConnectDialog')),
+  'add-component': lazy(() => import('./AddComponentDialog')),
   help: lazy(() => import('./HelpPanel')),
   security: lazy(() => import('./SecurityPanel')),
   autonomy: lazy(() => import('./AutonomyPanel')),
@@ -34,4 +35,4 @@ export const nextOverlayBodies: Readonly<Record<string, LazyExoticComponent<Comp
 export const nextOverlayCompanions: readonly string[] = ['id', 'entry', 'entries', 'component', 'job', 'topic', 'ns']
 
 /** Overlays drawn wider than the default: the Message dialog is read side by side (summary and properties). */
-export const nextOverlayWide: ReadonlySet<string> = new Set(['message', 'review', 'bulk-replay'])
+export const nextOverlayWide: ReadonlySet<string> = new Set(['message', 'review', 'bulk-replay', 'add-component'])

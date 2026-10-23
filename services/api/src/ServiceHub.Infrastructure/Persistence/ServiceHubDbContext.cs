@@ -80,6 +80,9 @@ public sealed class ServiceHubDbContext : DbContext
     /// <summary>What the Insights agents noticed — the Insights tab (W6, unit 6.18).</summary>
     public DbSet<InsightFinding> InsightFindings => Set<InsightFinding>();
 
+    /// <summary>Which components are ticked on which connection (Add a component, 5.0.0).</summary>
+    public DbSet<NamespaceComponent> NamespaceComponents => Set<NamespaceComponent>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -100,6 +103,7 @@ public sealed class ServiceHubDbContext : DbContext
         ConfigureGovernanceGrant(modelBuilder);
         ConfigureNotificationChannel(modelBuilder);
         ConfigureInsightFinding(modelBuilder);
+        ConfigureNamespaceComponent(modelBuilder);
     }
 
     /// <inheritdoc />
@@ -236,6 +240,22 @@ public sealed class ServiceHubDbContext : DbContext
         entity.HasIndex(e => new { e.OwnerId, e.NamespaceId }).HasDatabaseName("IX_GovernanceGrants_OwnerId_NamespaceId");
         entity.HasIndex(e => new { e.OwnerId, e.GranteeIdentity, e.NamespaceId, e.PillarKind })
             .IsUnique().HasFilter("[RevokedAt] IS NULL").HasDatabaseName("IX_GovernanceGrants_ActiveScope_Unique");
+    }
+
+    private static void ConfigureNamespaceComponent(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<NamespaceComponent>();
+
+        entity.ToTable("NamespaceComponents");
+        entity.HasKey(e => e.Id);
+        entity.Property(e => e.OwnerId).HasMaxLength(128).IsRequired();
+        entity.Property(e => e.ComponentKey).HasMaxLength(64).IsRequired();
+        entity.Property(e => e.ChangedBy).HasMaxLength(256).IsRequired();
+        entity.Property(e => e.ChangedAt).HasConversion(SortableUtc);
+
+        // No FK on NamespaceId: a soft reference, like every other namespace-scoped table. One row per connection and component.
+        entity.HasIndex(e => new { e.OwnerId, e.NamespaceId, e.ComponentKey }).IsUnique()
+            .HasDatabaseName("IX_NamespaceComponents_Owner_Namespace_Component");
     }
 
     private static void ConfigureInsightFinding(ModelBuilder modelBuilder)

@@ -135,7 +135,8 @@ describe('Home for one cloud (unit C1)', () => {
     vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue(page([]))
     open('/next/azure')
     expect(await screen.findByText(/No Azure component is connected yet/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Connect a component/ })).toHaveAttribute('href', '/next/azure?dialog=connect')
+    expect(screen.getByRole('link', { name: /Add a component/ })).toHaveAttribute('href', '/next/azure?dialog=add-component')
+    expect(screen.getByRole('link', { name: 'Connect a cloud' })).toHaveAttribute('href', '/next/azure?dialog=connect')
     expect(screen.getByText('Nothing here needs a person right now.')).toBeInTheDocument()
   })
 

@@ -1,5 +1,6 @@
 import { Link, NavLink, Outlet, useParams } from 'react-router-dom'
 import { onRequestComponents, sidebarComponents, useCoverage } from '../../hooks/useCoverage'
+import { useEnabledComponents } from '../../hooks/useComponentEnablement'
 import { useComponents } from '../../hooks/useComponents'
 import { HeaderStatus } from '../components/HeaderStatus'
 import { OverlayHost } from '../components/OverlayHost'
@@ -51,6 +52,7 @@ export function NextLayout() {
   const cloud = cloudOf(scope)
   const { data } = useCoverage()
   const rows = data?.rows ?? []
+  const enabled = useEnabledComponents().data ?? []
   // The badges are the same sums the Home tiles show, from the same read, so they cannot disagree with the page.
   const components = useComponents(cloud)
   const badges = components.data
@@ -93,7 +95,7 @@ export function NextLayout() {
 
           <h2 className={groupTitle}>PaaS Components<Tip label="menu:PaaS Components" /></h2>
           <ul>
-            {sidebarComponents(rows, cloud).map((row) => (
+            {sidebarComponents(rows, cloud, enabled).map((row) => (
               <li key={row.componentKey}>
                 <MenuLink to={nextHref(nextEntry('component-list'), { cloud: row.cloud, component: row.componentKey })} help={{ title: row.name, text: `Failed messages end up in: ${row.stuckPlace}. ${row.statusWords}.${row.note ? ` ${row.note}.` : ''} Open it to see your connections to ${row.name}.` }}>
                   {row.name}

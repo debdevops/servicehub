@@ -32,6 +32,7 @@ export const Intent = {
   GrantRole: 'grant-role',
   RevokeRole: 'revoke-role',
   ConfigureDlqObserver: 'configure-dlq-observer',
+  ManageComponents: 'manage-components',
   CreateRule: 'create-rule',
   GenerateRules: 'generate-rules',
   SwitchRule: 'switch-rule',

@@ -97,4 +97,6 @@ export interface World {
   unseen: Record<string, number>
   next: { deadLetter: number; entry: number; rule: number; audit: number; channel: number; grant: number; bulk: number }
   ticks: number
+  /** Read-on-demand components someone ticked in Add a component. Absent until first used: the demo then starts with each cloud's own turned on. */
+  enabledComponents?: { namespaceId: string; componentKey: string }[]
 }

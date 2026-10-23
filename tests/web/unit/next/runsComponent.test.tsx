@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as agentsApi from '@/lib/api/agents'
 import * as sourcesApi from '@/lib/api/componentSources'
 import * as componentsApi from '@/lib/api/components'
+import * as enablementApi from '@/lib/api/componentEnablement'
 import * as coverageApi from '@/lib/api/coverage'
 import * as identityApi from '@/lib/api/identity'
 import * as namespacesApi from '@/lib/api/namespaces'
@@ -16,6 +17,7 @@ import { agent, coverageRows, me } from './homeData'
 
 vi.mock('@/lib/api/coverage', async (o) => ({ ...(await o<typeof coverageApi>()), fetchCoverage: vi.fn() }))
 vi.mock('@/lib/api/components', async (o) => ({ ...(await o<typeof componentsApi>()), fetchComponents: vi.fn(), fetchComponent: vi.fn() }))
+vi.mock('@/lib/api/componentEnablement', async (o) => ({ ...(await o<typeof enablementApi>()), fetchEnabledComponents: vi.fn() }))
 vi.mock('@/lib/api/identity', async (o) => ({ ...(await o<typeof identityApi>()), fetchMe: vi.fn() }))
 vi.mock('@/lib/api/agents', async (o) => ({ ...(await o<typeof agentsApi>()), fetchAgents: vi.fn() }))
 vi.mock('@/lib/api/settings', async (o) => ({ ...(await o<typeof settingsApi>()), fetchEmergencyStop: vi.fn() }))
@@ -48,6 +50,7 @@ describe('a component that is not a message store (Step Functions, unit PP1/PP2)
     vi.clearAllMocks()
     vi.mocked(coverageApi.fetchCoverage).mockResolvedValue({ rows: [...coverageRows, stepFunctions, workflows] })
     vi.mocked(componentsApi.fetchComponents).mockResolvedValue({ components: [], generatedAtUtc: '2026-10-18T10:00:00Z' })
+    vi.mocked(enablementApi.fetchEnabledComponents).mockResolvedValue([{ namespaceId: 'ns-1', cloud: 'aws', componentKey: 'step-functions' }, { namespaceId: 'ns-2', cloud: 'gcp', componentKey: 'workflows' }])
     vi.mocked(identityApi.fetchMe).mockResolvedValue(me())
     vi.mocked(agentsApi.fetchAgents).mockResolvedValue([agent()])
     vi.mocked(settingsApi.fetchEmergencyStop).mockResolvedValue({ active: false, by: null, at: null, reason: null })

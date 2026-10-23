@@ -78,6 +78,7 @@ public static class PersistenceServiceCollectionExtensions
             sp, (IRecoveryEligibilityGate)sp.GetRequiredService<RecoveryLedger.RecoveryEligibilityGate>()));
         services.TryAddScoped<IRecoveryTrustScoringService, RecoveryLedger.RecoveryTrustScoringService>();
         services.TryAddScoped<IDlqObserverAttestationService, DlqObserver.DlqObserverAttestationService>();
+        services.TryAddScoped<INamespaceComponentService, Components.NamespaceComponentService>();
         services.TryAddSingleton<DlqObserver.DeadLetterViewTracker>();
         services.TryAddScoped<IFleetOverviewService, Fleet.FleetOverviewService>();
         services.TryAddScoped<IComponentOverviewService, Components.ComponentOverviewService>();

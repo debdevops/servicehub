@@ -4,6 +4,7 @@ import { agents } from './handlers/agents'
 import { backup } from './handlers/backup'
 import { bulk } from './handlers/bulk'
 import { componentSources } from './handlers/componentSources'
+import { componentEnablement } from './handlers/componentEnablement'
 import { components } from './handlers/components'
 import { coverage } from './handlers/coverage'
 import { deadLetters } from './handlers/deadLetters'
@@ -28,7 +29,7 @@ import { getWorld } from './world/store'
  * that nothing the app asks for is left unanswered (`tests/web/unit/lib/demo/coverage.test.ts`).
  */
 export const demoRoutes: readonly Route[] = [
-  ...health, ...identity, ...namespaces, ...messages, ...deadLetters, ...replays, ...recovery, ...rules, ...signatures, ...pendingWork, ...agents, ...bulk, ...settings, ...insights, ...fleet, ...coverage, ...components, ...componentSources, ...backup,
+  ...health, ...identity, ...namespaces, ...messages, ...deadLetters, ...replays, ...recovery, ...rules, ...signatures, ...pendingWork, ...agents, ...bulk, ...settings, ...insights, ...fleet, ...coverage, ...components, ...componentSources, ...componentEnablement, ...backup,
 ]
 
 function problem(config: InternalAxiosRequestConfig, status: number, code: string, detail: string): never {

@@ -81,5 +81,18 @@ public sealed class ComponentModuleTests
         routes.Should().OnlyContain(r => r == "HttpGet", "a component read endpoint never changes anything");
     }
 
+    [Fact]
+    public void The_endpoints_that_change_a_choice_need_the_intent_header_and_the_Admin_role_and_are_audited()
+    {
+        var text = File.ReadAllText(RepositoryRoot.CSharpFilesUnder($"{Src}/ServiceHub.Api").Single(f => f.Name == "NamespacesController.cs").FullName);
+        var at = text.IndexOf("[HttpPut(\"{id:guid}/enabled-components/{componentKey}\")]", StringComparison.Ordinal);
+        at.Should().BeGreaterThan(0);
+        var body = text[at..text.IndexOf("[HttpGet(\"components/enabled\")]", at, StringComparison.Ordinal)];
+
+        body.Should().Contain("IntentHeaders.ManageComponents").And.Contain("GovernanceRole.Admin").And.Contain("AuditActions.ComponentEnable");
+        Regex.Matches(text, @"\[HttpPut\(""\{id:guid\}/enabled-components/[^""]*""\)\]").Should().ContainSingle("only one door changes a choice");
+        Regex.Matches(text, @"\[Http(Post|Put|Delete)\(""\{id:guid\}/components/").Should().BeEmpty("a components/ route never changes anything");
+    }
+
     private static string StripComments(string text) => Regex.Replace(text, @"//.*$", string.Empty, RegexOptions.Multiline);
 }

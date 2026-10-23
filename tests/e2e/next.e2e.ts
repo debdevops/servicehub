@@ -180,3 +180,45 @@ test.describe('5.0.0 shell: a component that is not a message store (Step Functi
     await expect(page.getByRole('navigation', { name: 'ServiceHub' }).getByRole('link', { name: /Workflows/ })).toBeVisible()
   })
 })
+
+test.describe('5.0.0 shell: Add a component', () => {
+  test('ticks and unticks a component, the menu follows, the (i) explains, axe clean', async ({ page }) => {
+    const failed: string[] = []
+    page.on('pageerror', (e) => failed.push(e.message))
+    await enterDemo(page)
+    await open(page, '/next/aws')
+    const menu = page.getByRole('navigation', { name: 'ServiceHub' })
+    await expect(menu.getByRole('link', { name: /Step Functions/ })).toBeVisible()
+
+    await page.goto('/next/aws?dialog=add-component')
+    const dialog = page.getByRole('dialog', { name: 'Add a component' })
+    await expect(dialog.getByText(/never asks for a key/)).toBeVisible()
+    // A message store is on and cannot be unticked here; a run history can.
+    await expect(dialog.getByRole('checkbox', { name: 'SQS (Supported)' })).toBeDisabled()
+    const stepFunctions = dialog.getByRole('checkbox', { name: 'Step Functions (Not yet validated)' })
+    await expect(stepFunctions).toBeChecked()
+    expect(await violations(page), 'add a component').toEqual([])
+
+    // The (i) opens on hover and says what it never does.
+    await dialog.getByRole('button', { name: /About Step Functions/ }).hover()
+    await expect(page.getByText(/never starts, stops or redrives a run/)).toBeVisible()
+
+    await stepFunctions.uncheck()
+    await dialog.getByRole('button', { name: 'Save changes' }).click()
+    await expect(dialog.getByText(/Removed\. Its history is kept/)).toBeVisible()
+    await dialog.getByRole('button', { name: 'Done' }).click()
+    await expect(menu.getByRole('link', { name: /Step Functions/ })).toHaveCount(0)
+
+    // In-app, not a reload: the demo's world is written to the session a moment after a change.
+    await page.getByRole('link', { name: /Add a component/ }).first().click()
+    await dialog.getByRole('checkbox', { name: 'Step Functions (Not yet validated)' }).check()
+    await expect(dialog.getByText(/No key to paste/)).toBeVisible()
+    await dialog.getByRole('button', { name: 'Check access', exact: true }).click()
+    await expect(dialog.getByRole('status').filter({ hasText: /states:ListExecutions\s*present/ })).toBeVisible()
+    await dialog.getByRole('button', { name: 'Add 1 component' }).click()
+    await expect(dialog.getByText(/Added\. It is on the menu now/)).toBeVisible()
+    await dialog.getByRole('button', { name: 'Done' }).click()
+    await expect(menu.getByRole('link', { name: /Step Functions/ })).toBeVisible()
+    expect(failed).toEqual([])
+  })
+})

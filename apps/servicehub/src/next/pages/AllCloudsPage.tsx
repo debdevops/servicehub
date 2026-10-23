@@ -135,7 +135,7 @@ export default function AllCloudsPage() {
           {reason && <p role="note" className="rounded-xl border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-4 py-2.5 text-sm"><strong>No total across clouds.</strong> {reason}</p>}
 
           {clouds.length === 0 ? (
-            <p className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-6 text-sm text-[var(--color-text-muted)]">No cloud is connected yet. Pick a cloud in the menu, then use <strong>Connect a component</strong>.</p>
+            <p className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-6 text-sm text-[var(--color-text-muted)]">No cloud is connected yet. Pick a cloud in the menu, then use <strong>Connect a cloud</strong>.</p>
           ) : (
             <div className="grid gap-4 lg:grid-cols-3">
               {clouds.map(({ cloud, components: mine }) => (

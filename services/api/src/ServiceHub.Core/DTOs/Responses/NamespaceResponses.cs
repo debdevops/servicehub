@@ -122,3 +122,25 @@ public sealed record FailedItemsResponse(string ComponentKey, IReadOnlyList<Fail
 public sealed record FailedItemDetailResponse(
     FailedItemResponse? Item, string? Reason, string? Cause, DateTimeOffset? StartedUtc, DateTimeOffset? StoppedUtc);
 
+
+/// <summary>One copy-ready block of a setup guide.</summary>
+public sealed record SetupSnippetResponse(string Label, string Text);
+
+/// <summary>
+/// One entry of the Add a component dialog for a connection. <c>access</c> is <c>sameConnection</c>, <c>ownCredential</c>,
+/// <c>notBuildable</c> or <c>included</c>; <c>state</c> is <c>on</c>, <c>off</c>, <c>alwaysOn</c> (watched on every connection, cannot be
+/// unticked), <c>included</c> or <c>unavailable</c>. <c>canToggle</c> says whether the person may tick or untick it.
+/// </summary>
+public sealed record ComponentEntryResponse(
+    string ComponentKey, string Name, string StuckPlace, string Status, string StatusWords, string Access, string State, bool CanToggle,
+    string? Note, string? What, string? Appears, string? Needs, IReadOnlyList<string> Steps, IReadOnlyList<SetupSnippetResponse> Snippets, IReadOnlyList<string> Permissions,
+    string? IncludedIn);
+
+/// <summary><c>GET /api/v1/namespaces/{id}/components</c>: what can be brought in on this connection, and what already is.</summary>
+public sealed record ComponentListResponse(Guid NamespaceId, string ConnectionName, string Cloud, IReadOnlyList<ComponentEntryResponse> Components);
+
+/// <summary>The result of Check access. Read-only: <c>ok</c> false carries the reason, which names what is missing.</summary>
+public sealed record ComponentCheckResponse(string ComponentKey, bool Ok, string? Reason, IReadOnlyList<string> Permissions);
+
+/// <summary>One ticked component on one connection, for the menu.</summary>
+public sealed record EnabledComponentResponse(Guid NamespaceId, string Cloud, string ComponentKey);

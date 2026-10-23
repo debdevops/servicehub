@@ -16,10 +16,17 @@ describe('the coverage list the demo answers with', () => {
     expect(pattern.test('/fleet/coverage/x')).toBe(false)
   })
 
-  it('lists the seven components 5.0.0 puts in the menu, in order, per cloud', () => {
+  it('lists the message stores the menu always shows, in order, per cloud, and a run history only where it was ticked', () => {
     expect(sidebarComponents(answer.rows, 'azure').map((r) => r.name)).toEqual(['Service Bus', 'Storage Queues'])
-    expect(sidebarComponents(answer.rows, 'aws').map((r) => r.name)).toEqual(['SQS', 'SNS', 'Step Functions'])
-    expect(sidebarComponents(answer.rows, 'gcp').map((r) => r.name)).toEqual(['Pub/Sub', 'Workflows'])
+    expect(sidebarComponents(answer.rows, 'aws').map((r) => r.name)).toEqual(['SQS', 'SNS'])
+    expect(sidebarComponents(answer.rows, 'gcp').map((r) => r.name)).toEqual(['Pub/Sub'])
+    const ticked = [
+      { namespaceId: 'a', cloud: 'aws' as const, componentKey: 'step-functions' },
+      { namespaceId: 'g', cloud: 'gcp' as const, componentKey: 'workflows' },
+    ]
+    expect(sidebarComponents(answer.rows, 'aws', ticked).map((r) => r.name)).toEqual(['SQS', 'SNS', 'Step Functions'])
+    expect(sidebarComponents(answer.rows, 'gcp', ticked).map((r) => r.name)).toEqual(['Pub/Sub', 'Workflows'])
+    expect(sidebarComponents(answer.rows, 'aws', [{ namespaceId: 'g', cloud: 'gcp', componentKey: 'workflows' }]).map((r) => r.name)).toEqual(['SQS', 'SNS'])
   })
 
   it('never offers a replay on a row that is not supported, and lets only a provable row earn autonomy', () => {

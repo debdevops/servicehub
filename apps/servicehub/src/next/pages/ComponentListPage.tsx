@@ -90,7 +90,7 @@ function List({ cloud, componentKey }: { cloud: CloudKind; componentKey: string 
           <Link to={connect} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-primary-600)] px-3.5 py-2 text-xs font-bold text-white hover:bg-[var(--color-primary-700)]">
             <Plus className="h-4 w-4" aria-hidden="true" /> Connect a {row.name} connection
           </Link>
-          <Tip label="Connect a component" />
+          <Tip label="Connect a cloud" />
         </div>
 
         {components.isError ? (

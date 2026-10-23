@@ -83,16 +83,16 @@ export function ComponentTable({ components, cloudName, canConnect = true, lookN
         <h2 id="components-title" className="text-base font-semibold">{cloudName} PaaS components ({components.length})<Tip label="section:Components" /></h2>
         <div className="flex items-center gap-2">
           {lookNow}
-          <Link to={nextHref(nextEntry('connect'), {}, pathname)} aria-disabled={!canConnect} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-primary-600)] px-3.5 py-2 text-xs font-bold text-white hover:bg-[var(--color-primary-700)]">
-            <Plus className="h-4 w-4" aria-hidden="true" /> Connect a component
+          <Link to={nextHref(nextEntry('add-component'), {}, pathname)} aria-disabled={!canConnect} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-primary-600)] px-3.5 py-2 text-xs font-bold text-white hover:bg-[var(--color-primary-700)]">
+            <Plus className="h-4 w-4" aria-hidden="true" /> Add a component
           </Link>
-          <Tip label="Connect a component" />
+          <Tip label="Add a component" />
         </div>
       </div>
 
       {components.length === 0 ? (
         <p className="border-t border-[var(--color-border)] px-4 py-6 text-sm text-[var(--color-text-muted)]">
-          No {cloudName} component is connected yet. Use <strong>Connect a component</strong> to add one.
+          No {cloudName} component is connected yet. Use <Link className="font-semibold underline" to={nextHref(nextEntry('connect'), {}, pathname)}>Connect a cloud</Link> first, then <strong>Add a component</strong>.
         </p>
       ) : (
         <div className="overflow-x-auto">

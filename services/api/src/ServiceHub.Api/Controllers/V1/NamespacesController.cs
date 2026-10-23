@@ -664,6 +664,176 @@ public sealed class NamespacesController : ApiControllerBase
                 places.Value.ReachedLimit, places.Value.Incomplete));
     }
 
+    // ── Add a component (5.0.0): what can be brought in on a connection, a read-only access check, and ticking ─────────────────────
+    // The listing is a read under components/. Everything that changes a choice lives under enabled-components/, so the rule that every
+    // components/ route is a GET (ComponentModuleTests) stays true.
+
+    /// <summary>
+    /// The components the Add a component dialog lists for this connection: what each is, how it is reached (the connection already
+    /// there, or its own credential), its prerequisites, and whether it is on. Read-only.
+    /// </summary>
+    [HttpGet("{id:guid}/components")]
+    [ProducesResponseType(typeof(ComponentListResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Components(Guid id, [FromServices] INamespaceComponentService stored, CancellationToken cancellationToken)
+    {
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        var ns = found.Value;
+        if (ComponentCatalog.CloudOf(ns.Provider) is not { } cloud)
+        {
+            return Problem(StatusCodes.Status404NotFound, ErrorCodes.NotFound, "No components are listed for this connection's cloud.");
+        }
+
+        var choices = (await stored.ListAsync(OwnerId, id, cancellationToken)).ToDictionary(c => c.ComponentKey, StringComparer.Ordinal);
+        var entries = ComponentAccessRules.Listed(cloud).Select(row => ToEntry(row, ns, choices)).ToList();
+        return Ok(new ComponentListResponse(ns.Id, ns.DisplayName ?? ns.Name, ComponentCatalog.CloudName(cloud), entries));
+    }
+
+    /// <summary>
+    /// Check access: asks the cloud, with list and describe calls only, whether this connection's credential may read the component.
+    /// Nothing is saved and nothing in the cloud is changed. A "no" is a state with the reason, not an error.
+    /// </summary>
+    [HttpPost("{id:guid}/enabled-components/{componentKey}/check")]
+    [ProducesResponseType(typeof(ComponentCheckResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> CheckComponent(Guid id, string componentKey, CancellationToken cancellationToken)
+    {
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        var permissions = ComponentAccessRules.SetupFor(componentKey)?.Permissions ?? [];
+        var source = _sources.Find(componentKey, found.Value.Provider);
+        if (source is null)
+        {
+            return Ok(new ComponentCheckResponse(componentKey, false, "No access check is written for this component yet.", permissions));
+        }
+
+        var access = await source.ValidateAccessAsync(found.Value, cancellationToken);
+        return Ok(new ComponentCheckResponse(componentKey, access.IsSuccess, access.IsSuccess ? null : access.Error.Message, permissions));
+    }
+
+    /// <summary>
+    /// Ticks or unticks one component on this connection. Ticking checks access first and saves nothing if the check fails; unticking
+    /// keeps every record the component produced. Requires the <c>manage-components</c> intent header and the Admin role.
+    /// </summary>
+    [HttpPut("{id:guid}/enabled-components/{componentKey}")]
+    [ProducesResponseType(typeof(ComponentEntryResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
+    public async Task<IActionResult> SetComponent(
+        Guid id, string componentKey, [FromBody] SetComponentRequest request, [FromServices] INamespaceComponentService stored, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (!IntentHeaders.Declares(Request, IntentHeaders.ManageComponents))
+        {
+            return Problem(
+                StatusCodes.Status428PreconditionRequired, ErrorCodes.IntentRequired,
+                IntentHeaders.MissingDetail("add or remove a component", IntentHeaders.ManageComponents));
+        }
+
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        var ns = found.Value;
+        if (await DeniedUnlessAsync(GovernanceRole.Admin, id, null, "add or remove a component", cancellationToken) is { } denied) return denied;
+
+        var cloud = ComponentCatalog.CloudOf(ns.Provider);
+        var row = cloud is { } c ? ComponentAccessRules.Listed(c).FirstOrDefault(r => r.ComponentKey == componentKey) : null;
+        if (row is null)
+        {
+            return Problem(StatusCodes.Status404NotFound, ErrorCodes.NotFound, $"'{componentKey}' is not a component of this connection's cloud.");
+        }
+
+        // Only a component read on demand can be ticked here. A message store is watched on every connection (removing the connection
+        // removes it), and a component nothing reads yet cannot be switched on.
+        if (row.Detection != DetectionKind.Runs || ComponentAccessRules.Of(row) is not (ComponentAccess.SameConnection or ComponentAccess.OwnCredential))
+        {
+            return Problem(StatusCodes.Status409Conflict, ErrorCodes.CapabilityUnavailable, $"{row.Name} cannot be ticked or unticked here.");
+        }
+
+        if (request.Enabled)
+        {
+            var source = _sources.Find(componentKey, ns.Provider);
+            if (source is null)
+            {
+                return Problem(StatusCodes.Status409Conflict, ErrorCodes.CapabilityUnavailable, $"No reader is registered for {row.Name} on this connection.");
+            }
+
+            var access = await source.ValidateAccessAsync(ns, cancellationToken);
+            if (access.IsFailure)
+            {
+                await RecordAsync(AuditActions.ComponentEnable, AuditActions.Failure, ns, $"{row.Name}: {access.Error.Message}", cancellationToken);
+                return Problem(StatusCodes.Status409Conflict, ErrorCodes.CapabilityUnavailable, $"Not added. {access.Error.Message}");
+            }
+        }
+
+        var saved = await stored.SetAsync(OwnerId, id, componentKey, request.Enabled, Actor.Identity, cancellationToken);
+        if (saved.IsFailure)
+        {
+            await RecordAsync(request.Enabled ? AuditActions.ComponentEnable : AuditActions.ComponentDisable, AuditActions.Failure, ns, saved.Error.Message, cancellationToken);
+            return Problem(saved.Error);
+        }
+
+        await RecordAsync(request.Enabled ? AuditActions.ComponentEnable : AuditActions.ComponentDisable, AuditActions.Success, ns, row.Name, cancellationToken);
+        return Ok(ToEntry(row, ns, new Dictionary<string, NamespaceComponent>(StringComparer.Ordinal) { [componentKey] = saved.Value }));
+    }
+
+    /// <summary>Every component ticked on any connection, for the menu: a read-on-demand component is listed only where someone turned it on.</summary>
+    [HttpGet("components/enabled")]
+    [ProducesResponseType(typeof(IReadOnlyList<EnabledComponentResponse>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> EnabledComponents([FromServices] INamespaceComponentService stored, CancellationToken cancellationToken)
+    {
+        var all = await stored.ListAllAsync(OwnerId, cancellationToken);
+        var namespaces = await _namespaces.GetAllAsync(cancellationToken);
+        if (namespaces.IsFailure)
+        {
+            return Problem(namespaces.Error);
+        }
+
+        var byId = namespaces.Value.ToDictionary(n => n.Id);
+        var enabled = all
+            .Where(c => c.Enabled && byId.ContainsKey(c.NamespaceId))
+            .Select(c => (Row: c, Cloud: ComponentCatalog.CloudOf(byId[c.NamespaceId].Provider)))
+            .Where(x => x.Cloud is not null)
+            .Select(x => new EnabledComponentResponse(x.Row.NamespaceId, Camel(x.Cloud!.Value.ToString()), x.Row.ComponentKey))
+            .ToList();
+        return Ok(enabled);
+    }
+
+    private static string Camel(string word) => char.ToLowerInvariant(word[0]) + word[1..];
+
+    private static ComponentEntryResponse ToEntry(ComponentDescriptor row, Namespace ns, IReadOnlyDictionary<string, NamespaceComponent> choices)
+    {
+        var access = ComponentAccessRules.Of(row);
+        var setup = ComponentAccessRules.SetupFor(row.ComponentKey);
+        var alwaysOn = ComponentAccessRules.IsAlwaysOn(row);
+        var toggleable = row.Detection == DetectionKind.Runs && access is ComponentAccess.SameConnection or ComponentAccess.OwnCredential;
+        var state = access switch
+        {
+            ComponentAccess.Included => "included",
+            ComponentAccess.NotBuildable => "unavailable",
+            _ when alwaysOn => "alwaysOn",
+            _ => choices.TryGetValue(row.ComponentKey, out var c) && c.Enabled ? "on" : "off",
+        };
+        return new ComponentEntryResponse(
+            row.ComponentKey, row.Name, row.StuckPlace, Camel(row.Status.ToString()),
+            ComponentCatalog.StatusWords(row.Status), Camel(access.ToString()), state, toggleable,
+            row.Note, setup?.What, setup?.Appears, setup?.Needs, setup?.Steps ?? [], [.. (setup?.Snippets ?? []).Select(x => new SetupSnippetResponse(x.Label, x.Text))],
+            setup?.Permissions ?? [], setup?.IncludedIn);
+    }
+
     /// <summary>Failed runs or deliveries of a component that is not a message store, newest first and capped. Read-only.</summary>
     [HttpGet("{id:guid}/components/{componentKey}/failed")]
     [ProducesResponseType(typeof(FailedItemsResponse), StatusCodes.Status200OK)]

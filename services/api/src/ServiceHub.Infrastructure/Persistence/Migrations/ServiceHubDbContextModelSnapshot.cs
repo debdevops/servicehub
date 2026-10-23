@@ -746,6 +746,46 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                     b.ToTable("Namespaces", (string)null);
                 });
 
+            modelBuilder.Entity("ServiceHub.Core.Entities.NamespaceComponent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ChangedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ChangedBy")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ComponentKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("NamespaceId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId", "NamespaceId", "ComponentKey")
+                        .IsUnique()
+                        .HasDatabaseName("IX_NamespaceComponents_Owner_Namespace_Component");
+
+                    b.ToTable("NamespaceComponents", (string)null);
+                });
+
             modelBuilder.Entity("ServiceHub.Core.Entities.NamespaceSignature", b =>
                 {
                     b.Property<long>("Id")
