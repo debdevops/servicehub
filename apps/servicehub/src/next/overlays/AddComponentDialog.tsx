@@ -112,16 +112,16 @@ export default function AddComponentDialog({ close }: NextOverlayBodyProps) {
       <p className="text-xs text-[var(--color-text-muted)]">Adding a component never asks for a key. It switches on what that cloud’s connection can already see. Nothing is created or changed in your cloud.</p>
       {!may.allowed && <NotAllowed reason={may.reason} />}
 
-      <div role="tablist" aria-label="Cloud" className="flex gap-1 border-b border-[var(--color-border)]">
+      <div role="tablist" aria-label="Cloud" className="flex gap-1 border-b-2 border-[var(--color-primary-700)]">
         {sections.map((s) => {
           const pending = rows.filter((r) => r.s === s && ((r.entry.canToggle && r.entry.state === 'off' && wantedOn(r)) || (r.entry.canToggle && r.entry.state === 'on' && !wantedOn(r)))).length
           const selected = s.cloud === active
           return (
             <button key={s.cloud} type="button" role="tab" id={`add-component-tab-${s.cloud}`} aria-selected={selected} aria-controls={`add-component-${s.cloud}`}
               onClick={() => setTab(s.cloud)}
-              className={`-mb-px rounded-t-lg border border-b-0 px-4 py-2 text-sm font-semibold ${selected ? 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-primary-700)]' : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]'}`}>
+              className={`rounded-t-lg border border-b-0 px-5 py-2 text-sm font-bold ${selected ? 'border-[var(--color-primary-700)] bg-[var(--color-primary-700)] text-white' : 'border-slate-300 bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>
               {cloudLabel[s.cloud]}
-              {pending > 0 && <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-[11px] text-blue-800" aria-label={`${pending} to change`}>{pending}</span>}
+              {pending > 0 && <span className={`ml-2 rounded-full px-2 py-0.5 text-[11px] ${selected ? 'bg-white text-[var(--color-primary-700)]' : 'bg-blue-100 text-blue-800'}`} aria-label={`${pending} to change`}>{pending}</span>}
             </button>
           )
         })}
