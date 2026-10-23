@@ -151,6 +151,64 @@ public sealed class ComponentEnablementApiTests
         problem.GetProperty("detail").GetString().Should().Contain("manage-components");
     }
 
+    /// <summary>
+    /// 2026-10-23: PUT enabled-components is Admin-gated (adding a component widens what ServiceHub reads from a cloud) and no test proved a
+    /// lower role is refused; the architecture test only reads the source for the words. A refused tick must also change nothing.
+    /// </summary>
+    [Fact]
+    public async Task Ticking_a_component_is_an_Admin_act_a_viewer_and_an_operator_are_refused_and_nothing_is_saved()
+    {
+        var source = new FakeSource();
+        var root = new ServiceHubApiFactory();
+        var factory = root.WithWebHostBuilder(b =>
+        {
+            b.UseSetting("Security:Authentication:ApiKeys:0:Key", "viewer-key-value");
+            b.UseSetting("Security:Authentication:ApiKeys:0:Description", "viewer");
+            b.UseSetting("Security:Authentication:ApiKeys:1:Key", "operator-key-value");
+            b.UseSetting("Security:Authentication:ApiKeys:1:Description", "operator");
+            b.UseSetting("Security:Authentication:ApiKeys:2:Key", "lead-key-value");
+            b.UseSetting("Security:Authentication:ApiKeys:2:Description", "lead");
+            b.ConfigureServices(services =>
+            {
+                foreach (var d in services.Where(d => d.ServiceType == typeof(ICloudMessagingProvider) || d.ServiceType == typeof(IComponentSource)).ToList())
+                {
+                    services.Remove(d);
+                }
+
+                services.AddSingleton<ICloudMessagingProvider>(new NoAwsMessaging());
+                services.AddSingleton<IComponentSource>(source);
+            });
+        });
+        using var host = new DeadLettersApiTests.Handle(root, factory);
+        var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
+
+        async Task Grant(string who, string role) =>
+            (await host.Client.SendAsync(Keyed(HttpMethod.Post, "/api/v1/governance/grants", null, "grant-role", new { granteeIdentity = who, granteeKind = "ApiKey", role })))
+                .StatusCode.Should().Be(HttpStatusCode.Created);
+        await Grant("lead", "Admin");
+        await Grant("viewer", "Viewer");
+        await Grant("operator", "Operator");
+
+        foreach (var who in new[] { "viewer-key-value", "operator-key-value" })
+        {
+            var refused = await host.Client.SendAsync(Keyed(HttpMethod.Put, $"/api/v1/namespaces/{aws}/enabled-components/step-functions", who, "manage-components", new { enabled = true }));
+            refused.StatusCode.Should().Be(HttpStatusCode.Forbidden, $"{who} may not add a component");
+        }
+
+        (await Json(await host.Client.GetAsync("/api/v1/namespaces/components/enabled"), HttpStatusCode.OK)).EnumerateArray().Should().BeEmpty("a refused tick saves nothing");
+
+        var allowed = await host.Client.SendAsync(Keyed(HttpMethod.Put, $"/api/v1/namespaces/{aws}/enabled-components/step-functions", "lead-key-value", "manage-components", new { enabled = true }));
+        allowed.StatusCode.Should().Be(HttpStatusCode.OK, "an Admin may");
+    }
+
+    private static HttpRequestMessage Keyed(HttpMethod method, string url, string? key, string intent, object body)
+    {
+        var r = new HttpRequestMessage(method, url) { Content = JsonContent.Create(body) };
+        if (key is not null) r.Headers.Add("X-API-KEY", key);
+        r.Headers.Add("X-ServiceHub-Intent", intent);
+        return r;
+    }
+
     [Fact]
     public async Task A_failed_check_saves_nothing_and_names_what_is_missing()
     {

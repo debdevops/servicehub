@@ -29,9 +29,12 @@ const rows: CoverageRow[] = [
   row({ id: 'pubsub.dead-letter', componentKey: 'pubsub', cloud: 'gcp', cloudName: 'Google Cloud', name: 'Pub/Sub', class: 'r2ReplayableUnproven', mayEarnAutonomy: false }),
 ]
 
-function open(url: string) {
+async function open(url: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={client}><RouterProvider router={createMemoryRouter([nextRoute], { initialEntries: [url] })} /></QueryClientProvider>)
+  const view = render(<QueryClientProvider client={client}><RouterProvider router={createMemoryRouter([nextRoute], { initialEntries: [url] })} /></QueryClientProvider>)
+  // The shell is a lazy chunk (initial-bundle budget), so wait for it before anything asks for the header or the menu.
+  await screen.findByRole('banner')
+  return view
 }
 
 describe('the 5.0.0 shell', () => {
@@ -41,7 +44,7 @@ describe('the 5.0.0 shell', () => {
   })
 
   it('builds the menu from the coverage catalogue and the navigation array, and names nothing by hand', async () => {
-    open('/next/azure')
+    await open('/next/azure')
     const menu = screen.getByRole('navigation', { name: 'ServiceHub' })
 
     expect(await within(menu).findByRole('link', { name: 'Service Bus' })).toHaveAttribute('href', '/next/azure/c/service-bus')
@@ -58,7 +61,7 @@ describe('the 5.0.0 shell', () => {
   })
 
   it('shows every cloud’s components when no single cloud is the scope', async () => {
-    open('/next')
+    await open('/next')
     const menu = screen.getByRole('navigation', { name: 'ServiceHub' })
 
     expect(await within(menu).findByRole('link', { name: 'SQS' })).toHaveAttribute('href', '/next/aws/c/sqs')
@@ -67,14 +70,14 @@ describe('the 5.0.0 shell', () => {
   })
 
   it.each(nextPages.filter((p) => !p.built).map((p) => [p.id, p] as const))('%s says plainly that it is not built, and which unit and design it waits for', async (_id, page) => {
-    open(nextHref(page, { cloud: 'azure', component: 'service-bus', namespaceId: 'ns-1' }))
+    await open(nextHref(page, { cloud: 'azure', component: 'service-bus', namespaceId: 'ns-1' }))
 
     expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument()
     expect(screen.getByText(new RegExp(`Not built yet — unit ${page.id === 'component-detail' ? componentTabs[0].unit : page.unit}`))).toBeInTheDocument()
   })
 
   it('answers an address that names no page with the not-found screen, inside the shell', async () => {
-    open('/next/azure/c/service-bus/ns-1/extra/deeper')
+    await open('/next/azure/c/service-bus/ns-1/extra/deeper')
     expect(await screen.findByRole('heading', { level: 1, name: /doesn’t exist/ })).toBeInTheDocument()
     expect(screen.getByRole('navigation', { name: 'ServiceHub' })).toBeInTheDocument()
   })
@@ -87,7 +90,7 @@ describe('What ServiceHub covers', () => {
 
   it('shows one table per cloud with the server’s own words, and counts each status', async () => {
     vi.mocked(api.fetchCoverage).mockResolvedValue({ rows })
-    const { container } = open('/next/coverage')
+    const { container } = await open('/next/coverage')
 
     const azure = await screen.findByRole('region', { name: 'Azure' })
     expect(within(azure).getByRole('rowheader', { name: 'Cosmos DB' })).toBeInTheDocument()
@@ -103,7 +106,7 @@ describe('What ServiceHub covers', () => {
   it('says it is loading, then says in words when the list cannot be read — never an empty table', async () => {
     let fail: (reason: unknown) => void = () => {}
     vi.mocked(api.fetchCoverage).mockReturnValue(new Promise((_resolve, reject) => { fail = reject }))
-    open('/next/coverage')
+    await open('/next/coverage')
 
     expect(await screen.findByText('Loading what ServiceHub covers…')).toBeInTheDocument()
     fail(new Error('boom'))

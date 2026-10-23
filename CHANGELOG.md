@@ -1,5 +1,41 @@
 # ServiceHub Changelog
 
+## [Unreleased]
+
+### Added — the 5.0.0 shell (work in progress on `feat/servicehub-5.0.0`, served under `/next`)
+
+- **Add a component.** One window, with a tab per cloud, lists every PaaS component ServiceHub can bring in. Each says where its failures end up, what it needs, and is
+  access-checked (list and describe calls only) before it is added. Ticking needs the `manage-components` intent and the Admin role; unticking keeps every record the
+  component produced. A component that is not ready says so ("Not yet validated") instead of being hidden. The old "Later (On request)" section is gone.
+- **Components that are not message stores, read-only:** AWS Step Functions and Kinesis / DynamoDB streams, Azure Logic Apps and Event Grid, Google Cloud Workflows and
+  Eventarc. They list failed runs or dead-lettered events with the cloud's own error text and hand the failure to a person; ServiceHub does not re-run them. Each has its own
+  menu entry and page once ticked, and an Access tab that shows the permissions it needs.
+- **Per-component access, stored.** New table `NamespaceComponents` (migration `0016_W5_NamespaceComponents`, signed off) remembers what is ticked per connection.
+  New audit actions `Component.Enable` and `Component.Disable`.
+- **A Connections page** to see and manage cloud connections, with the connection name explained where it is shown.
+- **What ServiceHub covers.** `GET /api/v1/fleet/coverage` and a page listing every component on every cloud: where failed work ends up, how it is found, and how far
+  ServiceHub can move it on. `GET /api/v1/fleet/components` (and `…/{namespaceId}/{componentKey}`) report each message store's dead-letter count, what ServiceHub recorded,
+  and what waits for a person, scoped to the caller exactly like the overview.
+- **Home, per cloud.** A dead-letter count tile, a clearer component table, a "How it works" panel, and cloud brand colours with checked contrast. All-clouds shows one card
+  per cloud, never summing one cloud into another.
+- **Agents can be resumed** from the agent's page and from the Agents list.
+- **Failure signatures** show tracing and incident information.
+- **Provider entity settings** are read per cloud (`ICloudMessagingProvider`), and DLQ scanning and the component overview were extended to use them.
+
+### Fixed
+
+- **5.0.0 shell: the first screen of the 5.0.0 shell no longer slows the 4.2.0 core loop.** The shell and the 52 kB of explanation text it carries are now loaded
+  with the first `/next` screen instead of with the page everyone opens first; the initial script is back under its 460 kB budget (467 kB → 398 kB).
+- **5.0.0 shell: the cloud cards on `/next` and the failure-signatures panel on a cloud's Home fit their columns.** On real names ("ServiceHub Lab (dev) — AWS")
+  their tables were wider than the card and the whole page scrolled sideways at 1366 px; headers now wrap and long names break.
+
+### Tests
+
+- Unit and browser tests for the 5.0.0 shell: overlay host, roles, words, Replay history, Auto Replay rules, Send dialog, Failure signatures, Step Functions and Workflows,
+  and accessibility (axe, with colour contrast) of the Logic Apps, Event Grid and Kinesis pages.
+- A layout gate for the 5.0.0 shell that puts real-length names into the narrow cards (the demo's short names hid the defect).
+- `PUT /namespaces/{id}/enabled-components/{key}` is proven Admin-only: a Viewer and an Operator are refused and nothing is saved.
+
 ## [4.2.0] — 2026-10-11
 
 The last planned release of ServiceHub. Development stops after 4.2.0.

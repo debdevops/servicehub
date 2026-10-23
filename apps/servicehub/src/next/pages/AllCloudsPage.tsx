@@ -18,6 +18,9 @@ import { nextEntry, nextHref } from '../nav/navigation'
 import { Th } from '../components/Tip'
 import { Tip } from '../components/Tip'
 
+/** A header that may wrap: three cards share one row, so each is narrower than its four labels side by side. */
+const thc = 'px-2 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
+
 const ORDER: readonly CloudKind[] = ['azure', 'aws', 'gcp']
 const accent: Readonly<Record<CloudKind, string>> = { azure: 'border-t-blue-600', aws: 'border-t-orange-500', gcp: 'border-t-green-600' }
 
@@ -49,8 +52,9 @@ function CloudCard({ cloud, components, covered }: { cloud: CloudKind; component
           <p className="text-xs text-[var(--color-text-muted)]">approvals: {totals.approvals}, hand-offs: {totals.handOffs}</p>
         </div>
       </div>
-      <table className="mt-4 w-full text-sm" aria-label={`${cloudLabel[cloud]} components`}>
-        <thead><tr className="bg-[var(--color-surface-muted)] text-left text-xs font-semibold text-[var(--color-text-muted)]"><Th>Component</Th><Th>Dead-letter</Th><Th>Needs you</Th><Th>Status</Th></tr></thead>
+      <table className="mt-4 w-full table-fixed text-sm" aria-label={`${cloudLabel[cloud]} components`}>
+        <colgroup><col className="w-[32%]" /><col className="w-[22%]" /><col className="w-[20%]" /><col className="w-[26%]" /></colgroup>
+        <thead><tr className="bg-[var(--color-surface-muted)] text-left align-bottom text-xs font-semibold text-[var(--color-text-muted)]"><Th className={thc}>Component</Th><Th className={thc}>Dead-letter</Th><Th className={thc}>Needs you</Th><Th className={thc}>Status</Th></tr></thead>
         <tbody>
           {shown.map((c) => {
             const status = !c.reachable ? { text: 'Can’t reach', cls: 'text-red-700', dot: 'bg-red-600' } : c.deadLetters.kind === 'notRead' ? { text: 'Not read yet', cls: 'text-[var(--color-text-muted)]', dot: 'bg-slate-400' } : { text: 'Connected', cls: 'text-green-700', dot: 'bg-green-600' }

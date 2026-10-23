@@ -2,11 +2,12 @@ import { lazy, Suspense } from 'react'
 import type { RouteObject } from 'react-router-dom'
 import { RouteError } from '../components/RouteError'
 import { NotFoundPage } from '../pages/NotFoundPage'
-import { NextLayout } from './layouts/NextLayout'
 import { NEXT_ROOT, nextPages, type NextPage } from './nav/navigation'
 import { NextPlaceholderPage } from './pages/NextPlaceholderPage'
 
 // Each built page is its own chunk, exactly as in the 4.2.0 router.
+// The shell (and the 52 kB of explanations it carries) loads with the first /next screen, not with the 4.2.0 core loop: the initial chunk has a budget.
+const NextLayout = lazy(() => import('./layouts/NextLayout').then((m) => ({ default: m.NextLayout })))
 const CoveragePage = lazy(() => import('./pages/CoveragePage'))
 const HomePage = lazy(() => import('./pages/HomePage'))
 const AllCloudsPage = lazy(() => import('./pages/AllCloudsPage'))
@@ -72,7 +73,7 @@ function pageFor(entry: NextPage) {
  */
 export const nextRoute: RouteObject = {
   path: NEXT_ROOT,
-  element: <NextLayout />,
+  element: <Suspense fallback={loading}><NextLayout /></Suspense>,
   errorElement: <RouteError />,
   children: [
     ...nextPages.map((entry) => ({

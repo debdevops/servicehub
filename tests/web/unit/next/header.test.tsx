@@ -18,9 +18,12 @@ vi.mock('@/lib/api/settings', async (o) => ({ ...(await o<typeof settingsApi>())
 
 const off = { active: false, by: null, at: null, reason: null }
 
-function open(url = '/next/coverage') {
+async function open(url = '/next/coverage') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={client}><RouterProvider router={createMemoryRouter([nextRoute], { initialEntries: [url] })} /></QueryClientProvider>)
+  const view = render(<QueryClientProvider client={client}><RouterProvider router={createMemoryRouter([nextRoute], { initialEntries: [url] })} /></QueryClientProvider>)
+  // The shell is a lazy chunk (initial-bundle budget), so wait for it before anything asks for the header or the menu.
+  await screen.findByRole('banner')
+  return view
 }
 
 const header = () => screen.getByRole('banner')
@@ -37,38 +40,38 @@ describe('the 5.0.0 header (unit B3)', () => {
 
   it.each([['Viewer'], ['Operator'], ['Approver'], ['Admin']] as const)('shows the %s role from /me', async (role) => {
     vi.mocked(identityApi.fetchMe).mockResolvedValue(me({ recoverRole: role }))
-    open()
+    await open()
     expect(await within(header()).findByText(`Role: ${role}`)).toBeInTheDocument()
   })
 
   it('falls back to the fleet role when there is no recovery role, and says "No role" when none is granted', async () => {
     vi.mocked(identityApi.fetchMe).mockResolvedValue(me({ recoverRole: undefined, effectiveRole: 'Operator' }))
-    const { unmount } = open()
+    const { unmount } = await open()
     expect(await within(header()).findByText('Role: Operator')).toBeInTheDocument()
     unmount()
     vi.mocked(identityApi.fetchMe).mockResolvedValue(me({ recoverRole: null, effectiveRole: null }))
-    open()
+    await open()
     expect(await within(header()).findByText('Role: No role')).toBeInTheDocument()
   })
 
   it('says the role is unknown when /me cannot be read, rather than guessing one', async () => {
     vi.mocked(identityApi.fetchMe).mockRejectedValue(new Error('down'))
-    open()
+    await open()
     expect(await within(header()).findByText('Role: unknown')).toBeInTheDocument()
   })
 
   it('shows the Agent running, and paused when every acting agent is paused', async () => {
-    const { unmount } = open()
+    const { unmount } = await open()
     expect(await within(header()).findByText('Agent running')).toBeInTheDocument()
     unmount()
     vi.mocked(agentsApi.fetchAgents).mockResolvedValue([agent({ isPaused: true })])
-    open()
+    await open()
     expect(await within(header()).findByText('Agent paused')).toBeInTheDocument()
     expect(within(header()).getByText('Will not act until resumed')).toBeInTheDocument()
   })
 
   it('links the Emergency stop button to its dialog and shows no band while the stop is off', async () => {
-    open('/next/coverage')
+    await open('/next/coverage')
     const button = await within(header()).findByRole('link', { name: 'Emergency stop' })
     expect(button).toHaveAttribute('href', '/next/coverage?dialog=emergency-stop')
     expect(await screen.findByText('Role: Approver')).toBeInTheDocument()
@@ -77,7 +80,7 @@ describe('the 5.0.0 header (unit B3)', () => {
 
   it('shows a band above the page and says so in the header while the stop is on, with who set it and why', async () => {
     vi.mocked(settingsApi.fetchEmergencyStop).mockResolvedValue({ active: true, by: 'maya', at: '2026-10-18T09:00:00Z', reason: 'drill' })
-    open()
+    await open()
     const band = await screen.findByRole('alert')
     expect(band).toHaveTextContent('Emergency stop is ON')
     expect(band).toHaveTextContent('Set by maya')
@@ -87,7 +90,7 @@ describe('the 5.0.0 header (unit B3)', () => {
 
   it('treats a stop it cannot read as ON', async () => {
     vi.mocked(settingsApi.fetchEmergencyStop).mockRejectedValue(new Error('down'))
-    open()
+    await open()
     const band = await screen.findByRole('alert')
     expect(band).toHaveTextContent('cannot be read, so it is shown as ON')
     expect(within(header()).getByRole('link', { name: 'Emergency stop is ON' })).toBeInTheDocument()
@@ -98,14 +101,14 @@ describe('the 5.0.0 header (unit B3)', () => {
       components: [component({ needsYou: 3, approvals: 2, handOffs: 1 }), component({ componentKey: 'storage-queues', needsYou: 0, approvals: 0, handOffs: 0 })],
       generatedAtUtc: '2026-10-18T10:00:00Z',
     })
-    open('/next/azure')
+    await open('/next/azure')
     const menu = screen.getByRole('navigation', { name: 'ServiceHub' })
     expect(await within(menu).findByLabelText('3 need your attention')).toBeInTheDocument()
     expect(within(menu).getByLabelText('2 pending approvals')).toBeInTheDocument()
   })
 
   it('colours the header by the cloud being looked at', async () => {
-    open('/next/aws')
+    await open('/next/aws')
     await screen.findByText('Role: Approver')
     expect(header().className).toContain('bg-[#232f3e]')
   })

@@ -12,6 +12,9 @@ const ROWS = 4
 const tone = { yes: 'bg-green-50 text-green-800', 'not yet': 'bg-amber-50 text-amber-800', no: 'bg-red-50 text-red-700' } as const
 const label = { yes: 'Yes', 'not yet': 'Not yet', no: 'No' } as const
 
+/** A header that may wrap: this panel is a 26rem column, narrower than its four labels side by side. */
+const thc = 'px-1 py-2 text-left align-bottom text-xs font-semibold text-[var(--color-text-muted)]'
+
 /**
  * The top failure signatures for one cloud (build-plan unit C1). "Agent may act" is read from each signature's trust level —
  * never assumed. When the cloud is not watched the counts cover only what was recorded at the last look, and the panel says so.
@@ -51,10 +54,11 @@ export function SignaturePanel({ provider, cloudName, notWatched, recorded, inDe
       ) : rows.length === 0 ? (
         <p className="text-sm text-[var(--color-text-muted)]">No failure signature in the last 7 days{notWatched ? ' — press Look now to record what is in the dead-letter queues' : ''}.</p>
       ) : (
-        <table className="w-full text-sm">
+        <table className="w-full table-fixed text-sm">
+          <colgroup><col className="w-[34%]" /><col className="w-[16%]" /><col className="w-[28%]" /><col className="w-[22%]" /></colgroup>
           <thead>
             <tr className="text-left text-xs font-semibold text-[var(--color-text-muted)]">
-              <Th>Signature</Th><Th>Count</Th><Th>Components</Th><Th>Agent may act</Th>
+              <Th className={thc}>Signature</Th><Th className={thc}>Count</Th><Th className={thc}>Components</Th><Th className={thc}>Agent may act</Th>
             </tr>
           </thead>
           <tbody>
@@ -63,9 +67,9 @@ export function SignaturePanel({ provider, cloudName, notWatched, recorded, inDe
               const answer = t ? trustWords(t, cloudName).answer : null
               return (
                 <tr key={s.signatureHash} className="border-t border-[var(--color-border)]">
-                  <td className="py-2 pr-2 font-medium">{s.reason}</td>
+                  <td className="break-words py-2 pr-2 font-medium">{s.reason}</td>
                   <td className="px-2">{s.messages.toLocaleString('en-US')}</td>
-                  <td className="px-2 text-[var(--color-text-muted)]">{s.namespaces.map((n) => n.displayName ?? n.name).join(', ')}</td>
+                  <td className="break-words px-2 text-[var(--color-text-muted)]">{s.namespaces.map((n) => n.displayName ?? n.name).join(', ')}</td>
                   <td className="pl-2">
                     {answer ? <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${tone[answer]}`}>{label[answer]}</span> : <span className="text-xs text-[var(--color-text-muted)]">…</span>}
                   </td>
