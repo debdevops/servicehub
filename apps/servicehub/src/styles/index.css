@@ -62,13 +62,13 @@
  * the entire UI per provider would make the product feel like it had changed identity.
  */
 :root[data-provider='aws'] {
-  --color-accent: #f97316;
+  --color-accent: #ff9900;
 }
 :root[data-provider='gcp'] {
-  --color-accent: #22c55e;
+  --color-accent: #1a73e8;
 }
 :root {
-  --color-accent: var(--color-primary-600);
+  --color-accent: #0078d4;
 }
 
 /*

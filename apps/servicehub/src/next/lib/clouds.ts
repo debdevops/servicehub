@@ -24,12 +24,19 @@ export function cloudOf(scope: CloudScope): CloudKind | null {
 }
 
 /**
- * The header's own colour per cloud (the three Home designs differ on purpose). Colour only: nothing is decided from it (R4).
- * `all` and the non-cloud pages keep ServiceHub's own.
+ * Each cloud's own brand colours, so a page reads as that cloud's at a glance: Azure blue, AWS squid ink with its orange,
+ * Google Cloud blue. Colour only: nothing is decided from it (R4). `all` keeps ServiceHub's own.
  */
+export const cloudBrand: Readonly<Record<CloudKind, { bg: string; accent: string }>> = {
+  azure: { bg: '#0078d4', accent: '#0078d4' },
+  aws: { bg: '#232f3e', accent: '#ff9900' },
+  gcp: { bg: '#1a73e8', accent: '#1a73e8' },
+}
+
+/** The header's own colour per cloud (the three Home designs differ on purpose). */
 export const cloudHeaderClass: Readonly<Record<CloudScope, string>> = {
   all: 'bg-[var(--color-primary-900)]',
-  azure: 'bg-[#0b2f63]',
-  aws: 'bg-[#4a2310]',
-  gcp: 'bg-[#0f4a2b]',
+  azure: 'bg-[#0078d4]',
+  aws: 'bg-[#232f3e] border-b-4 border-[#ff9900]',
+  gcp: 'bg-[#1a73e8]',
 }
