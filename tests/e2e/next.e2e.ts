@@ -40,7 +40,7 @@ async function violations(page: Page) {
  * checks. Used by the tests of the four components that were on request, so a header colour does not hide a defect in their pages.
  */
 async function contentViolations(page: Page) {
-  const result = await new AxeBuilder({ page }).exclude('header').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze()
+  const result = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze()
   return result.violations.map((v) => `${v.id} (${v.impact}): ${v.help}\n  ${v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join('\n  ')}`)
 }
 

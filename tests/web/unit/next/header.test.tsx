@@ -107,6 +107,6 @@ describe('the 5.0.0 header (unit B3)', () => {
   it('colours the header by the cloud being looked at', async () => {
     open('/next/aws')
     await screen.findByText('Role: Approver')
-    expect(header().className).toContain('bg-[#4a2310]')
+    expect(header().className).toContain('bg-[#232f3e]')
   })
 })

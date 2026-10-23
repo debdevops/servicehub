@@ -33,10 +33,10 @@ export const cloudBrand: Readonly<Record<CloudKind, { bg: string; accent: string
   gcp: { bg: '#1a73e8', accent: '#1a73e8' },
 }
 
-/** The header's own colour per cloud (the three Home designs differ on purpose). */
+/** The header's own colour per cloud (the three Home designs differ on purpose). Azure and Google use a darker shade of the brand blue so the white header text keeps 4.5:1 contrast. */
 export const cloudHeaderClass: Readonly<Record<CloudScope, string>> = {
   all: 'bg-[var(--color-primary-900)]',
-  azure: 'bg-[#0078d4]',
+  azure: 'bg-[#005a9e]',
   aws: 'bg-[#232f3e] border-b-4 border-[#ff9900]',
-  gcp: 'bg-[#1a73e8]',
+  gcp: 'bg-[#1557b0]',
 }
