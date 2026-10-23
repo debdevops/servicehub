@@ -279,6 +279,21 @@ public sealed partial class EventarcSource : IComponentSource
     /// <summary>Every trigger in every location Eventarc is offered in, sorted by name. A location that cannot be read leaves the result incomplete.</summary>
     private async Task<Found> FindTriggersAsync(Namespace ns, int max, CancellationToken budget, CancellationToken caller)
     {
+        // Eventarc lists across every location with "-" in place of a location, in one call. Asking each of its ~50 locations (4 at a
+        // time) took 16 s of the 20 s budget on the first live run, so a listing that also read a dead-letter topic ran out of time and
+        // failed. The per-location walk stays as the fallback if Google refuses the wildcard.
+#pragma warning disable CA1031
+        try
+        {
+            var wide = await _reader.ListTriggersAsync(ns, "-", max, budget).ConfigureAwait(false);
+            return new Found([.. wide.Items.OrderBy(t => t.Name, StringComparer.Ordinal)], wide.More, false, null);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // fall through to the per-location walk
+        }
+#pragma warning restore CA1031
+
         var locations = await _reader.ListLocationsAsync(ns, budget).ConfigureAwait(false);
         var results = await SourceReads.RunAsync(
             locations.Items, (location, token) => _reader.ListTriggersAsync(ns, location, max, token), Fail, new Listing<TriggerRef>([], false), budget, caller).ConfigureAwait(false);

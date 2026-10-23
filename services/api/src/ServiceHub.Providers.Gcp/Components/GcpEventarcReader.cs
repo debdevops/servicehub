@@ -147,7 +147,17 @@ internal sealed class GcpEventarcReader : IGcpEventarcReader
 
     private static async Task<List<UndeliveredEvent>> PullAndReleaseAsync(SubscriberServiceApiClient subscriber, string subscription, CancellationToken ct)
     {
-        var response = await subscriber.PullAsync(new PullRequest { Subscription = subscription, MaxMessages = PullBatch }, ct).ConfigureAwait(false);
+        // A pull that waits for a message blocks until one arrives, so on an empty dead-letter subscription (the good case) the look ran out
+        // its whole time budget and was reported as a failed read (first live run). ReturnImmediately asks "is anything there now?", as the
+        // observer check does; Pub/Sub may answer empty while messages exist, so an empty answer is asked once more before it is believed.
+        PullResponse response = new();
+        for (var attempt = 0; attempt < 2 && response.ReceivedMessages.Count == 0; attempt++)
+        {
+#pragma warning disable CS0612, CS0618
+            response = await subscriber.PullAsync(new PullRequest { Subscription = subscription, MaxMessages = PullBatch, ReturnImmediately = true }, ct).ConfigureAwait(false);
+#pragma warning restore CS0612, CS0618
+        }
+
         if (response.ReceivedMessages.Count == 0)
         {
             return [];

@@ -90,12 +90,27 @@ public sealed class EventarcSourceTests : ComponentSourceConformance
     [Fact]
     public async Task A_location_that_cannot_be_read_leaves_the_places_incomplete_and_keeps_the_rest()
     {
+        _google.NoWildcard = true;
         _google.FailLocation = "europe-west1";
 
         var places = (await _source.ListPlacesAsync(_ns, default)).Value;
 
         places.Items.Should().ContainSingle().Which.Name.Should().Be("orders");
         places.Incomplete.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Triggers_are_listed_with_one_wildcard_call_and_the_per_location_walk_is_the_fallback()
+    {
+        _google.Triggers["europe-west1"] = [new TriggerRef(Billing, BillingSub)];
+
+        (await _source.ListPlacesAsync(_ns, default)).Value.Items.Should().HaveCount(2);
+        _google.Calls.Should().Equal("ListTriggers");
+
+        _google.Calls.Clear();
+        _google.NoWildcard = true;
+        (await _source.ListPlacesAsync(_ns, default)).Value.Items.Should().HaveCount(2);
+        _google.Calls.Should().Contain("ListLocations");
     }
 
     [Fact]
@@ -430,7 +445,7 @@ public sealed class EventarcSourceTests : ComponentSourceConformance
     {
         private readonly List<string> _calls = [];
 
-        public IReadOnlyList<string> Calls => _calls;
+        public List<string> Calls => _calls;
 
         public IReadOnlyList<string> Locations { get; set; } = [];
 
@@ -448,6 +463,9 @@ public sealed class EventarcSourceTests : ComponentSourceConformance
 
         public string? FailLocation { get; set; }
 
+        /// <summary>When set, Google refuses the "-" (every location) wildcard, as the source must survive.</summary>
+        public bool NoWildcard { get; set; }
+
         public string? FailSubscription { get; set; }
 
         public int MaxAsked { get; private set; }
@@ -464,6 +482,17 @@ public sealed class EventarcSourceTests : ComponentSourceConformance
                 if (location == FailLocation)
                 {
                     throw new RpcException(new Status(StatusCode.Unavailable, "location down"));
+                }
+
+                if (location == "-")
+                {
+                    if (NoWildcard)
+                    {
+                        throw new RpcException(new Status(StatusCode.InvalidArgument, "wildcard not supported"));
+                    }
+
+                    var every = Triggers.Values.SelectMany(x => x).ToList();
+                    return new Listing<TriggerRef>([.. every.Take(max)], every.Count > max);
                 }
 
                 var all = Triggers.TryGetValue(location, out var t) ? t : [];

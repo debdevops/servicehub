@@ -75,12 +75,25 @@ public sealed class WorkflowsSourceTests : ComponentSourceConformance
     [Fact]
     public async Task A_location_that_cannot_be_read_leaves_the_places_incomplete_and_keeps_the_rest()
     {
+        _google.NoWildcard = true;
         _google.FailLocation = "europe-west1";
 
         var places = (await _source.ListPlacesAsync(_ns, default)).Value;
 
         places.Items.Should().ContainSingle().Which.Name.Should().Be("orders");
         places.Incomplete.Should().BeTrue("a location failed, so a workflow that exists there may be missing");
+    }
+
+    [Fact]
+    public async Task Workflows_are_listed_with_one_wildcard_call_and_the_per_location_walk_is_the_fallback()
+    {
+        (await _source.ListPlacesAsync(_ns, default)).Value.Items.Should().NotBeEmpty();
+        _google.Calls.Should().Equal("ListWorkflows");
+
+        _google.Calls.Clear();
+        _google.NoWildcard = true;
+        (await _source.ListPlacesAsync(_ns, default)).Value.Items.Should().NotBeEmpty();
+        _google.Calls.Should().Contain("ListLocations");
     }
 
     [Fact]
@@ -201,7 +214,7 @@ public sealed class WorkflowsSourceTests : ComponentSourceConformance
     {
         private readonly List<string> _calls = [];
 
-        public IReadOnlyList<string> Calls => _calls;
+        public List<string> Calls => _calls;
 
         public IReadOnlyList<string> Locations { get; set; } = [];
 
@@ -217,6 +230,9 @@ public sealed class WorkflowsSourceTests : ComponentSourceConformance
 
         public string? FailLocation { get; set; }
 
+        /// <summary>When set, Google refuses the "-" (every location) wildcard, as the source must survive.</summary>
+        public bool NoWildcard { get; set; }
+
         public string? FailExecutionsState { get; set; }
 
         public Task<Listing<string>> ListLocationsAsync(Namespace ns, CancellationToken ct) =>
@@ -228,6 +244,17 @@ public sealed class WorkflowsSourceTests : ComponentSourceConformance
                 if (location == FailLocation)
                 {
                     throw new RpcException(new Status(StatusCode.Unavailable, "location down"));
+                }
+
+                if (location == "-")
+                {
+                    if (NoWildcard)
+                    {
+                        throw new RpcException(new Status(StatusCode.InvalidArgument, "wildcard not supported"));
+                    }
+
+                    var every = Workflows.Values.SelectMany(x => x).ToList();
+                    return new Listing<WorkflowRef>([.. every.Take(max)], every.Count > max);
                 }
 
                 var all = Workflows.TryGetValue(location, out var w) ? w : [];

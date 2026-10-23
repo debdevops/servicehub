@@ -229,6 +229,20 @@ public sealed partial class WorkflowsSource : IComponentSource
     /// <summary>Every workflow in every location Workflows is offered in, sorted by name. A location that cannot be read leaves the result incomplete.</summary>
     private async Task<Found> FindWorkflowsAsync(Namespace ns, int max, CancellationToken budget, CancellationToken caller)
     {
+        // "-" in place of a location lists every location in one call (the same as Eventarc). Walking Workflows' locations 4 at a time
+        // used most of the 20 s budget on the first live run. The walk stays as the fallback if Google refuses the wildcard.
+#pragma warning disable CA1031
+        try
+        {
+            var wide = await _reader.ListWorkflowsAsync(ns, "-", max, budget).ConfigureAwait(false);
+            return new Found([.. wide.Items.OrderBy(w => w.Name, StringComparer.Ordinal)], wide.More, false, null);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // fall through to the per-location walk
+        }
+#pragma warning restore CA1031
+
         var locations = await _reader.ListLocationsAsync(ns, budget).ConfigureAwait(false);
         var results = await SourceReads.RunAsync(
             locations.Items, (location, token) => _reader.ListWorkflowsAsync(ns, location, max, token), Fail, new Listing<WorkflowRef>([], false), budget, caller).ConfigureAwait(false);
