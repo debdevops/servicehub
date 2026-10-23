@@ -1,149 +1,121 @@
 import { useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Copy, Loader2, ShieldCheck, TriangleAlert, XCircle } from 'lucide-react'
 import { useMe } from '../../hooks/useIdentity'
 import { useNamespaces } from '../../hooks/useNamespaces'
-import { useCheckComponent, useComponentList, useSetComponent } from '../../hooks/useComponentEnablement'
+import { componentKeys, useComponentList } from '../../hooks/useComponentEnablement'
+import { useCoverage } from '../../hooks/useCoverage'
 import { toProblem } from '../../lib/api/client'
-import type { ComponentCheck, ComponentEntry } from '../../lib/api/componentEnablement'
+import { checkComponent, setComponent, type ComponentCheck, type ComponentEntry } from '../../lib/api/componentEnablement'
+import type { CloudKind } from '../../lib/api/coverage'
+import type { Namespace } from '../../lib/api/namespaces'
 import { permission } from '../../lib/permissions'
 import { NotAllowed } from '../../components/ui/NotAllowed'
 import { Select } from '../../components/ui/Select'
 import { Tip } from '../components/Tip'
 import { cloudLabel, cloudOf, parseScope } from '../lib/clouds'
 import { nextEntry, nextHref } from '../nav/navigation'
-import type { CloudKind } from '../../lib/api/coverage'
 import type { NextOverlayBodyProps } from './registry'
 
 /**
  * Add a component (docs-private/future/PLAN-ADD-A-COMPONENT-5.0.0.md; designs `d15`, `d16`, `d17`), at `?dialog=add-component`.
  *
- * One dialog to choose, connect and bring in a PaaS component on a cloud that is already connected. Ticking a row opens it in place: what it
- * needs, copy-ready prerequisites, and a read-only **Check access**. **Add** checks again and saves each row on its own, and the result is
- * drawn on the row: a failed check saves nothing for that row and names what is missing, and never blocks the others.
+ * It lists **every PaaS component ServiceHub can bring in**, on every cloud, grouped by cloud: what is on, what can be ticked, and what is
+ * only on request (greyed, so nothing is hidden). Each cloud uses its own connection (a picker when it has several). Ticking a row opens it in
+ * place: what it needs, copy-ready prerequisites, and a read-only **Check access**. **Add** checks again and saves each row on its own, and
+ * the result is drawn on the row: a failed check saves nothing for that row and names what is missing, and never blocks the others.
  *
- * It never asks for a key. A first-ever connection (the credential) stays in Connect a cloud, which this dialog links to. Admin only; the
+ * It never asks for a key. A cloud with no connection says so and links to Connect a cloud, which stays the first-ever step. Admin only; the
  * server enforces it, this only says so before the click.
  */
 type Outcome = { readonly ok: boolean; readonly message: string }
+type CheckState = ComponentCheck | 'checking'
+
+const CLOUDS: readonly CloudKind[] = ['azure', 'aws', 'gcp']
+const idOf = (namespaceId: string, componentKey: string) => `${namespaceId}|${componentKey}`
+
+/** One cloud's connection (the chosen one, or the one the dialog was opened for, or the first) and what can be brought in on it. */
+function useCloud(cloud: CloudKind, all: readonly Namespace[], wanted: string | null) {
+  const [chosen, setChosen] = useState<string | null>(null)
+  const connections = all.filter((n) => n.provider === cloud)
+  const connection = connections.find((c) => c.id === (chosen ?? wanted)) ?? connections[0]
+  const list = useComponentList(connection?.id)
+  return { cloud, connections, connection, list, setChosen }
+}
+type CloudData = ReturnType<typeof useCloud>
 
 export default function AddComponentDialog({ close }: NextOverlayBodyProps) {
   const { pathname } = useLocation()
-  const wanted = useSearchParams()[0].get('ns') // opened from a connection's own row: that connection, whatever page this is
+  const wanted = useSearchParams()[0].get('ns') // opened from one connection's row: that connection first, whatever page this is
   const namespaces = useNamespaces()
-  const named = (namespaces.data ?? []).find((n) => n.id === wanted)
-  const scoped = named?.provider ?? cloudOf(parseScope(pathname.split('/')[2]))
-  const [picked, setPicked] = useState<CloudKind | null>(null)
-  const cloud = scoped ?? picked
-  const connections = (namespaces.data ?? []).filter((n) => n.provider === cloud)
-  const [chosen, setChosen] = useState<string | null>(null)
-  const connection = connections.find((c) => c.id === (chosen ?? named?.id)) ?? connections[0]
-  const may = permission(useMe().data, 'Admin', 'add or remove a component', { namespaceId: connection?.id })
+  const all = namespaces.data ?? []
+  const first = all.find((n) => n.id === wanted)?.provider ?? cloudOf(parseScope(pathname.split('/')[2]))
+  const may = permission(useMe().data, 'Admin', 'add or remove a component')
+  const queryClient = useQueryClient()
+  const coverage = useCoverage()
 
-  if (cloud === null) {
-    return (
-      <div className="space-y-3">
-        <p className="text-sm">Which cloud?<Tip label="addc:cloud" /></p>
-        <div className="flex gap-2">
-          {(['azure', 'aws', 'gcp'] as const).map((c) => (
-            <button key={c} type="button" onClick={() => setPicked(c)} className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-semibold hover:bg-[var(--color-surface-muted)]">
-              {cloudLabel[c]}
-            </button>
-          ))}
-        </div>
-      </div>
-    )
-  }
+  const azure = useCloud('azure', all, wanted)
+  const aws = useCloud('aws', all, wanted)
+  const gcp = useCloud('gcp', all, wanted)
+  const byCloud = { azure, aws, gcp }
+  const sections = (first ? [first, ...CLOUDS.filter((c) => c !== first)] : CLOUDS).map((c) => byCloud[c])
 
-  if (namespaces.isPending) return <p role="status" className="text-sm text-[var(--color-text-muted)]">Loading…</p>
-
-  if (connection === undefined) {
-    return (
-      <div className="space-y-3">
-        <p className="text-sm">No {cloudLabel[cloud]} connection yet. A component is brought in on a cloud that is already connected, so connect the cloud first.</p>
-        <Link to={nextHref(nextEntry('connect'), {}, pathname)} className="inline-flex rounded-lg bg-[var(--color-primary-600)] px-3.5 py-2 text-xs font-semibold text-white">
-          Connect {cloudLabel[cloud]}
-        </Link>
-      </div>
-    )
-  }
-
-  return (
-    <Body key={connection.id} close={close} connectionId={connection.id} may={may}
-      connectionPicker={connections.length > 1 ? (
-        <label className="flex items-center gap-2 text-xs font-semibold">
-          Connection
-          <Select ariaLabel="Connection" variant="inline" value={connection.id} onChange={(v) => setChosen(v)}>
-            {connections.map((c) => <option key={c.id} value={c.id}>{c.displayName ?? c.name}</option>)}
-          </Select>
-        </label>
-      ) : null} />
-  )
-}
-
-function Body({ close, connectionId, may, connectionPicker }: { close: () => void; connectionId: string; may: { allowed: boolean; reason: string | null }; connectionPicker: React.ReactNode }) {
-  const list = useComponentList(connectionId)
-  const check = useCheckComponent(connectionId)
-  const set = useSetComponent(connectionId)
   const [desired, setDesired] = useState<Readonly<Record<string, boolean>>>({})
-  const [checks, setChecks] = useState<Readonly<Record<string, ComponentCheck | 'checking'>>>({})
+  const [checks, setChecks] = useState<Readonly<Record<string, CheckState>>>({})
   const [outcomes, setOutcomes] = useState<Readonly<Record<string, Outcome>>>({})
   const [saving, setSaving] = useState(false)
 
-  if (list.isPending) return <p role="status" className="text-sm text-[var(--color-text-muted)]">Loading…</p>
-  if (list.isError) return <p role="alert" className="text-sm text-red-700">{toProblem(list.error).message}</p>
+  if (namespaces.isPending) return <p role="status" className="text-sm text-[var(--color-text-muted)]">Loading…</p>
 
-  const entries = list.data.components
-  const wanted = (e: ComponentEntry) => desired[e.componentKey] ?? e.state === 'on'
-  const adds = entries.filter((e) => e.canToggle && e.state === 'off' && wanted(e))
-  const removes = entries.filter((e) => e.canToggle && e.state === 'on' && !wanted(e))
+  const entriesOf = (s: CloudData) => (s.connection && s.list.data ? s.list.data.components.map((entry) => ({ s, entry, id: idOf(s.connection!.id, entry.componentKey) })) : [])
+  const rows = sections.flatMap(entriesOf)
+  const wantedOn = (r: { entry: ComponentEntry; id: string }) => desired[r.id] ?? r.entry.state === 'on'
+  const adds = rows.filter((r) => r.entry.canToggle && r.entry.state === 'off' && wantedOn(r))
+  const removes = rows.filter((r) => r.entry.canToggle && r.entry.state === 'on' && !wantedOn(r))
   const changes = adds.length + removes.length
   const finished = Object.keys(outcomes).length > 0 && !saving
 
-  const runCheck = (key: string) => {
-    setChecks((c) => ({ ...c, [key]: 'checking' }))
-    check.mutate(key, {
-      onSuccess: (result) => setChecks((c) => ({ ...c, [key]: result })),
-      onError: (error) => setChecks((c) => ({ ...c, [key]: { componentKey: key, ok: false, reason: toProblem(error).message, permissions: [] } })),
-    })
+  const runCheck = (namespaceId: string, key: string) => {
+    const id = idOf(namespaceId, key)
+    setChecks((c) => ({ ...c, [id]: 'checking' }))
+    checkComponent(namespaceId, key).then(
+      (result) => setChecks((c) => ({ ...c, [id]: result })),
+      (error: unknown) => setChecks((c) => ({ ...c, [id]: { componentKey: key, ok: false, reason: toProblem(error).message, permissions: [] } })),
+    )
   }
 
   const apply = async () => {
     setSaving(true)
     const next: Record<string, Outcome> = {}
     // One row at a time, each on its own: a failure on one never blocks the others, and nothing half-saved is left behind.
-    for (const e of [...adds, ...removes]) {
-      const enable = adds.includes(e)
+    for (const r of [...adds, ...removes]) {
+      const enable = adds.includes(r)
       try {
-        await set.mutateAsync({ componentKey: e.componentKey, enabled: enable })
-        next[e.componentKey] = { ok: true, message: enable ? 'Added. It is on the menu now.' : 'Removed. Its history is kept.' }
+        await setComponent(r.s.connection!.id, r.entry.componentKey, enable)
+        next[r.id] = { ok: true, message: enable ? 'Added. It is on the menu now.' : 'Removed. Its history is kept.' }
       } catch (error) {
-        next[e.componentKey] = { ok: false, message: toProblem(error).message }
+        next[r.id] = { ok: false, message: toProblem(error).message }
       }
     }
+    await queryClient.invalidateQueries({ queryKey: componentKeys.all })
     setOutcomes(next)
     setSaving(false)
   }
 
   return (
     <div className="space-y-4">
-      <p className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-primary-50)] px-3 py-2 text-sm">
-        Using your existing {list.data.cloud} connection <strong>{list.data.connectionName}</strong><Tip label="addc:connection" />
-        <span className="ml-auto">{connectionPicker}</span>
-      </p>
-      <p className="text-xs text-[var(--color-text-muted)]">Adding a component never asks for a key. It switches on what this connection can already see. Nothing is created or changed in your cloud.</p>
+      <p className="text-sm">Every PaaS component ServiceHub can bring in, on every cloud. Tick the ones ServiceHub should watch.<Tip label="addc:which" /></p>
+      <p className="text-xs text-[var(--color-text-muted)]">Adding a component never asks for a key. It switches on what that cloud’s connection can already see. Nothing is created or changed in your cloud.</p>
       {!may.allowed && <NotAllowed reason={may.reason} />}
 
-      <h3 className="flex items-center text-sm font-semibold">Which components should ServiceHub watch?<Tip label="addc:which" /></h3>
-      <ul className="space-y-2">
-        {entries.map((e) => (
-          <Row key={e.componentKey} entry={e} on={wanted(e)} disabled={!may.allowed || saving || finished}
-            onToggle={(v) => setDesired((d) => ({ ...d, [e.componentKey]: v }))}
-            check={checks[e.componentKey]} onCheck={() => runCheck(e.componentKey)} outcome={outcomes[e.componentKey]} />
-        ))}
-      </ul>
+      {sections.map((s) => (
+        <CloudSection key={s.cloud} s={s} pathname={pathname} coverageNames={coverageNames(coverage.data?.rows ?? [], s.cloud)}
+          disabled={!may.allowed || saving || finished} wantedOn={wantedOn} checks={checks} outcomes={outcomes}
+          onToggle={(id, v) => setDesired((d) => ({ ...d, [id]: v }))} onCheck={runCheck} />
+      ))}
 
-      <div className="flex items-center gap-3 border-t border-[var(--color-border)] pt-3">
+      <div className="sticky bottom-0 flex items-center gap-3 border-t border-[var(--color-border)] bg-[var(--color-surface)] pt-3">
         <span className="text-xs text-[var(--color-text-muted)]" role="status">
           {finished ? `${Object.values(outcomes).filter((o) => o.ok).length} saved, ${Object.values(outcomes).filter((o) => !o.ok).length} not saved.` : `${changes} to change.`}
         </span>
@@ -153,7 +125,7 @@ function Body({ close, connectionId, may, connectionPicker }: { close: () => voi
         ) : (
           <>
             <button type="button" onClick={close} className="rounded-lg border border-[var(--color-border)] px-3.5 py-2 text-xs font-semibold">Cancel</button>
-            <button type="button" disabled={changes === 0 || !may.allowed || saving} onClick={apply}
+            <button type="button" disabled={changes === 0 || !may.allowed || saving} onClick={() => void apply()}
               className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-primary-600)] px-3.5 py-2 text-xs font-semibold text-white disabled:opacity-50">
               {saving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
               {removes.length === 0 ? `Add ${adds.length} component${adds.length === 1 ? '' : 's'}` : 'Save changes'}
@@ -162,6 +134,66 @@ function Body({ close, connectionId, may, connectionPicker }: { close: () => voi
         )}
       </div>
     </div>
+  )
+}
+
+/** The components a cloud can bring in, from the catalogue, for a cloud with no connection yet (nothing can be read without one). */
+function coverageNames(rows: readonly { cloud: CloudKind; componentKey: string; name: string; status: string; detection: string }[], cloud: CloudKind): string[] {
+  const seen = new Set<string>()
+  return rows
+    .filter((r) => r.cloud === cloud && r.status !== 'notSupported' && (r.detection === 'store' || r.detection === 'runs') && !seen.has(r.componentKey) && seen.add(r.componentKey))
+    .map((r) => (r.status === 'onRequest' ? `${r.name} (on request)` : r.name))
+}
+
+function CloudSection({ s, pathname, coverageNames: names, disabled, wantedOn, checks, outcomes, onToggle, onCheck }: {
+  s: CloudData; pathname: string; coverageNames: readonly string[]; disabled: boolean
+  wantedOn: (r: { entry: ComponentEntry; id: string }) => boolean
+  checks: Readonly<Record<string, CheckState>>; outcomes: Readonly<Record<string, Outcome>>
+  onToggle: (id: string, value: boolean) => void; onCheck: (namespaceId: string, key: string) => void
+}) {
+  const { connection, connections, list } = s
+  return (
+    <section aria-label={`${cloudLabel[s.cloud]} components`} className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-primary-50)] px-3 py-2 text-sm">
+        <h3 className="flex items-center font-semibold">{cloudLabel[s.cloud]}<Tip label="addc:cloud-section" /></h3>
+        {connection ? (
+          <>
+            <span>using your existing connection <strong>{connection.displayName ?? connection.name}</strong></span><Tip label="addc:connection" />
+            {connections.length > 1 && (
+              <span className="ml-auto flex items-center gap-2 text-xs font-semibold">
+                Connection
+                <Select ariaLabel={`${cloudLabel[s.cloud]} connection`} variant="inline" value={connection.id} onChange={(v) => s.setChosen(v)}>
+                  {connections.map((c) => <option key={c.id} value={c.id}>{c.displayName ?? c.name}</option>)}
+                </Select>
+              </span>
+            )}
+          </>
+        ) : (
+          <span className="text-[var(--color-text-muted)]">no connection yet</span>
+        )}
+      </div>
+
+      {!connection && (
+        <div className="rounded-lg border border-dashed border-[var(--color-border)] px-3 py-3 text-sm">
+          <p>Connect {cloudLabel[s.cloud]} first: a component is brought in on a cloud that is already connected.</p>
+          {names.length > 0 && <p className="mt-1 text-xs text-[var(--color-text-muted)]">It can bring in: {names.join(', ')}.</p>}
+          <Link to={nextHref(nextEntry('connect'), {}, pathname)} className="mt-2 inline-flex rounded-lg bg-[var(--color-primary-600)] px-3.5 py-2 text-xs font-semibold text-white">Connect {cloudLabel[s.cloud]}</Link>
+        </div>
+      )}
+      {connection && list.isPending && <p role="status" className="text-sm text-[var(--color-text-muted)]">Reading {cloudLabel[s.cloud]} components…</p>}
+      {connection && list.isError && <p role="alert" className="text-sm text-red-700">{toProblem(list.error).message}</p>}
+      {connection && list.data && (
+        <ul className="space-y-2">
+          {list.data.components.map((entry) => {
+            const id = idOf(connection.id, entry.componentKey)
+            return (
+              <Row key={id} entry={entry} on={wantedOn({ entry, id })} disabled={disabled}
+                onToggle={(v) => onToggle(id, v)} check={checks[id]} onCheck={() => onCheck(connection.id, entry.componentKey)} outcome={outcomes[id]} />
+            )
+          })}
+        </ul>
+      )}
+    </section>
   )
 }
 

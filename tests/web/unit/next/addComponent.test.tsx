@@ -64,12 +64,16 @@ describe('Add a component (one dialog: choose, connect, bring in)', () => {
     vi.mocked(enablementApi.fetchComponentList).mockResolvedValue(list)
   })
 
-  it('uses the existing connection, shows what is on, and locks what cannot be ticked', async () => {
+  it('lists every cloud’s components, uses the existing connection, shows what is on, and locks what cannot be ticked', async () => {
     open('/next/aws?dialog=add-component')
     const d = await dialog()
     expect(await d.findByText('Acme Payments')).toBeInTheDocument()
     expect(d.getByText(/never asks for a key/)).toBeInTheDocument()
-    expect(d.getByRole('checkbox', { name: 'SQS (Supported)' })).toBeChecked()
+    // Every cloud is listed, not just the one the page is on; a cloud with no connection says so and still names what it can bring in.
+    expect(d.getByRole('region', { name: 'AWS components' })).toBeInTheDocument()
+    expect(d.getByRole('region', { name: 'Azure components' })).toHaveTextContent(/Connect Azure first/)
+    expect(d.getByRole('region', { name: 'Google Cloud components' })).toHaveTextContent(/It can bring in: Pub\/Sub/)
+    expect(await d.findByRole('checkbox', { name: 'SQS (Supported)' })).toBeChecked()
     expect(d.getByRole('checkbox', { name: 'SQS (Supported)' })).toBeDisabled()
     expect(d.getByRole('checkbox', { name: 'Kinesis, DynamoDB streams (On request)' })).toBeDisabled()
     expect(d.getByRole('checkbox', { name: 'Step Functions (Not yet validated)' })).toBeEnabled()
@@ -126,7 +130,7 @@ describe('Add a component (one dialog: choose, connect, bring in)', () => {
     vi.mocked(namespacesApi.fetchNamespaces).mockResolvedValue([])
     open('/next/gcp?dialog=add-component')
     const d = await dialog()
-    expect(await d.findByText(/connect the cloud first/)).toBeInTheDocument()
+    expect(await d.findByText(/Connect Google Cloud first/)).toBeInTheDocument()
     expect(d.getByRole('link', { name: 'Connect Google Cloud' })).toHaveAttribute('href', '/next/gcp?dialog=connect')
     expect(enablementApi.fetchComponentList).not.toHaveBeenCalled()
   })

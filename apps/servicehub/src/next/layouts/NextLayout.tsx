@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet, useParams } from 'react-router-dom'
-import { onRequestComponents, sidebarComponents, useCoverage } from '../../hooks/useCoverage'
+import { sidebarComponents, useCoverage } from '../../hooks/useCoverage'
 import { useEnabledComponents } from '../../hooks/useComponentEnablement'
 import { useComponents } from '../../hooks/useComponents'
 import { HeaderStatus } from '../components/HeaderStatus'
@@ -37,7 +37,7 @@ function Badge({ count, label }: { count: number | null; label: string }) {
  * The 5.0.0 shell (design: every `*-home` page; build-plan unit A3): header, the one left menu, and the page.
  *
  * The menu is built from two lists and nothing else: the navigation array (Home, the tools, the footer links) and the coverage
- * catalogue (the PaaS Components and "Later" sections). Nothing here names a component or a tool by hand.
+ * catalogue (the PaaS Components section). Nothing here names a component or a tool by hand.
  *
  * The header shows the caller's role, the Agent's state and the Emergency stop button (B3), in the cloud's own colour; a band sits
  * above every page while the stop is on. The badges are the Home tiles' own sums.
@@ -107,19 +107,6 @@ export function NextLayout() {
                   {row.name}
                   {row.status === 'beingValidated' && <span className="ml-auto shrink-0 whitespace-nowrap text-[11px] text-amber-800">Not yet validated</span>}
                 </MenuLink>
-              </li>
-            ))}
-          </ul>
-
-          <h2 className={groupTitle}>Later (On request)<Tip label="menu:Later" /></h2>
-          <ul>
-            {onRequestComponents(rows, cloud).map((row) => (
-              <li key={row.componentKey} className="flex items-center">
-                <span className={`${linkBase} min-w-0 flex-1 text-[var(--color-text-muted)] hover:bg-transparent`}>
-                  <span className="min-w-0">{row.name}</span>
-                  <span className="ml-auto shrink-0 whitespace-nowrap rounded border border-[var(--color-border)] px-1.5 text-[11px]">On request</span>
-                </span>
-                <Tip help={{ title: row.name, text: `${row.name} is not built yet. It is built only if someone asks for it, so nothing here depends on it.` }} />
               </li>
             ))}
           </ul>

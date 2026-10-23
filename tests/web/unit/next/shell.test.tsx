@@ -4,7 +4,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '@/lib/api/coverage'
 import type { CoverageRow } from '@/lib/api/coverage'
-import { onRequestComponents, sidebarComponents } from '@/hooks/useCoverage'
+import { sidebarComponents } from '@/hooks/useCoverage'
 import { cloudOf, parseScope } from '@/next/lib/clouds'
 import { componentTabs, nextHref, nextPages } from '@/next/nav/navigation'
 import { nextRoute } from '@/next/router'
@@ -49,9 +49,10 @@ describe('the 5.0.0 shell', () => {
     expect(within(menu).getByRole('link', { name: /Storage Queues.*Not yet validated/ })).toBeInTheDocument()
     // Another cloud's component is not listed while Azure is the scope.
     expect(within(menu).queryByRole('link', { name: 'SQS' })).not.toBeInTheDocument()
-    // "On request" is listed, and is not a link: nothing behind it exists.
-    expect(within(menu).getByText('Event Grid')).toBeInTheDocument()
-    expect(within(menu).queryByRole('link', { name: /Event Grid/ })).not.toBeInTheDocument()
+    // There is no "Later (On request)" section: what is only on request is listed in Add a component, not in the menu.
+    expect(within(menu).queryByText(/Later \(On request\)/)).not.toBeInTheDocument()
+    expect(within(menu).queryByText('Event Grid')).not.toBeInTheDocument()
+    expect(within(menu).getByRole('link', { name: /^Connections/ })).toHaveAttribute('href', '/next/connections')
     expect(within(menu).getByRole('link', { name: 'Needs your attention' })).toHaveAttribute('href', '/next/azure/attention')
     expect(within(menu).getByRole('link', { name: 'What ServiceHub covers' })).toHaveAttribute('href', '/next/coverage')
   })
@@ -111,12 +112,10 @@ describe('What ServiceHub covers', () => {
   })
 })
 
-describe('the menu’s two lists', () => {
+describe('the menu’s component list', () => {
   it('lists a component once however many places it has, and only for the cloud asked', () => {
     expect(sidebarComponents(rows, 'azure').map((r) => r.componentKey)).toEqual(['service-bus', 'storage-queues'])
     expect(sidebarComponents(rows, null).map((r) => r.componentKey)).toEqual(['service-bus', 'storage-queues', 'sqs', 'pubsub'])
-    expect(onRequestComponents(rows, 'azure').map((r) => r.name)).toEqual(['Event Grid'])
-    expect(onRequestComponents(rows, 'aws')).toEqual([])
   })
 
   it('reads the scope from the address and never guesses at a segment it does not know', () => {

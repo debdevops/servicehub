@@ -60,7 +60,7 @@ describe('a component that is not a message store (Step Functions, unit PP1/PP2)
     vi.mocked(sourcesApi.fetchFailedItems).mockResolvedValue({ componentKey: 'step-functions', items: [item(2), item(1, { status: 'TIMED_OUT' })], reachedLimit: false, incomplete: false })
   })
 
-  it('is in the menu (not under Later) and its list offers each AWS connection', async () => {
+  it('is in the menu and its list offers each AWS connection', async () => {
     open('/next/aws/c/step-functions')
     expect(await screen.findByRole('heading', { name: /Step Functions connections \(1\)/ })).toBeInTheDocument()
     const menu = screen.getByRole('navigation', { name: 'ServiceHub' })

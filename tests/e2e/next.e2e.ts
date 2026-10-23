@@ -170,12 +170,12 @@ test.describe('5.0.0 shell: a component that is not a message store (Step Functi
     expect(failed).toEqual([])
   })
 
-  test('it is in the AWS menu and not under Later (On request)', async ({ page }) => {
+  test('it is in the AWS menu, and the menu has no Later (On request) section', async ({ page }) => {
     await enterDemo(page)
     await open(page, '/next/aws')
     const menu = page.getByRole('navigation', { name: 'ServiceHub' })
     await expect(menu.getByRole('link', { name: /Step Functions/ })).toBeVisible()
-    await expect(menu.locator('li', { hasText: 'On request' }).getByText('Step Functions')).toHaveCount(0)
+    await expect(page.getByText('Later (On request)')).toHaveCount(0)
     await open(page, '/next/gcp')
     await expect(page.getByRole('navigation', { name: 'ServiceHub' }).getByRole('link', { name: /Workflows/ })).toBeVisible()
   })

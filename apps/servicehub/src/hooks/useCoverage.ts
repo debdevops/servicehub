@@ -24,9 +24,3 @@ export function sidebarComponents(rows: readonly CoverageRow[], cloud: CloudKind
       seen.add(r.componentKey),
   )
 }
-
-/** Components that exist in the catalogue but are built only if someone asks. Listed, never linked. */
-export function onRequestComponents(rows: readonly CoverageRow[], cloud: CloudKind | null): readonly CoverageRow[] {
-  const seen = new Set<string>()
-  return rows.filter((r) => r.status === 'onRequest' && (cloud === null || r.cloud === cloud) && !seen.has(r.componentKey) && seen.add(r.componentKey))
-}
