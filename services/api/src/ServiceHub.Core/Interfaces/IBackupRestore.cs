@@ -17,10 +17,17 @@ public interface IBackupRestore
     /// <summary>Checks again and, only if it passes, stages the bundle for the next start.</summary>
     Task<RestoreCheck> StageAsync(string backupId, CancellationToken cancellationToken = default);
 
-    /// <summary>The bundle waiting for the next start, if any.</summary>
+    /// <summary>
+    /// Stages "start fresh" for the next start: the current database is set aside and ServiceHub begins with an empty one. The caller
+    /// must already hold a backup of the current state (<paramref name="safetyBackupId"/>) — a fresh start is only ever undoable because of it.
+    /// Replaces any restore that was waiting.
+    /// </summary>
+    void StageFresh(string safetyBackupId);
+
+    /// <summary>The restore or fresh start waiting for the next start, if any.</summary>
     PendingRestore? Pending();
 
-    /// <summary>Unstages a pending restore. True when there was one.</summary>
+    /// <summary>Unstages whatever is waiting for the next start. True when there was something.</summary>
     bool CancelPending();
 }
 
@@ -36,7 +43,15 @@ public sealed record RestoreCheck(string BackupId, bool CanRestore, IReadOnlyLis
 /// <param name="Detail">What was found.</param>
 public sealed record RestoreCheckItem(string Name, bool Passed, string Detail);
 
-/// <summary>A restore staged for the next start.</summary>
-/// <param name="BackupId">The bundle.</param>
+/// <summary>A restore, or a fresh start, staged for the next start.</summary>
+/// <param name="BackupId">The bundle to restore; for a fresh start, the backup of the state being set aside.</param>
 /// <param name="StagedAtUtc">When it was staged.</param>
-public sealed record PendingRestore(string BackupId, DateTimeOffset StagedAtUtc);
+/// <param name="Kind"><c>restore</c> or <c>fresh</c>.</param>
+public sealed record PendingRestore(string BackupId, DateTimeOffset StagedAtUtc, string Kind = PendingRestore.RestoreKind)
+{
+    /// <summary>Kind: a backup replaces the database.</summary>
+    public const string RestoreKind = "restore";
+
+    /// <summary>Kind: the database is set aside and an empty one is made.</summary>
+    public const string FreshKind = "fresh";
+}

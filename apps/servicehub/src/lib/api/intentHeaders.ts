@@ -29,6 +29,8 @@ export const Intent = {
   PurgeMessage: 'purge-message',
   CreateBackup: 'create-backup',
   RestoreBackup: 'restore-backup',
+  StartFresh: 'start-fresh',
+  ImportBackup: 'import-backup',
   GrantRole: 'grant-role',
   RevokeRole: 'revoke-role',
   ConfigureDlqObserver: 'configure-dlq-observer',

@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
@@ -28,10 +29,17 @@ public sealed class BackupRestoreService : IBackupRestore
     public const string PendingFileName = ServiceHubDataDirectory.DatabaseFileName + ".restore-pending";
 
     private const string PendingMarkerName = PendingFileName + ".json";
+
+    /// <summary>Marks "start fresh" for the next start. Holds a <see cref="PendingRestore"/> of kind <c>fresh</c>.</summary>
+    internal const string FreshMarkerName = ServiceHubDataDirectory.DatabaseFileName + ".fresh-pending.json";
+
+    private const string ManifestFileName = "manifest.json";
+    private const long MaxManifestBytes = 1_048_576;
     private static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true };
 
     private readonly ServiceHubDbContext _db;
     private readonly IConnectionStringProtector _protector;
+    private readonly IBackupService _backups;
     private readonly IConfiguration _configuration;
     private readonly BackupOptions _options;
     private readonly TimeProvider _time;
@@ -39,11 +47,12 @@ public sealed class BackupRestoreService : IBackupRestore
 
     /// <summary>Creates the service.</summary>
     public BackupRestoreService(
-        ServiceHubDbContext db, IConnectionStringProtector protector, IConfiguration configuration, IOptions<BackupOptions> options,
+        ServiceHubDbContext db, IConnectionStringProtector protector, IBackupService backups, IConfiguration configuration, IOptions<BackupOptions> options,
         ILogger<BackupRestoreService> logger, TimeProvider? time = null)
     {
         _db = db ?? throw new ArgumentNullException(nameof(db));
         _protector = protector ?? throw new ArgumentNullException(nameof(protector));
+        _backups = backups ?? throw new ArgumentNullException(nameof(backups));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _options = (options ?? throw new ArgumentNullException(nameof(options))).Value;
         _time = time ?? TimeProvider.System;
@@ -185,21 +194,58 @@ public sealed class BackupRestoreService : IBackupRestore
         var check = await CheckCoreAsync(backupId, temp, cancellationToken).ConfigureAwait(false);
         if (!check.CanRestore) return check;
 
+        // A restore replaces everything recorded since the backup. Back the current state up first, so the restore can itself be undone
+        // from the list — not only from the file set aside at the next start. If that cannot be done, nothing is staged.
+        var safety = await _backups.CreateBackupAsync(cancellationToken).ConfigureAwait(false);
+        if (safety.IsFailure)
+        {
+            File.Delete(temp);
+            return new RestoreCheck(backupId, false, [.. check.Checks, new("The current state was backed up first", false,
+                "ServiceHub could not back up what it holds now, so it will not replace it. Nothing was staged.")]);
+        }
+
+        ClearStaged();
         File.Move(temp, Path.Combine(DataDir, PendingFileName), overwrite: true);
         await File.WriteAllTextAsync(Path.Combine(DataDir, PendingMarkerName),
             JsonSerializer.Serialize(new PendingRestore(backupId, _time.GetUtcNow()), Json), cancellationToken).ConfigureAwait(false);
-        _logger.LogWarning("Backup {BackupId} staged for restore at the next start", LogRedactor.SanitiseForLog(backupId));
-        return check;
+        _logger.LogWarning("Backup {BackupId} staged for restore at the next start; the current state is backed up as {SafetyBackupId}",
+            LogRedactor.SanitiseForLog(backupId), LogRedactor.SanitiseForLog(safety.Value.BackupId));
+        return new RestoreCheck(backupId, true, [.. check.Checks, new("The current state was backed up first", true,
+            $"What ServiceHub holds now is kept as backup {safety.Value.BackupId}, so this restore can be undone.")]);
+    }
+
+    /// <inheritdoc />
+    public void StageFresh(string safetyBackupId)
+    {
+        ClearStaged();
+        File.WriteAllText(Path.Combine(DataDir, FreshMarkerName),
+            JsonSerializer.Serialize(new PendingRestore(safetyBackupId, _time.GetUtcNow(), PendingRestore.FreshKind), Json));
+        _logger.LogWarning("A fresh start is staged for the next start; the current state is backed up as {BackupId}", LogRedactor.SanitiseForLog(safetyBackupId));
+    }
+
+    private void ClearStaged()
+    {
+        foreach (var name in new[] { PendingFileName, PendingMarkerName, FreshMarkerName })
+        {
+            File.Delete(Path.Combine(DataDir, name));
+        }
     }
 
     /// <inheritdoc />
     public PendingRestore? Pending()
     {
+        var fresh = Path.Combine(DataDir, FreshMarkerName);
+        if (File.Exists(fresh)) return ReadMarker(fresh);
+
         var marker = Path.Combine(DataDir, PendingMarkerName);
-        if (!File.Exists(Path.Combine(DataDir, PendingFileName)) || !File.Exists(marker)) return null;
+        return File.Exists(Path.Combine(DataDir, PendingFileName)) && File.Exists(marker) ? ReadMarker(marker) : null;
+    }
+
+    private static PendingRestore? ReadMarker(string path)
+    {
         try
         {
-            return JsonSerializer.Deserialize<PendingRestore>(File.ReadAllText(marker), Json);
+            return JsonSerializer.Deserialize<PendingRestore>(File.ReadAllText(path), Json);
         }
         catch (JsonException)
         {
@@ -211,8 +257,7 @@ public sealed class BackupRestoreService : IBackupRestore
     public bool CancelPending()
     {
         var had = Pending() is not null;
-        File.Delete(Path.Combine(DataDir, PendingFileName));
-        File.Delete(Path.Combine(DataDir, PendingMarkerName));
+        ClearStaged();
         return had;
     }
 
@@ -224,9 +269,29 @@ public sealed class BackupRestoreService : IBackupRestore
     public static string? ApplyPendingRestore(string dataDirectory, DateTimeOffset now, ILogger logger)
     {
         var pending = Path.Combine(dataDirectory, PendingFileName);
-        if (!File.Exists(pending)) return null;
-
         var live = Path.Combine(dataDirectory, ServiceHubDataDirectory.DatabaseFileName);
+
+        // A restore wins over a fresh marker: staging either clears the other, so both together means a half-finished edit, and the
+        // restore is the one that names a file to bring back.
+        var freshMarker = Path.Combine(dataDirectory, FreshMarkerName);
+        if (!File.Exists(pending))
+        {
+            if (!File.Exists(freshMarker)) return null;
+
+            // Fresh start: set the database aside (with its write-ahead log) and let the migrations make an empty one. Backups are not touched.
+            var setAside = $"{live}.before-fresh-{now:yyyyMMdd-HHmmss}";
+            var had = File.Exists(live);
+            foreach (var suffix in new[] { "", "-wal", "-shm" })
+            {
+                if (File.Exists(live + suffix)) File.Move(live + suffix, setAside + suffix);
+            }
+
+            File.Delete(freshMarker);
+            if (had) logger.LogWarning("Starting fresh. The database it set aside is kept at {Kept}", setAside);
+            return had ? setAside : null;
+        }
+
+        File.Delete(freshMarker);
         var kept = $"{live}.before-restore-{now:yyyyMMdd-HHmmss}";
         var replaced = File.Exists(live);
         foreach (var suffix in new[] { "", "-wal", "-shm" })
@@ -245,6 +310,128 @@ public sealed class BackupRestoreService : IBackupRestore
         // A fresh data directory (a new container): there was nothing to keep, so the log must not claim otherwise.
         logger.LogWarning("Restored the staged backup into an empty data directory.");
         return null;
+    }
+
+    /// <summary>
+    /// Writes a backup as one portable file: its manifest and its database in a zip. This is what moves a backup to another server
+    /// (or back after a fresh start on a new disk) through <see cref="ImportAsync"/> — the plain database download carries no manifest.
+    /// </summary>
+    /// <returns>False when the id is not a backup with a readable manifest and snapshot.</returns>
+    public async Task<bool> ExportAsync(string backupId, Stream output, CancellationToken cancellationToken)
+    {
+        var dir = BundlePath(backupId);
+        var manifest = dir is null ? null : ReadManifest(dir);
+        var snapshot = dir is null || manifest is null ? null : SnapshotPath(dir, manifest);
+        if (dir is null || manifest is null || snapshot is null || !File.Exists(snapshot)) return false;
+
+        using var zip = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true); // `output` is a seekable temp file, so synchronous disposal is fine
+        await CopyToEntryAsync(zip, Path.Combine(dir, ManifestFileName), ManifestFileName, cancellationToken).ConfigureAwait(false);
+        await CopyToEntryAsync(zip, snapshot, manifest.Sqlite.FileName, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    private static async Task CopyToEntryAsync(ZipArchive zip, string source, string entryName, CancellationToken cancellationToken)
+    {
+        var entry = zip.CreateEntry(entryName, CompressionLevel.Optimal);
+        await using var to = entry.Open();
+        await using var from = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read);
+        await from.CopyToAsync(to, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Takes an exported bundle into the backups folder under a new id, after proving the database in it is the one its manifest
+    /// checksummed. Only the manifest and the one database file it names are read from the zip, by name and never by path, and no more
+    /// bytes than the manifest declares are ever written. The result is an ordinary backup: check it and restore it like any other.
+    /// </summary>
+    /// <returns>The new backup id, or null with a problem saying why nothing was kept.</returns>
+    public async Task<(string? BackupId, string? Problem)> ImportAsync(Stream bundle, CancellationToken cancellationToken)
+    {
+        ZipArchive zip;
+        try
+        {
+            zip = new ZipArchive(bundle, ZipArchiveMode.Read, leaveOpen: true);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or ArgumentOutOfRangeException or IOException)
+        {
+            // A file too short to hold a zip's directory throws ArgumentOutOfRange from the seek, not InvalidData.
+            return (null, "That file is not a ServiceHub backup. Import the .zip from a backup's Export button.");
+        }
+
+        using (zip)
+        {
+            var manifestEntry = zip.GetEntry(ManifestFileName);
+            if (manifestEntry is null || manifestEntry.Length > MaxManifestBytes)
+            {
+                return (null, "That zip has no manifest.json, so it is not a ServiceHub backup.");
+            }
+
+            BackupManifest? manifest;
+            try
+            {
+                await using var stream = manifestEntry.Open();
+                manifest = await JsonSerializer.DeserializeAsync<BackupManifest>(stream, Json, cancellationToken).ConfigureAwait(false);
+            }
+            catch (JsonException)
+            {
+                manifest = null;
+            }
+
+            var name = manifest?.Sqlite.FileName;
+            if (manifest is null || string.IsNullOrWhiteSpace(name) || name != Path.GetFileName(name) || name is "." or "..")
+            {
+                return (null, "That backup's manifest is damaged, so it was not imported.");
+            }
+
+            var dbEntry = zip.GetEntry(name);
+            if (dbEntry is null)
+            {
+                return (null, "That zip does not hold the database its manifest names.");
+            }
+
+            Directory.CreateDirectory(BackupRoot);
+            var baseId = $"imported-{_time.GetUtcNow():yyyyMMdd-HHmmss'Z'}";
+            var id = baseId;
+            for (var n = 1; Directory.Exists(Path.Combine(BackupRoot, id)); n++) id = $"{baseId}-{n}";
+            var dir = Path.Combine(BackupRoot, id);
+            Directory.CreateDirectory(dir);
+            try
+            {
+                var target = Path.Combine(dir, name);
+                using (var input = dbEntry.Open())
+                using (var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                using (var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
+                {
+                    var buffer = new byte[81920];
+                    long total = 0;
+                    int read;
+                    while ((read = await input.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
+                    {
+                        total += read;
+                        if (total > manifest.Sqlite.SizeBytes) throw new InvalidDataException("The database is larger than its manifest says.");
+                        hash.AppendData(buffer, 0, read);
+                        await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                    }
+
+                    if (!string.Equals(Convert.ToHexStringLower(hash.GetHashAndReset()), manifest.Sqlite.Sha256, StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new InvalidDataException("The database does not match its manifest's checksum.");
+                    }
+                }
+
+                // The folder name is the id everywhere else (the list, download, restore), so the manifest must say the same.
+                await File.WriteAllTextAsync(Path.Combine(dir, ManifestFileName),
+                    JsonSerializer.Serialize(manifest with { BackupId = id }, Json), cancellationToken).ConfigureAwait(false);
+                _logger.LogWarning("Imported backup {BackupId}", LogRedactor.SanitiseForLog(id));
+                return (id, null);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or IOException)
+            {
+                try { Directory.Delete(dir, recursive: true); } catch (IOException) { /* nothing more to do */ }
+                return (null, ex is InvalidDataException
+                    ? $"That backup was damaged or altered, so it was not imported. {ex.Message}"
+                    : "ServiceHub could not write the imported backup, so nothing was kept.");
+            }
+        }
     }
 
     private async Task<RestoreCheckItem> VerifyChainsAsync(string snapshot, CancellationToken cancellationToken)

@@ -64,12 +64,46 @@ describe('Settings → Backup', () => {
 
   it('shows a staged restore and lets it be cancelled', async () => {
     const user = userEvent.setup()
-    vi.mocked(backup.fetchBackups).mockResolvedValue({ backups: [one], pending: { backupId: one.backupId, stagedAtUtc: '2026-09-26T12:05:00Z' } })
+    vi.mocked(backup.fetchBackups).mockResolvedValue({ backups: [one], pending: { backupId: one.backupId, stagedAtUtc: '2026-09-26T12:05:00Z', kind: 'restore' } })
     vi.mocked(backup.cancelRestore).mockResolvedValue()
     wrap()
     expect(await screen.findByText(/will replace the database at the next start/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Cancel the restore' }))
     expect(backup.cancelRestore).toHaveBeenCalled()
+  })
+
+  it('starts fresh only after START FRESH is typed, and says nothing is deleted', async () => {
+    const user = userEvent.setup()
+    vi.mocked(backup.startFresh).mockResolvedValue({ backupId: 'b2', pending: { backupId: 'b2', stagedAtUtc: '2026-10-25T10:00:00Z', kind: 'fresh' } })
+    wrap()
+    await user.click(await screen.findByRole('button', { name: /Start fresh/ }))
+    expect(screen.getByText(/not deleted/)).toBeInTheDocument()
+    const go = screen.getByRole('button', { name: /start fresh at the next start/ })
+    expect(go).toBeDisabled()
+    await user.type(screen.getByLabelText('Type START FRESH to confirm'), 'START FRESH')
+    await user.click(go)
+    expect(backup.startFresh).toHaveBeenCalledWith('START FRESH')
+  })
+
+  it('shows a staged fresh start with the backup that keeps the old state, and lets it be cancelled', async () => {
+    const user = userEvent.setup()
+    vi.mocked(backup.fetchBackups).mockResolvedValue({ backups: [one], pending: { backupId: 'b2', stagedAtUtc: '2026-10-25T10:00:00Z', kind: 'fresh' } })
+    vi.mocked(backup.cancelRestore).mockResolvedValue()
+    wrap()
+    await screen.findByRole('button', { name: 'Cancel the fresh start' })
+    expect(screen.getByRole('status')).toHaveTextContent(/start fresh at the next start.*kept as backup b2/)
+    await user.click(screen.getByRole('button', { name: 'Cancel the fresh start' }))
+    expect(backup.cancelRestore).toHaveBeenCalled()
+  })
+
+  it('imports an exported backup and opens its restore checks', async () => {
+    const user = userEvent.setup()
+    const file = new File(['zip'], 'servicehub-backup.zip', { type: 'application/zip' })
+    vi.mocked(backup.importBackup).mockResolvedValue({ backupId: 'imported-1', canRestore: true, checks: [] })
+    wrap()
+    await user.upload(await screen.findByLabelText('Choose an exported backup (.zip)'), file)
+    expect(backup.importBackup).toHaveBeenCalledWith(file)
+    expect(await screen.findByText(/imported-1/)).toBeInTheDocument()
   })
 
   it('is Admin only and says so', async () => {

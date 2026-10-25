@@ -82,6 +82,12 @@ public static class IntentHeaders
     /// <summary>Intent for staging a backup to be restored at the next start.</summary>
     public const string RestoreBackup = "restore-backup";
 
+    /// <summary>Intent for staging a fresh start: the current database is set aside at the next start and an empty one begins.</summary>
+    public const string StartFresh = "start-fresh";
+
+    /// <summary>Intent for bringing a backup file from elsewhere into the backups folder.</summary>
+    public const string ImportBackup = "import-backup";
+
     /// <summary>Intent for making an Auto Replay rule — it starts on, so it hands a machine the right to replay.</summary>
     public const string CreateRule = "create-rule";
 

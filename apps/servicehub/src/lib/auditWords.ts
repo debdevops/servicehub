@@ -11,6 +11,8 @@ export const auditActionWords: Readonly<Record<string, string>> = {
   'Message.Send': 'Sent a message',
   'Backup.Create': 'Took a backup',
   'Backup.Restore': 'Staged a backup restore',
+  'Backup.StartFresh': 'Staged a fresh start',
+  'Backup.Import': 'Imported a backup',
   'Governance.Grant': 'Granted a role',
   'Governance.Revoke': 'Revoked a role',
   'Agent.Pause': 'Paused an agent',

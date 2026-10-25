@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.IO.Compression;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
@@ -160,5 +161,104 @@ public sealed class BackupApiTests : IDisposable
             (await client.SendAsync(Req(HttpMethod.Post, $"/api/v1/admin/backup/{id}/restore", "restore-backup", new { confirm = "RESTORE" })))
                 .StatusCode.Should().Be(HttpStatusCode.Conflict);
         }
+    }
+
+    [Fact]
+    public async Task Start_fresh_backs_up_first_begins_empty_at_the_next_start_and_the_backup_brings_everything_back()
+    {
+        string backupId;
+        using (var first = ServiceHubApiFactory.Reusing(_dir))
+        {
+            var client = first.CreateClient();
+            await Stop(client, on: true);
+            await Stop(client, on: false);
+
+            (await client.SendAsync(Req(HttpMethod.Post, "/api/v1/admin/backup/start-fresh", body: new { confirm = "START FRESH" })))
+                .StatusCode.Should().Be((HttpStatusCode)428);
+            (await client.SendAsync(Req(HttpMethod.Post, "/api/v1/admin/backup/start-fresh", "start-fresh", new { confirm = "yes" })))
+                .StatusCode.Should().Be(HttpStatusCode.BadRequest, "starting fresh must be deliberate");
+            var staged = await client.SendAsync(Req(HttpMethod.Post, "/api/v1/admin/backup/start-fresh", "start-fresh", new { confirm = "START FRESH" }));
+            staged.StatusCode.Should().Be(HttpStatusCode.OK);
+            backupId = (await Json(staged)).GetProperty("backupId").GetString()!;
+
+            var list = await Json(await client.GetAsync("/api/v1/admin/backup"));
+            list.GetProperty("pending").GetProperty("kind").GetString().Should().Be("fresh");
+            list.GetProperty("backups").EnumerateArray().Select(b => b.GetProperty("backupId").GetString()).Should().Contain(backupId);
+            (await LedgerEvents(client)).Should().Be(2, "nothing is swapped under a running server");
+        }
+
+        ServiceHubApiFactory.ClearPoolFor(_dir);
+        using (var second = ServiceHubApiFactory.Reusing(_dir))
+        {
+            var client = second.CreateClient();
+            (await LedgerEvents(client)).Should().Be(0, "it started as a new installation");
+            Directory.EnumerateFiles(_dir, "servicehub.db.before-fresh-*").Should().NotBeEmpty("the old database is kept, never deleted");
+            var list = await Json(await client.GetAsync("/api/v1/admin/backup"));
+            list.GetProperty("pending").ValueKind.Should().Be(JsonValueKind.Null);
+            list.GetProperty("backups").EnumerateArray().Select(b => b.GetProperty("backupId").GetString()).Should().Contain(backupId, "backups survive a fresh start");
+
+            var restore = await client.SendAsync(Req(HttpMethod.Post, $"/api/v1/admin/backup/{backupId}/restore", "restore-backup", new { confirm = "RESTORE" }));
+            restore.StatusCode.Should().Be(HttpStatusCode.OK, await restore.Content.ReadAsStringAsync());
+            (await Json(restore)).GetProperty("checks").EnumerateArray().Last().GetProperty("name").GetString()
+                .Should().Contain("backed up first", "a restore keeps what it replaces as a backup too");
+        }
+
+        ServiceHubApiFactory.ClearPoolFor(_dir);
+        using var third = ServiceHubApiFactory.Reusing(_dir);
+        var chain = await Json(await third.CreateClient().GetAsync("/api/v1/recovery/chain"));
+        chain.GetProperty("isValid").GetBoolean().Should().BeTrue();
+        chain.GetProperty("eventsChecked").GetInt64().Should().Be(2, "the backup taken before the fresh start came back");
+    }
+
+    [Fact]
+    public async Task An_exported_backup_imports_as_a_new_restorable_backup_and_a_tampered_one_is_refused()
+    {
+        using var host = ServiceHubApiFactory.Reusing(_dir);
+        var client = host.CreateClient();
+        await Stop(client, on: true);
+        var id = (await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/v1/admin/backup", "create-backup")))).GetProperty("backupId").GetString()!;
+
+        var export = await client.GetAsync($"/api/v1/admin/backup/{id}/export");
+        export.StatusCode.Should().Be(HttpStatusCode.OK);
+        var zipBytes = await export.Content.ReadAsByteArrayAsync();
+
+        async Task<HttpResponseMessage> Import(byte[] bytes, string? intent = "import-backup")
+        {
+            var form = new MultipartFormDataContent { { new ByteArrayContent(bytes), "file", "backup.zip" } };
+            var r = new HttpRequestMessage(HttpMethod.Post, "/api/v1/admin/backup/import") { Content = form };
+            if (intent is not null) r.Headers.Add("X-ServiceHub-Intent", intent);
+            return await client.SendAsync(r);
+        }
+
+        (await Import(zipBytes, intent: null)).StatusCode.Should().Be((HttpStatusCode)428);
+        (await Import([1, 2, 3])).StatusCode.Should().Be(HttpStatusCode.BadRequest, "not a zip");
+
+        var imported = await Import(zipBytes);
+        imported.StatusCode.Should().Be(HttpStatusCode.OK, await imported.Content.ReadAsStringAsync());
+        var check = await Json(imported);
+        check.GetProperty("backupId").GetString().Should().StartWith("imported-");
+        check.GetProperty("canRestore").GetBoolean().Should().BeTrue(check.GetRawText());
+        (await Json(await client.GetAsync("/api/v1/admin/backup"))).GetProperty("backups").GetArrayLength().Should().Be(2);
+
+        // One byte of the database changed after export: the checksum in the manifest no longer matches, so nothing is kept.
+        using var tampered = new MemoryStream();
+        using (var src = new ZipArchive(new MemoryStream(zipBytes)))
+        using (var dst = new ZipArchive(tampered, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            foreach (var e in src.Entries)
+            {
+                using var buf = new MemoryStream();
+                await using (var s = e.Open()) await s.CopyToAsync(buf);
+                var data = buf.ToArray();
+                if (e.Name.EndsWith(".db")) data[^1] ^= 0xFF;
+                await using var o = dst.CreateEntry(e.Name).Open();
+                await o.WriteAsync(data);
+            }
+        }
+
+        var refused = await Import(tampered.ToArray());
+        refused.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await Json(await client.GetAsync("/api/v1/admin/backup"))).GetProperty("backups").GetArrayLength().Should().Be(2, "a refused import leaves nothing behind");
+        Directory.EnumerateDirectories(Path.Combine(_dir, "backups")).Should().HaveCount(2);
     }
 }

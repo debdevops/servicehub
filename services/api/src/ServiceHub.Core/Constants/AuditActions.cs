@@ -48,6 +48,12 @@ public static class AuditActions
     /// <summary>A backup was staged to be restored at the next start, or unstaged.</summary>
     public const string BackupRestore = "Backup.Restore";
 
+    /// <summary>A fresh start was staged (after a backup of the current state), or unstaged.</summary>
+    public const string BackupStartFresh = "Backup.StartFresh";
+
+    /// <summary>A backup file from elsewhere was imported.</summary>
+    public const string BackupImport = "Backup.Import";
+
     /// <summary>An Auto Replay rule was made. <c>ResourceName</c> is the rule's id and name.</summary>
     public const string RuleCreate = "Rule.Create";
 
