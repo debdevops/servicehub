@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { checkComponent, fetchComponentList, fetchEnabledComponents, setComponent } from '../lib/api/componentEnablement'
 
 export const componentKeys = {
@@ -9,7 +9,9 @@ export const componentKeys = {
 
 /** What can be brought in on one connection, and what already is. */
 export function useComponentList(namespaceId: string | undefined) {
-  return useQuery({ queryKey: componentKeys.list(namespaceId ?? ''), queryFn: () => fetchComponentList(namespaceId!), enabled: namespaceId !== undefined })
+  return useQuery({ queryKey: componentKeys.list(namespaceId ?? ''), queryFn: () => fetchComponentList(namespaceId!), enabled: namespaceId !== undefined,
+    // Switching connection keeps the rows on screen until the new list arrives, so what the person is working on does not jump.
+    placeholderData: keepPreviousData })
 }
 
 /** Every component ticked on any connection: the menu lists a read-on-demand component only where someone turned it on. */

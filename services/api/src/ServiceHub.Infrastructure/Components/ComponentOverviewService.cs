@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using ServiceHub.Core.Components;
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
@@ -90,8 +91,15 @@ public sealed class ComponentOverviewService : IComponentOverviewService
         var reads = await Task.WhenAll(connected.Select(n => ReadAsync(n, cancellationToken))).ConfigureAwait(false);
 
         var result = new List<ConnectedComponent>();
-        foreach (var (ns, entities, error) in reads)
+        foreach (var (ns, entities, error, noStore) in reads)
         {
+            // A connection with no store credential (an Azure sign-in connection, made only to read Logic Apps or Event Grid) has no queues
+            // to count. Listing a "Service Bus: can't reach" row for it would say something is broken when nothing is.
+            if (noStore)
+            {
+                continue;
+            }
+
             var caps = _router.Resolve(ns.Provider).Capabilities;
             var kind = ComponentCatalog.CloudOf(ns.Provider)!.Value;
             var mine = recorded.Where(m => m.NamespaceId == ns.Id).ToList();
@@ -168,12 +176,17 @@ public sealed class ComponentOverviewService : IComponentOverviewService
         string.Equals(item.Entity, entity.Parent is null ? entity.Name : $"{entity.Parent}{SubscriptionSegment}{entity.Name}", StringComparison.Ordinal)
         || string.Equals(item.Entity, entity.Name, StringComparison.Ordinal);
 
-    private async Task<(Namespace Ns, IReadOnlyList<CloudEntity>? Entities, string? Error)> ReadAsync(Namespace ns, CancellationToken cancellationToken)
+    private async Task<(Namespace Ns, IReadOnlyList<CloudEntity>? Entities, string? Error, bool NoStore)> ReadAsync(Namespace ns, CancellationToken cancellationToken)
     {
         try
         {
             var listed = await _router.Resolve(ns.Provider).ListEntitiesAsync(ns.Id, cancellationToken).ConfigureAwait(false);
-            return listed.IsSuccess ? (ns, listed.Value, null) : (ns, null, Safe(listed.Error.Message));
+            if (listed.IsSuccess)
+            {
+                return (ns, listed.Value, null, false);
+            }
+
+            return (ns, null, Safe(listed.Error.Message), listed.Error.Code == ErrorCodes.Namespace.ConnectionStringRequired);
         }
         catch (OperationCanceledException)
         {
@@ -182,7 +195,7 @@ public sealed class ComponentOverviewService : IComponentOverviewService
 #pragma warning disable CA1031 // One unreachable cloud must not take down the whole table: it becomes a "Can't reach" row.
         catch (Exception ex)
         {
-            return (ns, null, Safe(ex.Message));
+            return (ns, null, Safe(ex.Message), false);
         }
 #pragma warning restore CA1031
     }

@@ -3,13 +3,13 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Copy, Loader2, ShieldCheck, TriangleAlert, XCircle } from 'lucide-react'
 import { useMe } from '../../hooks/useIdentity'
-import { useNamespaces } from '../../hooks/useNamespaces'
+import { useConnectNamespace, useNamespaces } from '../../hooks/useNamespaces'
 import { componentKeys, useComponentList } from '../../hooks/useComponentEnablement'
 import { useCoverage } from '../../hooks/useCoverage'
 import { toProblem } from '../../lib/api/client'
 import { checkComponent, setComponent, type ComponentCheck, type ComponentEntry } from '../../lib/api/componentEnablement'
 import { readsOnDemand, type CloudKind, type DetectionKind } from '../../lib/api/coverage'
-import type { Namespace } from '../../lib/api/namespaces'
+import type { AuthType, Namespace } from '../../lib/api/namespaces'
 import { permission } from '../../lib/permissions'
 import { NotAllowed } from '../../components/ui/NotAllowed'
 import { Select } from '../../components/ui/Select'
@@ -31,9 +31,19 @@ import type { NextOverlayBodyProps } from './registry'
  */
 type Outcome = { readonly ok: boolean; readonly message: string }
 type CheckState = ComponentCheck | 'checking'
+/** Where Connect is: which component's click is working, and what went wrong the last time. */
+type SignInState = { readonly connecting: string | null; readonly error: string | null }
 
 const CLOUDS: readonly CloudKind[] = ['azure', 'aws', 'gcp']
 const idOf = (namespaceId: string, componentKey: string) => `${namespaceId}|${componentKey}`
+
+/**
+ * The Azure components that are read through Azure Resource Manager and so need a connection that signs in as an identity, not a Service Bus
+ * connection string. The Connect button on their row makes (or switches to) that connection. Their setup text says the same in words.
+ */
+const ENTRA_COMPONENTS: ReadonlySet<string> = new Set(['event-grid', 'logic-apps'])
+const ENTRA_AUTH: ReadonlySet<AuthType> = new Set<AuthType>(['defaultAzureCredential', 'managedIdentity'])
+const isEntra = (n: Namespace | undefined) => n !== undefined && ENTRA_AUTH.has(n.authType)
 
 /** One cloud's connection (the chosen one, or the one the dialog was opened for, or the first) and what can be brought in on it. */
 function useCloud(cloud: CloudKind, all: readonly Namespace[], wanted: string | null) {
@@ -54,6 +64,9 @@ export default function AddComponentDialog({ close }: NextOverlayBodyProps) {
   const may = permission(useMe().data, 'Admin', 'add or remove a component')
   const queryClient = useQueryClient()
   const coverage = useCoverage()
+  const connectMutation = useConnectNamespace()
+  const [connecting, setConnecting] = useState<string | null>(null) // the component whose Connect is working
+  const [connectError, setConnectError] = useState<string | null>(null)
 
   const azure = useCloud('azure', all, wanted)
   const aws = useCloud('aws', all, wanted)
@@ -82,10 +95,30 @@ export default function AddComponentDialog({ close }: NextOverlayBodyProps) {
   const runCheck = (namespaceId: string, key: string) => {
     const id = idOf(namespaceId, key)
     setChecks((c) => ({ ...c, [id]: 'checking' }))
-    checkComponent(namespaceId, key).then(
+    return checkComponent(namespaceId, key).then(
       (result) => setChecks((c) => ({ ...c, [id]: result })),
       (error: unknown) => setChecks((c) => ({ ...c, [id]: { componentKey: key, ok: false, reason: toProblem(error).message, permissions: [] } })),
     )
+  }
+
+  /**
+   * One click: use the Azure sign-in connection (made now if there is none), tick the component on it and run its check. No popup and no key:
+   * the connection signs in as the account ServiceHub itself runs under, so the check says plainly which role is missing, if any.
+   */
+  const connectEntra = async (componentKey: string) => {
+    setConnecting(componentKey)
+    setConnectError(null)
+    try {
+      const existing = azure.connections.find(isEntra)
+      const connection = existing ?? await connectMutation.mutateAsync({ name: 'azure-entra', provider: 'azure', authType: 'defaultAzureCredential', displayName: 'Azure sign-in', environment: 'dev' })
+      azure.setChosen(connection.id)
+      setDesired((d) => ({ ...d, [idOf(connection.id, componentKey)]: true }))
+      await runCheck(connection.id, componentKey) // Connect stays 'working' until the check has answered
+    } catch (error) {
+      setConnectError(toProblem(error).message)
+    } finally {
+      setConnecting(null)
+    }
   }
 
   const apply = async () => {
@@ -131,7 +164,7 @@ export default function AddComponentDialog({ close }: NextOverlayBodyProps) {
       {sections.map((s) => (
         <CloudSection key={s.cloud} s={s} pathname={pathname} active={s.cloud === active} coverageNames={coverageNames(coverage.data?.rows ?? [], s.cloud)}
           disabled={!may.allowed || saving || finished} wantedOn={wantedOn} checks={checks} outcomes={outcomes}
-          onToggle={(id, v) => setDesired((d) => ({ ...d, [id]: v }))} onCheck={runCheck} />
+          onToggle={(id, v) => setDesired((d) => ({ ...d, [id]: v }))} onCheck={runCheck} onConnectEntra={connectEntra} signIn={{ connecting, error: connectError }} />
       ))}
 
       <div className="sticky bottom-0 flex items-center gap-3 border-t border-[var(--color-border)] bg-[var(--color-surface)] pt-3">
@@ -164,11 +197,12 @@ function coverageNames(rows: readonly { cloud: CloudKind; componentKey: string; 
     .map((r) => (r.status === 'onRequest' ? `${r.name} (on request)` : r.name))
 }
 
-function CloudSection({ s, pathname, active, coverageNames: names, disabled, wantedOn, checks, outcomes, onToggle, onCheck }: {
+function CloudSection({ s, pathname, active, coverageNames: names, disabled, wantedOn, checks, outcomes, onToggle, onCheck, onConnectEntra, signIn }: {
   s: CloudData; pathname: string; active: boolean; coverageNames: readonly string[]; disabled: boolean
   wantedOn: (r: { entry: ComponentEntry; id: string }) => boolean
   checks: Readonly<Record<string, CheckState>>; outcomes: Readonly<Record<string, Outcome>>
   onToggle: (id: string, value: boolean) => void; onCheck: (namespaceId: string, key: string) => void
+  onConnectEntra: (componentKey: string) => Promise<void>; signIn: SignInState
 }) {
   const { connection, connections, list } = s
   const entries = list.data?.components ?? []
@@ -209,8 +243,9 @@ function CloudSection({ s, pathname, active, coverageNames: names, disabled, wan
           {list.data.components.map((entry) => {
             const id = idOf(connection.id, entry.componentKey)
             return (
-              <Row key={id} entry={entry} on={wantedOn({ entry, id })} disabled={disabled}
-                onToggle={(v) => onToggle(id, v)} check={checks[id]} onCheck={() => onCheck(connection.id, entry.componentKey)} outcome={outcomes[id]} />
+              <Row key={entry.componentKey} entry={entry} on={wantedOn({ entry, id })} disabled={disabled}
+                onToggle={(v) => onToggle(id, v)} check={checks[id]} onCheck={() => onCheck(connection.id, entry.componentKey)} outcome={outcomes[id]}
+                needsSignIn={s.cloud === 'azure' && ENTRA_COMPONENTS.has(entry.componentKey)} signedIn={isEntra(connection)} signIn={signIn} onConnect={() => onConnectEntra(entry.componentKey)} />
             )
           })}
         </ul>
@@ -219,9 +254,10 @@ function CloudSection({ s, pathname, active, coverageNames: names, disabled, wan
   )
 }
 
-function Row({ entry: e, on, disabled, onToggle, check, onCheck, outcome }: {
+function Row({ entry: e, on, disabled, onToggle, check, onCheck, outcome, needsSignIn, signedIn, signIn, onConnect }: {
   entry: ComponentEntry; on: boolean; disabled: boolean; onToggle: (value: boolean) => void
   check: ComponentCheck | 'checking' | undefined; onCheck: () => void; outcome: Outcome | undefined
+  needsSignIn: boolean; signedIn: boolean; signIn: SignInState; onConnect: () => Promise<void>
 }) {
   const locked = e.state === 'alwaysOn' || e.state === 'included' || e.state === 'unavailable'
   const expanded = e.canToggle && e.state === 'off' && on
@@ -248,7 +284,7 @@ function Row({ entry: e, on, disabled, onToggle, check, onCheck, outcome }: {
           {e.needs && !locked && <p className="mt-1 text-xs"><span className="text-[var(--color-text-muted)]">It needs<Tip label="addc:needs" /> </span>{e.needs}</p>}
           {e.state === 'alwaysOn' && <p className="mt-1 text-xs text-[var(--color-text-muted)]">Watched on every connection of this cloud. Removing the connection removes it.</p>}
 
-          {expanded && <Setup entry={e} check={check} onCheck={onCheck} />}
+          {expanded && <Setup entry={e} check={check} onCheck={onCheck} needsSignIn={needsSignIn} signedIn={signedIn} signIn={signIn} onConnect={onConnect} disabled={disabled} />}
 
           {outcome && (
             <p role={outcome.ok ? 'status' : 'alert'} className={`mt-2 flex items-start gap-1.5 text-sm font-medium ${outcome.ok ? 'text-green-800' : 'text-red-800'}`}>
@@ -262,9 +298,38 @@ function Row({ entry: e, on, disabled, onToggle, check, onCheck, outcome }: {
   )
 }
 
-function Setup({ entry: e, check, onCheck }: { entry: ComponentEntry; check: ComponentCheck | 'checking' | undefined; onCheck: () => void }) {
+/**
+ * One click to connect Azure sign-in: nothing to copy, no popup, no key. The panel stays where it is the whole time: while it works the
+ * button is disabled and says so, and once connected it stays, disabled, saying the connection is made. A failure is said in words and the
+ * button is enabled again.
+ */
+function ConnectSignIn({ componentKey, onConnect, disabled, signedIn, signIn }: {
+  componentKey: string; onConnect: () => Promise<void>; disabled: boolean; signedIn: boolean; signIn: SignInState
+}) {
+  const working = signIn.connecting === componentKey
+  const label = working ? 'Connecting…' : signedIn ? 'Connected with Azure sign-in' : 'Connect with Azure sign-in'
+  return (
+    <section className="rounded-lg border border-[var(--color-primary-600)] bg-[var(--color-surface)] p-3">
+      <h4 className="font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Connect in one click</h4>
+      <p className="mt-1">This component is read with <strong>Azure sign-in</strong>, not a connection string. Connect uses the Azure account ServiceHub runs under (the one from <code>az login</code>). <strong>No key, no password and no pop-up; nothing secret is stored.</strong> It then checks access, and if a role is missing it says which.</p>
+      <button type="button" onClick={() => void onConnect()} disabled={working || signedIn || disabled} aria-busy={working}
+        className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-primary-600)] px-3.5 py-1.5 text-xs font-semibold text-white disabled:opacity-60">
+        {working ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : signedIn ? <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> : null} {label}
+      </button>
+      {working && <p role="status" className="mt-2 text-[var(--color-text-muted)]">Work in progress: making the Azure sign-in connection and checking what it can read. This takes a few seconds.</p>}
+      {signedIn && !working && <p role="status" className="mt-2 text-green-800">Connected. The result of the access check is below; when it is green, press <strong>Add</strong>.</p>}
+      {signIn.error && !working && <p role="alert" className="mt-2 flex items-start gap-1.5 font-medium text-red-800"><TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />{signIn.error}</p>}
+    </section>
+  )
+}
+
+function Setup({ entry: e, check, onCheck, needsSignIn, signedIn, signIn, onConnect, disabled }: {
+  entry: ComponentEntry; check: ComponentCheck | 'checking' | undefined; onCheck: () => void
+  needsSignIn: boolean; signedIn: boolean; signIn: SignInState; onConnect: () => Promise<void>; disabled: boolean
+}) {
   return (
     <div className="mt-3 space-y-3 border-t border-[var(--color-border)] pt-3 text-xs">
+      {needsSignIn && <ConnectSignIn componentKey={e.componentKey} onConnect={onConnect} disabled={disabled} signedIn={signedIn} signIn={signIn} />}
       <section>
         <h4 className="font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Connection</h4>
         <p>{e.access === 'sameConnection' ? <>Uses your existing connection. <strong>No key to paste.</strong></> : <>This is a separate resource, so it has its own credential. Connect it in <strong>Connect a cloud</strong>; the credential is stored encrypted and never shown again.</>}</p>

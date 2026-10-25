@@ -88,7 +88,7 @@ export default function HandOffPanel({ close }: NextOverlayBodyProps) {
 
       <section aria-label="What you can do">
         <h3 className="mb-2 text-sm font-bold">What you can do<Tip label="section:What you can do" /></h3>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 @lg:grid-cols-3">
           <div className="rounded-xl border border-[var(--color-border)] p-3 text-sm">
             <p className="flex items-center font-bold">Replay it again<Tip label="choice:Replay it again" /></p>
             <p className="mt-1 text-xs text-[var(--color-text-muted)]">Opens the Replay preview. Only useful if the cause was fixed.</p>

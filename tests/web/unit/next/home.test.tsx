@@ -5,6 +5,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as agentsApi from '@/lib/api/agents'
 import * as componentsApi from '@/lib/api/components'
+import * as enablementApi from '@/lib/api/componentEnablement'
 import * as coverageApi from '@/lib/api/coverage'
 import * as identityApi from '@/lib/api/identity'
 import * as namespacesApi from '@/lib/api/namespaces'
@@ -22,7 +23,8 @@ vi.mock('@/lib/api/agents', async (o) => ({ ...(await o<typeof agentsApi>()), fe
 vi.mock('@/lib/api/settings', async (o) => ({ ...(await o<typeof settingsApi>()), fetchEmergencyStop: vi.fn() }))
 vi.mock('@/lib/api/pendingWork', async (o) => ({ ...(await o<typeof pendingApi>()), fetchPendingWork: vi.fn() }))
 vi.mock('@/lib/api/signatures', async (o) => ({ ...(await o<typeof signaturesApi>()), fetchSignatures: vi.fn(), fetchSignatureTrust: vi.fn() }))
-vi.mock('@/lib/api/namespaces', async (o) => ({ ...(await o<typeof namespacesApi>()), lookAtDeadLetters: vi.fn() }))
+vi.mock('@/lib/api/namespaces', async (o) => ({ ...(await o<typeof namespacesApi>()), lookAtDeadLetters: vi.fn(), fetchNamespaces: vi.fn() }))
+vi.mock('@/lib/api/componentEnablement', async (o) => ({ ...(await o<typeof enablementApi>()), fetchEnabledComponents: vi.fn() }))
 
 const now = '2026-10-18T10:00:00Z'
 const generatedAtUtc = now
@@ -60,11 +62,24 @@ describe('Home for one cloud (unit C1)', () => {
     vi.mocked(coverageApi.fetchCoverage).mockResolvedValue({ rows: coverageRows })
     vi.mocked(componentsApi.fetchComponents).mockResolvedValue({ components: [component()], generatedAtUtc })
     vi.mocked(identityApi.fetchMe).mockResolvedValue(me())
+    vi.mocked(namespacesApi.fetchNamespaces).mockResolvedValue([])
+    vi.mocked(enablementApi.fetchEnabledComponents).mockResolvedValue([])
     vi.mocked(agentsApi.fetchAgents).mockResolvedValue([agent()])
     vi.mocked(settingsApi.fetchEmergencyStop).mockResolvedValue({ active: false, by: null, at: null, reason: null })
     vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue(page([approval()]))
     vi.mocked(signaturesApi.fetchSignatures).mockResolvedValue(signaturePage([signature()]))
     vi.mocked(signaturesApi.fetchSignatureTrust).mockResolvedValue(trust())
+  })
+
+  it('lists a component added on request (Event Grid) in the table, beside the ones read from the queue store', async () => {
+    vi.mocked(namespacesApi.fetchNamespaces).mockResolvedValue([{ id: 'ns-entra', name: 'azure-entra', displayName: 'Azure sign-in', provider: 'azure' } as namespacesApi.Namespace])
+    vi.mocked(enablementApi.fetchEnabledComponents).mockResolvedValue([{ namespaceId: 'ns-entra', cloud: 'azure', componentKey: 'event-grid' }])
+    open('/next/azure')
+
+    const grid = await screen.findByRole('heading', { name: /Azure PaaS components \(2\)/ })
+    expect(grid).toBeInTheDocument()
+    const row = (await screen.findByRole('link', { name: /View Azure sign-in/ })).closest('tr')!
+    expect(within(row).getByText('Read on request')).toBeInTheDocument()
   })
 
   it('asks for exactly its own cloud, from the two reads that feed every number', async () => {

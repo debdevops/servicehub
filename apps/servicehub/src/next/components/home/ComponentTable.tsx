@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import type { ConnectedComponent } from '../../../lib/api/components'
+import type { CloudKind } from '../../../lib/api/coverage'
 import { formatWhen } from '../../../lib/format'
 import { nextEntry, nextHref } from '../../nav/navigation'
 import { Pager } from '../../../components/ui/Pager'
@@ -14,6 +15,7 @@ const th = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-mut
 const td = 'px-3 py-2.5 align-top text-sm text-[var(--color-text)]'
 const tone = { bad: 'bg-red-50 text-red-700', warn: 'bg-amber-50 text-amber-800', ok: 'text-[var(--color-text-muted)]' } as const
 
+type Entry = { readonly kind: 'store'; readonly c: ConnectedComponent } | { readonly kind: 'demand'; readonly o: OnDemandRow }
 const key = (c: ConnectedComponent) => `${c.namespaceId}:${c.componentKey}`
 
 /** The places inside one component, paged on their own: a connection can hold hundreds of queues. */
@@ -57,13 +59,23 @@ function EntityTable({ component: c, showRecorded, now, detail }: {
   )
 }
 
+/** An added run-history component: read on request, so it has no counts of its own to show here. */
+export interface OnDemandRow {
+  readonly cloud: CloudKind
+  readonly namespaceId: string
+  readonly componentKey: string
+  readonly componentName: string
+  readonly connectionName: string
+}
+
 /**
  * One top row per connected component, expandable to its entities (build-plan unit C1). "Recorded" is a column only when some
  * component is not watched. Status is calculated; "Can’t reach" is also said in the Connection column, so it is never hidden
  * behind "Needs you".
  */
-export function ComponentTable({ components, cloudName, canConnect = true, lookNow }: {
+export function ComponentTable({ components, cloudName, canConnect = true, lookNow, onDemand = [] }: {
   components: readonly ConnectedComponent[]
+  onDemand?: readonly OnDemandRow[]
   cloudName: string
   canConnect?: boolean
   lookNow?: React.ReactNode
@@ -73,14 +85,15 @@ export function ComponentTable({ components, cloudName, canConnect = true, lookN
   const showRecorded = components.some((c) => !c.watched)
   const toggle = (id: string) => setOpen((s) => { const next = new Set(s); if (!next.delete(id)) next.add(id); return next })
   const now = new Date()
-  const { items: pageRows, pager } = usePagedList(components)
+  // Both kinds of row are paged as one list, so the count in the heading and the pager's "1–N of N" cannot disagree.
+  const { items: pageRows, pager } = usePagedList<Entry>([...components.map((c): Entry => ({ kind: 'store', c })), ...onDemand.map((o): Entry => ({ kind: 'demand', o }))])
   const detail = (c: ConnectedComponent, entity?: string) =>
     `${nextHref(nextEntry('component-detail'), { cloud: c.cloud, component: c.componentKey, namespaceId: c.namespaceId })}${entity ? `?entity=${encodeURIComponent(entity)}` : ''}`
 
   return (
     <section aria-labelledby="components-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-        <h2 id="components-title" className="text-base font-semibold">{cloudName} PaaS components ({components.length})<Tip label="section:Components" /></h2>
+        <h2 id="components-title" className="text-base font-semibold">{cloudName} PaaS components ({components.length + onDemand.length})<Tip label="section:Components" /></h2>
         <div className="flex items-center gap-2">
           {lookNow}
           <Link to={nextHref(nextEntry('add-component'), {}, pathname)} aria-disabled={!canConnect} className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-primary-600)] px-3.5 py-2 text-xs font-bold text-white hover:bg-[var(--color-primary-700)]">
@@ -90,7 +103,7 @@ export function ComponentTable({ components, cloudName, canConnect = true, lookN
         </div>
       </div>
 
-      {components.length === 0 ? (
+      {components.length + onDemand.length === 0 ? (
         <p className="border-t border-[var(--color-border)] px-4 py-6 text-sm text-[var(--color-text-muted)]">
           No {cloudName} component is connected yet. Use <Link className="font-semibold underline" to={nextHref(nextEntry('connect'), {}, pathname)}>Connect a cloud</Link> first, then <strong>Add a component</strong>.
         </p>
@@ -111,7 +124,9 @@ export function ComponentTable({ components, cloudName, canConnect = true, lookN
                 <Th>Actions</Th>
               </tr>
             </thead>
-            {pageRows.map((c) => {
+            {pageRows.map((entry) => {
+              if (entry.kind === 'demand') return <OnDemandTbody key={`${entry.o.namespaceId}:${entry.o.componentKey}`} c={entry.o} showRecorded={showRecorded} />
+              const c = entry.c
               const id = key(c)
               const expanded = open.has(id)
               const status = statusWords(c)
@@ -160,5 +175,27 @@ export function ComponentTable({ components, cloudName, canConnect = true, lookN
       {showRecorded && <p className="border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-muted)]">“Recorded” is what ServiceHub kept at the last look</p>}
       <Pager {...pager} label="components" />
     </section>
+  )
+}
+
+/** An added run-history component: read on request, so it has no counts here. Its page lists what failed. */
+function OnDemandTbody({ c, showRecorded }: { c: OnDemandRow; showRecorded: boolean }) {
+  return (
+    <tbody className="border-t border-[var(--color-border)]">
+      <tr>
+        <td className={td} />
+        <td className={`${td} font-semibold`}>{c.componentName}</td>
+        <td className={td}>{c.connectionName}</td>
+        <td className={td}><span className="font-semibold text-green-700">Added</span><span className="block text-xs text-[var(--color-text-muted)]">Read only</span></td>
+        <td className={td}><span className="inline-block rounded-md px-2 py-0.5 text-xs font-semibold text-[var(--color-text-muted)]">Read on request</span></td>
+        <td className={td}>Open to see</td>
+        {showRecorded && <td className={td}>—</td>}
+        <td className={td}>—</td>
+        <td className={td}>—</td>
+        <td className={td}>
+          <Link to={nextHref(nextEntry('component-list'), { cloud: c.cloud, component: c.componentKey })} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]" aria-label={`View ${c.connectionName} ${c.componentName}`}>View</Link>
+        </td>
+      </tr>
+    </tbody>
   )
 }

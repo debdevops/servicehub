@@ -71,7 +71,8 @@ export interface EntryLinks {
   readonly replay: ((dlqMessageId: number) => string) | null
 }
 
-export function EntryPanel({ id, onClose, links }: { id: string | null; onClose: () => void; links?: EntryLinks }) {
+/** `windowed`: inside a details window (5.0.0), which supplies the frame and the ✕. */
+export function EntryPanel({ id, onClose, links, windowed = false }: { id: string | null; onClose: () => void; links?: EntryLinks; windowed?: boolean }) {
   const { data, isPending, isError } = useLedgerEntry(id)
   const { search } = useLocation()
   // Whether the message is still stuck decides if "replay again" means anything: a replayed message has left the queue.
@@ -104,7 +105,7 @@ export function EntryPanel({ id, onClose, links }: { id: string | null; onClose:
   }
 
   return (
-    <aside aria-label="Entry" className="self-start overflow-y-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] lg:sticky lg:top-[calc(var(--header-height)+8px)] lg:max-h-[calc(100vh-var(--header-height)-24px)]">
+    <aside aria-label="Entry" className={windowed ? '-mx-5 -my-4' : 'self-start overflow-y-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] lg:sticky lg:top-[calc(var(--header-height)+8px)] lg:max-h-[calc(100vh-var(--header-height)-24px)]'}>
       <div className="flex items-start gap-2 border-b border-[var(--color-border)] p-4">
         <div className="min-w-0 flex-1">
           <p className="flex flex-wrap items-center gap-2"><StateChip state={e.state} /> <span className="text-sm font-medium">{stateMeaning[e.state]}</span></p>
@@ -113,7 +114,7 @@ export function EntryPanel({ id, onClose, links }: { id: string | null; onClose:
             <p className="mt-1 text-xs text-[var(--color-text-muted)]">Match: {e.confidence === 'Exact' ? 'Exact — by the recovery ID' : 'Heuristic — by contents, which may be shared'}</p>
           )}
         </div>
-        <button type="button" onClick={onClose} aria-label="Close entry" className="rounded-lg p-1 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)]"><X className="h-4 w-4" /></button>
+        {!windowed && <button type="button" onClick={onClose} aria-label="Close entry" className="rounded-lg p-1 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)]"><X className="h-4 w-4" /></button>}
       </div>
 
       <div className="space-y-4 p-4 text-sm">

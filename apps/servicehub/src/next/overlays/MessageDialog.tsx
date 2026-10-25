@@ -76,7 +76,7 @@ export default function MessageDialog({ close }: NextOverlayBodyProps) {
       </nav>
 
       {tab === 'summary' && (
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-6 @2xl:grid-cols-2">
           <div className="space-y-4">
             <section aria-label="Why it failed">
               <h3 className="mb-1 text-sm font-bold">Why it failed<Tip label="section:Why it failed" /></h3>

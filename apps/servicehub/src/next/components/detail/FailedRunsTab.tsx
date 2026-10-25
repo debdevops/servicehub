@@ -9,6 +9,7 @@ import type { ComponentSource, FailedItem } from '../../../lib/api/componentSour
 import type { CoverageRow } from '../../../lib/api/coverage'
 import { formatWhen } from '../../../lib/format'
 import { failedWords, itemStatusTone, itemStatusWords } from '../../lib/failedWords'
+import { DetailWindow } from '../DetailWindow'
 import { Th, Tip } from '../Tip'
 
 const td = 'px-3 py-2.5 align-top text-sm'
@@ -98,27 +99,41 @@ export function FailedRunsTab({ namespaceId, componentKey, source, row }: { name
       </section>
 
       {open !== null && (
-        <section aria-labelledby="run-detail-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-          <h2 id="run-detail-title" className="mb-2 text-base font-semibold">{selected?.summary ?? words.detailTitle}<Tip label={words.detailTip} /></h2>
-          {detail.isPending ? <p role="status" className="text-sm text-[var(--color-text-muted)]">Loading…</p>
-            : detail.isError ? <p role="alert" className="text-sm text-red-800">{toProblem(detail.error).message}</p>
-            : detail.data.item === null ? <p className="text-sm text-[var(--color-text-muted)]">{words.gone}</p>
-            : (
-              <dl className="text-sm">
-                <Fact label="Reason">{detail.data.reason ?? 'None recorded'}</Fact>
-                <Fact label="Cause">{detail.data.cause ?? 'None recorded'}</Fact>
-                <Fact label={words.first}>{detail.data.startedUtc ? formatWhen(detail.data.startedUtc, now) : '—'}</Fact>
-                <Fact label={words.last}>{detail.data.stoppedUtc ? formatWhen(detail.data.stoppedUtc, now) : '—'}</Fact>
-              </dl>
-            )}
-        </section>
+        <DetailWindow title={selected?.summary ?? words.detailTitle} description={placeName(selected?.place ?? '')} onClose={() => setOpen(null)}>
+          <div aria-labelledby="run-detail-title">
+            <h3 id="run-detail-title" className="sr-only">{words.detailTitle}<Tip label={words.detailTip} /></h3>
+            {detail.isPending ? <p role="status" className="text-sm text-[var(--color-text-muted)]">Loading…</p>
+              : detail.isError ? <p role="alert" className="text-sm text-red-800">{toProblem(detail.error).message}</p>
+              : detail.data.item === null ? <p className="text-sm text-[var(--color-text-muted)]">{words.gone}</p>
+              : (
+                <dl className="text-sm">
+                  <Fact label="Status"><span className={`inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${itemStatusTone[detail.data.item.status] ?? 'bg-slate-100 text-slate-700'}`}>{itemStatusWords[detail.data.item.status] ?? detail.data.item.status}</span></Fact>
+                  <Fact label="Place">{placeName(detail.data.item.place)}</Fact>
+                  <Fact label="Item">{detail.data.item.summary}</Fact>
+                  <Fact label="Reason">{detail.data.reason ?? 'None recorded'}</Fact>
+                  <Fact label="Cause">{detail.data.cause ?? 'None recorded'}</Fact>
+                  <Fact label={words.first}>{detail.data.startedUtc ? formatWhen(detail.data.startedUtc, now) : '—'}</Fact>
+                  <Fact label={words.last}>{detail.data.stoppedUtc ? formatWhen(detail.data.stoppedUtc, now) : '—'}</Fact>
+                  {detail.data.item.copy === 'pointer' && <Fact label="Original">Points at the original, which may have expired.</Fact>}
+                  {detail.data.item.consoleUrl && (
+                    <Fact label="Open in the cloud">
+                      <a href={detail.data.item.consoleUrl} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 text-[var(--color-primary-700)] underline">
+                        Console <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                      </a>
+                    </Fact>
+                  )}
+                </dl>
+              )}
+            <p className="mt-3 text-xs text-[var(--color-text-muted)]">{words.foot(componentName)}</p>
+          </div>
+        </DetailWindow>
       )}
     </div>
   )
 }
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div className="flex gap-4 border-b border-[var(--color-border)] py-2 last:border-0"><dt className="w-24 shrink-0 text-[var(--color-text-muted)]">{label}</dt><dd className="min-w-0 break-words font-semibold">{children}</dd></div>
+  return <div className="flex gap-4 border-b border-[var(--color-border)] py-2 last:border-0"><dt className="w-28 shrink-0 text-[var(--color-text-muted)]">{label}</dt><dd className="min-w-0 break-words font-semibold">{children}</dd></div>
 }
 
 function Row({ item: i, place, open, onToggle, now }: { item: FailedItem; place: string; open: boolean; onToggle: () => void; now: Date }) {

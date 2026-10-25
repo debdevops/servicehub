@@ -22,7 +22,7 @@ vi.mock('@/lib/api/componentEnablement', async (o) => ({
 vi.mock('@/lib/api/identity', async (o) => ({ ...(await o<typeof identityApi>()), fetchMe: vi.fn() }))
 vi.mock('@/lib/api/agents', async (o) => ({ ...(await o<typeof agentsApi>()), fetchAgents: vi.fn() }))
 vi.mock('@/lib/api/settings', async (o) => ({ ...(await o<typeof settingsApi>()), fetchEmergencyStop: vi.fn() }))
-vi.mock('@/lib/api/namespaces', async (o) => ({ ...(await o<typeof namespacesApi>()), fetchNamespaces: vi.fn(), fetchNamespace: vi.fn() }))
+vi.mock('@/lib/api/namespaces', async (o) => ({ ...(await o<typeof namespacesApi>()), fetchNamespaces: vi.fn(), fetchNamespace: vi.fn(), connectNamespace: vi.fn() }))
 
 const aws = { id: 'ns-1', name: 'acme', displayName: 'Acme Payments', provider: 'aws', environment: 'dev', authType: 'awsIamRole', awsRegion: 'eu-west-1', gcpProjectId: null, isActive: true, createdAt: '', lastConnectionTestAt: null, lastConnectionTestSucceeded: true, description: null, capabilities: null } as unknown as namespacesApi.Namespace
 
@@ -153,6 +153,30 @@ describe('Add a component (one dialog: choose, connect, bring in)', () => {
     expect(d.getByText('Use an Azure connection that signs in with Entra.')).toBeInTheDocument()
     expect(d.getByText('az role assignment create --role Reader')).toBeInTheDocument()
     expect(d.getByRole('button', { name: 'Add 1 component' })).toBeEnabled()
+  })
+
+  it('Connect makes the Azure sign-in connection in one click, ticks Event Grid on it and checks access', async () => {
+    const serviceBus = { ...aws, id: 'ns-4', name: 'sb', displayName: 'Azure-Dev', provider: 'azure', authType: 'connectionString', awsRegion: null } as unknown as namespacesApi.Namespace
+    const entra = { ...serviceBus, id: 'ns-5', name: 'azure-entra', displayName: 'Azure sign-in', authType: 'defaultAzureCredential' } as namespacesApi.Namespace
+    vi.mocked(namespacesApi.fetchNamespaces).mockResolvedValueOnce([serviceBus]).mockResolvedValue([serviceBus, entra])
+    vi.mocked(namespacesApi.connectNamespace).mockResolvedValue(entra)
+    const eventGrid = entry({
+      componentKey: 'event-grid', name: 'Event Grid', status: 'beingValidated', statusWords: 'Not yet validated', state: 'off', canToggle: true, stuckPlace: 'Dead-letter blobs',
+      what: 'Events Event Grid could not deliver.', needs: 'Reader.', steps: ['Press Check access.'], snippets: [], permissions: ['Reader'],
+    })
+    vi.mocked(enablementApi.fetchComponentList).mockImplementation(async (id: string) => ({ namespaceId: id, connectionName: 'Azure', cloud: 'Azure', components: [eventGrid] }))
+    vi.mocked(enablementApi.checkComponent).mockResolvedValue({ componentKey: 'event-grid', ok: true, reason: null, permissions: ['Reader'] })
+    open('/next/azure?dialog=add-component')
+    const d = await dialog()
+
+    await userEvent.click(await d.findByRole('checkbox', { name: 'Event Grid (Not yet validated)' }))
+    await userEvent.click(d.getByRole('button', { name: 'Connect with Azure sign-in' }))
+
+    expect(namespacesApi.connectNamespace).toHaveBeenCalledWith(expect.objectContaining({ provider: 'azure', authType: 'defaultAzureCredential' }))
+    expect(enablementApi.checkComponent).toHaveBeenCalledWith('ns-5', 'event-grid')
+    expect(await d.findByText('present')).toBeInTheDocument() // the check's result, drawn on the row
+    // The panel stays where it was, disabled, and says it is connected.
+    expect(d.getByRole('button', { name: 'Connected with Azure sign-in' })).toBeDisabled()
   })
 
   it('a cloud with no connection still names a failed-records component it can bring in', async () => {

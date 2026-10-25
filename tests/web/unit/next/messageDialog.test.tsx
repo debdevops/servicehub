@@ -77,6 +77,23 @@ describe('the Message dialog (unit D3)', () => {
     expect(await d.findByText(/orders-sb · payments-topic \/ sub-1 · In dead-letter/)).toBeInTheDocument()
   })
 
+  it('opens as a side window beside the page, expands to a modal on the same message, and goes back', async () => {
+    open(url)
+    const side = await screen.findByRole('dialog')
+    expect(side).toHaveAttribute('data-overlay', 'panel')
+    expect(side).toHaveAttribute('data-docked')
+    await within(side).findByRole('heading', { name: /Message b7d1c0/ })
+
+    await userEvent.click(within(side).getByRole('button', { name: 'Expand to a full window' }))
+    const modal = await screen.findByRole('dialog')
+    expect(modal).toHaveAttribute('data-overlay', 'modal')
+    expect(modal).not.toHaveAttribute('data-docked')
+    expect(within(modal).getByRole('heading', { name: /Message b7d1c0/ })).toBeInTheDocument() // same message, no reload
+
+    await userEvent.click(within(modal).getByRole('button', { name: 'Back to the side window' }))
+    expect(await screen.findByRole('dialog')).toHaveAttribute('data-overlay', 'panel')
+  })
+
   it('Summary says why it failed, how many are like it, and the properties; nothing shows a 0 it did not measure', async () => {
     open(url)
     const d = await dialog()

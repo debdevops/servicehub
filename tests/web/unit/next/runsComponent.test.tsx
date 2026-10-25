@@ -92,6 +92,26 @@ describe('a component that is not a message store (Step Functions, unit PP1/PP2)
     expect(sourcesApi.fetchFailedItem).toHaveBeenCalledTimes(1)
   })
 
+  it('shows the details in a side window that expands to a modal and closes', async () => {
+    vi.mocked(sourcesApi.fetchFailedItem).mockResolvedValue({ item: item(2), reason: 'States.TaskFailed', cause: 'The gateway returned 502', startedUtc: '2026-10-02T09:58:00Z', stoppedUtc: '2026-10-02T10:00:00Z' })
+    open('/next/aws/c/step-functions/ns-1')
+    await screen.findByRole('table')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Show details of Failed: run-2' }))
+    const side = await screen.findByRole('dialog', { name: 'Failed: run-2' })
+    expect(side).toHaveAttribute('data-overlay', 'panel')
+    expect(side).toHaveAttribute('data-docked')
+    expect(await within(side).findByText('States.TaskFailed')).toBeInTheDocument()
+
+    await userEvent.click(within(side).getByRole('button', { name: 'Expand to a full window' }))
+    const modal = await screen.findByRole('dialog', { name: 'Failed: run-2' })
+    expect(modal).toHaveAttribute('data-overlay', 'modal')
+    expect(await within(modal).findByText('The gateway returned 502')).toBeInTheDocument()
+
+    await userEvent.click(within(modal).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog', { name: 'Failed: run-2' })).not.toBeInTheDocument()
+  })
+
   it('offers a console link and no way to replay, re-run, redrive or purge', async () => {
     open('/next/aws/c/step-functions/ns-1')
     await screen.findByRole('table')

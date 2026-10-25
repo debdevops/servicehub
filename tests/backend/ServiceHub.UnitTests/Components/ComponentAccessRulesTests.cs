@@ -128,7 +128,7 @@ public sealed class ComponentAccessRulesTests
     public void The_azure_components_tell_the_reader_which_connection_type_they_need(string key)
     {
         ComponentAccessRules.SetupFor(key)!.Steps.Should().Contain(s => s.Contains("Entra"), "a Service Bus connection string cannot read Resource Manager");
-        ComponentAccessRules.SetupFor(key)!.Snippets.Should().NotBeEmpty().And.OnlyContain(s => s.Text.StartsWith("az ", StringComparison.Ordinal));
+        ComponentAccessRules.SetupFor(key)!.Snippets.Should().NotBeEmpty().And.OnlyContain(s => s.Text.StartsWith("az ", StringComparison.Ordinal) || s.Text.StartsWith("curl ", StringComparison.Ordinal), "a command to copy: the Azure CLI, or the one call that creates the Entra connection");
     }
 
     [Fact]

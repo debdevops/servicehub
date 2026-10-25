@@ -3,6 +3,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Moq;
 using ServiceHub.Core.Components;
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
@@ -156,6 +157,21 @@ public sealed class ComponentOverviewServiceTests : IAsyncLifetime
         row.DeadLetters.Should().Be(new Count(null, CountKind.NotRead));
         row.LastError.Should().NotBeNull().And.NotContain("abcd1234secret");
         row.ObservedAtUtc.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_connection_with_no_store_credential_has_no_message_store_row_instead_of_a_false_Cant_reach()
+    {
+        // An Azure sign-in connection exists to read Logic Apps and Event Grid; it holds no connection string, so there are no queues to count.
+        var ns = Azure("azure-entra");
+        var clouds = new Dictionary<CloudProviderType, Cloud>
+        {
+            [CloudProviderType.Azure] = new(ProviderCapabilities.Azure, () =>
+                Result.Failure<IReadOnlyList<CloudEntity>>(Error.Validation(ErrorCodes.Namespace.ConnectionStringRequired, "Namespace does not have a connection string configured."))),
+        };
+        var service = await ServiceAsync(clouds, null, ns);
+
+        (await service.GetAsync(Owner, null, null, default)).Components.Should().BeEmpty();
     }
 
     [Fact]

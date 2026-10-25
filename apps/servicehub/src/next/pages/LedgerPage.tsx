@@ -14,6 +14,7 @@ import { formatAge, formatWhen } from '../../lib/format'
 import { stateChip, stateMeaning } from '../../lib/ledgerWords'
 import { usePageSize } from '../../lib/pageSize'
 import { permission } from '../../lib/permissions'
+import { DetailWindow } from '../components/DetailWindow'
 import { ToolPageHeader } from '../components/ToolPageHeader'
 import { cloudLabel, cloudOf, parseScope } from '../lib/clouds'
 import { entityLabel } from '../lib/entityRows'
@@ -113,7 +114,7 @@ export default function LedgerPage() {
         {filtering && <button type="button" onClick={() => change({ state: null, by: null, connection: null })} className="text-sm font-semibold text-[var(--color-primary-700)]">Clear filters</button>}
       </div>
 
-      <div className={`grid gap-4 ${entry ? 'lg:grid-cols-[minmax(0,1fr)_380px]' : ''}`}>
+      <div className="grid gap-4">
         <section aria-labelledby="ledger-title" className="min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
           <h2 id="ledger-title" className="sr-only">Ledger entries</h2>
           <div role="tablist" aria-label="Ledger views" className="flex gap-5 border-b border-[var(--color-border)] px-4 pt-3">
@@ -204,7 +205,11 @@ export default function LedgerPage() {
           {chain.result && !chain.result.isValid && <p role="alert" className="px-4 pb-3 text-sm text-[var(--color-error)]"><b>The chain does not verify</b>{chain.result.firstDivergentSeq !== null ? ` — first divergence at event ${chain.result.firstDivergentSeq}` : ''}. {chain.result.reason}</p>}
           {chain.failed && <p role="alert" className="px-4 pb-3 text-sm text-[var(--color-error)]">ServiceHub couldn’t run the check.</p>}
         </section>
-        {entry && <EntryPanel id={entry} onClose={() => change({ entry: null })} links={entryLinks} />}
+        {entry && (
+          <DetailWindow title="Ledger entry" description="What was done, by whom, and what was observed afterwards" onClose={() => change({ entry: null })}>
+            <EntryPanel windowed id={entry} onClose={() => change({ entry: null })} links={entryLinks} />
+          </DetailWindow>
+        )}
       </div>
 
       <section aria-labelledby="reading-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">

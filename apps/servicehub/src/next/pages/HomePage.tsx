@@ -2,6 +2,8 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Info, RefreshCw } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 import { useComponents } from '../../hooks/useComponents'
+import { useEnabledComponents } from '../../hooks/useComponentEnablement'
+import { useNamespaces } from '../../hooks/useNamespaces'
 import { sidebarComponents, useCoverage } from '../../hooks/useCoverage'
 import { useMe } from '../../hooks/useIdentity'
 import { usePendingWork } from '../../hooks/usePendingWork'
@@ -36,10 +38,21 @@ function CloudHome({ cloud }: { cloud: CloudKind }) {
   const pending = usePendingWork({ provider: cloud })
   const coverage = useCoverage()
   const me = useMe()
+  const enabled = useEnabledComponents()
+  const namespaces = useNamespaces()
 
   const cloudName = cloudLabel[cloud]
   const rows = components.data?.components ?? []
   const covered = sidebarComponents(coverage.data?.rows ?? [], cloud)
+  // A run-history component (Event Grid, Logic Apps, Step Functions…) is read on request, not from the queue store, so the overview has no row
+  // for it. It still belongs in the table once someone has added it, so it is listed here from the same enabled read the menu uses.
+  const onDemand = (enabled.data ?? []).filter((e) => e.cloud === cloud).map((e) => ({
+    cloud,
+    namespaceId: e.namespaceId,
+    componentKey: e.componentKey,
+    componentName: (coverage.data?.rows ?? []).find((r) => r.cloud === cloud && r.componentKey === e.componentKey)?.name ?? e.componentKey,
+    connectionName: (namespaces.data ?? []).find((n) => n.id === e.namespaceId)?.displayName ?? (namespaces.data ?? []).find((n) => n.id === e.namespaceId)?.name ?? '—',
+  }))
   const totals = homeTotals(rows)
   const unwatched = rows.filter((c) => !c.watched)
   const lookIds = [...new Set(unwatched.map((c) => c.namespaceId))]
@@ -80,7 +93,7 @@ function CloudHome({ cloud }: { cloud: CloudKind }) {
           <div className="min-w-0 space-y-4">
             <Tiles totals={totals} observedAtUtc={components.data.generatedAtUtc} cloudName={cloudName} reachable={rows.filter((c) => c.reachable).length} />
             {unwatched.length > 0 && <NotWatchedNotice cloudName={cloudName} provider={cloud} namespaceIds={lookIds} me={me.data} onLook={refresh} />}
-            <ComponentTable components={rows} cloudName={cloudName} />
+            <ComponentTable components={rows} cloudName={cloudName} onDemand={onDemand} />
           </div>
           <div className="space-y-4">
             <HowItWorks cloudName={cloudName} components={rows} covered={covered} />

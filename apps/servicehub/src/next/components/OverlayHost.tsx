@@ -3,7 +3,8 @@ import { useSearchParams } from 'react-router-dom'
 import { OverlayFrame } from '../../components/overlays/OverlayFrame'
 import { OverlayTitleContext, type OverlayTitleOverride } from '../../components/overlays/overlayTitle'
 import { nextNavigation, type NextOverlay } from '../nav/navigation'
-import { nextOverlayBodies, nextOverlayCompanions, nextOverlayWide } from '../overlays/registry'
+import { nextOverlayBodies, nextOverlayCompanions, nextOverlayDetails, nextOverlayWide } from '../overlays/registry'
+import { ExpandButton } from './DetailWindow'
 
 type Kind = 'dialog' | 'panel'
 
@@ -16,6 +17,7 @@ type Kind = 'dialog' | 'panel'
  */
 export function OverlayHost() {
   const [params, setParams] = useSearchParams()
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set()) // details overlays shown as a modal instead of the side window
   const [titles, setTitles] = useState<Readonly<Record<string, OverlayTitleOverride>>>({})
   // One setter per overlay, created once. A body re-runs its retitle effect whenever the setter it is given changes, so a setter that was
   // new on every render would set state, re-render the host, hand over a new setter, and loop for ever.
@@ -58,9 +60,16 @@ export function OverlayHost() {
         const Body = nextOverlayBodies[entry.id]
         const onClose = close(kind)
         const key = `${kind}:${entry.id}`
+        const isDetails = nextOverlayDetails.has(entry.id)
+        const wide = isDetails && expanded.has(key)
+        const toggle = () => setExpanded((all) => { const next = new Set(all); if (!next.delete(key)) next.add(key); return next })
         return (
-          <OverlayFrame key={key} kind={kind === 'dialog' ? 'modal' : 'panel'} title={titles[key]?.title ?? entry.label} description={titles[key]?.description ?? entry.description}
-            onClose={onClose} size={nextOverlayWide.has(entry.id) ? 'wide' : 'default'}>
+          // A details overlay is a docked side window; expanded, it is the same frame and the same content as a modal (so a chosen tab survives).
+          <OverlayFrame key={key} kind={isDetails ? (wide ? 'modal' : 'panel') : kind === 'dialog' ? 'modal' : 'panel'}
+            title={titles[key]?.title ?? entry.label} description={titles[key]?.description ?? entry.description}
+            onClose={() => { onClose(); if (isDetails) setExpanded((all) => { const next = new Set(all); next.delete(key); return next }) }}
+            size={isDetails ? (wide ? 'wide' : 'drawer') : nextOverlayWide.has(entry.id) ? 'wide' : 'default'} docked={isDetails && !wide}
+            actions={isDetails ? <ExpandButton expanded={wide} onToggle={toggle} /> : undefined}>
             {Body ? (
               <Suspense fallback={<p role="status" className="text-sm text-[var(--color-text-muted)]">Loading…</p>}>
                 <OverlayTitleContext.Provider value={retitle(key)}>

@@ -28,9 +28,11 @@ export interface AgentLinks {
  * paused agent offers a Resume button there instead of naming another place. Without it (the 4.2.0 Advanced page) nothing here ever gives
  * authority back, as ADR-0016 D3 says.
  */
-export function Detail({ agent, onPause, pausing, notAllowed, links, resume }: {
+export function Detail({ agent, onPause, pausing, notAllowed, links, resume, windowed = false }: {
   agent: Agent; onPause: () => void; pausing: boolean; notAllowed: string | null; links?: AgentLinks
   resume?: { readonly onResume: () => void; readonly busy: boolean; readonly notAllowed: string | null }
+  /** Inside a details window (5.0.0): the window supplies the frame, so the card's own border is dropped. */
+  windowed?: boolean
 }) {
   const activity = useAgentActivity(agent.id)
   const now = new Date()
@@ -38,7 +40,7 @@ export function Detail({ agent, onPause, pausing, notAllowed, links, resume }: {
   const items = fold(activity.data?.items ?? [])
 
   return (
-    <aside aria-label={`${agent.name} details`} className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+    <aside aria-label={`${agent.name} details`} className={windowed ? '-mx-5 -my-4' : 'overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]'}>
       <div className="border-b border-[var(--color-border)] px-5 py-4">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-lg font-bold">{agent.name}</h2>

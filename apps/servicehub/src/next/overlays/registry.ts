@@ -36,3 +36,9 @@ export const nextOverlayCompanions: readonly string[] = ['id', 'entry', 'entries
 
 /** Overlays drawn wider than the default: the Message dialog is read side by side (summary and properties). */
 export const nextOverlayWide: ReadonlySet<string> = new Set(['message', 'review', 'bulk-replay', 'add-component'])
+
+/**
+ * Overlays that show one record in full. They open as a docked **side window** beside the page, and the expand button turns the same window
+ * into a modal; everything else (a form, a decision, a confirm) is a plain modal or panel. This is the one rule for "details" in 5.0.0.
+ */
+export const nextOverlayDetails: ReadonlySet<string> = new Set(['message', 'hand-off'])

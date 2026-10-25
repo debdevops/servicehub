@@ -126,7 +126,8 @@ export function OverlayFrame({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+        {/* @container: what is inside answers to this window's width (a 462px side window or a wide modal), not to the screen's. */}
+        <div className="@container min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
       </div>
     </div>
   )

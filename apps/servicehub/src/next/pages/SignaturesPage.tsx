@@ -3,6 +3,7 @@ import { Fingerprint, Search, TrendingUp, ThumbsDown, ThumbsUp } from 'lucide-re
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { Detail, type SignatureLinks } from '../../components/advanced/SignatureDetail'
+import { DetailWindow } from '../components/DetailWindow'
 import { TraceView, type StoryLinks } from '../../components/advanced/SignatureStory'
 import { Pager } from '../../components/ui/Pager'
 import { useComponents } from '../../hooks/useComponents'
@@ -206,7 +207,11 @@ export default function SignaturesPage() {
               <Pager page={data?.page ?? 1} pageSize={data?.pageSize ?? pageSize} total={data?.total ?? 0} filtered={filtering} onPage={(p) => change({ page: String(p) })} onPageSize={(n) => { setPageSize(n); change({ page: null }) }} label="signatures" />
               <p className="px-4 pb-4 text-xs text-[var(--color-text-muted)]">A signature is one kind of failure on one cloud. Trust is earned per signature and never carries over to another.</p>
             </section>
-            {selected && <Detail s={selected} days={days} now={now} onClose={() => change({ signature: null })} links={links} />}
+            {selected && (
+              <DetailWindow title={selected.reason} description="Failure signature" onClose={() => change({ signature: null })}>
+                <Detail windowed s={selected} days={days} now={now} onClose={() => change({ signature: null })} links={links} />
+              </DetailWindow>
+            )}
           </div>
 
           <section aria-labelledby="levels-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">

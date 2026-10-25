@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Bot, Check, OctagonAlert, Pause as PauseIcon } from 'lucide-react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { Detail, type AgentLinks } from '../../components/agent/AgentDetail'
+import { DetailWindow } from '../components/DetailWindow'
 import { healthTone, healthWord } from '../../components/agent/AgentRow'
 import { Pager } from '../../components/ui/Pager'
 import { useAgents, useDormantAgents, useSetAgentsPaused } from '../../hooks/useAgents'
@@ -82,7 +83,7 @@ export default function AgentsPage() {
           {stopped.map((i) => <p key={i.id} role="status" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"><b>{all.find((a) => a.id === i.agentId)?.name ?? i.agentId ?? 'An agent'}:</b> {i.reason}</p>)}
           {setPaused.isError && <p role="alert" className="text-sm text-red-700">That change didn’t go through. Nothing changed — try again.</p>}
 
-          <div className={`grid gap-4 ${selected ? 'xl:grid-cols-[minmax(0,1fr)_400px]' : ''}`}>
+          <div className="grid gap-4">
             <section aria-labelledby="agents-title" className="min-w-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
               <h2 id="agents-title" className="px-4 pt-4 text-base font-semibold">Agents<Tip label="section:Agents table" /></h2>
               <div className="overflow-x-auto">
@@ -122,11 +123,10 @@ export default function AgentsPage() {
               )}
             </section>
             {selected && (
-              <div className="space-y-2">
-                <button type="button" onClick={() => select(null)} className="text-sm font-semibold text-[var(--color-primary-700)] hover:underline">‹ All agents</button>
-                <Detail agent={selected} onPause={() => pause(selected)} pausing={setPaused.isPending || !mayPause.allowed} notAllowed={mayPause.reason} links={links}
+              <DetailWindow title={selected.name} description="Agent" onClose={() => select(null)}>
+                <Detail windowed agent={selected} onPause={() => pause(selected)} pausing={setPaused.isPending || !mayPause.allowed} notAllowed={mayPause.reason} links={links}
                   resume={{ onResume: () => resume(selected), busy: setPaused.isPending, notAllowed: mayResume.allowed ? null : mayResume.reason }} />
-              </div>
+              </DetailWindow>
             )}
           </div>
         </>
