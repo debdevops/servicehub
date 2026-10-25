@@ -98,10 +98,12 @@ export function OverlayFrame({
         tabIndex={-1}
         data-overlay={kind}
         data-docked={docked || undefined}
+        // overflow-clip, not -hidden: a hidden box can still be scrolled by an in-page anchor (Settings' side nav), which pushed the
+        // title bar and ✕ out of sight. Clip cannot be scrolled at all; the body below scrolls on its own.
         className={
           isModal
-            ? `relative flex max-h-full w-full flex-col ${size === 'wider' ? 'max-w-6xl' : size === 'wide' ? 'max-w-4xl' : 'max-w-xl'} overflow-hidden rounded-2xl bg-[var(--color-surface)] shadow-xl`
-            : `relative h-full w-full ${docked ? 'pointer-events-auto' : ''} ${size === 'drawer' ? 'max-w-[462px]' : 'max-w-md'} flex flex-col overflow-hidden border-l border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl`
+            ? `relative flex max-h-full w-full flex-col ${size === 'wider' ? 'max-w-6xl' : size === 'wide' ? 'max-w-4xl' : 'max-w-xl'} overflow-clip rounded-2xl bg-[var(--color-surface)] shadow-xl`
+            : `relative h-full w-full ${docked ? 'pointer-events-auto' : ''} ${size === 'drawer' ? 'max-w-[462px]' : 'max-w-md'} flex flex-col overflow-clip border-l border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl`
         }
       >
         <div className="flex shrink-0 items-start gap-3 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-4">
