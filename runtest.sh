@@ -52,6 +52,8 @@ if [ "$MODE" != "--frontend" ]; then
     COV_DIR="$(mktemp -d)"
     dotnet test "$SLN" --nologo --collect:"XPlat Code Coverage" --results-directory "$COV_DIR"
     tests/scripts/check-backend-coverage.sh "$COV_DIR" 60
+    step "Every API endpoint is called by a test"
+    tests/scripts/check-endpoint-coverage.sh
     rm -rf "$COV_DIR"
   else
     step "Backend tests (unit + integration)"

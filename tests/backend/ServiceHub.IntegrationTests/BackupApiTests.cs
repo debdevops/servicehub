@@ -87,6 +87,30 @@ public sealed class BackupApiTests : IDisposable
     }
 
     [Fact]
+    public async Task A_backup_can_be_downloaded_and_a_staged_restore_can_be_cancelled_before_the_next_start()
+    {
+        using var host = ServiceHubApiFactory.Reusing(_dir);
+        var client = host.CreateClient();
+        await Stop(client, on: true);
+        await Stop(client, on: false);
+        var id = (await Json(await client.SendAsync(Req(HttpMethod.Post, "/api/v1/admin/backup", "create-backup")))).GetProperty("backupId").GetString()!;
+
+        var download = await client.GetAsync($"/api/v1/admin/backup/{id}/download");
+        download.StatusCode.Should().Be(HttpStatusCode.OK);
+        download.Content.Headers.ContentType!.MediaType.Should().Be("application/vnd.sqlite3");
+        (await download.Content.ReadAsByteArrayAsync()).Should().NotBeEmpty();
+        (await client.GetAsync("/api/v1/admin/backup/no-such-backup/download")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        (await client.SendAsync(Req(HttpMethod.Delete, "/api/v1/admin/backup/pending", "restore-backup"))).StatusCode
+            .Should().Be(HttpStatusCode.NotFound, "nothing is staged yet");
+        (await client.SendAsync(Req(HttpMethod.Post, $"/api/v1/admin/backup/{id}/restore", "restore-backup", new { confirm = "RESTORE" }))).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await client.SendAsync(Req(HttpMethod.Delete, "/api/v1/admin/backup/pending"))).StatusCode.Should().Be((HttpStatusCode)428);
+        (await client.SendAsync(Req(HttpMethod.Delete, "/api/v1/admin/backup/pending", "restore-backup"))).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await Json(await client.GetAsync("/api/v1/admin/backup"))).GetProperty("pending").ValueKind.Should().Be(JsonValueKind.Null, "a cancelled restore is not applied at the next start");
+    }
+
+    [Fact]
     public async Task A_bundle_is_refused_when_changed_after_backup_made_with_another_key_or_holding_a_broken_chain()
     {
         using var host = ServiceHubApiFactory.Reusing(_dir);

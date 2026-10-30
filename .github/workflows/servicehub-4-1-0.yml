@@ -68,6 +68,10 @@ jobs:
         # Same script ./runtest.sh --all runs, so a local pass and a CI pass mean the same thing.
         run: tests/scripts/check-backend-coverage.sh tests/backend/TestResults 60
 
+      - name: Every API endpoint is called by a test
+        # Fails when an endpoint exists that no integration test hits — functionality must not ship untested.
+        run: tests/scripts/check-endpoint-coverage.sh tests/backend/ServiceHub.IntegrationTests/bin/Debug/net10.0/endpoint-coverage.json
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
