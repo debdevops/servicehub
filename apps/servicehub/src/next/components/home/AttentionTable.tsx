@@ -9,6 +9,7 @@ import { usePagedList } from '../../../hooks/usePagedList'
 import { Pager } from '../../../components/ui/Pager'
 import { cloudLabel } from '../../lib/clouds'
 import { familyWords } from '../../lib/words'
+import { useOwnerWords } from '../../lib/ownerWords'
 import { Th } from '../Tip'
 import { Tip } from '../Tip'
 
@@ -30,6 +31,7 @@ export function AttentionTable({ items, coverage, me, showCloud = false, tab: co
   tab?: AttentionTab; onTab?: (tab: AttentionTab) => void
 }) {
   const { pathname } = useLocation()
+  const ownerOf = useOwnerWords()
   const [ownTab, setOwnTab] = useState<Tab>('all')
   const tab = controlledTab ?? ownTab
   const setTab = onTab ?? setOwnTab
@@ -86,7 +88,7 @@ export function AttentionTable({ items, coverage, me, showCloud = false, tab: co
                     <td className={td}>{formatAge(i.since, now)}</td>
                     <td className={`${td} font-semibold ${hand ? 'text-amber-700' : 'text-red-700'}`}>{hand ? 'Hand-off' : 'Approval'}</td>
                     <td className={td}>{hand ? 'Investigate and decide' : 'Approve or reject'}</td>
-                    <td className={td}>All channels</td>
+                    <td className={td}>{ownerOf(i.namespaceId)}</td>
                     <td className={td}>
                       {hand || may.allowed
                         ? <Link to={open} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">{hand ? 'View' : 'Review'}</Link>

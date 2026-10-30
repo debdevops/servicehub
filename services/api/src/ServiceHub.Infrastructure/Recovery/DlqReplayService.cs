@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using ServiceHub.Core.Components;
 using ServiceHub.Core.Constants;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
@@ -578,7 +579,10 @@ public sealed class DlqReplayService : IDlqReplayService
                 ns.OwnerId, kind, actor.Kind, actor.Kind == RecoveryActorKind.Automation ? RecoveryTrigger.AutoRule : RecoveryTrigger.Manual,
                 ns.Id, message.EntityName, message.BodyHash, SignatureHash: message.SignatureHash, ns.Environment,
                 // The namespace's own cloud: whether absence can be proven is that cloud's capability.
-                Provider: ns.Provider, DlqMessageId: message.Id, SourceMessageId: message.MessageId),
+                Provider: ns.Provider, DlqMessageId: message.Id, SourceMessageId: message.MessageId,
+                // What the catalogue allows on this component; no catalogue row means no class and no change.
+                ConnectionCanSend: ns.CanSend,
+                Recoverability: ComponentCatalog.ForEntity(ns.Provider, message.EntityType.ToString().ToLowerInvariant())?.Class),
             cancellationToken);
 
     /// <summary>

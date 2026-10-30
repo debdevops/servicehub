@@ -18,9 +18,9 @@ vi.mock('@/lib/api/coverage', async (o) => ({ ...(await o<typeof coverageApi>())
 vi.mock('@/lib/api/components', async (o) => ({ ...(await o<typeof componentsApi>()), fetchComponent: vi.fn(), fetchComponents: vi.fn() }))
 vi.mock('@/lib/api/identity', async (o) => ({ ...(await o<typeof identityApi>()), fetchMe: vi.fn() }))
 vi.mock('@/lib/api/agents', async (o) => ({ ...(await o<typeof agentsApi>()), fetchAgents: vi.fn() }))
-vi.mock('@/lib/api/settings', async (o) => ({ ...(await o<typeof settingsApi>()), fetchEmergencyStop: vi.fn(), fetchGrants: vi.fn() }))
+vi.mock('@/lib/api/settings', async (o) => ({ ...(await o<typeof settingsApi>()), fetchEmergencyStop: vi.fn(), fetchGrants: vi.fn(), fetchSettings: vi.fn() }))
 vi.mock('@/lib/api/pendingWork', async (o) => ({ ...(await o<typeof pendingApi>()), fetchPendingWork: vi.fn() }))
-vi.mock('@/lib/api/namespaces', async (o) => ({ ...(await o<typeof namespacesApi>()), fetchNamespace: vi.fn(), fetchEntities: vi.fn(), fetchNamespaces: vi.fn(), testConnection: vi.fn() }))
+vi.mock('@/lib/api/namespaces', async (o) => ({ ...(await o<typeof namespacesApi>()), fetchNamespace: vi.fn(), fetchEntities: vi.fn(), fetchNamespaces: vi.fn(), testConnection: vi.fn(), declareCanSend: vi.fn(), setOwnerChannel: vi.fn() }))
 
 const at = '2026-10-18T09:00:00Z'
 const ok = '/next/azure/c/service-bus/ns-azure?tab=access'
@@ -125,16 +125,53 @@ describe('the Access tab (unit D5)', () => {
     expect(within(within(matrix).getByRole('row', { name: /Admin/ })).getAllByText('Yes')).toHaveLength(5)
   })
 
-  it('describes the connection without ever showing a credential, and never claims it may send', async () => {
+  it('describes the connection without ever showing a credential, and never claims the cloud confirmed it may send', async () => {
     open()
     const box = await screen.findByRole('region', { name: 'This connection' })
     expect(box).toHaveTextContent('Connected withConnection string')
     expect(box).toHaveTextContent('Read (listen)Yes')
     expect(box).toHaveTextContent('Send')
-    expect(box).toHaveTextContent('Not checked. Testing it would mean sending a message')
+    expect(box).toHaveTextContent('Not said. Treated as may send. The cloud itself was not asked')
     expect(box).not.toHaveTextContent(/Send\s*Yes/)
     expect(box).toHaveTextContent('Encrypted on this machine, never shown again')
     expect(box).toHaveTextContent('worked')
+  })
+
+  it('says a connection declared read only is read only, and an Admin can allow send', async () => {
+    vi.mocked(namespacesApi.declareCanSend).mockResolvedValue(ns({ canSend: true }))
+    open(ok, ns({ canSend: false }))
+    const box = await screen.findByRole('region', { name: 'This connection' })
+    expect(box).toHaveTextContent('Read only, as declared. ServiceHub will not replay or send through this connection.')
+
+    await userEvent.click(within(box).getByRole('button', { name: 'Allow send' }))
+    await waitFor(() => expect(namespacesApi.declareCanSend).toHaveBeenCalledWith('ns-azure', true))
+  })
+
+  it('a connection declared read and send says the cloud itself was not asked', async () => {
+    open(ok, ns({ canSend: true }))
+    const box = await screen.findByRole('region', { name: 'This connection' })
+    expect(box).toHaveTextContent('Read and send, as declared. The cloud itself was not asked')
+    expect(within(box).getByRole('button', { name: 'Make read only' })).toBeInTheDocument()
+  })
+
+  it('shows who is told about the connection and lets an Admin choose one enabled channel', async () => {
+    vi.mocked(settingsApi.fetchSettings).mockResolvedValue({
+      notifications: { bellAlwaysOn: true, serverChannel: null, channels: [
+        { id: 'ch-ops', format: 'slack', label: '#ops', enabled: true, createdAt: at, createdBy: 'a', lastDeliveredAt: null, lastError: null },
+        { id: 'ch-off', format: 'slack', label: '#off', enabled: false, createdAt: at, createdBy: 'a', lastDeliveredAt: null, lastError: null },
+      ] },
+      security: { apiKeysConfigured: 0, credentialsEncryptedAtRest: true, keyFingerprint: 'x' },
+      emergencyStop: { active: false, by: null, at: null, reason: null },
+    })
+    vi.mocked(namespacesApi.setOwnerChannel).mockResolvedValue(ns({ ownerChannelId: 'ch-ops' }))
+    open()
+    const box = await screen.findByRole('region', { name: 'This connection' })
+    expect(box).toHaveTextContent('ToldEvery enabled channel')
+
+    const choose = await within(box).findByRole('combobox', { name: 'Tell only' })
+    expect(within(choose).queryByRole('option', { name: '#off' })).not.toBeInTheDocument()
+    await userEvent.selectOptions(choose, 'ch-ops')
+    await waitFor(() => expect(namespacesApi.setOwnerChannel).toHaveBeenCalledWith('ns-azure', 'ch-ops'))
   })
 
   it('an identity-based connection stores no secret and says so', async () => {

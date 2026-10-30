@@ -54,6 +54,10 @@ export interface Namespace {
   readonly lastConnectionTestSucceeded: boolean | null
   /** Null only when this build has no adapter for the provider. */
   readonly capabilities: ProviderCapabilities | null
+  /** What the person declared: false is read-only, true is read and send, null/absent is not said (treated as may send). */
+  readonly canSend?: boolean | null
+  /** The one notification channel told about this connection; null/absent means every enabled channel. */
+  readonly ownerChannelId?: string | null
 }
 
 export interface ConnectNamespaceInput {
@@ -67,6 +71,8 @@ export interface ConnectNamespaceInput {
   readonly environment?: EnvironmentKind
   readonly awsRegion?: string
   readonly gcpProjectId?: string
+  /** False declares the connection read-only. */
+  readonly canSend?: boolean
 }
 
 export interface ConnectionTest {
@@ -210,6 +216,16 @@ export interface DlqObserverCheck {
 
 export async function fetchDlqObserver(id: string): Promise<DlqObserver> {
   return (await api.get<DlqObserver>(`/namespaces/${id}/dlq-observer`)).data
+}
+
+/** Says whether ServiceHub may send through this connection (Admin). `null` clears the declaration. */
+export async function declareCanSend(id: string, canSend: boolean | null): Promise<Namespace> {
+  return (await api.put<Namespace>(`/namespaces/${id}/can-send`, { canSend }, { headers: withIntent(Intent.DeclareCanSend) })).data
+}
+
+/** Chooses which notification channel is told about this connection (Admin). `null` means every enabled channel. */
+export async function setOwnerChannel(id: string, channelId: string | null): Promise<Namespace> {
+  return (await api.put<Namespace>(`/namespaces/${id}/owner-channel`, { channelId }, { headers: withIntent(Intent.SetOwnerChannel) })).data
 }
 
 export async function configureDlqObserver(id: string, input: ConfigureDlqObserverInput): Promise<DlqObserver> {

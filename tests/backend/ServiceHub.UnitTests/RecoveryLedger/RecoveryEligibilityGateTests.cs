@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using ServiceHub.Core.Components;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
@@ -60,6 +61,65 @@ public sealed class RecoveryEligibilityGateTests : IDisposable
         bool fleetRateLimitExceeded = false) =>
         new(OwnerId, actionKind, actorKind, RecoveryTrigger.Manual, NamespaceId, entityName, bodyHash,
             signatureHash, environment, rateLimitExceeded, provider, fleetRateLimitExceeded);
+
+    [Theory]
+    [InlineData(RecoverabilityClass.R0Unknown)]
+    [InlineData(RecoverabilityClass.R5DetectOnly)]
+    [InlineData(RecoverabilityClass.R6NotRecoverable)]
+    public async Task Replay_on_a_hand_off_only_class_is_denied_for_every_actor(RecoverabilityClass recoverability)
+    {
+        foreach (var actor in new[] { RecoveryActorKind.User, RecoveryActorKind.ApiKey, RecoveryActorKind.Automation, RecoveryActorKind.System })
+        {
+            var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: actor) with { Recoverability = recoverability });
+
+            decision.Verdict.Should().Be(EligibilityVerdict.Deny);
+            decision.ReasonCode.Should().Be(RecoveryEligibilityGate.ReasonReplayHandOffOnly);
+        }
+    }
+
+    [Theory]
+    [InlineData(RecoverabilityClass.R1ReplayableProvable)]
+    [InlineData(RecoverabilityClass.R2ReplayableUnproven)]
+    [InlineData(RecoverabilityClass.R4PointerOnly)]
+    [InlineData(null)]
+    public async Task A_class_that_offers_replay_or_no_class_leaves_the_verdict_as_it_was(RecoverabilityClass? recoverability)
+    {
+        var plain = await _gate.EvaluateAsync(BuildRequest());
+        var withClass = await _gate.EvaluateAsync(BuildRequest() with { Recoverability = recoverability });
+
+        withClass.Should().Be(plain);
+    }
+
+    [Fact]
+    public async Task Replay_through_a_connection_declared_read_only_is_denied_for_every_actor()
+    {
+        foreach (var actor in new[] { RecoveryActorKind.User, RecoveryActorKind.ApiKey, RecoveryActorKind.Automation, RecoveryActorKind.System })
+        {
+            var decision = await _gate.EvaluateAsync(BuildRequest(actorKind: actor) with { ConnectionCanSend = false });
+
+            decision.Verdict.Should().Be(EligibilityVerdict.Deny);
+            decision.ReasonCode.Should().Be(RecoveryEligibilityGate.ReasonConnectionReadOnly);
+        }
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(true)]
+    public async Task A_connection_not_declared_read_only_leaves_the_verdict_as_it_was(bool? canSend)
+    {
+        var plain = await _gate.EvaluateAsync(BuildRequest());
+
+        (await _gate.EvaluateAsync(BuildRequest() with { ConnectionCanSend = canSend })).Should().Be(plain);
+    }
+
+    [Fact]
+    public async Task A_purge_is_not_refused_by_the_replay_class_check()
+    {
+        var decision = await _gate.EvaluateAsync(
+            BuildRequest(actionKind: RecoveryOperationKind.Purge) with { Recoverability = RecoverabilityClass.R6NotRecoverable });
+
+        decision.ReasonCode.Should().NotBe(RecoveryEligibilityGate.ReasonReplayHandOffOnly);
+    }
 
     private void SeedLineageEntry(
         string entityName,

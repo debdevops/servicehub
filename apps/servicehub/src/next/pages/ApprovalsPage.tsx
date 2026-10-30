@@ -13,6 +13,7 @@ import { formatAge } from '../../lib/format'
 import { permission } from '../../lib/permissions'
 import { ToolPageHeader } from '../components/ToolPageHeader'
 import { cloudLabel, cloudOf, parseScope } from '../lib/clouds'
+import { useOwnerWords } from '../lib/ownerWords'
 import { roleWords } from '../lib/words'
 import { Th, ThHidden } from '../components/Tip'
 import { Tip } from '../components/Tip'
@@ -37,6 +38,7 @@ export default function ApprovalsPage() {
   const coverage = useCoverage()
   const me = useMe()
   const isManual = useManualApproval()
+  const ownerOf = useOwnerWords()
   const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set())
 
   const rows = coverage.data?.rows ?? []
@@ -120,7 +122,7 @@ export default function ApprovalsPage() {
                           <td className={td}>{i.deadLetterReason ?? '—'}</td>
                           <td className={`${td} max-w-md`}>{i.reason}</td>
                           <td className={td}>{formatAge(i.since, now)}</td>
-                          <td className={td}>All channels</td>
+                          <td className={td}>{ownerOf(i.namespaceId)}</td>
                           <td className={td}>
                             {may.allowed
                               ? <Link to={`${pathname}?dialog=review&entry=${encodeURIComponent(id)}`} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">Review</Link>

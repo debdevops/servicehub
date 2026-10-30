@@ -185,6 +185,7 @@ public sealed class ServiceHubDbContext : DbContext
         var entity = modelBuilder.Entity<AutonomyGrant>();
 
         entity.ToTable("AutonomyGrants");
+        entity.Property(e => e.PreconditionsHash).HasMaxLength(64);
         entity.HasKey(e => e.Id);
         entity.Property(e => e.OwnerId).HasMaxLength(128).IsRequired();
         entity.Property(e => e.SignatureHash).HasMaxLength(64).IsRequired();

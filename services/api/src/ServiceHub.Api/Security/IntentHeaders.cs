@@ -70,6 +70,12 @@ public static class IntentHeaders
     /// <summary>Intent for turning a cloud's DLQ observer on or off, or changing where its log lives.</summary>
     public const string ConfigureDlqObserver = "configure-dlq-observer";
 
+    /// <summary>Declare whether ServiceHub may send through a connection.</summary>
+    public const string DeclareCanSend = "declare-can-send";
+
+    /// <summary>Choose which notification channel is told about a connection.</summary>
+    public const string SetOwnerChannel = "set-owner-channel";
+
     /// <summary>Intent for ticking or unticking a component on a connection (Add a component).</summary>
     public const string ManageComponents = "manage-components";
 

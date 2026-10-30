@@ -27,7 +27,7 @@ export const labels: Readonly<Record<string, ColumnHelp>> = {
   'Family (if hand-off)': h('Family', 'For a hand-off, the group of reasons ServiceHub stopped for (for example “Outcome unknown” or “Policy blocked”). It tells you what kind of decision is waiting. Approvals have no family.'),
   'Age': h('Age', 'How long this has been waiting for a person, counted from when ServiceHub raised it.'),
   'What’s needed': h('What’s needed', 'What you are being asked to do: approve or decline a held replay, or investigate and decide on a hand-off.'),
-  'Owner (notification channel)': h('Owner (notification channel)', 'Who is told. A notification channel has no component of its own in this version, so every item says “All channels”: ServiceHub tells every enabled channel, and the bell.'),
+  'Owner (notification channel)': h('Owner (notification channel)', 'Who is told. A connection can name the one channel that is told about it (on its Access tab); otherwise every item says “All channels”: ServiceHub tells every enabled channel, and the bell.'),
   'Actions': h('Actions', 'What you can do with this row. Opening something changes nothing; anything that sends or changes a message asks you first.'),
   'Description': h('Description', 'The error text that came with the failure, exactly as the cloud or the application wrote it. “—” means none was given.'),
   'Deliveries': h('Deliveries', 'How many times a consumer picked this message up before it was set aside. A dash means this cloud does not report it.'),

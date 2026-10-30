@@ -82,7 +82,7 @@ export default function AutonomyPanel(_props: NextOverlayBodyProps) { // eslint-
         <ul className="divide-y divide-[var(--color-border)] rounded-xl border border-[var(--color-border)]">
           <Item tone="warn" title="A duplicate" note="Straight back to approval" />
           <Item tone="warn" title="The verified rate drops" note="Back to approval" />
-          <Item tone="warn" title="The component’s settings change" note="Not built yet" />
+          <Item tone="warn" title="The component’s settings change" note="Back to approval. Only what ServiceHub keeps is watched: the cloud, the environment and whether the connection may send. Limits that live in the cloud are not." />
           <li className="flex items-start gap-3 px-3 py-2 text-sm"><X className="mt-0.5 h-4 w-4 shrink-0 text-green-700" aria-hidden="true" /><span><span className="font-medium">Anything you turn off</span><span className="block text-xs text-[var(--color-text-muted)]">Emergency stop pauses the Agent; a person can still replay</span></span></li>
         </ul>
       </section>

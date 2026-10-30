@@ -152,6 +152,14 @@ public interface IRecoveryLedger
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Stores, or clears with <see langword="null"/>, the fingerprint of the settings a grant was earned under (plan G2). Not a
+    /// transition: the level and the chain are untouched. Does nothing when there is no grant.
+    /// </summary>
+    Task SetAutonomyGrantPreconditionsAsync(
+        string ownerId, string signatureHash, Enums.RecoveryOperationKind actionKind, string? preconditionsHash,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Records that the gate refused an automatic action and a person must decide (unit 5.1): a terminal entry with
     /// disposition Declined plus one <c>EligibilityDeclined</c> event carrying the reason code. Nothing reaches a cloud.
     /// </summary>

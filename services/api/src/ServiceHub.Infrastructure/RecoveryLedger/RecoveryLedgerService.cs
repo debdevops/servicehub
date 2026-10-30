@@ -714,6 +714,21 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     }
 
     /// <inheritdoc />
+    public async Task SetAutonomyGrantPreconditionsAsync(
+        string ownerId, string signatureHash, RecoveryOperationKind actionKind, string? preconditionsHash, CancellationToken cancellationToken = default)
+    {
+        var grant = await _db.AutonomyGrants.FirstOrDefaultAsync(
+            g => g.OwnerId == ownerId && g.SignatureHash == signatureHash && g.ActionKind == actionKind, cancellationToken);
+        if (grant is null || grant.PreconditionsHash == preconditionsHash)
+        {
+            return;
+        }
+
+        grant.PreconditionsHash = preconditionsHash;
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<Result<AutonomyGrant>> RecordAutonomyGrantTransitionAsync(
         string ownerId, string signatureHash, RecoveryOperationKind actionKind,
         AutonomyLevel previousLevel, AutonomyLevel newLevel, string reason, string? evidenceJson,

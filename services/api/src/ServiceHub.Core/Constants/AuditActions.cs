@@ -36,6 +36,12 @@ public static class AuditActions
     /// <summary>A person set up, changed or turned off a cloud's DLQ observer (unit 4.2).</summary>
     public const string DlqObserverConfigure = "DlqObserver.Configure";
 
+    /// <summary>A person declared whether ServiceHub may send through a connection.</summary>
+    public const string NamespaceDeclareCanSend = "Namespace.DeclareCanSend";
+
+    /// <summary>A person chose which notification channel is told about a connection.</summary>
+    public const string NamespaceSetOwnerChannel = "Namespace.SetOwnerChannel";
+
     /// <summary>A person ticked a component on a connection (Add a component).</summary>
     public const string ComponentEnable = "Component.Enable";
 

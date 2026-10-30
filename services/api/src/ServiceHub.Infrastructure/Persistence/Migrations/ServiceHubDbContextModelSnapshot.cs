@@ -221,6 +221,10 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("PreconditionsHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("SignatureHash")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -676,6 +680,9 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
+                    b.Property<bool?>("CanSend")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("ConnectionString")
                         .HasColumnType("TEXT")
                         .HasColumnName("ConnectionStringEncrypted");
@@ -719,6 +726,9 @@ namespace ServiceHub.Infrastructure.Persistence.Migrations
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("OwnerChannelId")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("OwnerId")

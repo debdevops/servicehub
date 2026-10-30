@@ -19,6 +19,8 @@ export const namespaces: readonly Route[] = [
   }],
   ['put', /^\/namespaces\/([^/]+)\/dlq-observer$/, () => refuse(409, 'demo_cannot_set_up', 'This is a demo — nothing is connected to a real cloud, so there is nothing to switch on.')],
   ['post', /^\/namespaces\/([^/]+)\/dlq-observer\/check$/, () => refuse(409, 'demo_cannot_set_up', 'This is a demo — nothing is connected to a real cloud, so there is nothing to check.')],
+  ['put', /^\/namespaces\/([^/]+)\/owner-channel$/, () => refuse(409, 'demo_keeps_its_clouds', 'This is a demo — its connections cannot be changed. Choose Exit demo mode to connect your own.')],
+  ['put', /^\/namespaces\/([^/]+)\/can-send$/, () => refuse(409, 'demo_keeps_its_clouds', 'This is a demo — its connections cannot be changed. Choose Exit demo mode to connect your own.')],
   ['get', /^\/namespaces$/, (_m, { w }) => w.namespaces],
   ['get', /^\/namespaces\/([^/]+)$/, (m, { w }) => w.namespaces.find((n) => n.id === m[1]) ?? notFound('namespace')],
   ['post', /^\/namespaces$/, () => refuse(409, 'demo_cannot_connect', 'This is a demo — it cannot connect to a real cloud. Choose Exit demo mode to connect your own.')],

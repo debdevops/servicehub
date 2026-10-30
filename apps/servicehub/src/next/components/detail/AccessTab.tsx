@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom'
 import { Pager } from '../../../components/ui/Pager'
 import { usePagedList } from '../../../hooks/usePagedList'
 import { useMe } from '../../../hooks/useIdentity'
-import { useGrants } from '../../../hooks/useSettings'
-import { useTestConnection } from '../../../hooks/useNamespaces'
+import { useGrants, useSettings } from '../../../hooks/useSettings'
+import { useDeclareCanSend, useSetOwnerChannel, useTestConnection } from '../../../hooks/useNamespaces'
 import { toProblem } from '../../../lib/api/client'
 import type { ConnectedComponent } from '../../../lib/api/components'
 import type { Role } from '../../../lib/api/identity'
@@ -32,6 +32,9 @@ export function AccessTab({ component: c, namespace: ns }: { component: Connecte
   const governed = me.data?.governanceActive === true
   const grants = useGrants(governed)
   const test = useTestConnection()
+  const declare = useDeclareCanSend()
+  const setOwner = useSetOwnerChannel()
+  const channels = (useSettings().data?.notifications.channels ?? []).filter((ch) => ch.enabled)
   const mine = (grants.data ?? []).filter((g) => g.namespaceId === null || g.namespaceId === c.namespaceId)
   const { items, pager } = usePagedList(mine)
   const yourRole = me.data ? (me.data.namespaceRecoverRoles?.[c.namespaceId] ?? me.data.recoverRole ?? me.data.effectiveRole) : undefined
@@ -119,12 +122,43 @@ export function AccessTab({ component: c, namespace: ns }: { component: Connecte
         <dl className="text-sm">
           <Fact label="Connected with">{ns ? credentialWords(ns.authType) : '—'}</Fact>
           <Fact label="Read (listen)">{c.reachable ? <span className="font-semibold text-green-700">Yes</span> : <span className="font-semibold text-amber-800">Not known: it cannot be reached</span>}</Fact>
-          <Fact label="Send">Not checked. Testing it would mean sending a message, so ServiceHub does not.</Fact>
+          <Fact label="Send">
+            {ns?.canSend === false ? <>Read only, as declared. ServiceHub will not replay or send through this connection.</>
+              : ns?.canSend === true ? <>Read and send, as declared. The cloud itself was not asked: testing it would mean sending a message.</>
+              : <>Not said. Treated as may send. The cloud itself was not asked: testing it would mean sending a message.</>}
+          </Fact>
+          <Fact label="Told">
+            {channels.find((ch) => ch.id === ns?.ownerChannelId)?.label ?? 'Every enabled channel'}
+          </Fact>
           <Fact label="Tested">{lastTest ? <>{formatWhen(lastTest.at, now)} · {lastTest.ok ? 'worked' : 'did not work'}</> : 'Not tested yet'}</Fact>
           <Fact label="Stored">
             {ns === undefined ? '—' : SECRET_AUTH.has(ns.authType) ? 'Encrypted on this machine, never shown again' : 'No secret is stored: it signs in as an identity'}
           </Fact>
         </dl>
+        {ns && me.data && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button type="button" disabled={declare.isPending}
+              onClick={() => declare.mutate({ id: ns.id, canSend: ns.canSend === false })}
+              className="rounded-lg border border-[var(--color-border)] px-3.5 py-2 text-xs font-bold hover:bg-[var(--color-surface-muted)] disabled:opacity-60">
+              {ns.canSend === false ? 'Allow send' : 'Make read only'}
+            </button>
+            <span className="text-xs text-[var(--color-text-muted)]">Admin only.</span>
+          </div>
+        )}
+        {ns && me.data && channels.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <label htmlFor="owner-channel" className="text-xs font-semibold">Tell only</label>
+            <select id="owner-channel" value={ns.ownerChannelId ?? ''} disabled={setOwner.isPending}
+              onChange={(e) => setOwner.mutate({ id: ns.id, channelId: e.target.value || null })}
+              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs">
+              <option value="">Every enabled channel</option>
+              {channels.map((ch) => <option key={ch.id} value={ch.id}>{ch.label}</option>)}
+            </select>
+            <span className="text-xs text-[var(--color-text-muted)]">Admin only.</span>
+          </div>
+        )}
+        {setOwner.isError && <p role="alert" className="mt-2 text-sm text-red-800">{toProblem(setOwner.error).message}</p>}
+        {declare.isError && <p role="alert" className="mt-2 text-sm text-red-800">{toProblem(declare.error).message}</p>}
         {test.isError && <p role="alert" className="mt-2 text-sm text-red-800">{toProblem(test.error).message}</p>}
         {test.data && !test.data.isConnected && <p role="alert" className="mt-2 text-sm text-amber-900">{test.data.message}</p>}
         {test.data?.isConnected && <p role="status" className="mt-2 text-sm text-green-800">The connection worked.</p>}

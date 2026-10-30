@@ -37,6 +37,11 @@ public sealed record CreateNamespaceRequest(
     public CloudProviderType Provider { get; init; } = CloudProviderType.Azure;
 
     /// <summary>
+    /// Whether ServiceHub may send through this connection: <c>false</c> is read-only. Omitted means not said, treated as may send.
+    /// </summary>
+    public bool? CanSend { get; init; }
+
+    /// <summary>
     /// Gets the AWS region identifier (e.g., us-east-1).
     /// Only relevant when Provider is Aws.
     /// </summary>

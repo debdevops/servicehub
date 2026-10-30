@@ -297,6 +297,82 @@ public sealed class NamespacesApiTests
         return request;
     }
 
+    private static HttpRequestMessage PutCanSend(Guid id, object body, string? intent = "declare-can-send")
+    {
+        var request = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/namespaces/{id}/can-send") { Content = JsonContent.Create(body) };
+        if (intent is not null)
+        {
+            request.Headers.Add("X-ServiceHub-Intent", intent);
+        }
+
+        return request;
+    }
+
+    [Fact]
+    public async Task A_connection_is_may_send_until_a_person_declares_it_read_only_and_the_declaration_survives_a_read()
+    {
+        using var host = Host();
+        var id = await Connect(host, "acme-bus");
+
+        (await Json(await host.Client.GetAsync($"/api/v1/namespaces/{id}"))).GetProperty("canSend").ValueKind.Should().Be(JsonValueKind.Null);
+        (await host.Client.SendAsync(PutCanSend(id, new { canSend = false }, intent: null))).StatusCode.Should().Be(HttpStatusCode.PreconditionRequired);
+
+        var saved = await host.Client.SendAsync(PutCanSend(id, new { canSend = false }));
+        saved.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await Json(saved)).GetProperty("canSend").GetBoolean().Should().BeFalse();
+        (await Json(await host.Client.GetAsync($"/api/v1/namespaces/{id}"))).GetProperty("canSend").GetBoolean().Should().BeFalse();
+
+        var cleared = await host.Client.SendAsync(PutCanSend(id, new { canSend = (bool?)null }));
+        (await Json(cleared)).GetProperty("canSend").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    private static HttpRequestMessage PutOwnerChannel(Guid id, object body, string? intent = "set-owner-channel")
+    {
+        var request = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/namespaces/{id}/owner-channel") { Content = JsonContent.Create(body) };
+        if (intent is not null)
+        {
+            request.Headers.Add("X-ServiceHub-Intent", intent);
+        }
+
+        return request;
+    }
+
+    [Fact]
+    public async Task A_connection_names_the_channel_that_is_told_about_it_and_only_a_real_channel_of_this_owner()
+    {
+        using var host = Host();
+        var id = await Connect(host, "acme-bus");
+        var added = await host.Client.SendAsync(Post("/api/v1/settings/channels", new { format = "slack", label = "#ops", url = "https://hooks.slack.com/services/T0/B0/secretpart" }, "add-channel"));
+        var channelId = (await Json(added)).GetProperty("id").GetGuid();
+
+        (await host.Client.SendAsync(PutOwnerChannel(id, new { channelId }, intent: null))).StatusCode.Should().Be(HttpStatusCode.PreconditionRequired);
+        (await host.Client.SendAsync(PutOwnerChannel(id, new { channelId = Guid.NewGuid() }))).StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var saved = await host.Client.SendAsync(PutOwnerChannel(id, new { channelId }));
+        saved.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await Json(saved)).GetProperty("ownerChannelId").GetGuid().Should().Be(channelId);
+        (await Json(await host.Client.GetAsync($"/api/v1/namespaces/{id}"))).GetProperty("ownerChannelId").GetGuid().Should().Be(channelId);
+
+        var cleared = await host.Client.SendAsync(PutOwnerChannel(id, new { channelId = (Guid?)null }));
+        (await Json(cleared)).GetProperty("ownerChannelId").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task A_connection_can_be_declared_read_only_when_it_is_connected()
+    {
+        using var host = Host();
+        var response = await host.Client.SendAsync(Post("/api/v1/namespaces", new
+        {
+            name = "read-only-bus",
+            connectionString = AzureCredential("read-only-bus"),
+            authType = "connectionString",
+            canSend = false,
+        }));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        (await Json(response)).GetProperty("canSend").GetBoolean().Should().BeFalse();
+    }
+
     [Fact]
     public async Task A_cloud_that_can_confirm_on_its_own_needs_no_observer_and_refuses_to_set_one_up()
     {

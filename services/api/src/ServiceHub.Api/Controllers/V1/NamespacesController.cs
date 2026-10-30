@@ -145,6 +145,7 @@ public sealed class NamespacesController : ApiControllerBase
             return Problem(created.Error);
         }
 
+        created.Value.DeclareCanSend(request.CanSend);
         var saved = await _namespaces.AddAsync(created.Value, cancellationToken);
         if (saved.IsFailure)
         {
@@ -156,6 +157,104 @@ public sealed class NamespacesController : ApiControllerBase
 
         _logger.LogInformation("Namespace {NamespaceId} connected", created.Value.Id);
         return CreatedAtAction(nameof(Get), new { id = created.Value.Id }, ToResponse(created.Value));
+    }
+
+    /// <summary>The body of <c>PUT .../can-send</c>.</summary>
+    /// <param name="CanSend">False is read-only; true is read and send; null clears the declaration (treated as may send).</param>
+    public sealed record DeclareCanSendRequest(bool? CanSend);
+
+    /// <summary>
+    /// Says whether ServiceHub may send through this connection (C3). A cloud cannot always be asked what a credential may do, so
+    /// the person declares it; a read-only connection refuses replay and manual Send. Requires the <c>declare-can-send</c> intent
+    /// header and the Admin role for this namespace.
+    /// </summary>
+    [HttpPut("{id:guid}/can-send")]
+    [ProducesResponseType(typeof(NamespaceResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
+    public async Task<IActionResult> DeclareCanSend(Guid id, [FromBody] DeclareCanSendRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (!IntentHeaders.Declares(Request, IntentHeaders.DeclareCanSend))
+        {
+            return Problem(
+                StatusCodes.Status428PreconditionRequired,
+                ErrorCodes.IntentRequired,
+                IntentHeaders.MissingDetail("say whether this connection may send", IntentHeaders.DeclareCanSend));
+        }
+
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        var ns = found.Value;
+        if (await DeniedUnlessAsync(GovernanceRole.Admin, id, null, "say whether this connection may send", cancellationToken) is { } denied) return denied;
+
+        ns.DeclareCanSend(request.CanSend);
+        var saved = await _namespaces.UpdateAsync(ns, cancellationToken);
+        if (saved.IsFailure)
+        {
+            await RecordAsync(AuditActions.NamespaceDeclareCanSend, AuditActions.Failure, ns, saved.Error.Message, cancellationToken);
+            return Problem(saved.Error);
+        }
+
+        await RecordAsync(AuditActions.NamespaceDeclareCanSend, AuditActions.Success, ns, null, cancellationToken);
+        return Ok(ToResponse(ns));
+    }
+
+    /// <summary>The body of <c>PUT .../owner-channel</c>.</summary>
+    /// <param name="ChannelId">The notification channel to tell about this connection; null means every enabled channel.</param>
+    public sealed record SetOwnerChannelRequest(Guid? ChannelId);
+
+    /// <summary>
+    /// Chooses the one notification channel that is told about this connection (G7). Needs the <c>set-owner-channel</c> intent
+    /// header and the Admin role for this namespace; the channel must be one of this owner's.
+    /// </summary>
+    [HttpPut("{id:guid}/owner-channel")]
+    [ProducesResponseType(typeof(NamespaceResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
+    public async Task<IActionResult> SetOwnerChannel(
+        Guid id, [FromBody] SetOwnerChannelRequest request, [FromServices] ServiceHubDbContext db, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(db);
+        if (!IntentHeaders.Declares(Request, IntentHeaders.SetOwnerChannel))
+        {
+            return Problem(
+                StatusCodes.Status428PreconditionRequired,
+                ErrorCodes.IntentRequired,
+                IntentHeaders.MissingDetail("choose who is told about this connection", IntentHeaders.SetOwnerChannel));
+        }
+
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        var ns = found.Value;
+        if (await DeniedUnlessAsync(GovernanceRole.Admin, id, null, "choose who is told about this connection", cancellationToken) is { } denied) return denied;
+
+        if (request.ChannelId is { } channelId
+            && !await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.AnyAsync(
+                db.NotificationChannels, c => c.Id == channelId && c.OwnerId == OwnerId, cancellationToken))
+        {
+            return Problem(StatusCodes.Status404NotFound, ErrorCodes.NotFound, "That notification channel was not found.");
+        }
+
+        ns.AssignOwnerChannel(request.ChannelId);
+        var saved = await _namespaces.UpdateAsync(ns, cancellationToken);
+        if (saved.IsFailure)
+        {
+            await RecordAsync(AuditActions.NamespaceSetOwnerChannel, AuditActions.Failure, ns, saved.Error.Message, cancellationToken);
+            return Problem(saved.Error);
+        }
+
+        await RecordAsync(AuditActions.NamespaceSetOwnerChannel, AuditActions.Success, ns, null, cancellationToken);
+        return Ok(ToResponse(ns));
     }
 
     /// <summary>Probes the namespace live and records the outcome. A failed probe is a 200 that says so.</summary>
@@ -983,7 +1082,9 @@ public sealed class NamespacesController : ApiControllerBase
         ns.CreatedAt,
         ns.LastConnectionTestAt,
         ns.LastConnectionTestSucceeded,
-        _router.IsRegistered(ns.Provider) ? _router.Resolve(ns.Provider).Capabilities : null);
+        _router.IsRegistered(ns.Provider) ? _router.Resolve(ns.Provider).Capabilities : null,
+        ns.CanSend,
+        ns.OwnerChannelId);
 
     private readonly record struct Listing((Namespace Ns, ProviderCapabilities Capabilities, IReadOnlyList<CloudEntity> Entities)? Success, ObjectResult? Failure)
     {

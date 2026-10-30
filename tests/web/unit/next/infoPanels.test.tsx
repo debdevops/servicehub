@@ -93,11 +93,12 @@ describe('How autonomy is earned (unit F11)', () => {
     expect(within(table).getByText('AWS SQS').closest('tr')).toHaveTextContent('Not on its own')
   })
 
-  it('does not claim a demotion that is not built', async () => {
+  it('claims only the settings ServiceHub keeps, and says the cloud\'s own limits are not watched', async () => {
     open('/next/azure?panel=autonomy')
     const panel = await screen.findByRole('dialog')
     expect(await within(panel).findByText(/The component’s settings change/)).toBeInTheDocument()
-    expect(within(panel).getByText('Not built yet')).toBeInTheDocument()
+    expect(within(panel).getByText(/Only what ServiceHub keeps is watched/)).toBeInTheDocument()
+    expect(within(panel).getByText(/Limits that live in the cloud are not/)).toBeInTheDocument()
   })
 
   it('is reached from Failure signatures, and has no accessibility violations', async () => {

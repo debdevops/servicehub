@@ -20,7 +20,7 @@ export const GATE_REASON_CODES = [
   'RECURRENCE_CAP_AMBIGUOUS_COLLISION', 'RECURRENCE_CAP_EXCEEDED', 'RECURRENCE_CAP_EXCEEDED_HEURISTIC', 'RECURRENCE_CAP_QUERY_ERROR',
   'AUTONOMY_SIGNATURE_HASH_MISSING', 'AUTONOMY_GRANT_QUERY_ERROR', 'AUTONOMY_GRANT_INSUFFICIENT', 'PROVIDER_CANNOT_VERIFY_ABSENCE',
   'SIGNATURE_RECENT_RESULTS_MIXED', 'SIGNATURE_RECENT_RESULTS_QUERY_ERROR',
-  'RATE_LIMITED', 'FLEET_RATE_LIMITED', 'NOT_ACTIVE', 'REPLAY_OUTCOME_UNKNOWN',
+  'RATE_LIMITED', 'FLEET_RATE_LIMITED', 'NOT_ACTIVE', 'REPLAY_OUTCOME_UNKNOWN', 'REPLAY_HAND_OFF_ONLY', 'CONNECTION_READ_ONLY',
 ] as const
 
 const couldNotRead = (what: string): UnlockHint => ({
@@ -40,6 +40,8 @@ export const unlockHints: Readonly<Record<(typeof GATE_REASON_CODES)[number], Un
   EMERGENCY_STOP_QUERY_ERROR: couldNotRead('emergency-stop state'),
   PURGE_AUTOMATION_PROHIBITED: { why: 'Only a person may purge — never a rule or an agent.', takes: 'Open the message and purge it yourself, with a reason.', go: { label: 'Dead letters', href: '/?tab=dlq' } },
   PRODUCTION_ELEVATION_REQUIRED: { why: 'This namespace is marked Production, and ServiceHub 4.1.0 stays out of production.', takes: 'Replay it with your production tooling — or, if it is not production, change its environment in Connections.', go: { label: 'Connections', href: '?panel=connections' } },
+  REPLAY_HAND_OFF_ONLY: { why: 'Nothing can be put back from this kind of component: ServiceHub can show it, not replay it.', takes: 'A person decides, using the cloud’s own tools.', go: { label: 'Waiting for a person', href: '/advanced/ledger?state=Waiting' } },
+  CONNECTION_READ_ONLY: { why: 'This connection was declared read only, so ServiceHub will not send through it.', takes: 'An Admin can allow send on the connection’s Access tab, or replay with your own tooling.', go: { label: 'Connections', href: '?panel=connections' } },
   RECURRENCE_CAP_AMBIGUOUS_COLLISION: { why: 'Two different messages look identical, so ServiceHub can’t count this one’s past attempts safely.', takes: 'A person can look at it and decide.', go: { label: 'Waiting for a person', href: '/advanced/ledger?state=Waiting' } },
   RECURRENCE_CAP_EXCEEDED: recurrence,
   RECURRENCE_CAP_EXCEEDED_HEURISTIC: recurrence,

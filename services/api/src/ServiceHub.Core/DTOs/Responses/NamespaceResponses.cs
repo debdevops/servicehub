@@ -21,6 +21,8 @@ namespace ServiceHub.Core.DTOs.Responses;
 /// <param name="CreatedAt">When it was connected.</param>
 /// <param name="LastConnectionTestAt">When it was last tested; null if never.</param>
 /// <param name="LastConnectionTestSucceeded">The last test's outcome; null if never tested.</param>
+/// <param name="CanSend">What the person declared: false is read-only, true is read and send, null is not said (treated as may send).</param>
+/// <param name="OwnerChannelId">The one notification channel told about this connection; null means every enabled channel.</param>
 /// <param name="Capabilities">
 /// What this namespace's provider genuinely supports. Carried on the response so the UI asks it
 /// "can this do X?" instead of deriving the answer from the provider's name (rule R4). Null only
@@ -40,7 +42,9 @@ public sealed record NamespaceResponse(
     DateTimeOffset CreatedAt,
     DateTimeOffset? LastConnectionTestAt,
     bool? LastConnectionTestSucceeded,
-    ProviderCapabilities? Capabilities);
+    ProviderCapabilities? Capabilities,
+    bool? CanSend = null,
+    Guid? OwnerChannelId = null);
 
 /// <summary>The outcome of testing a namespace's connection.</summary>
 /// <param name="IsConnected">Whether a live probe succeeded.</param>

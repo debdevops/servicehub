@@ -34,6 +34,8 @@ export const Intent = {
   GrantRole: 'grant-role',
   RevokeRole: 'revoke-role',
   ConfigureDlqObserver: 'configure-dlq-observer',
+  DeclareCanSend: 'declare-can-send',
+  SetOwnerChannel: 'set-owner-channel',
   ManageComponents: 'manage-components',
   CreateRule: 'create-rule',
   GenerateRules: 'generate-rules',

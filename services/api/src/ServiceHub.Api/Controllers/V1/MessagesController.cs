@@ -243,6 +243,12 @@ public sealed partial class MessagesController : ApiControllerBase
                 "This namespace is marked Production. ServiceHub 4.1.0 does not send messages into production — send test messages to a Dev or UAT namespace.");
         }
 
+        if (ns.CanSend == false)
+        {
+            return Problem(StatusCodes.Status409Conflict, ErrorCodes.CapabilityUnavailable,
+                "This connection was declared read-only, so ServiceHub will not send through it. An Admin can change that on the connection's Access tab.");
+        }
+
         if (await DeniedUnlessAsync(Core.Enums.GovernanceRole.Operator, ns.Id, null, "send a message here", cancellationToken) is { } denied) return denied;
 
         var sent = await provider.GetMessageSender().SendAsync(new SendMessageRequest(

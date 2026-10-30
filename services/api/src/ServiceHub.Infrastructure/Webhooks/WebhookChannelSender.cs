@@ -56,8 +56,18 @@ public sealed class WebhookChannelSender : IEscalationDelivery
     {
         ArgumentNullException.ThrowIfNull(escalation);
 
+        var channels = await _db.NotificationChannels.Where(c => c.OwnerId == ownerId && c.Enabled).ToListAsync(cancellationToken).ConfigureAwait(false);
+
+        // Plan G7: a connection can name the one channel that is told about it. A name that is gone or switched off is never
+        // silence — every enabled channel is told, as it was before the choice existed.
+        var ownerChannelId = escalation.NamespaceId is { } namespaceId
+            ? await _db.Namespaces.AsNoTracking().Where(n => n.Id == namespaceId && n.OwnerId == ownerId)
+                .Select(n => n.OwnerChannelId).FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false)
+            : null;
+        var chosen = ownerChannelId is { } wanted ? channels.Where(c => c.Id == wanted).ToList() : [];
+
         // The one the server's configuration names (4.0.0's single-URL model) still works beside Settings' channels.
-        if (_serverChannel.Enabled && !string.IsNullOrWhiteSpace(_serverChannel.Url))
+        if (chosen.Count == 0 && _serverChannel.Enabled && !string.IsNullOrWhiteSpace(_serverChannel.Url))
         {
             var sent = await SendAsync(_serverChannel.Url, _serverChannel.Format, escalation, cancellationToken).ConfigureAwait(false);
             if (sent.IsFailure)
@@ -66,7 +76,11 @@ public sealed class WebhookChannelSender : IEscalationDelivery
             }
         }
 
-        var channels = await _db.NotificationChannels.Where(c => c.OwnerId == ownerId && c.Enabled).ToListAsync(cancellationToken).ConfigureAwait(false);
+        if (chosen.Count > 0)
+        {
+            channels = chosen;
+        }
+
         foreach (var channel in channels)
         {
             await DeliverToAsync(channel, escalation, cancellationToken).ConfigureAwait(false);

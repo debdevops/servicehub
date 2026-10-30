@@ -92,7 +92,7 @@ export default function AddCloudModal({ close, initialCloud, homeHref }: Pick<Ov
   const set = <K extends keyof CloudForm>(key: K, value: CloudForm[K]) => setForm((f) => ({ ...f, [key]: value }))
 
   function chooseCloud(cloud: CloudProvider) {
-    setForm((f) => ({ ...emptyForm(cloud), displayName: f.displayName, environment: f.environment }))
+    setForm((f) => ({ ...emptyForm(cloud), displayName: f.displayName, environment: f.environment, canSend: f.canSend }))
     setKeyFileName(null)
     setStep({ at: 'form' })
   }
@@ -232,6 +232,24 @@ export default function AddCloudModal({ close, initialCloud, homeHref }: Pick<Ov
             New to ServiceHub? Connect a Development namespace first.
           </p>
         )}
+      </fieldset>
+
+      <fieldset>
+        <legend className="mb-1 text-sm font-medium text-[var(--color-text)]">What ServiceHub may do here</legend>
+        <div className="flex gap-4 text-sm">
+          <label className="flex items-center gap-1.5">
+            <input type="radio" name="canSend" checked={!form.canSend} onChange={() => set('canSend', false)} />
+            Read only
+          </label>
+          <label className="flex items-center gap-1.5">
+            <input type="radio" name="canSend" checked={form.canSend} onChange={() => set('canSend', true)} />
+            Read and send
+          </label>
+        </div>
+        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+          Read only: ServiceHub looks and reports, and will not replay or send a message through this connection. You are saying what the
+          credential should be used for; ServiceHub cannot always check what the cloud itself would allow. An Admin can change this later.
+        </p>
       </fieldset>
 
       {form.cloud === 'azure' && (

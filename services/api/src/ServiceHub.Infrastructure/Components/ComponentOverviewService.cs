@@ -261,7 +261,7 @@ public sealed class ComponentOverviewService : IComponentOverviewService
         var handOffs = items.Count(i => i.Kind == "unresolved");
         return new ConnectedComponent(
             ns.Id, descriptor?.ComponentKey ?? UnknownComponentKey, cloud, ns.DisplayName ?? ns.Name, descriptor?.Name ?? "Other",
-            ns.Environment, CanSend: true, Reachable: !unreadable, error, watched,
+            ns.Environment, CanSend: ns.CanSend != false, Reachable: !unreadable, error, watched,
             descriptor?.Class ?? RecoverabilityClass.R0Unknown,
             deadLetters, recorded, approvals + handOffs, approvals, handOffs, observed, entities);
     }

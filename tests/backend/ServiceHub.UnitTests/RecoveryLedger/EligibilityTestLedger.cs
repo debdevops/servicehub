@@ -54,6 +54,12 @@ internal sealed class EligibilityTestLedger : IRecoveryLedger
         return Result<RecoveryOperation>.Success(null!);
     }
 
+    public Task SetAutonomyGrantPreconditionsAsync(string ownerId, string signatureHash, RecoveryOperationKind actionKind, string? preconditionsHash, CancellationToken cancellationToken = default)
+    {
+        if (_grants.TryGetValue((ownerId, signatureHash, actionKind), out var g)) g.PreconditionsHash = preconditionsHash;
+        return Task.CompletedTask;
+    }
+
     public Task<Result<AutonomyGrant>> RecordAutonomyGrantTransitionAsync(
         string ownerId, string signatureHash, RecoveryOperationKind actionKind, AutonomyLevel previousLevel,
         AutonomyLevel newLevel, string reason, string? evidenceJson, CancellationToken cancellationToken = default)

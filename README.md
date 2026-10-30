@@ -123,6 +123,40 @@ Connections, Settings, Help, then Advanced and back. No sound needed. Click a pr
 
 *Recorded from the real app against real development clouds. Replay All is started and then stopped on camera: **Stop now** leaves every message not yet sent exactly as it was.*
 
+## What it covers
+
+Each row is one place a message gets stuck, and what ServiceHub can do about it. **Supported** rows have been run against a real cloud.
+**Being validated** rows are built and read-only, but have not yet had that live run: treat them as a way to *see* failures, not to act on them.
+This table is generated from the code, and a test fails if it drifts.
+
+<!-- coverage-table:start -->
+| Cloud | Component | Where it gets stuck | Found by | Moves on by | Status | Note |
+|---|---|---|---|---|---|---|
+| Azure | Service Bus | Dead-letter queue | Reads the place that holds the failed message | ServiceHub replays one message and verifies it | Supported | Can reach Verified |
+| Azure | Service Bus | Transfer dead-letter queue | Reads the place that holds the failed message | Shown as a count; reading it is being validated | Being validated | Replay target needs a live check |
+| Azure | Service Bus | Deferred messages, stuck sessions | A metric or a state only | Handed to a person | Being validated | No replay offered |
+| Azure | Storage Queues | Poison queue | Reads the place that holds the failed message | ServiceHub replays one message | Being validated | Not yet validated |
+| Azure | Event Grid | Dead-letter blobs | Reads the failed records the service keeps | Handed to a person | Being validated | Read only: the reason and delivery attempts of each dead-lettered event. Needs an Azure connection that signs in with Entra |
+| Azure | Logic Apps | Failed runs | Reads the history of failed runs | Handed to a person | Being validated | Read only: failed, timed-out and cancelled runs. Re-run in the Azure portal. Needs an Azure connection that signs in with Entra |
+| Azure | Event Hubs, Stream Analytics, Data Factory, Synapse, IoT Hub | No failed copy is kept | A metric or a state only | Not supported | Not supported | Only a lag or job metric exists; your monitoring already alerts on it |
+| Azure | Function Apps, Container Apps, AKS, Web Apps, App Service | Not a message store | — | Not supported | Not supported | They are consumers; their failures reach ServiceHub through the queue they read |
+| Azure | Cosmos DB, Azure SQL, Storage Accounts, Data Lake, Key Vault, API Management | Not messaging | — | Not supported | Not supported | No message, so nothing to put back |
+| AWS | SQS | Dead-letter queue | Reads the place that holds the failed message | ServiceHub replays one message, on approval | Supported | Ends Unverified |
+| AWS | SQS | Ageing source queue | A metric or a state only | Handed to a person | Being validated | No replay offered |
+| AWS | SNS | Dead-letter queue of each subscriber queue | Reads the place that holds the failed message | ServiceHub replays to the one subscriber queue | Supported | Queue subscribers only. Ends Unverified |
+| AWS | Lambda, EventBridge | Dead letters that land in SQS | Reads the place that holds the failed message | Reason shown; replay on request | Being validated | Read as SQS dead letters |
+| AWS | Step Functions | Failed runs | Reads the history of failed runs | Handed to a person | Being validated | Read only: failed, timed-out and aborted runs. Re-run in the AWS console |
+| AWS | Kinesis, DynamoDB streams | Failure records point at the original | Reads the failed records the service keeps | Handed to a person | Being validated | Read only: where a failed batch was in the stream. The original record expires, and may already be gone |
+| AWS | Data Firehose, MSK, Amazon MQ | No failed copy, or a connected broker | A metric or a state only | Not supported | Not supported | Brokers are out of scope |
+| AWS | ECS, EKS, S3, DynamoDB, RDS, ElastiCache, API Gateway | Not messaging | — | Not supported | Not supported | No message, so nothing to put back |
+| Google Cloud | Pub/Sub | Dead-letter topic of each subscription | Reads the place that holds the failed message | ServiceHub replays to the one subscription, on approval | Supported | No counts. Ends Unverified |
+| Google Cloud | Pub/Sub | Backlog, oldest unacked age | A metric or a state only | Handed to a person | Being validated | No replay offered |
+| Google Cloud | Eventarc | Undelivered events | Reads the failed records the service keeps | Handed to a person | Being validated | Read only: events held in a trigger's dead-letter topic. A trigger with no dead-letter policy keeps nothing |
+| Google Cloud | Workflows | Failed runs | Reads the history of failed runs | Handed to a person | Being validated | Read only: failed and cancelled runs. Re-run in the Google Cloud console |
+| Google Cloud | Dataflow, Dataproc, BigQuery, Cloud Tasks, Cloud Scheduler | No failed copy is kept | A metric or a state only | Not supported | Not supported | Only a job or lag metric exists |
+| Google Cloud | Cloud Functions, Cloud Run, GKE, Cloud Storage, Firestore, Spanner, Apigee | Not messaging | — | Not supported | Not supported | No message, so nothing to put back |
+<!-- coverage-table:end -->
+
 ## Know the limits
 
 - **Production namespaces are read-only for replay.** Replay is refused on any namespace you mark as Production, and ServiceHub has no way to override that. Investigate there; replay in dev and staging.

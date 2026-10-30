@@ -58,6 +58,18 @@ public sealed class Namespace
     /// <summary>The outcome of the last test; null when never tested.</summary>
     public bool? LastConnectionTestSucceeded { get; private set; }
 
+    /// <summary>
+    /// What the person declared when connecting: <see langword="false"/> is read-only, <see langword="true"/> is read and send,
+    /// <see langword="null"/> is not said (treated as may send, as before the declaration existed).
+    /// </summary>
+    public bool? CanSend { get; private set; }
+
+    /// <summary>
+    /// The one notification channel told about this connection (plan G7). <see langword="null"/> is every enabled channel, as before.
+    /// A channel that is gone or switched off is never silence: delivery falls back to every enabled channel.
+    /// </summary>
+    public Guid? OwnerChannelId { get; private set; }
+
     /// <summary>Dev, Uat or Prod.</summary>
     public EnvironmentType Environment { get; private set; }
 
@@ -174,6 +186,23 @@ public sealed class Namespace
         return Result<Namespace>.Success(Build(
             name, null, authType, displayName, description, environment, provider,
             ownerId, null, awsRegion, gcpProjectId));
+    }
+
+    /// <summary>
+    /// Declares whether ServiceHub may send through this connection. A cloud cannot always be asked what a credential may do
+    /// (Azure's connection string cannot), so the person says. <see langword="null"/> is "not said", treated as may send.
+    /// </summary>
+    public void DeclareCanSend(bool? canSend)
+    {
+        CanSend = canSend;
+        ModifiedAt = DateTimeOffset.UtcNow;
+    }
+
+    /// <summary>Chooses the one channel told about this connection, or <see langword="null"/> for every enabled channel.</summary>
+    public void AssignOwnerChannel(Guid? channelId)
+    {
+        OwnerChannelId = channelId;
+        ModifiedAt = DateTimeOffset.UtcNow;
     }
 
     /// <summary>Records the outcome of a connection test.</summary>
