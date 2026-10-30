@@ -65,6 +65,12 @@ public static class ComponentAccessRules
             [new("Enable the APIs", "gcloud services enable workflows.googleapis.com workflowexecutions.googleapis.com --project=<project-id>"),
              new("Grant the viewer role", "gcloud projects add-iam-policy-binding <project-id> --member=serviceAccount:<the identity> --role=roles/workflows.viewer")],
             ["roles/workflows.viewer", "workflows.googleapis.com", "workflowexecutions.googleapis.com"]),
+        ["cloud-scheduler"] = new(
+            "Cloud Scheduler jobs whose last attempt came back with an error, with the status Google recorded. Found across every location.", "Appears in the menu as Cloud Scheduler. Read only: a failed job is detected and handed to a person, who looks at it in the Google Cloud console. Only the last attempt is known, not a history, and a job's target is never read.", "Cloud Scheduler Viewer (roles/cloudscheduler.viewer) and the Cloud Scheduler API switched on in the project.",
+            ["Switch on the Cloud Scheduler API in the project.", "Let the identity ServiceHub signs in as read Cloud Scheduler jobs.", "Press Check access."],
+            [new("Enable the API", "gcloud services enable cloudscheduler.googleapis.com --project=<project-id>"),
+             new("Grant the viewer role", "gcloud projects add-iam-policy-binding <project-id> --member=serviceAccount:<the identity> --role=roles/cloudscheduler.viewer")],
+            ["roles/cloudscheduler.viewer", "cloudscheduler.googleapis.com"]),
         ["logic-apps"] = new(
             "Logic App runs that ended failed, timed out or cancelled, with the error code and message each recorded. Found in every subscription the identity can see.", "Appears in the menu as Logic Apps. Read only: a failed run is handed to a person, who re-runs it in the Azure portal.", "Reader on the subscription (Microsoft.Logic/workflows/read and Microsoft.Logic/workflows/runs/read), signed in with Entra. Nothing that runs, resubmits or cancels a run.",
             ["Use an Azure connection that signs in with Entra (Managed Identity or Default Azure Credential). A Service Bus connection string cannot read Logic Apps.", "Give that identity the Reader role on the subscription that holds the Logic Apps.", "Press Check access."],

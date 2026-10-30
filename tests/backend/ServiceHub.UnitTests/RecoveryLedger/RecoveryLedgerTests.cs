@@ -55,6 +55,22 @@ public sealed class RecoveryLedgerTests : IDisposable
         })).Value;
     }
 
+    [Fact]
+    public async Task A_redrive_the_cloud_accepted_closes_at_once_as_unverified_and_opens_no_observation_window()
+    {
+        var ledger = Ledger();
+        var entry = await BeganEntry(ledger, RecoveryOperationKind.Redrive);
+
+        var closed = (await ledger.RecordExecutionAsync(Execution(entry.Id, RecoveryExecutionOutcome.Accepted))).Value;
+
+        closed.State.Should().Be(RecoveryEntryState.Unverified);
+        closed.Disposition.Should().Be(RecoveryDisposition.Unverified);
+        closed.VerificationResult.Should().Be(VerificationResult.Unverified);
+        closed.ObservationWindowEndsAt.Should().BeNull();
+        closed.ClosedAt.Should().NotBeNull();
+        (await ledger.VerifyChainAsync(Owner)).IsValid.Should().BeTrue();
+    }
+
     private static RecordExecutionRequest Execution(Guid entryId, RecoveryExecutionOutcome outcome) =>
         new() { EntryId = entryId, OwnerId = Owner, Actor = Actor, Outcome = outcome };
 

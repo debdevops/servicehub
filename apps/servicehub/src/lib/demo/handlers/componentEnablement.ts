@@ -65,6 +65,17 @@ const SETUPS: Readonly<Record<string, Pick<ComponentEntry, 'what' | 'appears' | 
     ],
     permissions: ['roles/eventarc.viewer', 'roles/pubsub.viewer', 'roles/pubsub.subscriber', 'eventarc.googleapis.com'],
   },
+  'cloud-scheduler': {
+    what: 'Cloud Scheduler jobs whose last attempt came back with an error, with the status Google recorded. Found across every location.',
+    appears: 'Appears in the menu as Cloud Scheduler. Read only: a failed job is detected and handed to a person, who looks at it in the Google Cloud console. Only the last attempt is known, not a history, and a job\'s target is never read.',
+    needs: 'Cloud Scheduler Viewer (roles/cloudscheduler.viewer) and the Cloud Scheduler API switched on in the project.',
+    steps: ['Switch on the Cloud Scheduler API in the project.', 'Let the identity ServiceHub signs in as read Cloud Scheduler jobs.', 'Press Check access.'],
+    snippets: [
+      { label: 'Enable the API', text: 'gcloud services enable cloudscheduler.googleapis.com --project=<project-id>' },
+      { label: 'Grant the viewer role', text: 'gcloud projects add-iam-policy-binding <project-id> --member=serviceAccount:<the identity> --role=roles/cloudscheduler.viewer' },
+    ],
+    permissions: ['roles/cloudscheduler.viewer', 'cloudscheduler.googleapis.com'],
+  },
   workflows: {
     what: 'Workflow executions that ended failed or cancelled, with the error each recorded. Found across every location.',
     appears: 'Appears in the menu as Workflows. Read only: a failed run is handed to a person, who re-runs it in the Google Cloud console.',

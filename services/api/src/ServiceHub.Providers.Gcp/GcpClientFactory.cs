@@ -4,6 +4,8 @@ using EventarcClient = Google.Cloud.Eventarc.V1.EventarcClient;
 using EventarcClientBuilder = Google.Cloud.Eventarc.V1.EventarcClientBuilder;
 using Google.Cloud.Firestore;
 using Google.Cloud.PubSub.V1;
+using CloudSchedulerClient = Google.Cloud.Scheduler.V1.CloudSchedulerClient;
+using CloudSchedulerClientBuilder = Google.Cloud.Scheduler.V1.CloudSchedulerClientBuilder;
 using Google.Cloud.Workflows.Executions.V1;
 using Google.Cloud.Workflows.V1;
 using Grpc.Auth;
@@ -59,6 +61,7 @@ public sealed class GcpClientFactory : IGcpClientFactory
     private readonly ConcurrentDictionary<Guid, (WorkflowsClient Client, ChannelBase Channel)> _workflowsCache = new();
     private readonly ConcurrentDictionary<Guid, (ExecutionsClient Client, ChannelBase Channel)> _executionsCache = new();
     private readonly ConcurrentDictionary<Guid, (EventarcClient Client, ChannelBase Channel)> _eventarcCache = new();
+    private readonly ConcurrentDictionary<Guid, (CloudSchedulerClient Client, ChannelBase Channel)> _schedulerCache = new();
 
     /// <summary>
     /// Initialises a new instance of <see cref="GcpClientFactory"/>.
@@ -222,6 +225,23 @@ public sealed class GcpClientFactory : IGcpClientFactory
     }
 
     /// <inheritdoc/>
+    public async Task<CloudSchedulerClient> GetSchedulerClientAsync(Namespace ns, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(ns);
+
+        if (_schedulerCache.TryGetValue(ns.Id, out var cached))
+            return cached.Client;
+
+        var credential = await ResolveCredentialAsync(ns, WorkflowsScopes).ConfigureAwait(false);
+        var builder = new CloudSchedulerClientBuilder { ChannelCredentials = credential.ToChannelCredentials() };
+        var client = await builder.BuildAsync(ct).ConfigureAwait(false);
+
+        _schedulerCache.TryAdd(ns.Id, (client, builder.LastCreatedChannel));
+        _logger.LogDebug("Created CloudSchedulerClient for project {ProjectId}", LogRedactor.SanitiseForLog(GetProjectId(ns)));
+        return client;
+    }
+
+    /// <inheritdoc/>
     public async Task RemoveClientAsync(Guid namespaceId, CancellationToken cancellationToken = default)
     {
         var prefix = $"{namespaceId}:";
@@ -288,6 +308,11 @@ public sealed class GcpClientFactory : IGcpClientFactory
         if (_eventarcCache.TryRemove(namespaceId, out var eventarcEntry))
         {
             await ShutDownAsync(eventarcEntry.Channel, "Eventarc", namespaceId, linkedCts.Token).ConfigureAwait(false);
+        }
+
+        if (_schedulerCache.TryRemove(namespaceId, out var schedulerEntry))
+        {
+            await ShutDownAsync(schedulerEntry.Channel, "Cloud Scheduler", namespaceId, linkedCts.Token).ConfigureAwait(false);
         }
 
         if (_firestoreCache.TryRemove(namespaceId, out _))

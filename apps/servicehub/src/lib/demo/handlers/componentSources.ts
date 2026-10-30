@@ -1,5 +1,5 @@
 import type { CloudProvider } from '../../api/namespaces'
-import type { ComponentSource, FailedItem, FailedItemDetail, FailedItems } from '../../api/componentSources'
+import type { ComponentSource, FailedItem, FailedItemDetail, FailedItems, RedriveCheck } from '../../api/componentSources'
 import { notFound, refuse, type Route } from './http'
 
 const MINUTE = 60_000
@@ -38,6 +38,9 @@ const STREAM_IDS: Readonly<Record<string, string>> = { 'orders → process': '11
 const lambdaConsole = (fn: string) => `https://${REGION}.console.aws.amazon.com/lambda/home?region=${REGION}#/functions/${fn}?tab=configure`
 const eventarcName = (rest: string) => `projects/globex-events/locations/europe-west1/triggers/${rest}`
 const eventarcConsole = (rest: string) => `https://console.cloud.google.com/eventarc/triggers/europe-west1/${rest}?project=globex-events`
+
+const schedulerPlace = (rest: string) => `projects/globex-events/locations/${rest}`
+const SCHEDULER_JOBS = ['nightly-export', 'invoice-sync', 'cache-warm']
 
 const components: Readonly<Record<string, DemoComponent>> = {
   'step-functions': {
@@ -119,6 +122,20 @@ const components: Readonly<Record<string, DemoComponent>> = {
         { state: 'FAILED', minutesAgo: 610, reason: '{"message":"Key not found: customerId","tags":["KeyError"]}', cause: 'Error in step build_row' }] },
     ],
   },
+  // A place is a location; each failed item is a job whose last attempt failed (only the last attempt is known, not a history).
+  'cloud-scheduler': {
+    provider: 'gcp', kind: 'location',
+    place: (n) => schedulerPlace(n), run: (p, i) => `${schedulerPlace(p)}/jobs/${SCHEDULER_JOBS[i - 1]}`,
+    placeLink: () => 'https://console.cloud.google.com/cloudscheduler?project=globex-events',
+    runLink: (p, i) => `https://console.cloud.google.com/cloudscheduler/jobs/edit/${p}/${SCHEDULER_JOBS[i - 1]}?project=globex-events`,
+    summary: (r, n) => `Last attempt failed: ${r.reason} (${SCHEDULER_JOBS[n - 1]})`,
+    places: [
+      { name: 'europe-west1', runs: [
+        { state: 'UNAVAILABLE', minutesAgo: 35, reason: 'Unavailable', cause: 'The target did not answer.' },
+        { state: 'DEADLINE_EXCEEDED', minutesAgo: 190, reason: 'Deadline exceeded', cause: 'The target took longer than the job’s attempt deadline.' },
+        { state: 'PERMISSION_DENIED', minutesAgo: 700, reason: 'Permission denied', cause: 'The job’s service account may not call the target.' }] },
+    ],
+  },
 }
 
 const WORDS: Record<string, string> = {
@@ -150,6 +167,15 @@ export const componentSources: readonly Route[] = [
     const c = componentFor((id) => w.namespaces.find((n) => n.id === id)?.provider, m[1], m[2])
     const place = typeof params.place === 'string' ? params.place : null
     return { componentKey: m[2], items: items(c, now).filter((i) => place === null || i.place === place), reachedLimit: false, incomplete: false }
+  }],
+  // The demo's catalogue offers no cloud redrive (no row is validated on a real cloud), so the real gate would refuse. The demo says the same.
+  ['get', /^\/namespaces\/([^/]+)\/component-redrives\/([^/]+)\/check$/, (m, { w }): RedriveCheck => {
+    componentFor((id) => w.namespaces.find((n) => n.id === id)?.provider, m[1], m[2])
+    return { canRedrive: false, reasonCode: 'REDRIVE_NOT_OFFERED', message: 'Redrive is not offered for this component yet. It is handed to a person, who re-runs it in the cloud console.' }
+  }],
+  ['post', /^\/namespaces\/([^/]+)\/component-redrives\/([^/]+)$/, (m, { w }): never => {
+    componentFor((id) => w.namespaces.find((n) => n.id === id)?.provider, m[1], m[2])
+    return refuse(403, 'REDRIVE_NOT_OFFERED', 'Redrive is not offered for this component yet. It is handed to a person, who re-runs it in the cloud console.')
   }],
   ['get', /^\/namespaces\/([^/]+)\/components\/([^/]+)\/failed\/detail$/, (m, { w, params, now }): FailedItemDetail => {
     const c = componentFor((id) => w.namespaces.find((n) => n.id === id)?.provider, m[1], m[2])

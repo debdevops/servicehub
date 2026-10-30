@@ -54,6 +54,25 @@ public sealed class ComponentSourceApiTests
         }
     }
 
+    private sealed class FakeMover : IComponentMoveOn
+    {
+        public List<string> Calls { get; } = [];
+
+        public string ComponentKey => "step-functions";
+
+        public CloudProviderType Provider => CloudProviderType.Aws;
+
+        public bool Owns(Namespace ns, string itemId) => itemId.StartsWith("arn:aws:states:", StringComparison.Ordinal);
+
+        public string PlaceOf(string itemId) => "arn:aws:states:us-east-1:1:stateMachine:m";
+
+        public Task<Result<MoveOnAcceptance>> RedriveAsync(Namespace ns, string itemId, string requestToken, CancellationToken ct)
+        {
+            Calls.Add(itemId);
+            return Task.FromResult(Result.Success(new MoveOnAcceptance(null)));
+        }
+    }
+
     private sealed class NoAwsMessaging : ICloudMessagingProvider
     {
         public CloudProviderType ProviderType => CloudProviderType.Aws;
@@ -65,7 +84,9 @@ public sealed class ComponentSourceApiTests
             Task.FromResult(Result.Success<IReadOnlyList<CloudEntity>>([]));
     }
 
-    private static (DeadLettersApiTests.Handle Host, FakeSource Source) Host()
+    private static (DeadLettersApiTests.Handle Host, FakeSource Source) Host() => Host(new FakeMover());
+
+    private static (DeadLettersApiTests.Handle Host, FakeSource Source) Host(FakeMover mover)
     {
         var source = new FakeSource();
         var root = new ServiceHubApiFactory();
@@ -78,6 +99,7 @@ public sealed class ComponentSourceApiTests
 
             services.AddSingleton<ICloudMessagingProvider>(new NoAwsMessaging());
             services.AddSingleton<IComponentSource>(source);
+            services.AddSingleton<IComponentMoveOn>(mover);
         }));
         return (new DeadLettersApiTests.Handle(root, factory), source);
     }
@@ -178,5 +200,60 @@ public sealed class ComponentSourceApiTests
             var post = await host.Client.PostAsync($"/api/v1/namespaces/{aws}/components/step-functions/{path}", null);
             post.StatusCode.Should().BeOneOf(HttpStatusCode.MethodNotAllowed, HttpStatusCode.NotFound);
         }
+    }
+
+    private const string RunArn = "arn:aws:states:us-east-1:123456789012:execution:orders:run-1";
+
+    private static async Task<HttpResponseMessage> PostRedrive(DeadLettersApiTests.Handle host, Guid ns, bool withIntent = true, string item = RunArn)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/namespaces/{ns}/component-redrives/step-functions?itemId={Uri.EscapeDataString(item)}");
+        if (withIntent)
+        {
+            request.Headers.Add("X-ServiceHub-Intent", "redrive-execution");
+        }
+
+        return await host.Client.SendAsync(request);
+    }
+
+    [Fact]
+    public async Task A_redrive_without_the_intent_header_is_a_400_and_nothing_is_sent()
+    {
+        var mover = new FakeMover();
+        var (host, _) = Host(mover);
+        using var _h = host;
+        var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
+
+        (await PostRedrive(host, aws, withIntent: false)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        mover.Calls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_redrive_is_refused_while_the_catalogue_offers_none_and_nothing_is_sent()
+    {
+        var mover = new FakeMover();
+        var (host, _) = Host(mover);
+        using var _h = host;
+        var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
+
+        var response = await PostRedrive(host, aws);
+        var check = await Get(host.Client, $"/api/v1/namespaces/{aws}/component-redrives/step-functions/check?itemId={Uri.EscapeDataString(RunArn)}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden, "Step Functions is Being validated, so its class offers no redrive until a live run is recorded");
+        (await response.Content.ReadAsStringAsync()).Should().Contain("REDRIVE_NOT_OFFERED");
+        check.GetProperty("canRedrive").GetBoolean().Should().BeFalse();
+        check.GetProperty("reasonCode").GetString().Should().Be("REDRIVE_NOT_OFFERED");
+        mover.Calls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task The_redrive_endpoints_need_an_item_id_and_a_known_connection()
+    {
+        var (host, _) = Host();
+        using var _h = host;
+        var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
+
+        await Get(host.Client, $"/api/v1/namespaces/{aws}/component-redrives/step-functions/check", HttpStatusCode.BadRequest);
+        await Get(host.Client, $"/api/v1/namespaces/{Guid.NewGuid()}/component-redrives/step-functions/check?itemId=x", HttpStatusCode.NotFound);
+        (await PostRedrive(host, Guid.NewGuid())).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 }

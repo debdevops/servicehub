@@ -41,7 +41,7 @@ describe('the 5.0.0 navigation array', () => {
   it('names the build-plan unit and the accepted design for every screen, so nothing is built from memory', () => {
     for (const entry of [...nextNavigation, ...componentTabs]) {
       const name = 'id' in entry ? entry.id : entry.value
-      expect(entry.unit, name).toMatch(/^[A-I]\d+$/)
+      expect(entry.unit, name).toMatch(/^([A-I]|PP)\d+$/)
       expect(entry.design, name).toMatch(/^[a-z0-9-]+$/)
     }
   })

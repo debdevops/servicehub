@@ -34,5 +34,10 @@ public enum RecoveryOperationKind
     /// <summary>The operation sealed an epoch of the Recovery Evidence Ledger (roadmap
     /// next-chapter M5.2). Never represents a replay/purge and never touches an
     /// <see cref="Entities.AutonomyGrant"/>.</summary>
-    EpochControl = 6
+    EpochControl = 6,
+
+    /// <summary>The operation asked a cloud to restart one failed run from the step that failed (plan PP5). Done by the cloud
+    /// itself, so ServiceHub never reads the run's input. Approval only, never an Agent or a rule; the answer is always
+    /// <c>Unverified</c>. Never earns autonomy and never touches an <see cref="Entities.AutonomyGrant"/>.</summary>
+    Redrive = 7
 }

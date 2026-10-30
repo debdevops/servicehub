@@ -15,6 +15,9 @@ public static class AuditActions
     /// <summary>A dead letter was replayed (or a replay was refused).</summary>
     public const string ReplayMessage = "Replay.Message";
 
+    /// <summary>A person asked a cloud to redrive one failed run (plan PP5). <c>ResourceName</c> is the run's id.</summary>
+    public const string RedriveExecution = "Redrive.Execution";
+
     /// <summary>A person asked ServiceHub to look at a namespace's dead letters now.</summary>
     public const string DeadLettersLook = "DeadLetters.Look";
 

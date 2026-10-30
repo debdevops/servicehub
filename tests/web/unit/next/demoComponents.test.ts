@@ -21,8 +21,8 @@ const readOnDemand = catalogue.filter((r) => (r.detection === 'runs' || r.detect
 const byKey = new Map(readOnDemand.map((r) => [r.componentKey, r]))
 
 describe('the demo knows every component that is read on demand', () => {
-  it('has all six, two per Azure and one or two elsewhere, none on request', () => {
-    expect([...byKey.keys()].sort()).toEqual(['aws-streams', 'event-grid', 'eventarc', 'logic-apps', 'step-functions', 'workflows'])
+  it('has all seven, two per Azure and one or two elsewhere, none on request', () => {
+    expect([...byKey.keys()].sort()).toEqual(['aws-streams', 'cloud-scheduler', 'event-grid', 'eventarc', 'logic-apps', 'step-functions', 'workflows'])
     expect(catalogue.filter((r) => r.status === 'onRequest')).toEqual([])
     expect(readOnDemand.every((r) => r.status === 'beingValidated')).toBe(true)
   })

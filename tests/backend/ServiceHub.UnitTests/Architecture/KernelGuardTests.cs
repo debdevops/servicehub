@@ -19,7 +19,7 @@ public sealed class KernelGuardTests
 
     // Calls that change messages in a cloud. Provider projects implement them and are excluded from the scan.
     private static readonly Regex Mutating = new(
-        @"\.(ReplayMessageAsync|PurgeMessageAsync|DeadLetterMessagesAsync|SendBatchAsync|SendReturningProviderIdAsync)\(|GetMessageSender\(\)",
+        @"\.(ReplayMessageAsync|PurgeMessageAsync|DeadLetterMessagesAsync|SendBatchAsync|SendReturningProviderIdAsync|RedriveAsync)\(|GetMessageSender\(\)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>The only files allowed to call a mutating provider operation, each with the reason.</summary>
@@ -28,6 +28,7 @@ public sealed class KernelGuardTests
         ["DlqReplayService.cs"] = "the gated door: asks the gate, opens a ledger operation, then replays or purges",
         ["MessageOperationsService.cs"] = "the wrapper DlqReplayService calls; nothing else may reach it (checked below)",
         ["ICloudMessagingProvider.cs"] = "only declares the GetMessageSender() accessor; it calls nothing",
+        ["ComponentRedriveService.cs"] = "the gated redrive door (PP5): asks the gate, opens a ledger operation, then asks the cloud to redrive; a person only",
         ["MessagesController.cs"] = "manual 'Send a test message': operator-only, refused on Production, intent header, audited; not a recovery",
     };
 
@@ -88,6 +89,58 @@ public sealed class KernelGuardTests
         gate.Should().BeLessThan(cloud, "the gate is asked before the cloud call");
         ledger.Should().BeGreaterThan(gate, "the attempt is opened in the ledger after the gate allows it");
         ledger.Should().BeLessThan(cloud, "the attempt is on the record before the cloud call");
+    }
+
+    [Fact]
+    public void Nothing_but_the_gated_redrive_service_holds_the_component_mover()
+    {
+        var users = NonProviderSources()
+            .Where(f => f.Name != "ComponentRedriveService.cs")
+            .Where(f => Regex.IsMatch(File.ReadAllText(f.FullName), @"\bIComponentMoveOn\b"))
+            .Select(f => f.Name)
+            // The interface itself is not a caller.
+            .Where(n => n != "ComponentMoveOn.cs")
+            .ToList();
+
+        users.Should().BeEmpty("IComponentMoveOn asks a cloud to move a run on; only ComponentRedriveService may hold it");
+    }
+
+    [Fact]
+    public void The_redrive_asks_the_gate_and_is_on_the_ledger_before_the_cloud_is_called()
+    {
+        var file = RepositoryRoot.CSharpFilesUnder($"{Src}/ServiceHub.Infrastructure").Single(f => f.Name == "ComponentRedriveService.cs");
+        var text = File.ReadAllText(file.FullName);
+
+        const string methodStart = "public async Task<Result<RedriveOutcome>> RequestRedriveAsync(";
+        var start = text.IndexOf(methodStart, StringComparison.Ordinal);
+        start.Should().BeGreaterThan(-1, "RequestRedriveAsync must still exist");
+        var next = text.IndexOf("\n    private ", start + methodStart.Length, StringComparison.Ordinal);
+        var body = next < 0 ? text[start..] : text[start..next];
+
+        var gate = body.IndexOf("EvaluateAsync(", StringComparison.Ordinal);
+        var ledger = body.IndexOf("_ledger.OpenOperationAsync(", StringComparison.Ordinal);
+        var entry = body.IndexOf("_ledger.BeginEntryAsync(", StringComparison.Ordinal);
+        var cloud = body.IndexOf("mover.RedriveAsync(", StringComparison.Ordinal);
+
+        gate.Should().BeGreaterThan(-1, "the method must ask the gate");
+        cloud.Should().BeGreaterThan(-1, "the method must make the cloud call this test watches");
+        gate.Should().BeLessThan(ledger, "the attempt is opened in the ledger only after the gate allows it");
+        ledger.Should().BeLessThan(entry);
+        entry.Should().BeLessThan(cloud, "the attempt is on the record before the cloud call");
+        File.ReadAllText(file.FullName).Should().Contain("_gate.EvaluateAsync(", "the private evaluate step really asks the gate");
+    }
+
+    [Fact]
+    public void The_redrive_endpoint_keeps_its_protections()
+    {
+        var file = RepositoryRoot.CSharpFilesUnder($"{Src}/ServiceHub.Api").Single(f => f.Name == "NamespacesController.cs");
+        var text = File.ReadAllText(file.FullName);
+        var action = text[text.IndexOf("public async Task<IActionResult> ComponentRedrive(", StringComparison.Ordinal)..];
+        action = action[..action.IndexOf("private static FailedItemResponse ToResponse(", StringComparison.Ordinal)];
+
+        action.Should().Contain("IntentHeaders.RedriveExecution", "an explicit intent header is required");
+        action.Should().Contain("GovernanceRole.Approver", "only an Approver can redrive a run");
+        action.Should().Contain("_redrive.RequestRedriveAsync(", "the only route to the cloud is the gated service");
     }
 
     [Fact]

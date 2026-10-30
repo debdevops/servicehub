@@ -86,6 +86,7 @@ public static class PersistenceServiceCollectionExtensions
         services.TryAddScoped<IRulesService, Rules.RulesService>();
         services.TryAddScoped<ISignaturesService, Signatures.SignaturesService>();
         services.TryAddScoped<IDlqReplayService, Recovery.DlqReplayService>();
+        services.TryAddScoped<IComponentRedriveService, Recovery.ComponentRedriveService>();
         services.TryAddScoped<IPendingWorkService, Recovery.PendingWorkService>();
         services.TryAddScoped<IGovernanceGrantService, Governance.GovernanceGrantService>();
         services.TryAddScoped<IGovernanceAccessEvaluator, Governance.GovernanceAccessEvaluator>();

@@ -64,6 +64,9 @@ public static class IntentHeaders
     /// <summary>Intent for purging (deleting for good) one dead letter.</summary>
     public const string PurgeMessage = "purge-message";
 
+    /// <summary>Intent for asking a cloud to redrive one failed run of a component that is not a message store.</summary>
+    public const string RedriveExecution = "redrive-execution";
+
     /// <summary>Intent for sending one new message.</summary>
     public const string SendMessage = "send-message";
 

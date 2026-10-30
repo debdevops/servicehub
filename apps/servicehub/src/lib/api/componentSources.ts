@@ -1,4 +1,5 @@
 import { api } from './client'
+import { Intent, withIntent } from './intentHeaders'
 
 /**
  * A component that is not a message store: failed runs or failed deliveries (5.0.0, PLAN-PLUG-AND-PLAY-COMPONENTS). Everything here is
@@ -66,4 +67,30 @@ export async function fetchFailedItems(namespaceId: string, componentKey: string
 
 export async function fetchFailedItem(namespaceId: string, componentKey: string, itemId: string): Promise<FailedItemDetail> {
   return (await api.get<FailedItemDetail>(`/namespaces/${namespaceId}/components/${componentKey}/failed/detail`, { params: { itemId } })).data
+}
+
+/** Whether a person may ask the cloud to redrive one failed run now, and if not, why. Asks the server's gate; changes nothing. */
+export interface RedriveCheck {
+  readonly canRedrive: boolean
+  readonly reasonCode: string | null
+  readonly message: string
+}
+
+/** What a redrive request ended as: what the cloud accepted, and nothing more. The run's own result is never known. */
+export interface RedriveOutcome {
+  readonly entryId: string
+  readonly operationId: string
+  readonly result: 'accepted' | 'rejected' | 'unknown'
+  readonly state: string
+  readonly message: string
+  readonly errorCode: string | null
+}
+
+export async function fetchRedriveCheck(namespaceId: string, componentKey: string, itemId: string): Promise<RedriveCheck> {
+  return (await api.get<RedriveCheck>(`/namespaces/${namespaceId}/component-redrives/${componentKey}/check`, { params: { itemId } })).data
+}
+
+/** The one route that asks a cloud to redrive a run. Carries the intent header; Approver only; never retried. */
+export async function redriveRun(namespaceId: string, componentKey: string, itemId: string): Promise<RedriveOutcome> {
+  return (await api.post<RedriveOutcome>(`/namespaces/${namespaceId}/component-redrives/${componentKey}`, null, { params: { itemId }, headers: withIntent(Intent.RedriveExecution) })).data
 }

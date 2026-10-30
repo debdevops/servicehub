@@ -179,6 +179,25 @@ test.describe('5.0.0 shell: a component that is not a message store (Step Functi
     expect(failed).toEqual([])
   })
 
+  test('Cloud Scheduler on Google Cloud: list, jobs whose last attempt failed, one job opened, axe clean', async ({ page }) => {
+    const failed: string[] = []
+    page.on('pageerror', (e) => failed.push(e.message))
+    await enterDemo(page)
+
+    await open(page, '/next/gcp/c/cloud-scheduler')
+    await sound(page, 'cloud scheduler list')
+    await page.getByRole('link', { name: /^View / }).first().click()
+
+    await expect(page.getByRole('table', { name: /Failed Cloud Scheduler runs/ })).toBeVisible()
+    await expect(page.getByText(/Last attempt failed: Unavailable/).first()).toBeVisible()
+    await sound(page, 'cloud scheduler page')
+    expect(await violations(page), 'cloud scheduler failed jobs').toEqual([])
+    await page.getByRole('button', { name: /^Show details of / }).first().click()
+    await expect(page.getByText(/The target did not answer/).first()).toBeVisible()
+    expect(await violations(page), 'cloud scheduler job opened').toEqual([])
+    expect(failed).toEqual([])
+  })
+
   test('Logic Apps on Azure: list, failed runs by Azure’s own words, one run opened, axe clean', async ({ page }) => {
     const failed: string[] = []
     page.on('pageerror', (e) => failed.push(e.message))

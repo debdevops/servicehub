@@ -1,5 +1,8 @@
 import { ExternalLink } from 'lucide-react'
 import { useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
+import { useMe } from '../../../hooks/useIdentity'
+import { permission } from '../../../lib/permissions'
 import { Pager } from '../../../components/ui/Pager'
 import { Select } from '../../../components/ui/Select'
 import { useFailedItem, useFailedItems } from '../../../hooks/useComponentSource'
@@ -21,7 +24,9 @@ const ALL = '__all__'
  * Logic Apps, Event Grid and the rest is what the source returns, so nothing here names a cloud or a service. The words follow the
  * catalogue row's `detection`.
  *
- * Read-only by construction: there is no replay, re-run or purge control, because this version moves nothing on. It says so, and says
+ * Read-only by construction, with one exception that is off until it is earned: a **Redrive…** link (build-plan unit PP5) appears only on a
+ * component whose catalogue row offers a cloud redrive, which no row does until a live run is recorded, and only for an Approver. Otherwise
+ * there is no replay, re-run or purge control, because this version moves nothing on. It says so, and says
  * where to do it. It never reads a run's input or output or an event's data, and a reason is read only when someone opens the item.
  */
 export function FailedRunsTab({ namespaceId, componentKey, source, row }: { namespaceId: string; componentKey: string; source: ComponentSource; row: CoverageRow }) {
@@ -33,6 +38,12 @@ export function FailedRunsTab({ namespaceId, componentKey, source, row }: { name
   const detail = useFailedItem(namespaceId, componentKey, open)
   const { items, pager } = usePagedList(failed.data?.items ?? [])
   const now = new Date()
+  const { pathname } = useLocation()
+  const me = useMe()
+  // A redrive is offered only where the catalogue says the component offers one (a row that is not yet validated never does) and the caller may.
+  const redriveHref = row.offersCloudRedrive && permission(me.data, 'Approver', 'redrive a run', { recover: true, namespaceId }).allowed
+    ? (id: string) => `${pathname}?dialog=redrive&ns=${namespaceId}&component=${componentKey}&item=${encodeURIComponent(id)}`
+    : null
   const placeName = (id: string) => source.places.find((p) => p.id === id)?.name ?? id
   const selected = failed.data?.items.find((i) => i.id === open) ?? null
 
@@ -85,7 +96,7 @@ export function FailedRunsTab({ namespaceId, componentKey, source, row }: { name
                     <tr><Th>When</Th><Th>Status</Th><Th>Place</Th><Th>Summary</Th><Th>Actions</Th></tr>
                   </thead>
                   <tbody>
-                    {items.map((i) => <Row key={i.id} item={i} place={placeName(i.place)} open={open === i.id} onToggle={() => setOpen(open === i.id ? null : i.id)} now={now} />)}
+                    {items.map((i) => <Row key={i.id} item={i} place={placeName(i.place)} open={open === i.id} onToggle={() => setOpen(open === i.id ? null : i.id)} now={now} redriveHref={redriveHref?.(i.id) ?? null} />)}
                   </tbody>
                 </table>
               </div>
@@ -136,7 +147,7 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
   return <div className="flex gap-4 border-b border-[var(--color-border)] py-2 last:border-0"><dt className="w-28 shrink-0 text-[var(--color-text-muted)]">{label}</dt><dd className="min-w-0 break-words font-semibold">{children}</dd></div>
 }
 
-function Row({ item: i, place, open, onToggle, now }: { item: FailedItem; place: string; open: boolean; onToggle: () => void; now: Date }) {
+function Row({ item: i, place, open, onToggle, now, redriveHref }: { item: FailedItem; place: string; open: boolean; onToggle: () => void; now: Date; redriveHref: string | null }) {
   return (
     <tr className="border-t border-[var(--color-border)]">
       <td className={td}>{i.atUtc ? formatWhen(i.atUtc, now) : '—'}</td>
@@ -149,6 +160,7 @@ function Row({ item: i, place, open, onToggle, now }: { item: FailedItem; place:
       <td className={td}>
         <div className="flex flex-wrap gap-2">
           <button type="button" aria-expanded={open} aria-label={`${open ? 'Hide' : 'Show'} details of ${i.summary}`} onClick={onToggle} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">{open ? 'Hide' : 'Details'}</button>
+          {redriveHref && <Link to={redriveHref} aria-label={`Redrive ${i.summary}`} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">Redrive…</Link>}
           {i.consoleUrl && (
             <a href={i.consoleUrl} target="_blank" rel="noreferrer noopener" aria-label={`Open ${i.summary} in the cloud console`} className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold hover:bg-[var(--color-surface-muted)]">
               Console <ExternalLink className="h-3 w-3" aria-hidden="true" />

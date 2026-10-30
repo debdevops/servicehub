@@ -113,6 +113,65 @@ public sealed class RecoveryEligibilityGateTests : IDisposable
     }
 
     [Fact]
+    public async Task A_redrive_is_allowed_for_a_person_on_a_class_that_offers_it()
+    {
+        foreach (var actor in new[] { RecoveryActorKind.User, RecoveryActorKind.ApiKey })
+        {
+            var decision = await _gate.EvaluateAsync(
+                BuildRequest(RecoveryOperationKind.Redrive, actor, bodyHash: null) with { Recoverability = RecoverabilityClass.R3CloudRedriveOnly });
+
+            decision.Verdict.Should().Be(EligibilityVerdict.Allow);
+        }
+    }
+
+    [Fact]
+    public async Task A_redrive_by_an_agent_or_a_rule_is_always_denied_even_with_a_grant_and_a_class_that_offers_it()
+    {
+        foreach (var actor in new[] { RecoveryActorKind.Automation, RecoveryActorKind.System })
+        {
+            var decision = await _gate.EvaluateAsync(
+                BuildRequest(RecoveryOperationKind.Redrive, actor, signatureHash: "sig") with { Recoverability = RecoverabilityClass.R3CloudRedriveOnly });
+
+            decision.Verdict.Should().Be(EligibilityVerdict.Deny);
+            decision.ReasonCode.Should().Be(RecoveryEligibilityGate.ReasonRedriveAutomationProhibited);
+        }
+    }
+
+    [Theory]
+    [InlineData(RecoverabilityClass.R0Unknown)]
+    [InlineData(RecoverabilityClass.R1ReplayableProvable)]
+    [InlineData(RecoverabilityClass.R5DetectOnly)]
+    [InlineData(RecoverabilityClass.R6NotRecoverable)]
+    [InlineData(null)]
+    public async Task A_redrive_is_denied_unless_the_class_offers_a_cloud_redrive(RecoverabilityClass? recoverability)
+    {
+        var decision = await _gate.EvaluateAsync(BuildRequest(RecoveryOperationKind.Redrive) with { Recoverability = recoverability });
+
+        decision.Verdict.Should().Be(EligibilityVerdict.Deny);
+        decision.ReasonCode.Should().Be(RecoveryEligibilityGate.ReasonRedriveNotOffered);
+    }
+
+    [Fact]
+    public async Task A_redrive_through_a_read_only_connection_is_denied_and_so_is_one_on_production()
+    {
+        var readOnly = await _gate.EvaluateAsync(
+            BuildRequest(RecoveryOperationKind.Redrive) with { Recoverability = RecoverabilityClass.R3CloudRedriveOnly, ConnectionCanSend = false });
+        var prod = await _gate.EvaluateAsync(
+            BuildRequest(RecoveryOperationKind.Redrive, environment: EnvironmentType.Prod) with { Recoverability = RecoverabilityClass.R3CloudRedriveOnly });
+
+        readOnly.ReasonCode.Should().Be(RecoveryEligibilityGate.ReasonConnectionReadOnly);
+        prod.Verdict.Should().Be(EligibilityVerdict.Deny, "4.1.0 ships no production elevation, so a Production change is refused");
+    }
+
+    [Fact]
+    public async Task A_replay_is_unchanged_by_the_redrive_rules()
+    {
+        var plain = await _gate.EvaluateAsync(BuildRequest());
+
+        (await _gate.EvaluateAsync(BuildRequest() with { Recoverability = RecoverabilityClass.R3CloudRedriveOnly })).Should().Be(plain);
+    }
+
+    [Fact]
     public async Task A_purge_is_not_refused_by_the_replay_class_check()
     {
         var decision = await _gate.EvaluateAsync(

@@ -59,7 +59,7 @@ public sealed class ComponentAccessRulesTests
             .Should().OnlyContain(c => ComponentAccessRules.Of(c) == ComponentAccess.NotBuildable);
     }
 
-    private static readonly string[] BuiltOnDemand = ["step-functions", "workflows", "logic-apps", "event-grid", "aws-streams", "eventarc"];
+    private static readonly string[] BuiltOnDemand = ["step-functions", "workflows", "cloud-scheduler", "logic-apps", "event-grid", "aws-streams", "eventarc"];
 
     [Theory]
     [InlineData(DetectionKind.Runs, true)]
@@ -101,7 +101,7 @@ public sealed class ComponentAccessRulesTests
     [Theory]
     [InlineData(CloudKind.Azure, "service-bus", "storage-queues", "event-grid", "logic-apps")]
     [InlineData(CloudKind.Aws, "sqs", "sns", "lambda-eventbridge", "step-functions", "aws-streams")]
-    [InlineData(CloudKind.Gcp, "pubsub", "eventarc", "workflows")]
+    [InlineData(CloudKind.Gcp, "pubsub", "eventarc", "workflows", "cloud-scheduler")]
     public void The_dialog_lists_every_component_of_a_cloud_once_in_catalogue_order(CloudKind cloud, params string[] keys)
     {
         ComponentAccessRules.Listed(cloud).Select(r => r.ComponentKey).Should().Equal(keys);

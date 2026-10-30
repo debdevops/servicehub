@@ -40,12 +40,15 @@ public sealed class NamespacesController : ApiControllerBase
     private readonly IAuditTrail _audit;
     private readonly ICloudProviderRouter _router;
     private readonly IComponentSourceRouter _sources;
+    private readonly IComponentRedriveService _redrive;
     private readonly ILogger<NamespacesController> _logger;
 
     /// <summary>Creates the controller.</summary>
     public NamespacesController(
-        INamespaceRepository namespaces, IAuditTrail audit, ICloudProviderRouter router, IComponentSourceRouter sources, ILogger<NamespacesController> logger)
+        INamespaceRepository namespaces, IAuditTrail audit, ICloudProviderRouter router, IComponentSourceRouter sources, IComponentRedriveService redrive,
+        ILogger<NamespacesController> logger)
     {
+        _redrive = redrive ?? throw new ArgumentNullException(nameof(redrive));
         _namespaces = namespaces ?? throw new ArgumentNullException(nameof(namespaces));
         _audit = audit ?? throw new ArgumentNullException(nameof(audit));
         _router = router ?? throw new ArgumentNullException(nameof(router));
@@ -978,6 +981,66 @@ public sealed class NamespacesController : ApiControllerBase
         return Ok(read.Value is null
             ? new FailedItemDetailResponse(null, null, null, null, null)
             : new FailedItemDetailResponse(ToResponse(read.Value.Item), read.Value.Reason, read.Value.Cause, read.Value.StartedUtc, read.Value.StoppedUtc));
+    }
+
+    /// <summary>
+    /// Whether the gate would let a person ask the cloud to redrive one failed run now, and if not, why. Records nothing and calls no cloud.
+    /// </summary>
+    [HttpGet("{id:guid}/component-redrives/{componentKey}/check")]
+    [ProducesResponseType(typeof(RedriveCheck), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ComponentRedriveCheck(Guid id, string componentKey, [FromQuery] string? itemId, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(itemId))
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "'itemId' is required.");
+        }
+
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        var check = await _redrive.CheckAsync(found.Value, componentKey, itemId.Trim(), Actor, cancellationToken);
+        return check.IsFailure ? Problem(check.Error) : Ok(check.Value);
+    }
+
+    /// <summary>
+    /// Asks the cloud to redrive one failed run (plan PP5): through the eligibility gate, recorded in the ledger before and after the cloud
+    /// is touched, once, never retried, and only by an Approver. Needs <c>X-ServiceHub-Intent: redrive-execution</c>. The answer says what
+    /// the cloud accepted and nothing more.
+    /// </summary>
+    [HttpPost("{id:guid}/component-redrives/{componentKey}")]
+    [ProducesResponseType(typeof(RedriveOutcome), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ComponentRedrive(Guid id, string componentKey, [FromQuery] string? itemId, CancellationToken cancellationToken)
+    {
+        if (!IntentHeaders.Declares(Request, IntentHeaders.RedriveExecution))
+        {
+            return Problem(
+                StatusCodes.Status400BadRequest, ErrorCodes.IntentRequired,
+                IntentHeaders.MissingDetail("redrive this run", IntentHeaders.RedriveExecution));
+        }
+
+        if (string.IsNullOrWhiteSpace(itemId))
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "'itemId' is required.");
+        }
+
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        if (await DeniedUnlessAsync(GovernanceRole.Approver, found.Value.Id, PillarKind.Recover, "redrive this run", cancellationToken) is { } denied) return denied;
+        var outcome = await _redrive.RequestRedriveAsync(found.Value, componentKey, itemId.Trim(), Actor, IntentHeaders.RedriveExecution, HttpContext.TraceIdentifier, cancellationToken);
+        return outcome.IsFailure ? Problem(outcome.Error) : Ok(outcome.Value);
     }
 
     private static FailedItemResponse ToResponse(FailedItem i) =>

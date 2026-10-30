@@ -277,6 +277,16 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
                 opensObservationWindow = true;
                 break;
 
+            case RecoveryExecutionOutcome.Accepted when operation.Kind == RecoveryOperationKind.Redrive:
+                // The cloud accepted a restart it carries out itself. Nothing ServiceHub can read says the run then finished fixed,
+                // so the entry closes at once as Unverified; it never opens an observation window and earns no trust.
+                entry.State = RecoveryEntryState.Unverified;
+                entry.Disposition = RecoveryDisposition.Unverified;
+                entry.VerificationResult = VerificationResult.Unverified;
+                entry.ClosedAt = now;
+                eventType = RecoveryEventType.ProviderAccepted;
+                break;
+
             case RecoveryExecutionOutcome.Accepted: // Purge
                 entry.State = RecoveryEntryState.Discarded;
                 entry.Disposition = RecoveryDisposition.Discarded;

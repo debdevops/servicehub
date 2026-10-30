@@ -44,6 +44,7 @@ public static class GcpDependencyInjection
         // Components that are not message stores: read-only sources, one line each (PLAN-PLUG-AND-PLAY-COMPONENTS).
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IComponentSource, WorkflowsSource>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IComponentSource, EventarcSource>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IComponentSource, CloudSchedulerSource>());
 
         // Register the GCP health check so the /health/dependencies endpoint validates Pub/Sub
         // connectivity. Tagged "dependencies", not "ready" — an unreachable GCP namespace is an

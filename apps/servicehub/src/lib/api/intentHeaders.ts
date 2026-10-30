@@ -26,6 +26,7 @@ export const Intent = {
   RemoveChannel: 'remove-channel',
   EmergencyStop: 'emergency-stop',
   SendMessage: 'send-message',
+  RedriveExecution: 'redrive-execution',
   PurgeMessage: 'purge-message',
   CreateBackup: 'create-backup',
   RestoreBackup: 'restore-backup',

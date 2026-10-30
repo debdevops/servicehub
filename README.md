@@ -153,7 +153,8 @@ This table is generated from the code, and a test fails if it drifts.
 | Google Cloud | Pub/Sub | Backlog, oldest unacked age | A metric or a state only | Handed to a person | Being validated | No replay offered |
 | Google Cloud | Eventarc | Undelivered events | Reads the failed records the service keeps | Handed to a person | Being validated | Read only: events held in a trigger's dead-letter topic. A trigger with no dead-letter policy keeps nothing |
 | Google Cloud | Workflows | Failed runs | Reads the history of failed runs | Handed to a person | Being validated | Read only: failed and cancelled runs. Re-run in the Google Cloud console |
-| Google Cloud | Dataflow, Dataproc, BigQuery, Cloud Tasks, Cloud Scheduler | No failed copy is kept | A metric or a state only | Not supported | Not supported | Only a job or lag metric exists |
+| Google Cloud | Cloud Scheduler | Jobs whose last attempt failed | Reads the history of failed runs | Detected, handed to an owner | Being validated | Read only: the last attempt of each job, not a history. A job that failed and then succeeded shows nothing. A paused job is listed, never counted as failed |
+| Google Cloud | Dataflow, Dataproc, BigQuery, Cloud Tasks | No failed copy is kept | A metric or a state only | Not supported | Not supported | Only a job or lag metric exists |
 | Google Cloud | Cloud Functions, Cloud Run, GKE, Cloud Storage, Firestore, Spanner, Apigee | Not messaging | — | Not supported | Not supported | No message, so nothing to put back |
 <!-- coverage-table:end -->
 

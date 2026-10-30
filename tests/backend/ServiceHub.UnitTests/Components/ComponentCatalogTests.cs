@@ -35,7 +35,7 @@ public sealed class ComponentCatalogTests
 
         ComponentCatalog.Sidebar(CloudKind.Azure).Select(c => c.ComponentKey).Should().Equal("service-bus", "storage-queues", "event-grid", "logic-apps");
         ComponentCatalog.Sidebar(CloudKind.Aws).Select(c => c.ComponentKey).Should().Equal("sqs", "sns", "step-functions", "aws-streams");
-        ComponentCatalog.Sidebar(CloudKind.Gcp).Select(c => c.ComponentKey).Should().Equal("pubsub", "eventarc", "workflows");
+        ComponentCatalog.Sidebar(CloudKind.Gcp).Select(c => c.ComponentKey).Should().Equal("pubsub", "eventarc", "workflows", "cloud-scheduler");
     }
 
     [Fact]

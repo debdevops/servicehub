@@ -12,6 +12,11 @@
   menu entry and page once ticked, and an Access tab that shows the permissions it needs.
 - **Per-component access, stored.** New table `NamespaceComponents` (migration `0016_W5_NamespaceComponents`, signed off) remembers what is ticked per connection.
   New audit actions `Component.Enable` and `Component.Disable`.
+- **Cloud Scheduler (Google), read-only.** Lists the jobs whose last attempt came back with an error, with the status Google recorded, across every location. Only the last
+  attempt is known, not a history, and a paused job is never counted. A job's target is never read; nothing is run, paused or changed. Shown as "Not yet validated".
+- **Redrive a failed Step Functions run (built, switched off until a live run is recorded).** An Approver can ask AWS to restart one failed Standard run from the step that
+  failed; AWS does the work, so ServiceHub never reads the run's input. It goes through the same gate and ledger as a replay, an Agent or a rule can never start one, and
+  the record always says Unverified. New ledger kind `Redrive` (no migration), intent `redrive-execution`, audit action `Redrive.Execution`.
 - **A Connections page** to see and manage cloud connections, with the connection name explained where it is shown.
 - **What ServiceHub covers.** `GET /api/v1/fleet/coverage` and a page listing every component on every cloud: where failed work ends up, how it is found, and how far
   ServiceHub can move it on. `GET /api/v1/fleet/components` (and `…/{namespaceId}/{componentKey}`) report each message store's dead-letter count, what ServiceHub recorded,
