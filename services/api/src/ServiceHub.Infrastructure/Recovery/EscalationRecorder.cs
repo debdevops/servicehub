@@ -112,7 +112,17 @@ public sealed class EscalationRecorder
         }, ownerId, null, ct);
     }
 
-    private async Task PublishAsync(EscalationRaisedPayload payload, string ownerId, Guid? namespaceId, CancellationToken ct)
+    /// <summary>
+    /// Announces something the Health Keeper found wrong with ServiceHub itself. It travels as an <c>agent</c> escalation from agent
+    /// <c>health</c>, so every channel, the event stream and the "Open Agents" link work with no change.
+    /// </summary>
+    public Task RaiseHealthAsync(string reasonCode, string reason, string ownerId, Guid? namespaceId, string? namespaceName, EventSeverity severity, CancellationToken ct) =>
+        PublishAsync(new EscalationRaisedPayload
+        {
+            Kind = "agent", AgentId = "health", NamespaceId = namespaceId, NamespaceName = namespaceName, ReasonCode = reasonCode, Reason = reason, RaisedAtUtc = _time.GetUtcNow(),
+        }, ownerId, namespaceId, ct, severity);
+
+    private async Task PublishAsync(EscalationRaisedPayload payload, string ownerId, Guid? namespaceId, CancellationToken ct, EventSeverity severity = EventSeverity.Warning)
     {
         if (_bus is null)
         {
@@ -124,7 +134,7 @@ public sealed class EscalationRecorder
             await _bus.PublishAsync(new PlatformEvent
             {
                 Source = "escalation", Category = EventCategories.Escalation, EventType = EventTypes.EscalationRaised,
-                Severity = EventSeverity.Warning, Actor = ownerId, NamespaceId = namespaceId, CloudProvider = payload.Provider, Payload = payload,
+                Severity = severity, Actor = ownerId, NamespaceId = namespaceId, CloudProvider = payload.Provider, Payload = payload,
             }, ct).ConfigureAwait(false);
         }
 #pragma warning disable CA1031 // A notification failing must never fail the escalation it announces.

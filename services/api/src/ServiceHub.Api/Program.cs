@@ -53,6 +53,7 @@ builder.Services.AddAgent<DeadLetterViewAgent>(); // ADR-0018: idle unless a per
 builder.Services.AddAgent<BulkOperationAgent>();
 builder.Services.AddAgent<ServiceHub.Infrastructure.Rules.AutoReplayAgent>();
 builder.Services.AddAgent<AutonomyEvaluationAgent>();
+builder.Services.AddAgent<HealthAgent>(); // ServiceHub watching itself: rule-based, read-only, tells your channels once per problem
 builder.Services.AddAgent<ServiceHub.Infrastructure.Insights.AnomalyInsightAgent>();
 builder.Services.AddAgent<ServiceHub.Infrastructure.Insights.BacklogInsightAgent>();
 builder.Services.AddAgent<ServiceHub.Infrastructure.Insights.CorrelationInsightAgent>();

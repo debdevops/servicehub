@@ -16,6 +16,24 @@ public static class EscalationReasons
     /// <summary>A rule's circuit breaker switched it off (unit 3.6); it waits until a person looks.</summary>
     public const string RuleStoppedItself = "RULE_CIRCUIT_BREAKER";
 
+    /// <summary>Emergency stop has been on for a long time (Health Keeper).</summary>
+    public const string HealthEmergencyStopOn = "HEALTH_EMERGENCY_STOP_ON";
+
+    /// <summary>A person paused an agent and it is still paused (Health Keeper).</summary>
+    public const string HealthAgentPaused = "HEALTH_AGENT_PAUSED";
+
+    /// <summary>A recovery attempt has been executing for far longer than a cloud call takes (Health Keeper).</summary>
+    public const string HealthLedgerStuck = "HEALTH_LEDGER_STUCK";
+
+    /// <summary>A replay's observation window ended long ago and nothing closed it (Health Keeper).</summary>
+    public const string HealthObservationOverdue = "HEALTH_OBSERVATION_OVERDUE";
+
+    /// <summary>The Recovery Evidence Ledger's hash chain no longer verifies (Health Keeper).</summary>
+    public const string HealthLedgerChainBroken = "HEALTH_LEDGER_CHAIN_BROKEN";
+
+    /// <summary>A connection's last connection test failed (Health Keeper).</summary>
+    public const string HealthConnectionFailing = "HEALTH_CONNECTION_FAILING";
+
     /// <summary>
     /// An earlier attempt to recover this message has no recorded answer (ServiceHub stopped, or lost contact with the cloud, before it
     /// could tell whether the message was sent). Nothing tries again until a person checks and says what happened.
@@ -57,6 +75,18 @@ public static class EscalationReasons
             "This agent's last cycles all failed. What it does is not happening — see its last error on the Agents page.",
         RuleStoppedItself =>
             "Fewer than half of this rule's replays stayed fixed, so it switched itself off. Look at why before turning it back on.",
+        HealthEmergencyStopOn =>
+            "Emergency stop has been on for a long time, so nothing replays on its own. Lift it when the cause is dealt with.",
+        HealthAgentPaused =>
+            "An agent is paused, so what it does is not happening. Resume it from the Agents page when you are ready.",
+        HealthLedgerStuck =>
+            "A recovery attempt has been running far longer than a cloud call takes. It may be stuck. ServiceHub settles it on the next start; check the cloud first.",
+        HealthObservationOverdue =>
+            "A replay's watching time ended long ago and it is still open, so Recovery Verification may not be closing entries. Check that agent.",
+        HealthLedgerChainBroken =>
+            "The recovery evidence ledger no longer verifies: a record was changed or lost. Stop relying on its history until a person has looked.",
+        HealthConnectionFailing =>
+            "ServiceHub could not connect to this cloud on its last test, so nothing is being read from it. Check the credential.",
         null or "" => "The agent stopped and asked a person.",
         _ => $"The agent stopped and asked a person ({code}).",
     };

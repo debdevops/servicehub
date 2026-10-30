@@ -71,6 +71,12 @@ public static class ReasonFamilies
         [EscalationReasons.AgentStale] = ReasonFamily.AgentHealth,
         [EscalationReasons.AgentFailing] = ReasonFamily.AgentHealth,
         [EscalationReasons.RuleStoppedItself] = ReasonFamily.Rejected,
+        [EscalationReasons.HealthEmergencyStopOn] = ReasonFamily.PolicyBlocked,
+        [EscalationReasons.HealthAgentPaused] = ReasonFamily.AgentHealth,
+        [EscalationReasons.HealthLedgerStuck] = ReasonFamily.AgentHealth,
+        [EscalationReasons.HealthObservationOverdue] = ReasonFamily.AgentHealth,
+        [EscalationReasons.HealthLedgerChainBroken] = ReasonFamily.AgentHealth,
+        [EscalationReasons.HealthConnectionFailing] = ReasonFamily.DependencyDown,
     };
 
     /// <summary>Every code that has a family. The tests check this against the codes <see cref="EscalationReasons"/> knows.</summary>

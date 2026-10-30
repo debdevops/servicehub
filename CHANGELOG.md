@@ -17,6 +17,10 @@
 - **Redrive a failed Step Functions run (built, switched off until a live run is recorded).** An Approver can ask AWS to restart one failed Standard run from the step that
   failed; AWS does the work, so ServiceHub never reads the run's input. It goes through the same gate and ledger as a replay, an Agent or a rule can never start one, and
   the record always says Unverified. New ledger kind `Redrive` (no migration), intent `redrive-execution`, audit action `Redrive.Execution`.
+- **Health Keeper (a new agent).** ServiceHub watches itself and tells your notification channels once per problem: emergency stop left on for over an hour, an agent left
+  paused, a recovery attempt stuck for over 15 minutes, a replay that should have been closed hours ago, a failed connection test, or a ledger whose hash chain no longer
+  verifies. Fixed rules, no model; read-only, so it changes nothing. A problem is announced when it appears and again only if it clears and returns. It travels as an agent
+  escalation, so Slack, Teams, webhooks and the live stream carry it unchanged.
 - **A Connections page** to see and manage cloud connections, with the connection name explained where it is shown.
 - **What ServiceHub covers.** `GET /api/v1/fleet/coverage` and a page listing every component on every cloud: where failed work ends up, how it is found, and how far
   ServiceHub can move it on. `GET /api/v1/fleet/components` (and `…/{namespaceId}/{componentKey}`) report each message store's dead-letter count, what ServiceHub recorded,
