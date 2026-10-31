@@ -37,6 +37,8 @@ export interface FailedItem {
   readonly summary: string
   readonly copy: 'none' | 'pointer' | 'held'
   readonly consoleUrl: string | null
+  /** Another component's entity that also holds this failure and can put it back (Eventarc: its Pub/Sub transport subscription), or null/absent. */
+  readonly heldIn?: { readonly componentKey: string; readonly entity: string } | null
 }
 
 export interface FailedItems {

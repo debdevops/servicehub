@@ -12,7 +12,8 @@ import type { ComponentSource, FailedItem } from '../../../lib/api/componentSour
 import type { CoverageRow } from '../../../lib/api/coverage'
 import { formatWhen } from '../../../lib/format'
 import { failedWords, itemStatusTone, itemStatusWords } from '../../lib/failedWords'
-import { redriveWords, type RedriveWords } from '../../lib/redriveWords'
+import { handOffNote, redriveWords, type RedriveWords } from '../../lib/redriveWords'
+import { useCoverage } from '../../../hooks/useCoverage'
 import { DetailWindow } from '../DetailWindow'
 import { Th, Tip } from '../Tip'
 
@@ -42,6 +43,14 @@ export function FailedRunsTab({ namespaceId, componentKey, source, row }: { name
   const now = new Date()
   const { pathname } = useLocation()
   const me = useMe()
+  const coverage = useCoverage()
+  // Where a held failure can be retried: the other component's dead-letter view, found by the entity that holds it (its name is what that view searches).
+  const heldInHref = (i: FailedItem): { href: string; name: string } | null => {
+    if (!i.heldIn) return null
+    const name = coverage.data?.rows.find((r) => r.componentKey === i.heldIn!.componentKey)?.name
+    if (!name) return null
+    return { href: `${pathname.replace(`/c/${componentKey}/`, `/c/${i.heldIn.componentKey}/`)}?tab=dead-letters&q=${encodeURIComponent(i.heldIn.entity)}`, name }
+  }
   // A redrive is offered only where the catalogue says the component offers one (a row that is not yet validated never does) and the caller may.
   const redriveHref = row.offersCloudRedrive && permission(me.data, 'Approver', `${redrive.verb} a run`, { recover: true, namespaceId }).allowed
     ? (id: string) => `${pathname}?dialog=redrive&ns=${namespaceId}&component=${componentKey}&item=${encodeURIComponent(id)}`
@@ -98,7 +107,7 @@ export function FailedRunsTab({ namespaceId, componentKey, source, row }: { name
                     <tr><Th>When</Th><Th>Status</Th><Th>Place</Th><Th>Summary</Th><Th>Actions</Th></tr>
                   </thead>
                   <tbody>
-                    {items.map((i) => <Row key={i.id} item={i} place={placeName(i.place)} open={open === i.id} onToggle={() => setOpen(open === i.id ? null : i.id)} now={now} redriveHref={redriveHref?.(i.id) ?? null} redrive={redrive} />)}
+                    {items.map((i) => <Row key={i.id} item={i} place={placeName(i.place)} open={open === i.id} onToggle={() => setOpen(open === i.id ? null : i.id)} now={now} redriveHref={redriveHref?.(i.id) ?? null} redrive={redrive} heldIn={heldInHref(i)} />)}
                   </tbody>
                 </table>
               </div>
@@ -107,7 +116,7 @@ export function FailedRunsTab({ namespaceId, componentKey, source, row }: { name
           </>
         )}
         <p className="border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-muted)]">
-          {words.foot(componentName, row.offersCloudRedrive ? redrive.footNote : undefined)}
+          {words.foot(componentName, row.offersCloudRedrive ? redrive.footNote : handOffNote(componentKey))}
         </p>
       </section>
 
@@ -137,7 +146,7 @@ export function FailedRunsTab({ namespaceId, componentKey, source, row }: { name
                   )}
                 </dl>
               )}
-            <p className="mt-3 text-xs text-[var(--color-text-muted)]">{words.foot(componentName, row.offersCloudRedrive ? redrive.footNote : undefined)}</p>
+            <p className="mt-3 text-xs text-[var(--color-text-muted)]">{words.foot(componentName, row.offersCloudRedrive ? redrive.footNote : handOffNote(componentKey))}</p>
           </div>
         </DetailWindow>
       )}
@@ -149,7 +158,7 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
   return <div className="flex gap-4 border-b border-[var(--color-border)] py-2 last:border-0"><dt className="w-28 shrink-0 text-[var(--color-text-muted)]">{label}</dt><dd className="min-w-0 break-words font-semibold">{children}</dd></div>
 }
 
-function Row({ item: i, place, open, onToggle, now, redriveHref, redrive }: { item: FailedItem; place: string; open: boolean; onToggle: () => void; now: Date; redriveHref: string | null; redrive: RedriveWords }) {
+function Row({ item: i, place, open, onToggle, now, redriveHref, redrive, heldIn }: { item: FailedItem; place: string; open: boolean; onToggle: () => void; now: Date; redriveHref: string | null; redrive: RedriveWords; heldIn: { href: string; name: string } | null }) {
   return (
     <tr className="border-t border-[var(--color-border)]">
       <td className={td}>{i.atUtc ? formatWhen(i.atUtc, now) : '—'}</td>
@@ -163,6 +172,7 @@ function Row({ item: i, place, open, onToggle, now, redriveHref, redrive }: { it
         <div className="flex flex-wrap gap-2">
           <button type="button" aria-expanded={open} aria-label={`${open ? 'Hide' : 'Show'} details of ${i.summary}`} onClick={onToggle} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">{open ? 'Hide' : 'Details'}</button>
           {redriveHref && <Link to={redriveHref} aria-label={`${redrive.link.replace('…', '')} ${i.summary}`} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">{redrive.link}</Link>}
+          {heldIn && <Link to={heldIn.href} aria-label={`Retry ${i.summary} in ${heldIn.name}`} title={`Opens the ${heldIn.name} dead letters for this event’s subscription, where the usual replay (the gate, the ledger, the checks) puts it back.`} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">Retry in {heldIn.name}…</Link>}
           {i.consoleUrl && (
             <a href={i.consoleUrl} target="_blank" rel="noreferrer noopener" aria-label={`Open ${i.summary} in the cloud console`} className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold hover:bg-[var(--color-surface-muted)]">
               Console <ExternalLink className="h-3 w-3" aria-hidden="true" />

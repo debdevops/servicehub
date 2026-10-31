@@ -35,6 +35,14 @@ public sealed record SourcePlace(string Id, string Name, string Kind, string? Co
 /// </summary>
 public sealed record SourcePlacesPage(IReadOnlyList<SourcePlace> Items, bool ReachedLimit, bool Incomplete = false);
 
+/// <summary>
+/// Says that a failed item is also held as a dead letter in an entity of another component, where that component's own replay can put it
+/// back (build-plan unit R3b). A pointer for a person to follow; nothing in it is sent anywhere.
+/// </summary>
+/// <param name="ComponentKey">The catalogue component that holds it, such as <c>pubsub</c>.</param>
+/// <param name="Entity">The entity's name in that component: the text that finds it in that component's dead letters.</param>
+public sealed record HeldIn(string ComponentKey, string Entity);
+
 /// <summary>One failed run or delivery. A read model: nothing in it can be sent back to a cloud.</summary>
 /// <param name="Id">Stable id the cloud uses for the item.</param>
 /// <param name="Place">The <see cref="SourcePlace.Id"/> it belongs to.</param>
@@ -44,8 +52,9 @@ public sealed record SourcePlacesPage(IReadOnlyList<SourcePlace> Items, bool Rea
 /// <param name="Summary">One plain line.</param>
 /// <param name="Copy">Whether the failed work itself is held anywhere ServiceHub can read.</param>
 /// <param name="ConsoleUrl">A link to the item in the cloud's console, or null.</param>
+/// <param name="HeldIn">Where else the same failure is held and can be retried, or null when nowhere.</param>
 public sealed record FailedItem(
-    string Id, string Place, DateTimeOffset? AtUtc, string Status, string? ReasonCode, string Summary, CopyKind Copy, string? ConsoleUrl);
+    string Id, string Place, DateTimeOffset? AtUtc, string Status, string? ReasonCode, string Summary, CopyKind Copy, string? ConsoleUrl, HeldIn? HeldIn = null);
 
 /// <summary>
 /// A page of failed items, newest first. <see cref="ReachedLimit"/> says there are more than were returned.

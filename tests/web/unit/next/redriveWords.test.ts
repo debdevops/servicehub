@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { redriveWords } from '@/next/lib/redriveWords'
+import { handOffNote, redriveWords } from '@/next/lib/redriveWords'
 
 describe('the words of moving a failed run on', () => {
   it('describes a Step Functions redrive as restarting the same run, and never says every step runs again', () => {
@@ -39,5 +39,14 @@ describe('the words of moving a failed run on', () => {
   it('gives a component with no words of its own the redrive words, so a new component never shows blank text', () => {
     expect(redriveWords('something-new')).toBe(redriveWords('step-functions'))
     expect(redriveWords(null)).toBe(redriveWords('step-functions'))
+  })
+
+  it('says Event Grid cannot be retried and why, and where an Eventarc event can be', () => {
+    expect(handOffNote('event-grid')).toContain('ServiceHub cannot retry these')
+    expect(handOffNote('event-grid')).toContain('every subscription')
+    expect(handOffNote('eventarc')).toContain('Retry in Pub/Sub')
+    expect(handOffNote('eventarc')).toContain('this trigger’s own transport topic only')
+    expect(handOffNote('aws-streams')).toBeUndefined()
+    expect(handOffNote(null)).toBeUndefined()
   })
 })

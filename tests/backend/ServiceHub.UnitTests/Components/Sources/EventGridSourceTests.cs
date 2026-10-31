@@ -455,4 +455,25 @@ public sealed class EventGridSourceTests : ComponentSourceConformance
             }
         }
     }
+
+    [Fact]
+    public async Task A_listed_dead_letter_blob_links_to_its_storage_account_and_names_no_second_place_to_retry()
+    {
+        ArrangeFailures(1);
+
+        var item = (await _source.ListFailedAsync(_ns, null, default)).Value.Items.Single();
+
+        item.ConsoleUrl.Should().Be($"https://portal.azure.com/#@/resource{AccountId}/overview");
+        item.HeldIn.Should().BeNull("Event Grid has no safe place to retry an event: republishing it would reach every subscription");
+    }
+
+    [Fact]
+    public async Task A_blob_listed_by_container_name_has_no_link_because_only_a_full_listing_learns_the_accounts_resource_id()
+    {
+        ArrangeFailures(1);
+
+        var item = (await _source.ListFailedAsync(_ns, Place, default)).Value.Items.Single();
+
+        item.ConsoleUrl.Should().BeNull();
+    }
 }

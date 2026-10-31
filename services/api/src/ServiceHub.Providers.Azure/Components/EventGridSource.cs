@@ -130,6 +130,7 @@ public sealed partial class EventGridSource : IComponentSource
             var reached = false;
             var incomplete = false;
             List<(string Account, string Container)> containers;
+            var links = new Dictionary<string, string?>(StringComparer.Ordinal);
             if (place is null)
             {
                 var found = await FindContainersAsync(ns, MaxContainersPerListing + 1, budget.Token, ct).ConfigureAwait(false);
@@ -139,6 +140,10 @@ public sealed partial class EventGridSource : IComponentSource
                 }
 
                 containers = [.. found.Items.Take(MaxContainersPerListing).Select(c => (c.Account, c.Container))];
+                foreach (var c in found.Items.Take(MaxContainersPerListing))
+                {
+                    links[$"{c.Account}/{c.Container}"] = AccountLink(c);
+                }
                 reached = found.More || found.Items.Count > MaxContainersPerListing;
                 incomplete = found.Incomplete;
             }
@@ -160,7 +165,7 @@ public sealed partial class EventGridSource : IComponentSource
             reached |= results.Any(r => r.Value.More);
             var ordered = results.SelectMany(r => r.Value.Items).OrderByDescending(b => b.ModifiedUtc ?? DateTimeOffset.MinValue).ToList();
             reached |= ordered.Count > ComponentSourceLimits.MaxFailedItems;
-            return Result.Success(new FailedItemsPage([.. ordered.Take(ComponentSourceLimits.MaxFailedItems).Select(ToItem)], reached, incomplete));
+            return Result.Success(new FailedItemsPage([.. ordered.Take(ComponentSourceLimits.MaxFailedItems).Select(b => ToItem(b, links.GetValueOrDefault($"{b.Account}/{b.Container}")))], reached, incomplete));
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -233,9 +238,11 @@ public sealed partial class EventGridSource : IComponentSource
         return new Found(all, subscriptions.More || results.Any(r => r.Value.More), results.Any(r => r.Failed || r.Value.Incomplete), null);
     }
 
-    private static FailedItem ToItem(DeadLetterBlob blob) =>
+    // The link opens the blob's storage account in the portal (the container is in the Place column). It is null when the listing was asked
+    // for one container by name, because only a full listing learns the account's resource id.
+    private static FailedItem ToItem(DeadLetterBlob blob, string? accountLink) =>
         new($"blob://{blob.Account}/{blob.Container}/{blob.Name}", PlaceId(blob.Account, blob.Container), blob.ModifiedUtc, Status, ReasonCode: null,
-            $"Dead-lettered event: {Clean(blob.Name[(blob.Name.LastIndexOf('/') + 1)..])}", CopyKind.None, ConsoleUrl: null);
+            $"Dead-lettered event: {Clean(blob.Name[(blob.Name.LastIndexOf('/') + 1)..])}", CopyKind.None, accountLink);
 
     private static string? Cause(DeadLetterBlobRead read)
     {

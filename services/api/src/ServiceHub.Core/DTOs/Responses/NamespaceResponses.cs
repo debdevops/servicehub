@@ -117,7 +117,10 @@ public sealed record ComponentSourceResponse(
 
 /// <summary>One failed run or delivery. <c>reasonCode</c> is null when the list did not read it.</summary>
 public sealed record FailedItemResponse(
-    string Id, string Place, DateTimeOffset? AtUtc, string Status, string? ReasonCode, string Summary, string Copy, string? ConsoleUrl);
+    string Id, string Place, DateTimeOffset? AtUtc, string Status, string? ReasonCode, string Summary, string Copy, string? ConsoleUrl, HeldInResponse? HeldIn = null);
+
+/// <summary>Another component's entity that also holds a failed item, where its own replay can put it back.</summary>
+public sealed record HeldInResponse(string ComponentKey, string Entity);
 
 /// <summary>Failed items, newest first. <c>reachedLimit</c> says there are more than were returned; <c>incomplete</c> says part of the read failed or timed out.</summary>
 public sealed record FailedItemsResponse(string ComponentKey, IReadOnlyList<FailedItemResponse> Items, bool ReachedLimit, bool Incomplete);

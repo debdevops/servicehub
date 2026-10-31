@@ -105,8 +105,56 @@ describe('components that keep failed records, not runs (Event Grid, Eventarc, s
     const section = screen.getByRole('table').closest('section')!
     expect(within(section).queryByText(/Failed runs/)).not.toBeInTheDocument()
     expect(within(section).queryByRole('button', { name: /replay|re-run|rerun|redrive|purge|retry|delete|start|resubmit/i })).not.toBeInTheDocument()
-    expect(screen.getByText(/does not move work on for Event Grid/)).toBeInTheDocument()
     expect(screen.queryByText(/To run one again/)).not.toBeInTheDocument()
+  })
+
+  it('says plainly that ServiceHub cannot retry Event Grid events, and why, instead of implying a retry is near', async () => {
+    open('/next/azure/c/event-grid/ns-3')
+    await screen.findByRole('table')
+
+    expect(screen.getByText(/ServiceHub cannot retry these: Event Grid has no way to redeliver an event/)).toBeInTheDocument()
+    expect(screen.getByText(/send it to every subscription|to every subscription, including ones that already handled it/)).toBeInTheDocument()
+    expect(screen.queryByText(/does not move work on/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Retry/ })).not.toBeInTheDocument()
+  })
+
+  it('links an Event Grid blob to its storage account in the portal when the source knows it', async () => {
+    vi.mocked(sourcesApi.fetchFailedItems).mockResolvedValue({ componentKey: 'event-grid', items: [item(1, { consoleUrl: 'https://portal.azure.com/#@/resource/subscriptions/s/overview' })], reachedLimit: false, incomplete: false })
+    open('/next/azure/c/event-grid/ns-3')
+
+    const link = await screen.findByRole('link', { name: 'Open Dead-lettered event: e1.json in the cloud console' })
+    expect(link).toHaveAttribute('href', 'https://portal.azure.com/#@/resource/subscriptions/s/overview')
+  })
+
+  it('offers an undelivered Eventarc event a Retry in Pub/Sub link to the dead letters of its own subscription', async () => {
+    vi.mocked(sourcesApi.fetchComponentSource).mockImplementation(async (_id, key) => ({ ...readable(key, 'trigger'), places: [{ id: 'trg', name: 'orders', kind: 'trigger', consoleUrl: null }] }))
+    vi.mocked(sourcesApi.fetchFailedItems).mockResolvedValue({
+      componentKey: 'eventarc', reachedLimit: false, incomplete: false,
+      items: [item(1, { id: 'trg#1', place: 'trg', status: 'UNDELIVERED', summary: 'Undelivered event: orders.created', heldIn: { componentKey: 'pubsub', entity: 'eventarc-orders-sub' } })],
+    })
+    open('/next/gcp/c/eventarc/ns-2')
+
+    const link = await screen.findByRole('link', { name: 'Retry Undelivered event: orders.created in Pub/Sub' })
+    expect(link.textContent).toBe('Retry in Pub/Sub…')
+    expect(link).toHaveAttribute('href', '/next/gcp/c/pubsub/ns-2?tab=dead-letters&q=eventarc-orders-sub')
+    expect(screen.getByText(/use Retry in Pub\/Sub: its dead-letter topic is a Pub\/Sub topic/)).toBeInTheDocument()
+    expect(screen.getByText(/press Look now there/)).toBeInTheDocument()
+  })
+
+  it('offers no retry link for an event that says it is held nowhere else, and never for a stream failure', async () => {
+    open('/next/azure/c/event-grid/ns-3')
+    await screen.findByRole('table')
+    expect(screen.queryByRole('link', { name: /Retry/ })).not.toBeInTheDocument()
+  })
+
+  it('does not draw the link while the component it points at is unknown to the catalogue', async () => {
+    vi.mocked(sourcesApi.fetchFailedItems).mockResolvedValue({
+      componentKey: 'eventarc', reachedLimit: false, incomplete: false,
+      items: [item(1, { id: 'trg#1', place: 'trg', status: 'UNDELIVERED', summary: 'Undelivered event: x', heldIn: { componentKey: 'no-such-component', entity: 'e' } })],
+    })
+    open('/next/gcp/c/eventarc/ns-2')
+    await screen.findByRole('table')
+    expect(screen.queryByRole('link', { name: /Retry/ })).not.toBeInTheDocument()
   })
 
   it('says a stream failure only points at the original, which may have expired', async () => {

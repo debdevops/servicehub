@@ -563,4 +563,31 @@ public sealed class EventarcSourceTests : ComponentSourceConformance
             }
         }
     }
+
+    [Fact]
+    public async Task An_undelivered_event_says_it_is_held_in_pubsub_under_its_triggers_transport_subscription()
+    {
+        ArrangeFailures(1);
+
+        var listed = (await _source.ListFailedAsync(_ns, Orders, default)).Value.Items.Single();
+        var detail = (await _source.GetFailedAsync(_ns, Item, default)).Value!.Item;
+
+        listed.HeldIn.Should().Be(new HeldIn("pubsub", "eventarc-orders-sub"), "the Pub/Sub component lists that subscription and replays to its own topic, this trigger's transport topic");
+        detail.HeldIn.Should().Be(listed.HeldIn);
+    }
+
+    [Fact]
+    public async Task An_event_names_the_subscription_of_its_own_trigger_and_not_another()
+    {
+        _google.Triggers["europe-west1"] = [new TriggerRef(Billing, BillingSub)];
+        _google.DeadLetterTopics[BillingSub] = "projects/my-proj/topics/billing-dlt";
+        var at = new DateTimeOffset(2026, 10, 1, 0, 0, 0, TimeSpan.Zero);
+        _google.Undelivered[Dlt] = [Event(1, at)];
+        _google.Undelivered["projects/my-proj/topics/billing-dlt"] = [Event(2, at)];
+
+        var items = (await _source.ListFailedAsync(_ns, null, default)).Value.Items;
+
+        items.Single(i => i.Place == Orders).HeldIn!.Entity.Should().Be("eventarc-orders-sub");
+        items.Single(i => i.Place == Billing).HeldIn!.Entity.Should().Be("eventarc-billing-sub");
+    }
 }

@@ -134,6 +134,19 @@ public sealed class ComponentCatalogTests
         row.Class.MayEarnAutonomy().Should().BeFalse("it ends Unverified and never earns autonomy");
     }
 
+    [Fact]
+    public void Event_grid_says_plainly_that_it_cannot_retry_and_why_and_eventarc_says_where_to_retry()
+    {
+        var eventGrid = ComponentCatalog.Find("event-grid.dead-letter-blobs")!;
+        var eventarc = ComponentCatalog.Find("eventarc.undelivered")!;
+
+        eventGrid.Note.Should().Contain("cannot retry these").And.Contain("republishing one to the topic would reach every subscription");
+        eventGrid.Class.OffersCloudRedrive().Should().BeFalse();
+        eventGrid.Class.OffersReplay().Should().BeFalse("a retry would reach every subscription, so none is offered");
+        eventarc.Note.Should().Contain("Retry one in Pub/Sub").And.Contain("this trigger's own transport topic only");
+        eventarc.Class.OffersReplay().Should().BeFalse("the retry is the Pub/Sub row's, not a second one here");
+    }
+
     [Theory]
     [InlineData("event-grid.dead-letter-blobs", CloudKind.Azure, DetectionKind.Records, CloudProviderType.Azure)]
     [InlineData("aws-streams.failure-records", CloudKind.Aws, DetectionKind.Records, CloudProviderType.Aws)]
@@ -147,7 +160,7 @@ public sealed class ComponentCatalogTests
         row.Provider.Should().Be(provider);
         row.Status.Should().Be(SupportStatus.BeingValidated, "it has been built and tested against a fake cloud, not seen on a real one");
         row.InSidebar.Should().BeTrue();
-        row.MovesOnBy.Should().Be("Handed to a person");
+        row.MovesOnBy.Should().Be(id == "eventarc.undelivered" ? "A person retries it in Pub/Sub" : "Handed to a person");
         row.Note.Should().Contain("Read only");
         row.EvidenceRef.Should().BeNull();
         row.Class.Should().Be(RecoverabilityClass.R0Unknown);

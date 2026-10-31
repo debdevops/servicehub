@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { readsOnDemand, type DetectionKind } from '@/lib/api/coverage'
 import { failedWords, itemStatusTone, itemStatusWords } from '@/next/lib/failedWords'
-import { redriveWords } from '@/next/lib/redriveWords'
+import { handOffNote, redriveWords } from '@/next/lib/redriveWords'
 
 describe('which components are read on demand', () => {
   it.each<[DetectionKind, boolean]>([['runs', true], ['records', true], ['store', false], ['signal', false], ['none', false]])('%s → %s', (detection, expected) => {
@@ -37,6 +37,17 @@ describe('the words of the failed-items tab', () => {
     expect(text).toContain('Resubmit…')
     expect(text).toContain('every step runs again')
     expect(text).not.toMatch(/Redrive|from the step that failed/)
+  })
+
+  it('says where a held record can be retried, or why nowhere, instead of the generic line', () => {
+    const w = failedWords('records')
+    const eventarc = w.foot('Eventarc', handOffNote('eventarc'))
+    const eventGrid = w.foot('Event Grid', handOffNote('event-grid'))
+    expect(eventarc).toContain('Retry in Pub/Sub')
+    expect(eventGrid).toContain('ServiceHub cannot retry these')
+    expect(eventarc).not.toMatch(/does not move work on/)
+    expect(eventGrid).not.toMatch(/does not move work on/)
+    expect(w.foot('Kinesis')).toContain('does not move work on for Kinesis')
   })
 
   it('speaks of records for failed records, and never promises a re-run', () => {

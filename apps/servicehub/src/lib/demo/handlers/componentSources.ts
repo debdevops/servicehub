@@ -25,6 +25,8 @@ interface DemoComponent {
   readonly summary?: (run: DemoRun, n: number) => string
   /** Whether the failed work itself is held anywhere; a stream failure only points at the original. */
   readonly copy?: 'none' | 'pointer' | 'held'
+  /** The other component's entity that also holds a failed item and can put it back (Eventarc: its Pub/Sub transport subscription). */
+  readonly heldIn?: (placeName: string) => { readonly componentKey: string; readonly entity: string }
 }
 
 const REGION = 'eu-west-1'
@@ -104,6 +106,7 @@ const components: Readonly<Record<string, DemoComponent>> = {
     placeLink: (p) => eventarcConsole(p),
     runLink: (p) => eventarcConsole(p),
     summary: () => 'Undelivered event: google.cloud.pubsub.topic.v1.messagePublished',
+    heldIn: (p) => ({ componentKey: 'pubsub', entity: `eventarc-${p}-sub` }),
     places: [
       { name: 'orders-to-fulfilment', runs: [
         { state: 'UNDELIVERED', minutesAgo: 41, reason: 'HTTP 503 from the Cloud Run service', cause: 'tried 5 times; event type google.cloud.pubsub.topic.v1.messagePublished; from //pubsub.googleapis.com/projects/globex-events/topics/orders' },
@@ -147,6 +150,7 @@ function items(c: DemoComponent, now: number): FailedItem[] {
   return c.places.flatMap((p) => p.runs.map((r, i) => ({
     id: c.run(p.name, i + 1), place: c.place(p.name), atUtc: new Date(now - r.minutesAgo * MINUTE).toISOString(), status: r.state, reasonCode: null,
     summary: c.summary ? c.summary(r, i + 1) : `${WORDS[r.state] ?? r.state}: run-${i + 1}`, copy: c.copy ?? ('none' as const), consoleUrl: c.runLink(p.name, i + 1),
+    ...(c.heldIn ? { heldIn: c.heldIn(p.name) } : {}),
   }))).sort((a, b) => Date.parse(b.atUtc!) - Date.parse(a.atUtc!))
 }
 

@@ -79,3 +79,17 @@ const byComponent: Readonly<Record<string, RedriveWords>> = {
 export function redriveWords(componentKey: string | null | undefined): RedriveWords {
   return (componentKey ? byComponent[componentKey] : undefined) ?? redrive
 }
+
+/**
+ * The sentence a failed-records footnote says where a component cannot retry in place, or can only retry somewhere else. A failure that
+ * is held as data (an event, a blob) is retried by reading it and putting it back, so the words must say where, or why nowhere: for Event Grid
+ * a retry would reach every subscription, and Event Grid has no way to redeliver to one. Keyed by component key, never by cloud.
+ */
+const handOffNotes: Readonly<Record<string, string>> = {
+  'event-grid': 'ServiceHub cannot retry these: Event Grid has no way to redeliver an event, and republishing one to the topic would send it to every subscription, including ones that already handled it. Open the storage account in Azure to see the blob.',
+  eventarc: 'To retry an event, use Retry in Pub/Sub: its dead-letter topic is a Pub/Sub topic, and Pub/Sub puts the event back on this trigger’s own transport topic only. On Google Cloud, press Look now there to bring the events in.',
+}
+
+export function handOffNote(componentKey: string | null | undefined): string | undefined {
+  return componentKey ? handOffNotes[componentKey] : undefined
+}

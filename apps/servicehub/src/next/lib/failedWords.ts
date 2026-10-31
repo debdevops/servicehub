@@ -21,7 +21,7 @@ export interface FailedWords {
   readonly last: string
   readonly empty: (component: string, incomplete: boolean) => string
   readonly caption: (component: string) => string
-  /** The footnote. `redriveNote` is given only where the catalogue row offers a cloud redrive or resubmit; the words must then say so. */
+  /** The footnote. `redriveNote` is given where the catalogue row offers a cloud redrive or resubmit, or says where else a held failure can be retried; the words must then say so. */
   readonly foot: (component: string, redriveNote?: string) => string
 }
 
@@ -52,7 +52,9 @@ const records: FailedWords = {
   last: 'Latest',
   empty: (c, incomplete) => `No failed or undelivered ${c} records were found${incomplete ? ' in what could be read' : ''}.`,
   caption: (c) => `Failed ${c} records, newest first`,
-  foot: (c) => `ServiceHub only reads these. To deal with one, open it where the cloud keeps it: this version does not move work on for ${c}.`,
+  foot: (c, note) => note
+    ? `ServiceHub reads these. ${note}`
+    : `ServiceHub only reads these. To deal with one, open it where the cloud keeps it: this version does not move work on for ${c}.`,
 }
 
 export function failedWords(detection: DetectionKind): FailedWords {

@@ -35,7 +35,7 @@ const SETUPS: Readonly<Record<string, Pick<ComponentEntry, 'what' | 'appears' | 
   },
   'event-grid': {
     what: 'Events Event Grid could not deliver, kept as blobs in the dead-letter container of an event subscription. Each is listed with the reason and the delivery attempts.',
-    appears: 'Appears in the menu as Event Grid. Read only: a dead-lettered event is handed to a person. The event body is not shown.',
+    appears: 'Appears in the menu as Event Grid. Read only: a dead-lettered event is handed to a person. The event body is not shown. ServiceHub cannot retry these: Event Grid has no way to redeliver an event, and republishing one to the topic would send it to every subscription, including ones that already handled it.',
     needs: 'Reader on the subscription to find event subscriptions, and Storage Blob Data Reader on the storage account that holds the dead-letter container. Signed in with Entra.',
     steps: [
       "Use an Azure connection that signs in with Entra (Managed Identity or Default Azure Credential). No key, secret or connection string is used or stored, and the Event Grid topic access keys in the Azure portal are not needed. A Service Bus connection string cannot read Event Grid. If you have no Azure sign-in connection yet, press Connect at the top of this card: it makes one in a click, with no popup.",
@@ -63,7 +63,7 @@ const SETUPS: Readonly<Record<string, Pick<ComponentEntry, 'what' | 'appears' | 
   },
   eventarc: {
     what: "Events Eventarc could not deliver, kept in the dead-letter topic of the trigger's Pub/Sub subscription. A trigger whose subscription has no dead-letter policy keeps nothing, and the page says so.",
-    appears: 'Appears in the menu as Eventarc. Read only: an undelivered event is handed to a person. The event body is not shown.',
+    appears: 'Appears in the menu as Eventarc. Read only: an undelivered event is handed to a person. The event body is not shown. To retry one, use Retry in Pub/Sub: its dead-letter topic is a Pub/Sub topic, and Pub/Sub puts the event back on this trigger\'s own transport topic only.',
     needs: "Eventarc Viewer (roles/eventarc.viewer) to list triggers, and Pub/Sub Viewer plus Subscriber on the dead-letter topic's subscription to look at what it holds.",
     steps: ['Switch on the Eventarc API in the project.', 'Give the identity ServiceHub signs in as the Eventarc Viewer role.', "Put a dead-letter policy on the trigger's transport subscription, and a pull subscription on the dead-letter topic so something can be looked at.", 'Press Check access.'],
     snippets: [

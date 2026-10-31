@@ -23,6 +23,8 @@ public sealed class ComponentSourceApiTests
     {
         public Result Access { get; set; } = Result.Success();
 
+        public HeldIn? HeldIn { get; set; }
+
         public List<string> Calls { get; } = [];
 
         public string ComponentKey => "step-functions";
@@ -43,7 +45,7 @@ public sealed class ComponentSourceApiTests
         {
             Calls.Add($"failed:{placeId}");
             return Task.FromResult(Result.Success(new FailedItemsPage(
-                [new FailedItem("e1", "m1", DateTimeOffset.Parse("2026-10-01T00:00:00Z"), "FAILED", null, "Failed: run-1", CopyKind.None, "https://console/e1")],
+                [new FailedItem("e1", "m1", DateTimeOffset.Parse("2026-10-01T00:00:00Z"), "FAILED", null, "Failed: run-1", CopyKind.None, "https://console/e1", HeldIn)],
                 ReachedLimit: true, Incomplete: true)));
         }
 
@@ -162,7 +164,23 @@ public sealed class ComponentSourceApiTests
         item.GetProperty("status").GetString().Should().Be("FAILED");
         item.GetProperty("copy").GetString().Should().Be("none");
         item.GetProperty("reasonCode").ValueKind.Should().Be(JsonValueKind.Null);
+        item.GetProperty("heldIn").ValueKind.Should().Be(JsonValueKind.Null, "nothing else holds this failure");
         source.Calls.Should().Contain("failed:m1");
+    }
+
+    [Fact]
+    public async Task A_failed_item_says_which_other_components_entity_also_holds_it()
+    {
+        var (host, source) = Host();
+        using var _h = host;
+        source.HeldIn = new HeldIn("pubsub", "eventarc-orders-sub");
+        var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
+
+        var body = await Get(host.Client, $"/api/v1/namespaces/{aws}/components/step-functions/failed");
+
+        var held = body.GetProperty("items").EnumerateArray().Single().GetProperty("heldIn");
+        held.GetProperty("componentKey").GetString().Should().Be("pubsub");
+        held.GetProperty("entity").GetString().Should().Be("eventarc-orders-sub");
     }
 
     [Fact]

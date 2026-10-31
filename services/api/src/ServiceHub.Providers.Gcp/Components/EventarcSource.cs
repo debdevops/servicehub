@@ -26,6 +26,9 @@ public sealed partial class EventarcSource : IComponentSource
     /// <summary>The catalogue component this serves.</summary>
     public const string Key = "eventarc";
 
+    /// <summary>The catalogue component that holds an Eventarc event as a dead letter and can put it back.</summary>
+    internal const string PubSubKey = "pubsub";
+
     /// <summary>Without a chosen place, at most this many triggers are read, so one listing stays a bounded number of calls.</summary>
     internal const int MaxTriggersPerListing = 20;
 
@@ -206,7 +209,7 @@ public sealed partial class EventarcSource : IComponentSource
             for (var i = 0; i < keys.Count; i++)
             {
                 reached |= reads[i].Value.More;
-                items.AddRange(reads[i].Value.Events.Select(e => ToItem(ns, owners[keys[i]].Name, e)));
+                items.AddRange(reads[i].Value.Events.Select(e => ToItem(ns, owners[keys[i]].Name, e, owners[keys[i]].TransportSubscription)));
             }
 
             var ordered = items.OrderByDescending(i => i.AtUtc ?? DateTimeOffset.MinValue).ToList();
@@ -260,7 +263,7 @@ public sealed partial class EventarcSource : IComponentSource
 
             // The error text is what Pub/Sub recorded about a delivery: free text, redacted and bounded before it leaves this source.
             return Result.Success<FailedItemDetail?>(new FailedItemDetail(
-                ToItem(ns, trigger, read), Clean(Attribute(read, ErrorAttribute)), Clean(Cause(read)), null, read.PublishedUtc));
+                ToItem(ns, trigger, read, found!.TransportSubscription), Clean(Attribute(read, ErrorAttribute)), Clean(Cause(read)), null, read.PublishedUtc));
         }
         catch (OperationCanceledException)
         {
@@ -317,12 +320,21 @@ public sealed partial class EventarcSource : IComponentSource
             ? "This trigger keeps nothing: its Pub/Sub subscription has no dead-letter policy, so an event Eventarc cannot deliver is dropped. Add a dead-letter policy to see them here."
             : "None of these triggers keeps anything: no Pub/Sub subscription has a dead-letter policy, so an event Eventarc cannot deliver is dropped.");
 
-    private static FailedItem ToItem(Namespace ns, string triggerName, UndeliveredEvent e)
+    private static FailedItem ToItem(Namespace ns, string triggerName, UndeliveredEvent e, string? transportSubscription)
     {
         var type = Clean(Attribute(e, "ce-type"));
         return new FailedItem(
             $"{triggerName}#{e.MessageId}", triggerName, e.PublishedUtc, Status, ReasonCode: null,
-            type is null ? "Undelivered event" : $"Undelivered event: {type}", CopyKind.None, TriggerLink(ns, triggerName));
+            type is null ? "Undelivered event" : $"Undelivered event: {type}", CopyKind.None, TriggerLink(ns, triggerName), HeldInPubSub(transportSubscription));
+    }
+
+    // The event is held in the dead-letter topic of the trigger's Pub/Sub transport subscription, and the Pub/Sub component lists that
+    // subscription and replays to its own source topic: the one trigger's transport topic, so a retry there reaches only this trigger.
+    // The entity named is the subscription's id, which is the text that finds it among the Pub/Sub component's dead letters.
+    private static HeldIn? HeldInPubSub(string? transportSubscription)
+    {
+        var id = transportSubscription is null ? null : transportSubscription[(transportSubscription.LastIndexOf('/') + 1)..];
+        return string.IsNullOrWhiteSpace(id) ? null : new HeldIn(PubSubKey, id);
     }
 
     private static string? Cause(UndeliveredEvent e)

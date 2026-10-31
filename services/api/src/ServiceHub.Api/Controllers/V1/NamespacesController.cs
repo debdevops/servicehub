@@ -1044,7 +1044,8 @@ public sealed class NamespacesController : ApiControllerBase
     }
 
     private static FailedItemResponse ToResponse(FailedItem i) =>
-        new(i.Id, i.Place, i.AtUtc, i.Status, i.ReasonCode, i.Summary, i.Copy.ToString().ToLowerInvariant(), i.ConsoleUrl);
+        new(i.Id, i.Place, i.AtUtc, i.Status, i.ReasonCode, i.Summary, i.Copy.ToString().ToLowerInvariant(), i.ConsoleUrl,
+            i.HeldIn is null ? null : new HeldInResponse(i.HeldIn.ComponentKey, i.HeldIn.Entity));
 
     private readonly record struct ResolvedSource(Namespace? Namespace, IComponentSource? Source, IActionResult? Failure);
 
