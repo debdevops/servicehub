@@ -323,7 +323,8 @@ public sealed class ComponentEnablementApiTests
             entry.GetProperty("access").GetString().Should().Be("sameConnection");
             entry.GetProperty("state").GetString().Should().Be("off");
             entry.GetProperty("canToggle").GetBoolean().Should().BeTrue();
-            entry.GetProperty("status").GetString().Should().Be("beingValidated");
+            // Logic Apps has a recorded live run (RECOVERY-EVIDENCE.md section 8); Event Grid is still being validated.
+            entry.GetProperty("status").GetString().Should().Be(key == "logic-apps" ? "supported" : "beingValidated");
             entry.GetProperty("steps").EnumerateArray().Select(p => p.GetString()).Should().Contain(x => x!.Contains("Entra"));
             entry.GetProperty("steps").EnumerateArray().Select(p => p.GetString()).Should().Contain(x => x!.Contains("Check access"));
             entry.GetProperty("permissions").EnumerateArray().Should().NotBeEmpty();

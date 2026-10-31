@@ -16,7 +16,7 @@ namespace ServiceHub.Providers.Azure.MoveOn;
 /// already succeeded. The original run stays <c>Failed</c>. ServiceHub never reads the trigger's input or any action's input or output.
 /// </summary>
 /// <remarks>
-/// Needs <c>Microsoft.Logic/workflows/triggers/histories/resubmit/action</c>, which the Reader role and the Logic App Operator role do not
+/// Refuses unless the Logic App is <c>Enabled</c>, because Azure resubmits a disabled one anyway. Needs <c>Microsoft.Logic/workflows/triggers/histories/resubmit/action</c>, which the Reader role and the Logic App Operator role do not
 /// include (Logic App Contributor does); a connection without it is told so, and ServiceHub never grants it. Azure gives no idempotency
 /// key, so a request is never retried. Nothing here is reachable except through the gated redrive service.
 /// </remarks>
@@ -78,6 +78,21 @@ internal sealed partial class LogicAppsMoveOn : IComponentMoveOn
             {
                 return Result.Failure<MoveOnAcceptance>(Error.Conflict(
                     "Azure.LogicApps.NotResubmittable", $"Only a run that ended Failed, TimedOut or Cancelled can be resubmitted; this one is {run.Run.Status}."));
+            }
+
+            // Seen live (2026-10-31): Azure ACCEPTS a resubmit on a disabled Logic App and runs it anyway. Disabling is a person saying "do not run
+            // this", so ServiceHub refuses unless Azure says the Logic App is Enabled (fail closed: an unreadable or unknown state is a refusal too).
+            var state = await _reader.GetWorkflowStateAsync(ns, PlaceOf(itemId), ct).ConfigureAwait(false);
+            if (state is null)
+            {
+                return Result.Failure<MoveOnAcceptance>(Error.NotFound("Azure.LogicApps.LogicAppGone", "Azure no longer has this Logic App."));
+            }
+
+            if (!string.Equals(state, "Enabled", StringComparison.OrdinalIgnoreCase))
+            {
+                return Result.Failure<MoveOnAcceptance>(Error.Conflict(
+                    "Azure.LogicApps.LogicAppNotEnabled",
+                    $"This Logic App is {state}. Azure would run a resubmit anyway, so ServiceHub will not ask. Enable it in Azure first if it should run."));
             }
 
             if (run.TriggerName is not { } trigger || !TriggerNameRegex().IsMatch(trigger))

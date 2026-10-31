@@ -60,11 +60,15 @@ public sealed class ComponentCatalogTests
     [Fact]
     public void A_supported_row_claims_proof_exactly_when_its_adapter_can_prove_absence()
     {
-        foreach (var row in ComponentCatalog.All.Where(c => c.Status == SupportStatus.Supported))
+        // Absence proof is about a dead-letter store. A run or record row (a redrive or resubmit) never claims it, whatever its adapter can do.
+        foreach (var row in ComponentCatalog.All.Where(c => c.Status == SupportStatus.Supported && c.Detection == DetectionKind.Store))
         {
             var canProve = ProviderCapabilities.For(row.Provider!.Value).CanProveDlqAbsence;
             row.Class.MayEarnAutonomy().Should().Be(canProve, $"{row.Id} and its adapter must agree about what can be proved");
         }
+
+        ComponentCatalog.All.Where(c => c.Status == SupportStatus.Supported && c.Detection != DetectionKind.Store)
+            .Should().OnlyContain(c => !c.Class.MayEarnAutonomy(), "a redrive or resubmit ends Unverified and never earns autonomy");
     }
 
     [Theory]
@@ -116,17 +120,18 @@ public sealed class ComponentCatalogTests
     }
 
     [Fact]
-    public void Logic_apps_names_a_resubmit_that_replays_every_step_and_offers_nothing_until_a_live_run_is_recorded()
+    public void Logic_apps_is_supported_as_a_resubmit_that_replays_every_step_and_says_so()
     {
         var row = ComponentCatalog.Find("logic-apps.failed-runs")!;
 
-        row.Status.Should().Be(SupportStatus.BeingValidated, "the resubmit has been built and tested against a fake Azure, not seen on a real one");
+        row.Status.Should().Be(SupportStatus.Supported, "a resubmit was seen on a real Azure (RECOVERY-EVIDENCE.md section 8)");
         row.Facts.Path.Should().Be(RecoveryPathKind.Resubmit);
         row.MovesOnBy.Should().Be("A person asks Azure to resubmit the run");
         row.Note.Should().Contain("every step runs again").And.Contain("original run stays Failed", "a resubmit is not a redrive: it must never be described as one");
-        row.EvidenceRef.Should().BeNull();
-        row.Class.Should().Be(RecoverabilityClass.R0Unknown);
-        row.Class.OffersCloudRedrive().Should().BeFalse("no row offers a retry before a live run is recorded");
+        row.EvidenceRef.Should().Be("docs/RECOVERY-EVIDENCE.md");
+        row.Class.Should().Be(RecoverabilityClass.R3CloudRedriveOnly);
+        row.Class.OffersCloudRedrive().Should().BeTrue();
+        row.Class.MayEarnAutonomy().Should().BeFalse("it ends Unverified and never earns autonomy");
     }
 
     [Theory]
@@ -166,8 +171,11 @@ public sealed class ComponentCatalogTests
         var markdown = ComponentCatalog.ToMarkdown();
 
         markdown.Should().Contain("Reads the failed records the service keeps");
-        markdown.Split('\n').Where(l => l.Contains("| Event Grid |") || l.Contains("| Logic Apps |") || l.Contains("| Eventarc |") || l.Contains("Kinesis, DynamoDB streams"))
-            .Should().HaveCount(4).And.OnlyContain(l => l.Contains("Being validated") && !l.Contains("On request"));
+        var lines = markdown.Split('\n').Where(l => l.Contains("| Event Grid |") || l.Contains("| Logic Apps |") || l.Contains("| Eventarc |") || l.Contains("Kinesis, DynamoDB streams")).ToList();
+        lines.Should().HaveCount(4).And.OnlyContain(l => !l.Contains("On request"));
+        // Logic Apps has a recorded live run (RECOVERY-EVIDENCE.md section 8); the other three are still being validated.
+        lines.Where(l => !l.Contains("| Logic Apps |")).Should().OnlyContain(l => l.Contains("Being validated"));
+        lines.Single(l => l.Contains("| Logic Apps |")).Should().Contain("| Supported |");
     }
 
     [Theory]

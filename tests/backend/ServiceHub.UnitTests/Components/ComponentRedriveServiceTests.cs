@@ -157,10 +157,10 @@ public sealed class ComponentRedriveServiceTests : IDisposable
     }
 
     [Fact]
-    public void Only_step_functions_offers_a_redrive_in_the_real_catalogue_until_another_live_run_is_recorded()
+    public void Only_step_functions_and_logic_apps_offer_a_redrive_in_the_real_catalogue_until_another_live_run_is_recorded()
     {
         // Workflows names a Resubmit path too, but it is Being validated, so its class stays R0 and the gate denies it.
-        ComponentCatalog.All.Where(c => c.Class.OffersCloudRedrive()).Select(c => c.ComponentKey).Should().Equal("step-functions");
+        ComponentCatalog.All.Where(c => c.Class.OffersCloudRedrive()).Select(c => c.ComponentKey).Should().BeEquivalentTo(["step-functions", "logic-apps"]);
     }
 
     [Fact]

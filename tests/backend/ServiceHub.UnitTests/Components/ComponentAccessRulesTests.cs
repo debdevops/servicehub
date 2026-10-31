@@ -87,8 +87,8 @@ public sealed class ComponentAccessRulesTests
         var rows = ComponentCatalog.All.Where(ComponentAccessRules.ReadsOnDemand).ToList();
 
         rows.Select(r => r.ComponentKey).Should().BeEquivalentTo(BuiltOnDemand);
-        // Only a row with a recorded live run may claim Supported. Step Functions has one (RECOVERY-EVIDENCE.md §7); add a key here only with its own.
-        string[] withRecordedLiveRun = ["step-functions"];
+        // Only a row with a recorded live run may claim Supported. Step Functions and Logic Apps have one (RECOVERY-EVIDENCE.md §7 and §8); add a key here only with its own.
+        string[] withRecordedLiveRun = ["step-functions", "logic-apps"];
         rows.Where(r => !withRecordedLiveRun.Contains(r.ComponentKey))
             .Should().OnlyContain(r => r.Status == SupportStatus.BeingValidated, "no other row has a recorded live run yet, so none may claim Supported");
         rows.Where(r => withRecordedLiveRun.Contains(r.ComponentKey)).Should().OnlyContain(r => r.Status == SupportStatus.Supported && r.EvidenceRef != null);

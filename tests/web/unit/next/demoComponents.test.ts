@@ -24,9 +24,10 @@ describe('the demo knows every component that is read on demand', () => {
   it('has all seven, two per Azure and one or two elsewhere, none on request', () => {
     expect([...byKey.keys()].sort()).toEqual(['aws-streams', 'cloud-scheduler', 'event-grid', 'eventarc', 'logic-apps', 'step-functions', 'workflows'])
     expect(catalogue.filter((r) => r.status === 'onRequest')).toEqual([])
-    // Step Functions has a recorded live run (RECOVERY-EVIDENCE §7); no other row has one yet.
-    expect(readOnDemand.filter((r) => r.componentKey !== 'step-functions').every((r) => r.status === 'beingValidated')).toBe(true)
-    expect(readOnDemand.find((r) => r.componentKey === 'step-functions')?.status).toBe('supported')
+    // Step Functions and Logic Apps have a recorded live run (RECOVERY-EVIDENCE §7 and §8); no other row has one yet.
+    const recorded = ['step-functions', 'logic-apps']
+    expect(readOnDemand.filter((r) => !recorded.includes(r.componentKey)).every((r) => r.status === 'beingValidated')).toBe(true)
+    expect(readOnDemand.filter((r) => recorded.includes(r.componentKey)).every((r) => r.status === 'supported')).toBe(true)
   })
 })
 
@@ -101,7 +102,7 @@ describe.each([...byKey.values()].map((r) => [r.componentKey, r.cloud] as const)
     expect(entry).toBeDefined()
     expect(entry.canToggle).toBe(true)
     expect(entry.access).toBe('sameConnection')
-    expect(entry.status).toBe(key === 'step-functions' ? 'supported' : 'beingValidated')
+    expect(entry.status).toBe(key === 'step-functions' || key === 'logic-apps' ? 'supported' : 'beingValidated')
     expect(entry.what).toBeTruthy()
     expect(entry.appears).toContain(key === 'step-functions' ? 'redrive' : key === 'logic-apps' ? 'resubmit' : 'Read only')
     expect(entry.needs).toBeTruthy()

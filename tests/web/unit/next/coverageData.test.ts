@@ -41,15 +41,16 @@ describe('the coverage list the demo answers with', () => {
     expect(sidebarComponents(answer.rows, null, ticked).map((r) => r.componentKey)).toEqual(expect.arrayContaining(['event-grid', 'aws-streams', 'eventarc']))
   })
 
-  it('keeps all four components that used to be on request out of that state, and being validated', () => {
+  it('keeps all four components that used to be on request out of that state; three are being validated and Logic Apps has a recorded live run', () => {
     for (const id of ['event-grid.dead-letter-blobs', 'logic-apps.failed-runs', 'aws-streams.failure-records', 'eventarc.undelivered']) {
       const row = answer.rows.find((r) => r.id === id)!
-      expect(row.status, id).toBe('beingValidated')
-      expect(row.statusWords, id).toBe('Being validated')
+      const recorded = id === 'logic-apps.failed-runs'
+      expect(row.status, id).toBe(recorded ? 'supported' : 'beingValidated')
+      expect(row.statusWords, id).toBe(recorded ? 'Supported' : 'Being validated')
       expect(row.inSidebar, id).toBe(true)
       // Logic Apps names the one retry it will offer once a live run is recorded; the rest are handed to a person.
       expect(row.movesOnBy, id).toBe(id === 'logic-apps.failed-runs' ? 'A person asks Azure to resubmit the run' : 'Handed to a person')
-      expect(row.offersCloudRedrive, id).toBe(false)
+      expect(row.offersCloudRedrive, id).toBe(id === 'logic-apps.failed-runs')
     }
     expect(answer.rows.filter((r) => r.detection === 'records').map((r) => r.componentKey).sort()).toEqual(['aws-streams', 'event-grid', 'eventarc'])
     expect(answer.rows.find((r) => r.id === 'eventarc.undelivered')!.detectionWords).toBe('Reads the failed records the service keeps')

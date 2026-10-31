@@ -7,7 +7,7 @@ import { useMe } from '../../hooks/useIdentity'
 import { usePendingWork, useResolvePending } from '../../hooks/usePendingWork'
 import { useLedgerEntry } from '../../hooks/useRecoverySummary'
 import { toProblem } from '../../lib/api/client'
-import { formatAge, formatWhen } from '../../lib/format'
+import { formatAgo, formatWhen } from '../../lib/format'
 import { describeEvent } from '../../lib/ledgerWords'
 import { permission } from '../../lib/permissions'
 import { cloudLabel } from '../lib/clouds'
@@ -79,7 +79,7 @@ export default function HandOffPanel({ close }: NextOverlayBodyProps) {
       <dl>
         <Row label="What">{item.dlqMessageId !== null ? `Message #${item.dlqMessageId}` : 'A message'}{item.deadLetterReason ? ` failed with ${item.deadLetterReason}` : ''}</Row>
         <Row label="Where">{where || '—'}</Row>
-        <Row label="Since">{formatWhen(item.since, now)} ({formatAge(item.since, now)} ago)</Row>
+        <Row label="Since">{formatWhen(item.since, now)} ({formatAgo(item.since, now)})</Row>
         <Row label="Why it stops">{item.reason}</Row>
         {familyWords(item.family) && <Row label="Family"><span className="rounded-md bg-purple-50 px-2 py-0.5 text-xs font-semibold text-purple-800">{familyWords(item.family)}</span></Row>}
         <Row label="Who was told">Every enabled notification channel, and the bell (see Configuration)</Row>

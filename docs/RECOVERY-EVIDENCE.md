@@ -149,3 +149,22 @@ A failed, timed-out or aborted **Standard** Step Functions run can be restarted 
 
 **Not observed, so not claimed:** whether `states:RedriveExecution` can be scoped to the execution ARN or needs the state machine ARN (the test identity used `*`); the 14-day redrive window; a redrive after the state machine was edited; a redrive of a run that was still running. AWS documents these refusals, and ServiceHub shows what AWS answers.
 
+## 8. Cloud resubmit of a failed run (Azure Logic Apps)
+
+A failed, timed-out or cancelled Logic Apps run can be **resubmitted** through Azure's own trigger-history `resubmit` (`POST .../triggers/{trigger}/histories/{run}/resubmit`). **This is not a redrive.** Azure starts a **new run** from the trigger, with the trigger's original input, and **every step runs again, including steps that already succeeded**; steps that send, write or charge outside Azure will do it again. The original run stays `Failed`. ServiceHub never reads the trigger's input or any step's input or output (it reads only the run's status and the trigger's name), and only a person with the Approver role on the Recover pillar may ask; the gate denies an Agent or a rule, a read-only connection, and a Production connection without an approved elevation. Azure gives a resubmit no idempotency key, so ServiceHub never retries one, and a second request on the same run is allowed with a warning. The ledger entry is written *before* Azure is called, and closes **`Unverified`**: acceptance says nothing about whether the new run finished fixed. Class **R3**; it never earns autonomy.
+
+*Verified live 2026-10-31 against Azure Logic Apps (a Consumption Logic App with an HTTP request trigger whose action always fails), through the API and the screens, signed in as the Azure CLI identity (`DefaultAzureCredential`, Owner on the subscription):*
+
+| Check | Observed |
+|---|---|
+| Access check | Passes with Reader; resubmit is a separate permission, which Check access does not test |
+| Listing | The 3 `Failed` runs listed, not incomplete |
+| History name | The trigger history's name equals the run name (read back from Azure for the HTTP request trigger) |
+| Resubmit of a failed run | Azure answered 202; a **new run** appeared about 3 seconds later and also ended `Failed` (the workflow fails by design); the original run was unchanged; the entry closed `Unverified` |
+| Resubmit of the same run again | Warned in the dialog ("the cloud already accepted a resubmit of this run"), still allowed; accepted; a second new run appeared |
+| Identity without the resubmit permission | A throwaway service principal with the Reader role only (deleted afterwards) could list the runs and was offered the action, but Azure refused the resubmit; ServiceHub recorded `ExecutionFailed` with a message naming `Microsoft.Logic/workflows/triggers/histories/resubmit/action`; no new run was created |
+| **A disabled Logic App** | **Azure accepted the resubmit and ran it anyway** (202, a new run appeared). A person who disables a Logic App means "do not run this", so ServiceHub now reads the Logic App's state first and **refuses unless it is `Enabled`** (fail closed: an unknown state is a refusal too). Seen live: refused while Disabled with no new run, accepted again once re-enabled |
+| Words | The dialog says "starts a new run", "every step runs again, including steps that already succeeded" and "it stays failed"; the ledger says "the cloud accepted the request, but ServiceHub cannot confirm the run then finished fixed" |
+
+**Not observed, so not claimed:** a trigger history that has aged out; a Recurrence or other trigger type (only the HTTP request trigger was tried); a run that was still running (ServiceHub refuses it before calling Azure, tested offline only); Logic Apps Standard (single-tenant), which this component does not read.
+

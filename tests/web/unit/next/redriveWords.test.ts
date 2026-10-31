@@ -24,6 +24,8 @@ describe('the words of moving a failed run on', () => {
     expect(will).toContain('Every step runs again, including steps that already succeeded')
     expect(cannot).toContain('It stays failed')
     expect(cannot).toContain('Steps that send, write or charge outside the cloud will do it again')
+    expect(cannot).toContain('ServiceHub refuses, because Azure would run a resubmit on a disabled Logic App anyway')
+    expect(cannot).not.toContain('Logic App may be disabled')
     expect(`${will} ${cannot}`).not.toMatch(/restart this one run|from the step that failed/)
     expect(w.button('Azure')).toBe('Ask Azure to resubmit')
   })

@@ -376,6 +376,8 @@ public sealed class LogicAppsSourceTests : ComponentSourceConformance
     /// <summary>Azure as the source sees it: records the operation names and answers from what a test arranged.</summary>
     private sealed class FakeAzure : IAzureLogicAppsReader
     {
+        public Task<string?> GetWorkflowStateAsync(Namespace ns, string workflowId, CancellationToken ct) => throw new NotSupportedException("a source never reads a Logic App's state");
+
         private readonly List<string> _calls = [];
 
         public IReadOnlyList<string> Calls => _calls;

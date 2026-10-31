@@ -7,7 +7,7 @@ import { useFailedItem, useRedrive, useRedriveCheck } from '../../hooks/useCompo
 import { useMe } from '../../hooks/useIdentity'
 import { useNamespace } from '../../hooks/useNamespaces'
 import { toProblem } from '../../lib/api/client'
-import { formatAge, formatWhen } from '../../lib/format'
+import { formatAgo, formatWhen } from '../../lib/format'
 import { permission } from '../../lib/permissions'
 import { cloudLabel } from '../lib/clouds'
 import { itemStatusWords } from '../lib/failedWords'
@@ -77,7 +77,7 @@ export default function RedriveDialog({ close }: NextOverlayBodyProps) {
         <Row label="Run">{item.summary}</Row>
         <Row label="Status">{itemStatusWords[item.status] ?? item.status}</Row>
         <Row label="Where">{ns.data.displayName ?? ns.data.name} · {cloud}</Row>
-        {item.atUtc && <Row label="Ended">{formatWhen(item.atUtc, now)} ({formatAge(item.atUtc, now)} ago)</Row>}
+        {item.atUtc && <Row label="Ended">{formatWhen(item.atUtc, now)} ({formatAgo(item.atUtc, now)})</Row>}
       </dl>
 
       <section aria-label="What will happen">
@@ -96,7 +96,7 @@ export default function RedriveDialog({ close }: NextOverlayBodyProps) {
 
       {check.data.previousRequestAtUtc && (
         <p role="status" className="rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-sm text-amber-900">
-          The cloud already accepted a {words.verb} of this run at {formatWhen(check.data.previousRequestAtUtc, now)} ({formatAge(check.data.previousRequestAtUtc, now)} ago). Asking again will {words.again}. This is a warning, not a block.
+          The cloud already accepted a {words.verb} of this run at {formatWhen(check.data.previousRequestAtUtc, now)} ({formatAgo(check.data.previousRequestAtUtc, now)}). Asking again will {words.again}. This is a warning, not a block.
         </p>
       )}
       {!check.data.canRedrive && <p role="status" className="rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-sm text-amber-900">{check.data.message}</p>}

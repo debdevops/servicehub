@@ -108,6 +108,44 @@ public sealed class LogicAppsMoveOnTests
     }
 
     [Theory]
+    [InlineData("Disabled")]
+    [InlineData("Suspended")]
+    [InlineData("Deleted")]
+    [InlineData("Unknown")]
+    public async Task A_logic_app_that_is_not_enabled_is_never_resubmitted_because_azure_would_run_it_anyway(string state)
+    {
+        _reader.State = state;
+
+        var result = await _mover.RedriveAsync(_ns, Run, "token", default);
+
+        result.Error.Type.Should().Be(ErrorType.Conflict);
+        result.Error.Code.Should().Be("Azure.LogicApps.LogicAppNotEnabled");
+        result.Error.Message.Should().Contain(state).And.Contain("Azure would run a resubmit anyway");
+        _reader.StateReads.Should().Equal(Orders);
+        _door.Posted.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_logic_app_azure_no_longer_has_is_not_found_and_nothing_is_posted()
+    {
+        _reader.State = null;
+
+        var result = await _mover.RedriveAsync(_ns, Run, "token", default);
+
+        result.Error.Type.Should().Be(ErrorType.NotFound);
+        _door.Posted.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task An_enabled_logic_app_is_resubmitted_whatever_the_case_azure_spells_enabled_in()
+    {
+        _reader.State = "enabled";
+
+        (await _mover.RedriveAsync(_ns, Run, "token", default)).IsSuccess.Should().BeTrue();
+        _door.Posted.Should().HaveCount(1);
+    }
+
+    [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("a/b")]
@@ -203,7 +241,17 @@ public sealed class LogicAppsMoveOnTests
 
         public Exception? Throw { get; set; }
 
+        public string? State { get; set; } = "Enabled";
+
+        public List<string> StateReads { get; } = [];
+
         public List<string> Reads { get; } = [];
+
+        public Task<string?> GetWorkflowStateAsync(Namespace ns, string workflowId, CancellationToken ct)
+        {
+            StateReads.Add(workflowId);
+            return Task.FromResult(State);
+        }
 
         public Task<LogicRunRead?> GetRunAsync(Namespace ns, string runId, CancellationToken ct)
         {

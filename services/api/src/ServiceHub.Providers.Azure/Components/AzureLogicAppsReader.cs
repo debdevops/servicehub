@@ -50,6 +50,18 @@ internal sealed class AzureLogicAppsReader : IAzureLogicAppsReader
         return new LogicRunRead(run, AzureArm.Text(error, "code") ?? AzureArm.Text(props, "code"), AzureArm.Text(error, "message"), AzureArm.Text(AzureArm.Child(props, "trigger"), "name"));
     }
 
+    public async Task<string?> GetWorkflowStateAsync(Namespace ns, string workflowId, CancellationToken ct)
+    {
+        var text = await _rest.GetTextAsync(ns, AzureArm.Url(workflowId, ApiVersion), AzureAudience.Management, null, ct).ConfigureAwait(false);
+        if (text is null)
+        {
+            return null;
+        }
+
+        using var doc = AzureArm.Parse(text);
+        return AzureArm.Text(AzureArm.Child(doc.RootElement, "properties"), "state") ?? "Unknown";
+    }
+
     private static LogicRunRef? ToRun(System.Text.Json.JsonElement element)
     {
         var id = AzureArm.Text(element, "id");

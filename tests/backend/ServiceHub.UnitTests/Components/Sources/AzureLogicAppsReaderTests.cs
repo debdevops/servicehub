@@ -211,4 +211,22 @@ public sealed class AzureLogicAppsReaderTests
 
         (await _reader.GetRunAsync(_ns, run, default))!.TriggerName.Should().BeNull();
     }
+
+    [Fact]
+    public async Task A_logic_apps_state_is_read_from_the_logic_app_itself_with_a_get()
+    {
+        _rest.Answers[$"{Wf}?api-version=2016-06-01"] = J("""{"id":"@WF@","properties":{"state":"Disabled"}}""");
+
+        (await _reader.GetWorkflowStateAsync(_ns, Wf, default)).Should().Be("Disabled");
+        _rest.Asked.Should().ContainSingle().Which.Audience.Should().Be(AzureAudience.Management);
+    }
+
+    [Fact]
+    public async Task A_logic_app_with_no_state_reads_as_unknown_and_one_that_is_gone_as_null()
+    {
+        _rest.Answers[$"{Wf}?api-version=2016-06-01"] = J("""{"id":"@WF@","properties":{}}""");
+
+        (await _reader.GetWorkflowStateAsync(_ns, Wf, default)).Should().Be("Unknown", "an unreadable state is never taken to mean Enabled");
+        (await _reader.GetWorkflowStateAsync(_ns, $"{Wf}-missing", default)).Should().BeNull();
+    }
 }

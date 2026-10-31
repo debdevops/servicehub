@@ -90,6 +90,15 @@ describe('Resubmit a failed Logic Apps run (unit R2)', () => {
     expect(screen.getByRole('button', { name: 'Ask Azure to resubmit' })).toBeEnabled()
   })
 
+  it('says "just now", never "just now ago", when the cloud accepted the earlier request moments ago', async () => {
+    vi.mocked(sourcesApi.fetchRedriveCheck).mockResolvedValue({ canRedrive: true, reasonCode: null, message: 'A person can ask Azure to resubmit this run.', verb: 'resubmit', previousRequestAtUtc: new Date().toISOString() })
+    open(dialogUrl)
+
+    const warning = await screen.findByText(/already accepted a resubmit of this run/)
+    expect(warning.textContent).toMatch(/\(just now\)/)
+    expect(warning.textContent).not.toMatch(/just now ago/)
+  })
+
   it('shows no warning for a run that was never requested', async () => {
     open(dialogUrl)
 

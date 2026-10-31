@@ -34,4 +34,10 @@ internal interface IAzureLogicAppsReader
 
     /// <summary>One run, or null when Azure no longer has it.</summary>
     Task<LogicRunRead?> GetRunAsync(Namespace ns, string runId, CancellationToken ct);
+
+    /// <summary>
+    /// The state Azure reports for one Logic App (<c>Enabled</c>, <c>Disabled</c>, <c>Suspended</c>...), or null when Azure no longer has it.
+    /// A resubmit needs it: Azure runs a resubmit on a disabled Logic App anyway.
+    /// </summary>
+    Task<string?> GetWorkflowStateAsync(Namespace ns, string workflowId, CancellationToken ct);
 }
