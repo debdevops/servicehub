@@ -87,7 +87,7 @@ export function redriveWords(componentKey: string | null | undefined): RedriveWo
  */
 const handOffNotes: Readonly<Record<string, string>> = {
   'event-grid': 'ServiceHub cannot retry these: Event Grid has no way to redeliver an event, and republishing one to the topic would send it to every subscription, including ones that already handled it. Open the storage account in Azure to see the blob.',
-  eventarc: 'To retry an event, use Retry in Pub/Sub: its dead-letter topic is a Pub/Sub topic, and Pub/Sub puts the event back on this trigger’s own transport topic only. On Google Cloud, press Look now there to bring the events in.',
+  eventarc: 'To retry an event, use Retry in Pub/Sub: its dead-letter topic is a Pub/Sub topic, and Pub/Sub puts the event back on the topic this trigger reads from, so every subscription on that topic receives it again. On Google Cloud, press Look now there to bring the events in.',
 }
 
 export function handOffNote(componentKey: string | null | undefined): string | undefined {

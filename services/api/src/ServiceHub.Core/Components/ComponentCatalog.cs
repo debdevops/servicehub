@@ -84,13 +84,13 @@ public static class ComponentCatalog
 
         // ── Google Cloud ─────────────────────────────────────────────────────────────────────────
         new("pubsub.dead-letter", "pubsub", CloudKind.Gcp, "Pub/Sub", "Dead-letter topic of each subscription", DetectionKind.Store,
-            "ServiceHub replays to the one subscription, on approval", HeldUnproven, SupportStatus.Supported, "No counts. Ends Unverified",
+            "ServiceHub puts one message back on its topic, on approval", HeldUnproven, SupportStatus.Supported, "No counts. Every subscription on that topic receives it again. Ends Unverified",
             CloudProviderType.Gcp, TopicAndSubscription, InSidebar: true, EvidenceRef: Evidence),
         new("pubsub.backlog", "pubsub", CloudKind.Gcp, "Pub/Sub", "Backlog, oldest unacked age", DetectionKind.Signal,
             "Handed to a person", SignalOnly, SupportStatus.BeingValidated, "No replay offered", CloudProviderType.Gcp, TopicAndSubscription, PlanUnit: "3.2"),
         new("eventarc.undelivered", "eventarc", CloudKind.Gcp, "Eventarc", "Undelivered events", DetectionKind.Records,
             "A person retries it in Pub/Sub", HeldNoPath, SupportStatus.BeingValidated,
-            "Read only: events held in a trigger's dead-letter topic. Retry one in Pub/Sub, which puts it back on this trigger's own transport topic only. A trigger with no dead-letter policy keeps nothing",
+            "Read only: events held in a trigger's dead-letter topic. Retry one in Pub/Sub, which puts it back on the topic this trigger reads from; every subscription on that topic receives it again. A trigger with no dead-letter policy keeps nothing",
             CloudProviderType.Gcp, InSidebar: true, PlanUnit: "PP4b"),
         new("workflows.failed-runs", "workflows", CloudKind.Gcp, "Workflows", "Failed runs", DetectionKind.Runs,
             "Handed to a person", new(CopyKind.None, RecoveryPathKind.Resubmit, ProofLevel.None), SupportStatus.BeingValidated,

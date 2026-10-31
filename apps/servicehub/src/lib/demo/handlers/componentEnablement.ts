@@ -63,7 +63,7 @@ const SETUPS: Readonly<Record<string, Pick<ComponentEntry, 'what' | 'appears' | 
   },
   eventarc: {
     what: "Events Eventarc could not deliver, kept in the dead-letter topic of the trigger's Pub/Sub subscription. A trigger whose subscription has no dead-letter policy keeps nothing, and the page says so.",
-    appears: 'Appears in the menu as Eventarc. Read only: an undelivered event is handed to a person. The event body is not shown. To retry one, use Retry in Pub/Sub: its dead-letter topic is a Pub/Sub topic, and Pub/Sub puts the event back on this trigger\'s own transport topic only.',
+    appears: 'Appears in the menu as Eventarc. Read only: an undelivered event is handed to a person. The event body is not shown. To retry one, use Retry in Pub/Sub: its dead-letter topic is a Pub/Sub topic, and Pub/Sub puts the event back on the topic this trigger reads from, so every subscription on that topic receives it again.',
     needs: "Eventarc Viewer (roles/eventarc.viewer) to list triggers, and Pub/Sub Viewer plus Subscriber on the dead-letter topic's subscription to look at what it holds.",
     steps: ['Switch on the Eventarc API in the project.', 'Give the identity ServiceHub signs in as the Eventarc Viewer role.', "Put a dead-letter policy on the trigger's transport subscription, and a pull subscription on the dead-letter topic so something can be looked at.", 'Press Check access.'],
     snippets: [

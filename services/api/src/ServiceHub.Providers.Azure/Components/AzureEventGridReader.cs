@@ -101,7 +101,7 @@ internal sealed partial class AzureEventGridReader : IAzureEventGridReader
         }
 
         // Only these few fields are picked out of the text. The event's data is never parsed, kept or shown, and a blob cut short by the
-        // size cap still gives its reason (the fields sit at the start of each event record).
+        // size cap still gives its reason (seen live 2026-10-31: the blob is a JSON array, and each event's reason fields sit about 330 bytes in, after its identifying fields and before its `data`, so a large payload cannot push them past the cap).
         return new DeadLetterBlobRead(
             new DeadLetterBlob(account, container, blobName, null, null),
             Field("deadLetterReason", text), Field("lastDeliveryOutcome", text),

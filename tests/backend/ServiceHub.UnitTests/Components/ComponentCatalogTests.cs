@@ -135,6 +135,16 @@ public sealed class ComponentCatalogTests
     }
 
     [Fact]
+    public void Pubsub_says_a_replay_goes_back_to_the_topic_and_reaches_every_subscription_on_it()
+    {
+        var row = ComponentCatalog.Find("pubsub.dead-letter")!;
+
+        row.MovesOnBy.Should().Be("ServiceHub puts one message back on its topic, on approval");
+        row.Note.Should().Contain("Every subscription on that topic receives it again");
+        row.MovesOnBy.Should().NotContain("one subscription", "Pub/Sub has no way to publish to one subscription, and the replay publishes to the topic (seen live 2026-10-31)");
+    }
+
+    [Fact]
     public void Event_grid_says_plainly_that_it_cannot_retry_and_why_and_eventarc_says_where_to_retry()
     {
         var eventGrid = ComponentCatalog.Find("event-grid.dead-letter-blobs")!;
@@ -143,7 +153,7 @@ public sealed class ComponentCatalogTests
         eventGrid.Note.Should().Contain("cannot retry these").And.Contain("republishing one to the topic would reach every subscription");
         eventGrid.Class.OffersCloudRedrive().Should().BeFalse();
         eventGrid.Class.OffersReplay().Should().BeFalse("a retry would reach every subscription, so none is offered");
-        eventarc.Note.Should().Contain("Retry one in Pub/Sub").And.Contain("this trigger's own transport topic only");
+        eventarc.Note.Should().Contain("Retry one in Pub/Sub").And.Contain("every subscription on that topic receives it again").And.NotContain("own transport topic only", "the live check showed the transport topic can be the customer's own topic, shared with other subscriptions");
         eventarc.Class.OffersReplay().Should().BeFalse("the retry is the Pub/Sub row's, not a second one here");
     }
 
