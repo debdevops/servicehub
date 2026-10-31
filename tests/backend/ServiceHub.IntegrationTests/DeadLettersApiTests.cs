@@ -65,7 +65,7 @@ public sealed class DeadLettersApiTests
     private static readonly DateTimeOffset Now = DateTimeOffset.UtcNow;
 
     internal static async Task Seed(Handle host, Guid namespaceId, CloudProviderType provider, int count, string? reason = "MaxDeliveryCountExceeded",
-        string entity = "orders", TimeSpan? age = null, DlqMessageStatus status = DlqMessageStatus.Active, string prefix = "m", string? errorText = null)
+        string entity = "orders", TimeSpan? age = null, DlqMessageStatus status = DlqMessageStatus.Active, string prefix = "m", string? errorText = null, string? topic = null)
     {
         using var scope = host.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ServiceHubDbContext>();
@@ -76,7 +76,7 @@ public sealed class DeadLettersApiTests
             db.DlqMessages.Add(new DlqMessage
             {
                 MessageId = $"{prefix}-{entity}-{reason}-{i}", SequenceNumber = Random.Shared.NextInt64(), BodyHash = "empty",
-                NamespaceId = namespaceId, CloudProvider = provider, OwnerId = owner, EntityName = entity, EntityType = ServiceBusEntityType.Queue,
+                NamespaceId = namespaceId, CloudProvider = provider, OwnerId = owner, EntityName = entity, TopicName = topic, EntityType = topic is null ? ServiceBusEntityType.Queue : ServiceBusEntityType.Subscription,
                 EnqueuedTimeUtc = seen, DetectedAtUtc = seen, DeadLetterReason = reason, DeliveryCount = 5, MessageSize = 2048,
                 BodyPreview = "SECRET-BODY-TEXT", Status = status, DeadLetterErrorDescription = errorText,
             });
@@ -482,7 +482,45 @@ public sealed class DeadLettersApiTests
         proposal.GetProperty("canConfirm").GetBoolean().Should().BeTrue();
         proposal.GetProperty("checks").EnumerateArray().Select(c => c.GetProperty("id").GetString())
             .Should().Equal("status", "environment", "frequency", "verification");
+        proposal.GetProperty("fansOut").GetBoolean().Should().BeFalse("a queue goes back to the same queue, so nothing else receives it");
         log.Replays.Should().Be(0, "a proposal must never touch the cloud");
+    }
+
+    [Fact]
+    public async Task A_topic_subscriptions_proposal_warns_that_the_replay_goes_to_the_topic_and_reaches_every_subscription_but_does_not_block()
+    {
+        var log = new PeekLog { OnReplay = () => Result<bool>.Success(true) };
+        using var host = Host(log);
+        var ns = await Connect(host.Client, "azure");
+        await Seed(host, ns, CloudProviderType.Azure, 1, entity: "billing", topic: "orders");
+        var id = await FirstId(host, ns);
+
+        var proposal = await Body(await host.Client.GetAsync($"/api/v1/dead-letters/{id}/replay-proposal"));
+
+        proposal.GetProperty("targetEntity").GetString().Should().Be("orders");
+        proposal.GetProperty("fansOut").GetBoolean().Should().BeTrue();
+        var check = proposal.GetProperty("checks").EnumerateArray().Single(c => c.GetProperty("id").GetString() == "fan-out");
+        check.GetProperty("state").GetString().Should().Be("warning");
+        check.GetProperty("label").GetString().Should().Contain("not to this subscription alone");
+        check.GetProperty("detail").GetString().Should().Contain("Every subscription on orders").And.Contain("already handled it");
+        proposal.GetProperty("canExecute").GetBoolean().Should().BeTrue("a warning, never a block");
+        proposal.GetProperty("verdict").GetString().Should().Be("Allow");
+        log.Replays.Should().Be(0, "a proposal must never touch the cloud");
+    }
+
+    [Fact]
+    public async Task An_aws_dead_letter_never_warns_about_a_topic_because_a_replay_there_goes_to_one_queue()
+    {
+        var log = new PeekLog { OnReplay = () => Result<bool>.Success(true) };
+        using var host = Host(log);
+        var ns = await Connect(host.Client, "aws");
+        await Seed(host, ns, CloudProviderType.Aws, 1, entity: "billing-queue", topic: "orders-topic");
+        var id = await FirstId(host, ns);
+
+        var proposal = await Body(await host.Client.GetAsync($"/api/v1/dead-letters/{id}/replay-proposal"));
+
+        proposal.GetProperty("fansOut").GetBoolean().Should().BeFalse();
+        proposal.GetProperty("checks").EnumerateArray().Select(c => c.GetProperty("id").GetString()).Should().NotContain("fan-out");
     }
 
     [Fact]

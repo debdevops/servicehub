@@ -106,6 +106,16 @@ export default function ReplayModal({ close, links }: Pick<OverlayBodyProps, 'cl
         </Collapsible>
       </section>
 
+      {p.fansOut && (
+        <section aria-label="Goes to the whole topic" className="rounded-xl border border-[var(--color-warning)] bg-[var(--color-warning-light)] p-4 text-sm">
+          <p className="flex items-center gap-2 font-semibold"><TriangleAlert className="h-4 w-4" aria-hidden="true" /> It goes back onto the topic, not to one subscription</p>
+          <p className="mt-1">
+            {cloud} cannot send a message to just one subscription. <span className="font-mono text-[13px] font-semibold">{p.targetEntity}</span> delivers it to every subscription on the topic that accepts it, so
+            subscriptions that already handled this message may receive it again. Replay only if that is safe for every consumer of this topic.
+          </p>
+        </section>
+      )}
+
       {mayFailAgain && (
         <section aria-label="Risk" className="rounded-xl border border-[var(--color-warning)] bg-[var(--color-warning-light)] p-4 text-sm">
           <p className="flex items-center gap-2 font-semibold"><TriangleAlert className="h-4 w-4" aria-hidden="true" /> It may fail the same way again</p>

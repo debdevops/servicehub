@@ -57,6 +57,8 @@ function proposal(w: World, d: DemoDeadLetter): ReplayProposal {
   const prior = attempts(w, d)
   const active = d.status === 'active'
   const capped = prior >= ATTEMPT_CAP
+  // A subscription's dead letter goes back to its topic on Azure and Google Cloud (never on AWS), reaching every subscription on it.
+  const fansOut = d.topicName != null && ns.provider !== 'aws'
   return {
     dlqMessageId: d.id, messageId: d.messageId, sourceEntity: d.entityName, targetEntity: d.topicName ?? d.entityName, namespaceName: ns.displayName ?? ns.name, provider: ns.provider, environment: ns.environment,
     stampsRecoveryMarker: true, priorAttempts: prior, attemptCap: ATTEMPT_CAP, othersLikeIt: w.deadLetters.filter((x) => x.signatureHash === d.signatureHash && x.status === 'active' && x.id !== d.id).length,
@@ -69,7 +71,9 @@ function proposal(w: World, d: DemoDeadLetter): ReplayProposal {
       canConfirm
         ? { id: 'verification', label: 'The cloud can confirm whether it stayed fixed', state: 'passed', detail: null }
         : { id: 'verification', label: 'The cloud cannot prove it stayed fixed', state: 'warning', detail: 'The result will read “verification required”, never “verified”.' },
+      ...(fansOut ? [{ id: 'fan-out', label: 'Goes back onto the topic, not to this subscription alone', state: 'warning' as const, detail: `Every subscription on ${d.topicName} that accepts the message receives it again, including ones that already handled it.` }] : []),
     ],
+    fansOut,
   }
 }
 

@@ -134,6 +134,15 @@ public sealed class ComponentCatalogTests
         row.Class.MayEarnAutonomy().Should().BeFalse("it ends Unverified and never earns autonomy");
     }
 
+    [Theory]
+    [InlineData(CloudProviderType.Azure, true)]
+    [InlineData(CloudProviderType.Gcp, true)]
+    [InlineData(CloudProviderType.Aws, false)]
+    public void Only_azure_and_gcp_say_a_topic_subscriptions_replay_goes_to_the_topic_and_reaches_every_subscription(CloudProviderType provider, bool fansOut)
+    {
+        ProviderCapabilities.For(provider).ReplayFansOutToTopic.Should().Be(fansOut);
+    }
+
     [Fact]
     public void Pubsub_says_a_replay_goes_back_to_the_topic_and_reaches_every_subscription_on_it()
     {

@@ -99,13 +99,22 @@ public sealed class DlqReplayService : IDlqReplayService
                 capabilities.CanProveDlqAbsence ? null : "The result will read “verification required”, never “verified”."),
         };
 
+        // A subscription's dead letter goes back to its TOPIC (seen live on Pub/Sub, 2026-10-31; Service Bus does the same), so every
+        // subscription on the topic that accepts the message receives it again. Said before the button, as a warning, never a block.
+        var fansOut = message.TopicName is not null && capabilities.ReplayFansOutToTopic;
+        if (fansOut)
+        {
+            checks.Add(new("fan-out", "Goes back onto the topic, not to this subscription alone", "warning",
+                $"Every subscription on {TargetOf(message)} that accepts the message receives it again, including ones that already handled it."));
+        }
+
         return Result<ReplayProposal>.Success(new ReplayProposal(
             message.Id, message.MessageId, message.EntityName, TargetOf(message),
             ns.DisplayName ?? ns.Name, ns.Provider.ToString().ToLowerInvariant(), ns.Environment.ToString(),
             capabilities.SupportsRecoveryMarker, prior, RecoveryEligibilityGate.RecurrenceLineageCap, others,
             RecoveryLedgerService.ResolveObservationWindowHours(_configuration), capabilities.CanProveDlqAbsence,
             decision.Verdict.ToString(), decision.ReasonCode, decision.Verdict == EligibilityVerdict.Escalate,
-            canExecute, canExecute ? null : (!active ? NotActive : decision.ReasonCode), checks));
+            canExecute, canExecute ? null : (!active ? NotActive : decision.ReasonCode), checks, fansOut));
     }
 
     /// <inheritdoc />

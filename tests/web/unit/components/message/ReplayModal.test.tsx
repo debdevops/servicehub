@@ -103,6 +103,34 @@ describe('the replay proposal', () => {
     expect(screen.getByText(/1 to look at/)).toBeInTheDocument()
   })
 
+  it('warns, before the button is pressed, that a topic subscription’s replay reaches every subscription on the topic, and still lets it be pressed', async () => {
+    proposalMock.mockResolvedValue(proposal({
+      sourceEntity: 'orders/subscriptions/billing', targetEntity: 'orders', fansOut: true,
+      checks: [
+        { id: 'status', label: 'Still in the dead-letter queue', state: 'passed', detail: null },
+        { id: 'fan-out', label: 'Goes back onto the topic, not to this subscription alone', state: 'warning', detail: 'Every subscription on orders that accepts the message receives it again, including ones that already handled it.' },
+      ],
+    }))
+    renderModal()
+
+    const warning = await screen.findByRole('region', { name: 'Goes to the whole topic' })
+    expect(within(warning).getByText('It goes back onto the topic, not to one subscription')).toBeInTheDocument()
+    expect(warning).toHaveTextContent('cannot send a message to just one subscription')
+    expect(warning).toHaveTextContent('subscriptions that already handled this message may receive it again')
+    expect(screen.getByText(/Goes back onto the topic, not to this subscription alone/)).toBeInTheDocument()
+    for (const b of await screen.findAllByRole('button', { name: /Replay 1 message/ })) expect(b).toBeEnabled()
+    expect(replayMock).not.toHaveBeenCalled()
+    await expectNoAxeViolations(warning)
+  })
+
+  it('shows no topic warning for a queue, or when the proposal does not say it fans out', async () => {
+    proposalMock.mockResolvedValue(proposal())
+    renderModal()
+    await screen.findAllByRole('button', { name: /Replay 1 message/ })
+    expect(screen.queryByRole('region', { name: 'Goes to the whole topic' })).toBeNull()
+    expect(screen.queryByText(/not to one subscription/)).toBeNull()
+  })
+
   it('keeps Replay, disabled, with the gate reason code beside it when blocked', async () => {
     proposalMock.mockResolvedValue(proposal({ canExecute: false, verdict: 'Deny', reasonCode: 'PRODUCTION_ELEVATION_REQUIRED', blockedCode: 'PRODUCTION_ELEVATION_REQUIRED' }))
     renderModal()

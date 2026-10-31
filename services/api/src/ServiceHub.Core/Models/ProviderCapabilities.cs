@@ -79,6 +79,10 @@ namespace ServiceHub.Core.Models;
 /// Whether the counts the provider reports are the cloud's own estimates rather than exact numbers. True for AWS SQS, whose
 /// attributes are named <c>ApproximateNumberOfMessages</c>. A screen shows such a count as approximate, never as exact.
 /// </param>
+/// <param name="ReplayFansOutToTopic">
+/// Whether replaying a topic subscription's dead letter publishes to the <b>topic</b>, so every subscription on it that accepts the message receives it
+/// again, not only the one it failed on (Azure Service Bus and Google Pub/Sub have no way to publish to one subscription). False where a replay goes to one queue.
+/// </param>
 public sealed record ProviderCapabilities(
     bool SupportsMessageCounts,
     bool SupportsManualDeadLetter,
@@ -90,7 +94,8 @@ public sealed record ProviderCapabilities(
     bool CanProveDlqAbsence,
     bool SupportsTopics = true,
     bool SupportsSubscriptions = true,
-    bool CountsAreApproximate = false)
+    bool CountsAreApproximate = false,
+    bool ReplayFansOutToTopic = false)
 {
     /// <summary>Capabilities of Microsoft Azure Service Bus.</summary>
     public static readonly ProviderCapabilities Azure = new(
@@ -101,7 +106,8 @@ public sealed record ProviderCapabilities(
         SupportsRepeatablePeek: true,
         Notes: "Purge is not supported — the SDK has no reliable single-message delete by sequence number.",
         SupportsRecoveryMarker: true,
-        CanProveDlqAbsence: true);
+        CanProveDlqAbsence: true,
+        ReplayFansOutToTopic: true);
 
     /// <summary>Capabilities of Amazon SQS/SNS.</summary>
     public static readonly ProviderCapabilities Aws = new(
@@ -124,7 +130,8 @@ public sealed record ProviderCapabilities(
         SupportsRepeatablePeek: false,
         Notes: "Message counts and manual dead-lettering are not supported — Pub/Sub has no count API and dead-lettering is policy-driven via MaxDeliveryAttempts. Scheduled messages are not supported either. Repeated/live polling is also not supported — every pull-then-release still counts as a delivery attempt toward the subscription's MaxDeliveryAttempts, so watching a message repeatedly can dead-letter it by accident.",
         SupportsRecoveryMarker: true,
-        CanProveDlqAbsence: false);
+        CanProveDlqAbsence: false,
+        ReplayFansOutToTopic: true);
 
     /// <summary>
     /// Resolves the capabilities preset for a given provider type. This is the single place

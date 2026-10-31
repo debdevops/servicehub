@@ -39,6 +39,11 @@ export interface ReplayProposal {
   readonly canExecute: boolean
   readonly blockedCode: string | null
   readonly checks: readonly ReplayCheck[]
+  /**
+   * True when the replay is published to a topic, so every subscription on it that accepts the message receives it again, not only the
+   * one it failed on (Azure Service Bus and Google Pub/Sub cannot publish to one subscription). A warning, never a block.
+   */
+  readonly fansOut?: boolean
 }
 
 export interface ReplayOutcome {
