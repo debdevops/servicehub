@@ -25,6 +25,9 @@ public interface IComponentMoveOn
     /// <summary>The adapter whose connection it acts with.</summary>
     CloudProviderType Provider { get; }
 
+    /// <summary>What the cloud calls the action, lower case, for the words people read: <c>redrive</c> or <c>resubmit</c>.</summary>
+    string Verb { get; }
+
     /// <summary>Whether <paramref name="itemId"/> is a run of this component in this connection's own account and region. Checked before anything is recorded or sent.</summary>
     bool Owns(Namespace ns, string itemId);
 

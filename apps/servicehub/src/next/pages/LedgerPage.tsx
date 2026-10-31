@@ -11,7 +11,7 @@ import { usePendingWork } from '../../hooks/usePendingWork'
 import { useLedger, useRecoverySummary } from '../../hooks/useRecoverySummary'
 import { verifyChain, type ChainVerification, type EntryState, type LedgerEntry, type RecoveryWindow } from '../../lib/api/recovery'
 import { formatAge, formatWhen } from '../../lib/format'
-import { stateChip, stateMeaning } from '../../lib/ledgerWords'
+import { meaningOf, stateChip } from '../../lib/ledgerWords'
 import { usePageSize } from '../../lib/pageSize'
 import { permission } from '../../lib/permissions'
 import { DetailWindow } from '../components/DetailWindow'
@@ -181,7 +181,7 @@ export default function LedgerPage() {
                       <td className={td}>{connectionOf(r)}<span className="block text-xs text-[var(--color-text-muted)]">{entityLabel(r.entityName, null)}</span></td>
                       <td className={td}><ByCell actor={r.actor} at={r.begunAt} /></td>
                       <td className={td}><StateChip state={r.state} /></td>
-                      <td className={td}>{sentence(stateMeaning[r.state])}</td>
+                      <td className={td}>{sentence(meaningOf(r.state, r.kind))}</td>
                       <td className={td}>{r.state === 'Returned' && r.confidence ? (r.confidence === 'Exact' ? 'Recognised by its recovery ID' : 'Recognised by its contents, which may be shared') : '—'}</td>
                       <td className={td}>
                         <button type="button" aria-pressed={entry === r.id} aria-label={`Open ledger entry from ${formatWhen(r.begunAt, now)}`} onClick={() => change({ entry: entry === r.id ? null : r.id })}

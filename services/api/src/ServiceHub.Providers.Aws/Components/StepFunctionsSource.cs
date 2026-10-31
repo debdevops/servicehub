@@ -192,7 +192,10 @@ public sealed class StepFunctionsSource : IComponentSource
     {
         var response = await _clients.GetStepFunctionsClient(ns)
             .ListStateMachinesAsync(new ListStateMachinesRequest { MaxResults = ComponentSourceLimits.MaxPlaces }, ct).ConfigureAwait(false);
-        return (response.StateMachines, !string.IsNullOrEmpty(response.NextToken));
+        // An Express state machine keeps no execution history AWS will list (ListExecutions answers StateMachineTypeNotSupported), so it
+        // is not a place: listing it would mark every page incomplete for a machine that can never have a failed run to show.
+        var listable = response.StateMachines.Where(m => m.Type != StateMachineType.EXPRESS).ToList();
+        return (listable, !string.IsNullOrEmpty(response.NextToken));
     }
 
     private static string Words(string status) => status switch

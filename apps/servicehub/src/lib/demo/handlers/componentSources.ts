@@ -1,6 +1,7 @@
 import type { CloudProvider } from '../../api/namespaces'
-import type { ComponentSource, FailedItem, FailedItemDetail, FailedItems, RedriveCheck } from '../../api/componentSources'
+import type { ComponentSource, FailedItem, FailedItemDetail, FailedItems, RedriveCheck, RedriveOutcome } from '../../api/componentSources'
 import { notFound, refuse, type Route } from './http'
+import { catalogue } from '../world/catalogue'
 
 const MINUTE = 60_000
 
@@ -155,6 +156,10 @@ const componentFor = (providerOf: (id: string) => CloudProvider | undefined, id:
   return c && c.provider === provider ? c : refuse(404, 'not_found', `No reader is registered for '${key}' on this connection.`)
 }
 
+// Whether the demo's own catalogue row offers a cloud redrive or resubmit for this component, and what that action is called.
+const offered = (key: string): boolean => catalogue.some((r) => r.componentKey === key && r.offersCloudRedrive)
+const verbOf = (key: string): string => (key === 'logic-apps' ? 'resubmit' : 'redrive')
+
 export const componentSources: readonly Route[] = [
   ['get', /^\/namespaces\/([^/]+)\/components\/([^/]+)\/source$/, (m, { w }): ComponentSource => {
     const c = componentFor((id) => w.namespaces.find((n) => n.id === id)?.provider, m[1], m[2])
@@ -168,14 +173,23 @@ export const componentSources: readonly Route[] = [
     const place = typeof params.place === 'string' ? params.place : null
     return { componentKey: m[2], items: items(c, now).filter((i) => place === null || i.place === place), reachedLimit: false, incomplete: false }
   }],
-  // The demo's catalogue offers no cloud redrive (no row is validated on a real cloud), so the real gate would refuse. The demo says the same.
+  // The demo offers a redrive or resubmit exactly where its own catalogue does (the real gate's rule), and nothing is sent anywhere: the
+  // acceptance below is made up, like the rest of the demo's data.
   ['get', /^\/namespaces\/([^/]+)\/component-redrives\/([^/]+)\/check$/, (m, { w }): RedriveCheck => {
     componentFor((id) => w.namespaces.find((n) => n.id === id)?.provider, m[1], m[2])
-    return { canRedrive: false, reasonCode: 'REDRIVE_NOT_OFFERED', message: 'Redrive is not offered for this component yet. It is handed to a person, who re-runs it in the cloud console.' }
+    const verb = verbOf(m[2])
+    return offered(m[2])
+      ? { canRedrive: true, reasonCode: null, message: `A person can ask the cloud to ${verb} this run.`, verb, previousRequestAtUtc: null }
+      : { canRedrive: false, reasonCode: 'REDRIVE_NOT_OFFERED', message: `A ${verb} is not offered for this component yet. It is handed to a person, who re-runs it in the cloud console.`, verb, previousRequestAtUtc: null }
   }],
-  ['post', /^\/namespaces\/([^/]+)\/component-redrives\/([^/]+)$/, (m, { w }): never => {
+  ['post', /^\/namespaces\/([^/]+)\/component-redrives\/([^/]+)$/, (m, { w }): RedriveOutcome => {
     componentFor((id) => w.namespaces.find((n) => n.id === id)?.provider, m[1], m[2])
-    return refuse(403, 'REDRIVE_NOT_OFFERED', 'Redrive is not offered for this component yet. It is handed to a person, who re-runs it in the cloud console.')
+    const verb = verbOf(m[2])
+    if (!offered(m[2])) return refuse(403, 'REDRIVE_NOT_OFFERED', `A ${verb} is not offered for this component yet. It is handed to a person, who re-runs it in the cloud console.`)
+    return {
+      entryId: 'demo-entry', operationId: 'demo-operation', result: 'accepted', state: 'Unverified', errorCode: null,
+      message: `The cloud accepted the ${verb} request. ServiceHub cannot confirm the run finished fixed.`,
+    }
   }],
   ['get', /^\/namespaces\/([^/]+)\/components\/([^/]+)\/failed\/detail$/, (m, { w, params, now }): FailedItemDetail => {
     const c = componentFor((id) => w.namespaces.find((n) => n.id === id)?.provider, m[1], m[2])

@@ -60,10 +60,15 @@ public sealed class ComponentRedriveService : IComponentRedriveService
             return Result<RedriveCheck>.Failure(resolved.Failure);
         }
 
-        var decision = await EvaluateAsync(ns, componentKey, itemId, resolved.Mover!.PlaceOf(itemId), actor, cancellationToken);
-        return Result<RedriveCheck>.Success(decision.Verdict == EligibilityVerdict.Allow
-            ? new RedriveCheck(true, null, "A person can ask AWS to redrive this run.")
-            : new RedriveCheck(false, decision.ReasonCode, Refusal(decision.ReasonCode)));
+        var mover = resolved.Mover!;
+        var decision = await EvaluateAsync(ns, componentKey, itemId, mover.PlaceOf(itemId), actor, cancellationToken);
+        if (decision.Verdict != EligibilityVerdict.Allow)
+        {
+            return Result<RedriveCheck>.Success(new RedriveCheck(false, decision.ReasonCode, Refusal(decision.ReasonCode, mover.Verb), mover.Verb));
+        }
+
+        var previous = await _ledger.GetLastAcceptedRequestAtAsync(ns.OwnerId, ns.Id, itemId, cancellationToken);
+        return Result<RedriveCheck>.Success(new RedriveCheck(true, null, $"A person can ask {CloudName(ns)} to {mover.Verb} this run.", mover.Verb, previous));
     }
 
     /// <inheritdoc />
@@ -88,7 +93,7 @@ public sealed class ComponentRedriveService : IComponentRedriveService
                 return Result<RedriveOutcome>.Failure(Error.Conflict(EscalationReasons.ReplayOutcomeUnknown, EscalationReasons.Describe(EscalationReasons.ReplayOutcomeUnknown)));
             }
 
-            var refusal = Refusal(decision.ReasonCode);
+            var refusal = Refusal(decision.ReasonCode, mover.Verb);
             return Result<RedriveOutcome>.Failure(decision.Verdict == EligibilityVerdict.Deny
                 ? Error.Forbidden(decision.ReasonCode ?? "DENIED", refusal)
                 : Error.Conflict(decision.ReasonCode ?? "ESCALATED", refusal));
@@ -160,9 +165,9 @@ public sealed class ComponentRedriveService : IComponentRedriveService
 
         var sentence = executed switch
         {
-            RecoveryExecutionOutcome.Accepted => "AWS accepted the redrive request. ServiceHub cannot confirm the run finished fixed.",
-            RecoveryExecutionOutcome.Rejected => errorMessage ?? "AWS did not accept it, so nothing was redriven.",
-            _ => errorMessage ?? "Whether AWS accepted it is not known. Check the run before asking again.",
+            RecoveryExecutionOutcome.Accepted => $"{CloudName(ns)} accepted the {mover.Verb} request. ServiceHub cannot confirm the run finished fixed.",
+            RecoveryExecutionOutcome.Rejected => errorMessage ?? $"{CloudName(ns)} did not accept it, so nothing was changed.",
+            _ => errorMessage ?? $"Whether {CloudName(ns)} accepted it is not known. Check the run before asking again.",
         };
         return Result<RedriveOutcome>.Success(new RedriveOutcome(entry.Value.Id, operation.Value.Id, status, final.State.ToString(), sentence, errorCode));
     }
@@ -193,13 +198,17 @@ public sealed class ComponentRedriveService : IComponentRedriveService
     private static RecoverabilityClass? ClassFromCatalogue(string componentKey) =>
         ComponentCatalog.All.FirstOrDefault(c => c.ComponentKey == componentKey && ComponentAccessRules.ReadsOnDemand(c))?.Class;
 
-    private static string Refusal(string? code) => code switch
+    // The cloud's own name for the screen, read from the catalogue (the one place that ties an adapter to a cloud).
+    private static string CloudName(Namespace ns) =>
+        ComponentCatalog.CloudOf(ns.Provider) is { } cloud ? ComponentCatalog.CloudName(cloud) : "The cloud";
+
+    private static string Refusal(string? code, string verb) => code switch
     {
-        "REDRIVE_AUTOMATION_PROHIBITED" => "Only a person can redrive a run, never an Agent or a rule.",
-        "REDRIVE_NOT_OFFERED" => "Redrive is not offered for this component yet. It is handed to a person, who re-runs it in the cloud console.",
+        "REDRIVE_AUTOMATION_PROHIBITED" => $"Only a person can {verb} a run, never an Agent or a rule.",
+        "REDRIVE_NOT_OFFERED" => $"A {verb} is not offered for this component yet. It is handed to a person, who re-runs it in the cloud console.",
         "CONNECTION_READ_ONLY" => "This connection is marked read-only, so ServiceHub will not change anything in it.",
         "PRODUCTION_ELEVATION_REQUIRED" => "This is a Production connection, and a Production change needs an approved elevation.",
-        _ => $"A redrive is not allowed here ({code ?? "refused"}).",
+        _ => $"A {verb} is not allowed here ({code ?? "refused"}).",
     };
 
     private static string HashOf(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();

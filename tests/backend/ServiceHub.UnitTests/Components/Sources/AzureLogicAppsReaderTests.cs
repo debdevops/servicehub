@@ -187,4 +187,28 @@ public sealed class AzureLogicAppsReaderTests
 
         _rest.Asked.Should().OnlyContain(a => a.Audience == AzureAudience.Management && a.Url.Host == "management.azure.com" && a.Url.Scheme == "https" && a.MaxBytes == null);
     }
+
+    [Fact]
+    public async Task A_run_read_carries_the_name_of_its_trigger_and_never_its_inputs_or_outputs()
+    {
+        var run = $"{Wf}/runs/run-1";
+        _rest.Answers[$"{run}?api-version=2016-06-01"] =
+            J("""{"id":"@WF@/runs/run-1","properties":{"status":"Failed","startTime":"2026-10-01T00:00:00Z","endTime":"2026-10-01T00:01:00Z","trigger":{"name":"manual","inputsLink":{"uri":"https://secret.example/in"},"outputsLink":{"uri":"https://secret.example/out"}},"error":{"code":"ActionFailed","message":"boom"}}}""");
+
+        var read = await _reader.GetRunAsync(_ns, run, default);
+
+        read!.TriggerName.Should().Be("manual");
+        read.ErrorCode.Should().Be("ActionFailed");
+        read.ToString().Should().NotContain("secret.example", "a run's trigger and action inputs and outputs are never read");
+        _rest.Urls.Should().OnlyContain(u => !u.Contains("secret.example", StringComparison.Ordinal), "the links to inputs and outputs are never followed");
+    }
+
+    [Fact]
+    public async Task A_run_with_no_trigger_reads_with_no_trigger_name()
+    {
+        var run = $"{Wf}/runs/run-2";
+        _rest.Answers[$"{run}?api-version=2016-06-01"] = J("""{"id":"@WF@/runs/run-2","properties":{"status":"Failed"}}""");
+
+        (await _reader.GetRunAsync(_ns, run, default))!.TriggerName.Should().BeNull();
+    }
 }

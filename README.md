@@ -137,7 +137,7 @@ This table is generated from the code, and a test fails if it drifts.
 | Azure | Service Bus | Deferred messages, stuck sessions | A metric or a state only | Handed to a person | Being validated | No replay offered |
 | Azure | Storage Queues | Poison queue | Reads the place that holds the failed message | ServiceHub replays one message | Being validated | Not yet validated |
 | Azure | Event Grid | Dead-letter blobs | Reads the failed records the service keeps | Handed to a person | Being validated | Read only: the reason and delivery attempts of each dead-lettered event. Needs an Azure connection that signs in with Entra |
-| Azure | Logic Apps | Failed runs | Reads the history of failed runs | Handed to a person | Being validated | Read only: failed, timed-out and cancelled runs. Re-run in the Azure portal. Needs an Azure connection that signs in with Entra |
+| Azure | Logic Apps | Failed runs | Reads the history of failed runs | A person asks Azure to resubmit the run | Being validated | Failed, timed-out and cancelled runs. A resubmit starts a new run from the trigger and every step runs again, including steps that already succeeded; the original run stays Failed. Needs an Azure connection that signs in with Entra. Redrive is off until a live run is recorded |
 | Azure | Event Hubs, Stream Analytics, Data Factory, Synapse, IoT Hub | No failed copy is kept | A metric or a state only | Not supported | Not supported | Only a lag or job metric exists; your monitoring already alerts on it |
 | Azure | Function Apps, Container Apps, AKS, Web Apps, App Service | Not a message store | — | Not supported | Not supported | They are consumers; their failures reach ServiceHub through the queue they read |
 | Azure | Cosmos DB, Azure SQL, Storage Accounts, Data Lake, Key Vault, API Management | Not messaging | — | Not supported | Not supported | No message, so nothing to put back |
@@ -145,7 +145,7 @@ This table is generated from the code, and a test fails if it drifts.
 | AWS | SQS | Ageing source queue | A metric or a state only | Handed to a person | Being validated | No replay offered |
 | AWS | SNS | Dead-letter queue of each subscriber queue | Reads the place that holds the failed message | ServiceHub replays to the one subscriber queue | Supported | Queue subscribers only. Ends Unverified |
 | AWS | Lambda, EventBridge | Dead letters that land in SQS | Reads the place that holds the failed message | Reason shown; replay on request | Being validated | Read as SQS dead letters |
-| AWS | Step Functions | Failed runs | Reads the history of failed runs | Handed to a person | Being validated | Read only: failed, timed-out and aborted runs. Re-run in the AWS console |
+| AWS | Step Functions | Failed runs | Reads the history of failed runs | A person asks AWS to redrive the run | Supported | Failed, timed-out and aborted Standard runs; AWS restarts the run from the step that failed. Ends Unverified. Express runs are not listed |
 | AWS | Kinesis, DynamoDB streams | Failure records point at the original | Reads the failed records the service keeps | Handed to a person | Being validated | Read only: where a failed batch was in the stream. The original record expires, and may already be gone |
 | AWS | Data Firehose, MSK, Amazon MQ | No failed copy, or a connected broker | A metric or a state only | Not supported | Not supported | Brokers are out of scope |
 | AWS | ECS, EKS, S3, DynamoDB, RDS, ElastiCache, API Gateway | Not messaging | — | Not supported | Not supported | No message, so nothing to put back |

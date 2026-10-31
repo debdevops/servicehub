@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using ServiceHub.Core.Components;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Providers.Azure.Components;
+using ServiceHub.Providers.Azure.MoveOn;
 using ServiceHub.Providers.Azure.ServiceBus;
 
 namespace ServiceHub.Providers.Azure;
@@ -38,6 +39,13 @@ public static class AzureProviderServiceCollectionExtensions
         services.TryAddSingleton<IAzureRestClient>(sp => new AzureRestClient(sp.GetRequiredService<IHttpClientFactory>().CreateClient("servicehub-azure-rest")));
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IComponentSource, LogicAppsSource>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IComponentSource, EventGridSource>());
+
+        // Moving a failed Logic Apps run on (build-plan unit R2) goes through its own HTTP door, never the read-only one above. It has no
+        // retry handler on purpose: Azure gives a resubmit no idempotency key, so a retried POST would start a second run.
+        services.AddHttpClient("servicehub-azure-resubmit", c => c.Timeout = TimeSpan.FromSeconds(30))
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(5) });
+        services.TryAddSingleton<IAzureResubmitClient>(sp => new AzureResubmitClient(sp.GetRequiredService<IHttpClientFactory>().CreateClient("servicehub-azure-resubmit")));
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IComponentMoveOn, LogicAppsMoveOn>());
 
         // Tagged "dependencies", not "ready": an unreachable Azure namespace is an external broker
         // outage, and must never flip /health/ready to Unhealthy and pull the instance out of

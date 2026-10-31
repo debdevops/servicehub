@@ -115,9 +115,22 @@ public sealed class ComponentCatalogTests
         lines[2].Should().StartWith("| Azure | Service Bus | Dead-letter queue |");
     }
 
+    [Fact]
+    public void Logic_apps_names_a_resubmit_that_replays_every_step_and_offers_nothing_until_a_live_run_is_recorded()
+    {
+        var row = ComponentCatalog.Find("logic-apps.failed-runs")!;
+
+        row.Status.Should().Be(SupportStatus.BeingValidated, "the resubmit has been built and tested against a fake Azure, not seen on a real one");
+        row.Facts.Path.Should().Be(RecoveryPathKind.Resubmit);
+        row.MovesOnBy.Should().Be("A person asks Azure to resubmit the run");
+        row.Note.Should().Contain("every step runs again").And.Contain("original run stays Failed", "a resubmit is not a redrive: it must never be described as one");
+        row.EvidenceRef.Should().BeNull();
+        row.Class.Should().Be(RecoverabilityClass.R0Unknown);
+        row.Class.OffersCloudRedrive().Should().BeFalse("no row offers a retry before a live run is recorded");
+    }
+
     [Theory]
     [InlineData("event-grid.dead-letter-blobs", CloudKind.Azure, DetectionKind.Records, CloudProviderType.Azure)]
-    [InlineData("logic-apps.failed-runs", CloudKind.Azure, DetectionKind.Runs, CloudProviderType.Azure)]
     [InlineData("aws-streams.failure-records", CloudKind.Aws, DetectionKind.Records, CloudProviderType.Aws)]
     [InlineData("eventarc.undelivered", CloudKind.Gcp, DetectionKind.Records, CloudProviderType.Gcp)]
     public void A_component_that_was_on_request_is_now_read_only_and_being_validated(string id, CloudKind cloud, DetectionKind detection, CloudProviderType provider)

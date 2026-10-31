@@ -21,7 +21,8 @@ export interface FailedWords {
   readonly last: string
   readonly empty: (component: string, incomplete: boolean) => string
   readonly caption: (component: string) => string
-  readonly foot: (component: string) => string
+  /** The footnote. `redriveNote` is given only where the catalogue row offers a cloud redrive or resubmit; the words must then say so. */
+  readonly foot: (component: string, redriveNote?: string) => string
 }
 
 const runs: FailedWords = {
@@ -35,7 +36,9 @@ const runs: FailedWords = {
   last: 'Stopped',
   empty: (c, incomplete) => `No failed, timed-out or aborted ${c} runs were found${incomplete ? ' in what could be read' : ''}.`,
   caption: (c) => `Failed ${c} runs, newest first`,
-  foot: (c) => `ServiceHub only reads these. To run one again, open it in the cloud’s console: this version does not move work on for ${c}.`,
+  foot: (c, redriveNote) => redriveNote
+    ? `ServiceHub reads these. ${redriveNote} You can also open it in the cloud’s console.`
+    : `ServiceHub only reads these. To run one again, open it in the cloud’s console: this version does not move work on for ${c}.`,
 }
 
 const records: FailedWords = {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { readsOnDemand, type DetectionKind } from '@/lib/api/coverage'
 import { failedWords, itemStatusTone, itemStatusWords } from '@/next/lib/failedWords'
+import { redriveWords } from '@/next/lib/redriveWords'
 
 describe('which components are read on demand', () => {
   it.each<[DetectionKind, boolean]>([['runs', true], ['records', true], ['store', false], ['signal', false], ['none', false]])('%s → %s', (detection, expected) => {
@@ -19,6 +20,23 @@ describe('the words of the failed-items tab', () => {
     expect(w.foot('Logic Apps')).toContain('To run one again')
     expect([w.first, w.last]).toEqual(['Started', 'Stopped'])
     expect(w.gone).toContain('run')
+  })
+
+  it('says Redrive… exists, and stops saying nothing moves on, only where the row offers a cloud redrive', () => {
+    const w = failedWords('runs')
+    const note = redriveWords('step-functions').footNote
+    expect(w.foot('Step Functions', note)).toContain('Redrive…')
+    expect(w.foot('Step Functions', note)).not.toMatch(/does not move work on/)
+    expect(w.foot('Step Functions', undefined)).toContain('does not move work on for Step Functions')
+    expect(w.foot('Step Functions')).toContain('does not move work on for Step Functions')
+  })
+
+  it('says Resubmit… and that every step runs again for Logic Apps, and never calls it a redrive', () => {
+    const w = failedWords('runs')
+    const text = w.foot('Logic Apps', redriveWords('logic-apps').footNote)
+    expect(text).toContain('Resubmit…')
+    expect(text).toContain('every step runs again')
+    expect(text).not.toMatch(/Redrive|from the step that failed/)
   })
 
   it('speaks of records for failed records, and never promises a re-run', () => {

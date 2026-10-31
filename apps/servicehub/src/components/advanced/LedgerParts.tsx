@@ -7,7 +7,7 @@ import { useDeadLetter } from '../../hooks/useDeadLetter'
 import { useLedgerEntry } from '../../hooks/useRecoverySummary'
 import { exportEvidence, verifyChain, type ChainVerification, type EntryState, type LedgerEntry, type RecoveryWindow } from '../../lib/api/recovery'
 import type { CloudProvider } from '../../lib/api/namespaces'
-import { describeEvent, shortHash, stateChip, stateMeaning, stateTone } from '../../lib/ledgerWords'
+import { describeEvent, meaningOf, shortHash, stateChip, stateTone } from '../../lib/ledgerWords'
 import { formatWhen } from '../../lib/format'
 import { providerLabel } from '../../lib/providers'
 import { cloudColor } from '../provider/scopeChoice'
@@ -108,7 +108,7 @@ export function EntryPanel({ id, onClose, links, windowed = false }: { id: strin
     <aside aria-label="Entry" className={windowed ? '-mx-5 -my-4' : 'self-start overflow-y-auto rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] lg:sticky lg:top-[calc(var(--header-height)+8px)] lg:max-h-[calc(100vh-var(--header-height)-24px)]'}>
       <div className="flex items-start gap-2 border-b border-[var(--color-border)] p-4">
         <div className="min-w-0 flex-1">
-          <p className="flex flex-wrap items-center gap-2"><StateChip state={e.state} /> <span className="text-sm font-medium">{stateMeaning[e.state]}</span></p>
+          <p className="flex flex-wrap items-center gap-2"><StateChip state={e.state} /> <span className="text-sm font-medium">{meaningOf(e.state, e.kind)}</span></p>
           <p className="mt-1 text-sm"><span className="font-mono text-[13px]">{e.entityName}</span> → <span className="font-mono text-[13px]">{e.targetEntity}</span> · {cloud}{e.namespaceName ? ` · ${e.namespaceName}` : ''}</p>
           {e.state === 'Returned' && e.confidence && (
             <p className="mt-1 text-xs text-[var(--color-text-muted)]">Match: {e.confidence === 'Exact' ? 'Exact — by the recovery ID' : 'Heuristic — by contents, which may be shared'}</p>
@@ -134,7 +134,7 @@ export function EntryPanel({ id, onClose, links, windowed = false }: { id: strin
           <h3 className="mb-1 flex items-center text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">What happened<InfoTip help={sectionHelp.ledger.happened} /></h3>
           <ol className="space-y-2">
             {data.events.map((ev) => {
-              const w = describeEvent(ev, cloud)
+              const w = describeEvent(ev, cloud, e.kind)
               return (
                 <li key={ev.seq} className="flex items-start justify-between gap-3">
                   <span><span className="font-medium">{w.title}</span>{w.note && <span className="block text-xs text-[var(--color-text-muted)]">{w.note}</span>}</span>

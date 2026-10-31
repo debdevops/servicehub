@@ -196,6 +196,22 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     }
 
     /// <inheritdoc />
+    public async Task<DateTimeOffset?> GetLastAcceptedRequestAtAsync(string ownerId, Guid namespaceId, string sourceMessageId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(sourceMessageId))
+        {
+            return null;
+        }
+
+        // Few entries match one run, and BegunAt is sortable text, so the latest is taken in memory.
+        var begun = await _db.RecoveryLedgerEntries.AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && e.NamespaceId == namespaceId && e.SourceMessageIdSnapshot == sourceMessageId && e.State == RecoveryEntryState.Unverified)
+            .Select(e => e.BegunAt)
+            .ToListAsync(cancellationToken);
+        return begun.Count == 0 ? null : begun.Max();
+    }
+
+    /// <inheritdoc />
     public async Task<int> ReconcileInterruptedAsync(DateTimeOffset processStartedAt, CancellationToken cancellationToken = default)
     {
         // Few rows are ever Executing (a call is seconds long), so the cutoff is compared in memory: BegunAt is sortable text.

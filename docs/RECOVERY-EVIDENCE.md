@@ -132,3 +132,20 @@ DLQ is attributed to that exact recovery (confidence **Exact**). Where it cannot
 ambiguous rather than guessed.
 
 *Verified live 2026-09-29 against a real 15,424-event ledger: chain valid, offline verifier PASS, tamper negative control FAIL at the edited `Seq`.*
+
+## 7. Cloud redrive of a failed run (AWS Step Functions)
+
+A failed, timed-out or aborted **Standard** Step Functions run can be restarted by AWS itself from the step that failed (`RedriveExecution`), with the input it already has. ServiceHub never reads the run's input or output, and only a person with the Approver role on the Recover pillar may ask. The gate denies an Agent or a rule, a read-only connection, and a Production connection without an approved elevation. The ledger entry is written *before* AWS is called and records what AWS answered. Class **R3**: approval only, and the entry always closes **`Unverified`** — acceptance says nothing about whether the run then finished fixed. It never opens an observation window and never earns autonomy.
+
+*Verified live 2026-10-31 against AWS Step Functions (region `ap-south-1`), through the API and the screens, with a read-and-redrive identity and a read-only one:*
+
+| Check | Observed |
+|---|---|
+| Redrive of a failed Standard run | AWS accepted; the run's `redriveCount` went 0 → 1; the run restarted and ended `FAILED` again at once (its state was a deliberate `Fail`); the entry closed `Unverified` |
+| Redrive of the same run again | Accepted (count 2): a run that failed again can be redriven again |
+| Identity without `states:RedriveExecution` | Refused (`AWS.StepFunctions.RedriveNotAllowed`); the entry closed `ExecutionFailed`; nothing was changed |
+| Express workflow run | AWS refuses (`InvalidArn … express`); ServiceHub refuses before calling AWS |
+| Listing | `FAILED`, `TIMED_OUT` and `ABORTED` runs listed with the right status. Express workflows are not listed (AWS does not list their executions) |
+
+**Not observed, so not claimed:** whether `states:RedriveExecution` can be scoped to the execution ARN or needs the state machine ARN (the test identity used `*`); the 14-day redrive window; a redrive after the state machine was edited; a redrive of a run that was still running. AWS documents these refusals, and ServiceHub shows what AWS answers.
+

@@ -11,8 +11,11 @@ internal sealed record LogicAppRef(string Id);
 /// <summary>A workflow run, by its full resource id, with the status Azure reports.</summary>
 internal sealed record LogicRunRef(string Id, string Status, DateTimeOffset? StartedUtc, DateTimeOffset? EndedUtc);
 
-/// <summary>One run read in full. Never carries the run's trigger or action inputs and outputs.</summary>
-internal sealed record LogicRunRead(LogicRunRef Run, string? ErrorCode, string? ErrorMessage);
+/// <summary>
+/// One run read in full. Never carries the run's trigger or action inputs and outputs. <paramref name="TriggerName"/> is only the
+/// trigger's name, which a resubmit needs to build its address.
+/// </summary>
+internal sealed record LogicRunRead(LogicRunRef Run, string? ErrorCode, string? ErrorMessage, string? TriggerName = null);
 
 /// <summary>
 /// The only way <see cref="LogicAppsSource"/> touches Azure: list subscriptions, list Logic Apps, list runs, get one run. Narrow on

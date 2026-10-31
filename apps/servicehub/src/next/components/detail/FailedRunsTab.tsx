@@ -12,6 +12,7 @@ import type { ComponentSource, FailedItem } from '../../../lib/api/componentSour
 import type { CoverageRow } from '../../../lib/api/coverage'
 import { formatWhen } from '../../../lib/format'
 import { failedWords, itemStatusTone, itemStatusWords } from '../../lib/failedWords'
+import { redriveWords, type RedriveWords } from '../../lib/redriveWords'
 import { DetailWindow } from '../DetailWindow'
 import { Th, Tip } from '../Tip'
 
@@ -31,6 +32,7 @@ const ALL = '__all__'
  */
 export function FailedRunsTab({ namespaceId, componentKey, source, row }: { namespaceId: string; componentKey: string; source: ComponentSource; row: CoverageRow }) {
   const words = failedWords(row.detection)
+  const redrive = redriveWords(componentKey)
   const componentName = row.name
   const [place, setPlace] = useState<string>(ALL)
   const [open, setOpen] = useState<string | null>(null)
@@ -41,7 +43,7 @@ export function FailedRunsTab({ namespaceId, componentKey, source, row }: { name
   const { pathname } = useLocation()
   const me = useMe()
   // A redrive is offered only where the catalogue says the component offers one (a row that is not yet validated never does) and the caller may.
-  const redriveHref = row.offersCloudRedrive && permission(me.data, 'Approver', 'redrive a run', { recover: true, namespaceId }).allowed
+  const redriveHref = row.offersCloudRedrive && permission(me.data, 'Approver', `${redrive.verb} a run`, { recover: true, namespaceId }).allowed
     ? (id: string) => `${pathname}?dialog=redrive&ns=${namespaceId}&component=${componentKey}&item=${encodeURIComponent(id)}`
     : null
   const placeName = (id: string) => source.places.find((p) => p.id === id)?.name ?? id
@@ -96,7 +98,7 @@ export function FailedRunsTab({ namespaceId, componentKey, source, row }: { name
                     <tr><Th>When</Th><Th>Status</Th><Th>Place</Th><Th>Summary</Th><Th>Actions</Th></tr>
                   </thead>
                   <tbody>
-                    {items.map((i) => <Row key={i.id} item={i} place={placeName(i.place)} open={open === i.id} onToggle={() => setOpen(open === i.id ? null : i.id)} now={now} redriveHref={redriveHref?.(i.id) ?? null} />)}
+                    {items.map((i) => <Row key={i.id} item={i} place={placeName(i.place)} open={open === i.id} onToggle={() => setOpen(open === i.id ? null : i.id)} now={now} redriveHref={redriveHref?.(i.id) ?? null} redrive={redrive} />)}
                   </tbody>
                 </table>
               </div>
@@ -105,7 +107,7 @@ export function FailedRunsTab({ namespaceId, componentKey, source, row }: { name
           </>
         )}
         <p className="border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-muted)]">
-          {words.foot(componentName)}
+          {words.foot(componentName, row.offersCloudRedrive ? redrive.footNote : undefined)}
         </p>
       </section>
 
@@ -135,7 +137,7 @@ export function FailedRunsTab({ namespaceId, componentKey, source, row }: { name
                   )}
                 </dl>
               )}
-            <p className="mt-3 text-xs text-[var(--color-text-muted)]">{words.foot(componentName)}</p>
+            <p className="mt-3 text-xs text-[var(--color-text-muted)]">{words.foot(componentName, row.offersCloudRedrive ? redrive.footNote : undefined)}</p>
           </div>
         </DetailWindow>
       )}
@@ -147,7 +149,7 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
   return <div className="flex gap-4 border-b border-[var(--color-border)] py-2 last:border-0"><dt className="w-28 shrink-0 text-[var(--color-text-muted)]">{label}</dt><dd className="min-w-0 break-words font-semibold">{children}</dd></div>
 }
 
-function Row({ item: i, place, open, onToggle, now, redriveHref }: { item: FailedItem; place: string; open: boolean; onToggle: () => void; now: Date; redriveHref: string | null }) {
+function Row({ item: i, place, open, onToggle, now, redriveHref, redrive }: { item: FailedItem; place: string; open: boolean; onToggle: () => void; now: Date; redriveHref: string | null; redrive: RedriveWords }) {
   return (
     <tr className="border-t border-[var(--color-border)]">
       <td className={td}>{i.atUtc ? formatWhen(i.atUtc, now) : '—'}</td>
@@ -160,7 +162,7 @@ function Row({ item: i, place, open, onToggle, now, redriveHref }: { item: Faile
       <td className={td}>
         <div className="flex flex-wrap gap-2">
           <button type="button" aria-expanded={open} aria-label={`${open ? 'Hide' : 'Show'} details of ${i.summary}`} onClick={onToggle} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">{open ? 'Hide' : 'Details'}</button>
-          {redriveHref && <Link to={redriveHref} aria-label={`Redrive ${i.summary}`} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">Redrive…</Link>}
+          {redriveHref && <Link to={redriveHref} aria-label={`${redrive.link.replace('…', '')} ${i.summary}`} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">{redrive.link}</Link>}
           {i.consoleUrl && (
             <a href={i.consoleUrl} target="_blank" rel="noreferrer noopener" aria-label={`Open ${i.summary} in the cloud console`} className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold hover:bg-[var(--color-surface-muted)]">
               Console <ExternalLink className="h-3 w-3" aria-hidden="true" />

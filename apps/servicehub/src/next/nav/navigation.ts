@@ -173,7 +173,7 @@ export const nextNavigation: readonly NextEntry[] = [
   },
   {
     kind: 'dialog', id: 'redrive', label: 'Redrive a run', value: 'redrive',
-    description: 'Ask the cloud to restart one failed run from the step that failed. A person decides; the cloud does the work.',
+    description: 'Ask the cloud to move one failed run on: a redrive (restart from the step that failed) or a resubmit (a new run). A person decides; the cloud does the work.',
     icon: RotateCcw, group: 'contextual', unit: 'PP5', design: 'pp5-redrive', built: true,
   },
   {

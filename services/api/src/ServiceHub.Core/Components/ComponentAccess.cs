@@ -46,14 +46,24 @@ public static class ComponentAccessRules
     public static IReadOnlyDictionary<string, ComponentSetup> Setups { get; } = new Dictionary<string, ComponentSetup>(StringComparer.Ordinal)
     {
         ["step-functions"] = new(
-            "State machine runs that ended failed, timed out or aborted, with the error and cause the run recorded.", "Appears in the menu as Step Functions. Read only: a failed run is handed to a person, who re-runs it in the AWS console.", "states:ListStateMachines, states:ListExecutions and states:DescribeExecution. Nothing that starts or stops a run.",
-            ["Add this policy to the identity ServiceHub signs in as. ListStateMachines cannot be limited to one machine; the other two can.", "Press Check access."],
+            "State machine runs that ended failed, timed out or aborted, with the error and cause the run recorded.", "Appears in the menu as Step Functions. A failed run is listed, and a person with the Approver role can ask AWS to redrive it: AWS restarts the run from the step that failed. The result always stays Unverified.", "To read: states:ListStateMachines, states:ListExecutions and states:DescribeExecution, which start or stop nothing. To let a person redrive (optional, separate): states:RedriveExecution, which Check access does not test.",
+            ["Add this policy to the identity ServiceHub signs in as. ListStateMachines cannot be limited to one machine; the other two can.", "Optional: to let a person redrive a failed run from ServiceHub, add the second policy as well. It was tried with Resource set to *; whether it can be narrowed to one state machine is not yet checked. Without it a redrive is refused and the message says so.", "Press Check access."],
             [new("IAM policy", """
                 {
                   "Version": "2012-10-17",
                   "Statement": [{
                     "Effect": "Allow",
                     "Action": ["states:ListStateMachines", "states:ListExecutions", "states:DescribeExecution"],
+                    "Resource": "*"
+                  }]
+                }
+                """),
+             new("IAM policy to redrive (optional)", """
+                {
+                  "Version": "2012-10-17",
+                  "Statement": [{
+                    "Effect": "Allow",
+                    "Action": ["states:RedriveExecution"],
                     "Resource": "*"
                   }]
                 }
@@ -72,9 +82,11 @@ public static class ComponentAccessRules
              new("Grant the viewer role", "gcloud projects add-iam-policy-binding <project-id> --member=serviceAccount:<the identity> --role=roles/cloudscheduler.viewer")],
             ["roles/cloudscheduler.viewer", "cloudscheduler.googleapis.com"]),
         ["logic-apps"] = new(
-            "Logic App runs that ended failed, timed out or cancelled, with the error code and message each recorded. Found in every subscription the identity can see.", "Appears in the menu as Logic Apps. Read only: a failed run is handed to a person, who re-runs it in the Azure portal.", "Reader on the subscription (Microsoft.Logic/workflows/read and Microsoft.Logic/workflows/runs/read), signed in with Entra. Nothing that runs, resubmits or cancels a run.",
-            ["Use an Azure connection that signs in with Entra (Managed Identity or Default Azure Credential). A Service Bus connection string cannot read Logic Apps.", "Give that identity the Reader role on the subscription that holds the Logic Apps.", "Press Check access."],
-            [new("Grant the reader role", "az role assignment create --assignee <the identity> --role Reader --scope /subscriptions/<subscription-id>")],
+            "Logic App runs that ended failed, timed out or cancelled, with the error code and message each recorded. Found in every subscription the identity can see.", "Appears in the menu as Logic Apps. A failed run is listed, and a person with the Approver role can ask Azure to resubmit it. A resubmit starts a new run from the trigger and every step runs again, including steps that already succeeded; the original run stays Failed. The result always stays Unverified.", "To read: Reader on the subscription (Microsoft.Logic/workflows/read and Microsoft.Logic/workflows/runs/read), signed in with Entra. To let a person resubmit (optional, separate): Microsoft.Logic/workflows/triggers/histories/resubmit/action, which Reader and Logic App Operator do not include (Logic App Contributor does); a custom role with only that action is the least you can give. Check access does not test it. Reading starts, resubmits or cancels nothing.",
+            ["Use an Azure connection that signs in with Entra (Managed Identity or Default Azure Credential). A Service Bus connection string cannot read Logic Apps.", "Give that identity the Reader role on the subscription that holds the Logic Apps.", "Optional: to let a person resubmit a failed run from ServiceHub, also create the one-action role below and give it to the same identity on the same subscription. A resubmit replays the whole workflow, so give it only to an identity you want to be able to do that. Without it a resubmit is refused and the message says so.", "Press Check access."],
+            [new("Grant the reader role", "az role assignment create --assignee <the identity> --role Reader --scope /subscriptions/<subscription-id>"),
+             new("Optional: create a role that can only resubmit", "az role definition create --role-definition '{\"Name\":\"Logic App Run Resubmitter\",\"Description\":\"Resubmit a Logic Apps run from its trigger history.\",\"Actions\":[\"Microsoft.Logic/workflows/triggers/histories/resubmit/action\"],\"AssignableScopes\":[\"/subscriptions/<subscription-id>\"]}'"),
+             new("Optional: give that role to the identity", "az role assignment create --assignee <the identity> --role \"Logic App Run Resubmitter\" --scope /subscriptions/<subscription-id>")],
             ["Reader", "Microsoft.Logic/workflows/read", "Microsoft.Logic/workflows/runs/read"]),
         ["event-grid"] = new(
             "Events Event Grid could not deliver, kept as blobs in the dead-letter container of an event subscription. Each is listed with the reason and the delivery attempts.", "Appears in the menu as Event Grid. Read only: a dead-lettered event is handed to a person. The event body is not shown.", "Reader on the subscription to find event subscriptions, and Storage Blob Data Reader on the storage account that holds the dead-letter container. Signed in with Entra.",

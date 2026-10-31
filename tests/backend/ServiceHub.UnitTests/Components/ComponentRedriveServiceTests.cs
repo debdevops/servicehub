@@ -75,6 +75,54 @@ public sealed class ComponentRedriveServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task The_words_name_the_connections_cloud_and_the_movers_verb()
+    {
+        const string logicRun = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Logic/workflows/orders/runs/run-1";
+        var azure = Namespace.CreateWithManagedIdentity("azure-words", ConnectionAuthType.ManagedIdentity, provider: CloudProviderType.Azure).Value;
+        var mover = new FakeMover { ComponentKey = "logic-apps", Provider = CloudProviderType.Azure, Verb = "resubmit", OwnedPrefix = "/subscriptions/" };
+        var service = new ComponentRedriveService(
+            _ledger, new RecoveryEligibilityGate(_ledger, NullLogger<RecoveryEligibilityGate>.Instance), [mover], _audit.Object, NullLogger<ComponentRedriveService>.Instance, _ => _class);
+
+        var check = (await service.CheckAsync(azure, "logic-apps", logicRun, Person, default)).Value;
+        var outcome = (await service.RequestRedriveAsync(azure, "logic-apps", logicRun, Person, "redrive-execution", "trace-1", default)).Value;
+
+        check.Verb.Should().Be("resubmit");
+        check.Message.Should().Be("A person can ask Azure to resubmit this run.");
+        outcome.Message.Should().Be("Azure accepted the resubmit request. ServiceHub cannot confirm the run finished fixed.");
+        outcome.Message.Should().NotContain("AWS").And.NotContain("redrive");
+    }
+
+    [Fact]
+    public async Task A_refusal_uses_the_movers_verb()
+    {
+        _class = RecoverabilityClass.R0Unknown;
+        var service = new ComponentRedriveService(
+            _ledger, new RecoveryEligibilityGate(_ledger, NullLogger<RecoveryEligibilityGate>.Instance), [new FakeMover { Verb = "resubmit" }], _audit.Object,
+            NullLogger<ComponentRedriveService>.Instance, _ => _class);
+
+        var check = (await service.CheckAsync(_ns, "step-functions", Run, Person, default)).Value;
+
+        check.CanRedrive.Should().BeFalse();
+        check.Message.Should().Contain("resubmit").And.NotContain("redrive");
+    }
+
+    [Fact]
+    public async Task The_check_says_when_the_cloud_last_accepted_a_request_for_the_same_run_and_never_blocks_a_second()
+    {
+        (await Service().CheckAsync(_ns, "step-functions", Run, Person, default)).Value.PreviousRequestAtUtc.Should().BeNull("nothing was requested yet");
+
+        var first = (await Redrive()).Value;
+        var check = (await Service().CheckAsync(_ns, "step-functions", Run, Person, default)).Value;
+        var other = (await Service().CheckAsync(_ns, "step-functions", Run.Replace("run-1", "run-2", StringComparison.Ordinal), Person, default)).Value;
+
+        first.Result.Should().Be("accepted");
+        check.CanRedrive.Should().BeTrue("a warning, never a block: a person may genuinely want a second run");
+        check.PreviousRequestAtUtc.Should().NotBeNull();
+        other.PreviousRequestAtUtc.Should().BeNull("another run was never requested");
+        (await Redrive()).Value.Result.Should().Be("accepted");
+    }
+
+    [Fact]
     public async Task The_ledger_entry_exists_in_the_executing_state_when_the_cloud_is_called()
     {
         var seen = (RecoveryEntryState?)null;
@@ -99,18 +147,20 @@ public sealed class ComponentRedriveServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task A_component_whose_class_does_not_offer_a_redrive_is_refused_and_the_real_catalogue_offers_none_yet()
+    public async Task A_component_whose_class_does_not_offer_a_redrive_is_refused()
     {
         _class = RecoverabilityClass.R0Unknown;
+
         (await Redrive()).Error.Code.Should().Be(RecoveryEligibilityGate.ReasonRedriveNotOffered);
-
-        var real = new ComponentRedriveService(
-            _ledger, new RecoveryEligibilityGate(_ledger, NullLogger<RecoveryEligibilityGate>.Instance), [_mover], _audit.Object, NullLogger<ComponentRedriveService>.Instance);
-        var result = await real.RequestRedriveAsync(_ns, "step-functions", Run, Person, null, null, default);
-
-        result.Error.Code.Should().Be(RecoveryEligibilityGate.ReasonRedriveNotOffered, "Step Functions is Being validated until a live run is recorded");
         _mover.Asked.Should().BeEmpty();
         _db.RecoveryOperations.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Only_step_functions_offers_a_redrive_in_the_real_catalogue_until_another_live_run_is_recorded()
+    {
+        // Workflows names a Resubmit path too, but it is Being validated, so its class stays R0 and the gate denies it.
+        ComponentCatalog.All.Where(c => c.Class.OffersCloudRedrive()).Select(c => c.ComponentKey).Should().Equal("step-functions");
     }
 
     [Fact]
@@ -209,11 +259,15 @@ public sealed class ComponentRedriveServiceTests : IDisposable
 
         public Action? OnCall { get; set; }
 
-        public string ComponentKey => "step-functions";
+        public string ComponentKey { get; init; } = "step-functions";
 
-        public CloudProviderType Provider => CloudProviderType.Aws;
+        public CloudProviderType Provider { get; init; } = CloudProviderType.Aws;
 
-        public bool Owns(Namespace ns, string itemId) => itemId.StartsWith("arn:aws:states:us-east-1:", StringComparison.Ordinal);
+        public string Verb { get; init; } = "redrive";
+
+        public string OwnedPrefix { get; init; } = "arn:aws:states:us-east-1:";
+
+        public bool Owns(Namespace ns, string itemId) => itemId.StartsWith(OwnedPrefix, StringComparison.Ordinal);
 
         public string PlaceOf(string itemId) => Machine;
 

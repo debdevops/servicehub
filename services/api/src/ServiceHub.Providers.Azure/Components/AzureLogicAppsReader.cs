@@ -44,10 +44,10 @@ internal sealed class AzureLogicAppsReader : IAzureLogicAppsReader
             return null;
         }
 
-        // Only the error is read: a run's trigger and action inputs and outputs can hold customer data, and are never touched.
+        // Only the error and the trigger's name are read: a run's trigger and action inputs and outputs can hold customer data, and are never touched.
         var props = AzureArm.Child(doc.RootElement, "properties");
         var error = AzureArm.Child(props, "error");
-        return new LogicRunRead(run, AzureArm.Text(error, "code") ?? AzureArm.Text(props, "code"), AzureArm.Text(error, "message"));
+        return new LogicRunRead(run, AzureArm.Text(error, "code") ?? AzureArm.Text(props, "code"), AzureArm.Text(error, "message"), AzureArm.Text(AzureArm.Child(props, "trigger"), "name"));
     }
 
     private static LogicRunRef? ToRun(System.Text.Json.JsonElement element)

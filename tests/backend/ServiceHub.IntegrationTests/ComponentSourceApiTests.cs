@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -62,6 +63,8 @@ public sealed class ComponentSourceApiTests
 
         public CloudProviderType Provider => CloudProviderType.Aws;
 
+        public string Verb => "redrive";
+
         public bool Owns(Namespace ns, string itemId) => itemId.StartsWith("arn:aws:states:", StringComparison.Ordinal);
 
         public string PlaceOf(string itemId) => "arn:aws:states:us-east-1:1:stateMachine:m";
@@ -92,7 +95,7 @@ public sealed class ComponentSourceApiTests
         var root = new ServiceHubApiFactory();
         var factory = root.WithWebHostBuilder(b => b.ConfigureServices(services =>
         {
-            foreach (var d in services.Where(d => d.ServiceType == typeof(ICloudMessagingProvider) || d.ServiceType == typeof(IComponentSource)).ToList())
+            foreach (var d in services.Where(d => d.ServiceType == typeof(ICloudMessagingProvider) || d.ServiceType == typeof(IComponentSource) || d.ServiceType == typeof(IComponentMoveOn)).ToList())
             {
                 services.Remove(d);
             }
@@ -228,20 +231,40 @@ public sealed class ComponentSourceApiTests
     }
 
     [Fact]
-    public async Task A_redrive_is_refused_while_the_catalogue_offers_none_and_nothing_is_sent()
+    public async Task A_redrive_is_accepted_once_for_step_functions_because_a_live_run_is_recorded()
     {
         var mover = new FakeMover();
         var (host, _) = Host(mover);
         using var _h = host;
         var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
 
+        var check = await Get(host.Client, $"/api/v1/namespaces/{aws}/component-redrives/step-functions/check?itemId={Uri.EscapeDataString(RunArn)}");
+        var response = await PostRedrive(host, aws);
+
+        check.GetProperty("canRedrive").GetBoolean().Should().BeTrue();
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("Unverified", "acceptance never proves the run finished fixed");
+        mover.Calls.Should().Equal(RunArn);
+    }
+
+    [Fact]
+    public async Task A_redrive_is_refused_on_a_read_only_connection_and_nothing_is_sent()
+    {
+        var mover = new FakeMover();
+        var (host, _) = Host(mover);
+        using var _h = host;
+        var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
+        var readOnly = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/namespaces/{aws}/can-send") { Content = JsonContent.Create(new { canSend = false }) };
+        readOnly.Headers.Add("X-ServiceHub-Intent", "declare-can-send");
+        (await host.Client.SendAsync(readOnly)).StatusCode.Should().Be(HttpStatusCode.OK);
+
         var response = await PostRedrive(host, aws);
         var check = await Get(host.Client, $"/api/v1/namespaces/{aws}/component-redrives/step-functions/check?itemId={Uri.EscapeDataString(RunArn)}");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden, "Step Functions is Being validated, so its class offers no redrive until a live run is recorded");
-        (await response.Content.ReadAsStringAsync()).Should().Contain("REDRIVE_NOT_OFFERED");
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("CONNECTION_READ_ONLY");
         check.GetProperty("canRedrive").GetBoolean().Should().BeFalse();
-        check.GetProperty("reasonCode").GetString().Should().Be("REDRIVE_NOT_OFFERED");
+        check.GetProperty("reasonCode").GetString().Should().Be("CONNECTION_READ_ONLY");
         mover.Calls.Should().BeEmpty();
     }
 

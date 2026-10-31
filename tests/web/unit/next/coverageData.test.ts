@@ -47,7 +47,9 @@ describe('the coverage list the demo answers with', () => {
       expect(row.status, id).toBe('beingValidated')
       expect(row.statusWords, id).toBe('Being validated')
       expect(row.inSidebar, id).toBe(true)
-      expect(row.movesOnBy, id).toBe('Handed to a person')
+      // Logic Apps names the one retry it will offer once a live run is recorded; the rest are handed to a person.
+      expect(row.movesOnBy, id).toBe(id === 'logic-apps.failed-runs' ? 'A person asks Azure to resubmit the run' : 'Handed to a person')
+      expect(row.offersCloudRedrive, id).toBe(false)
     }
     expect(answer.rows.filter((r) => r.detection === 'records').map((r) => r.componentKey).sort()).toEqual(['aws-streams', 'event-grid', 'eventarc'])
     expect(answer.rows.find((r) => r.id === 'eventarc.undelivered')!.detectionWords).toBe('Reads the failed records the service keeps')

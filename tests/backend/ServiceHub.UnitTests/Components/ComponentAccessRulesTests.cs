@@ -87,7 +87,11 @@ public sealed class ComponentAccessRulesTests
         var rows = ComponentCatalog.All.Where(ComponentAccessRules.ReadsOnDemand).ToList();
 
         rows.Select(r => r.ComponentKey).Should().BeEquivalentTo(BuiltOnDemand);
-        rows.Should().OnlyContain(r => r.Status == SupportStatus.BeingValidated, "none has a recorded live run yet, so none may claim Supported");
+        // Only a row with a recorded live run may claim Supported. Step Functions has one (RECOVERY-EVIDENCE.md §7); add a key here only with its own.
+        string[] withRecordedLiveRun = ["step-functions"];
+        rows.Where(r => !withRecordedLiveRun.Contains(r.ComponentKey))
+            .Should().OnlyContain(r => r.Status == SupportStatus.BeingValidated, "no other row has a recorded live run yet, so none may claim Supported");
+        rows.Where(r => withRecordedLiveRun.Contains(r.ComponentKey)).Should().OnlyContain(r => r.Status == SupportStatus.Supported && r.EvidenceRef != null);
         rows.Should().OnlyContain(r => r.InSidebar && r.Provider != null);
         rows.Should().OnlyContain(r => ComponentAccessRules.Of(r) == ComponentAccess.SameConnection);
     }
@@ -108,7 +112,6 @@ public sealed class ComponentAccessRulesTests
     }
 
     [Theory]
-    [InlineData("logic-apps", "Reader")]
     [InlineData("event-grid", "Storage Blob Data Reader")]
     [InlineData("aws-streams", "sqs:ReceiveMessage")]
     [InlineData("eventarc", "roles/eventarc.viewer")]
@@ -144,9 +147,38 @@ public sealed class ComponentAccessRulesTests
     [Fact]
     public void The_step_functions_policy_is_valid_json_too()
     {
-        var policy = System.Text.Json.JsonDocument.Parse(ComponentAccessRules.SetupFor("step-functions")!.Snippets.Single().Text);
+        var setup = ComponentAccessRules.SetupFor("step-functions")!;
+        var read = System.Text.Json.JsonDocument.Parse(setup.Snippets[0].Text);
+        var redrive = System.Text.Json.JsonDocument.Parse(setup.Snippets[1].Text);
 
-        policy.RootElement.GetProperty("Statement")[0].GetProperty("Action").GetArrayLength().Should().Be(3);
+        setup.Snippets.Should().HaveCount(2);
+        read.RootElement.GetProperty("Statement")[0].GetProperty("Action").GetArrayLength().Should().Be(3);
+        redrive.RootElement.GetProperty("Statement")[0].GetProperty("Action")[0].GetString().Should().Be("states:RedriveExecution");
+    }
+
+    [Fact]
+    public void The_logic_apps_guidance_says_a_resubmit_replays_every_step_and_names_the_role_that_allows_it()
+    {
+        var setup = ComponentAccessRules.SetupFor("logic-apps")!;
+
+        setup.Permissions.Should().Contain("Reader");
+        setup.Steps.Last().Should().Contain("Check access");
+        setup.Appears.Should().Contain("resubmit").And.Contain("every step runs again").And.Contain("original run stays Failed").And.NotContain("Read only");
+        setup.Needs.Should().Contain("Microsoft.Logic/workflows/triggers/histories/resubmit/action").And.Contain("Reader and Logic App Operator do not include")
+            .And.Contain("Check access does not test it").And.NotContain("Nothing that runs, resubmits");
+        setup.Snippets.Should().Contain(s => s.Text.Contains("role definition create", StringComparison.Ordinal) && s.Text.Contains("histories/resubmit/action", StringComparison.Ordinal));
+        setup.Permissions.Should().NotContain(p => p.Contains("resubmit", StringComparison.OrdinalIgnoreCase), "the check tests only what reading needs");
+    }
+
+    [Fact]
+    public void The_step_functions_guidance_says_a_person_can_redrive_and_which_permission_that_needs_and_that_check_access_skips_it()
+    {
+        var setup = ComponentAccessRules.SetupFor("step-functions")!;
+
+        setup.Appears.Should().Contain("redrive").And.NotContain("Read only");
+        setup.Needs.Should().Contain("states:RedriveExecution").And.Contain("Check access does not test");
+        setup.Steps.Should().Contain(s => s.Contains("redrive", StringComparison.OrdinalIgnoreCase));
+        setup.Permissions.Should().NotContain("states:RedriveExecution", "the check tests only what reading needs");
     }
 
     [Fact]

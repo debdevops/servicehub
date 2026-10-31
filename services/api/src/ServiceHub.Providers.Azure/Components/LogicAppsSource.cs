@@ -244,11 +244,11 @@ public sealed partial class LogicAppsSource : IComponentSource
 
     private static bool IsWorkflowId(string id) => id.Length <= 512 && WorkflowIdRegex().IsMatch(id);
 
-    private static bool IsRunId(string id) => id.Length <= 600 && RunIdRegex().IsMatch(id);
+    internal static bool IsRunId(string id) => id.Length <= 600 && RunIdRegex().IsMatch(id);
 
     private static string ShortName(string id) => id[(id.LastIndexOf('/') + 1)..];
 
-    private static string WorkflowOf(string runId)
+    internal static string WorkflowOf(string runId)
     {
         var at = runId.IndexOf("/runs/", StringComparison.OrdinalIgnoreCase);
         return at < 0 ? runId : runId[..at];

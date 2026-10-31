@@ -13,6 +13,7 @@ import { cloudLabel } from '../lib/clouds'
 import { credentialWords } from '../lib/words'
 import { nextEntry, nextHref } from '../nav/navigation'
 import { Th, Tip } from '../components/Tip'
+import { redriveWords } from '../lib/redriveWords'
 
 const td = 'px-3 py-3 align-top text-sm'
 const panel = 'rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]'
@@ -68,7 +69,7 @@ export function RunsComponentPage({ cloud, row, namespaceId }: { cloud: CloudKin
         <div className="flex gap-3">
           <aside aria-label="What you’re looking at" className="flex max-w-xl gap-2.5 rounded-xl border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] p-3 text-sm">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-primary-700)]" aria-hidden="true" />
-            <div><p className="font-semibold">What you’re looking at</p><p>The {row.stuckPlace.toLowerCase()} of {row.name} on this connection. ServiceHub reads them and tells you; it does not run anything again.</p></div>
+            <div><p className="font-semibold">What you’re looking at</p><p>The {row.stuckPlace.toLowerCase()} of {row.name} on this connection. {row.offersCloudRedrive ? `ServiceHub reads them and tells you. ${redriveWords(row.componentKey).bannerNote}` : 'ServiceHub reads them and tells you; it does not run anything again.'}</p></div>
           </aside>
           <button type="button" aria-label="Refresh" onClick={() => void client.invalidateQueries({ queryKey: ['component-source'] })} className="self-start rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-2.5 hover:bg-[var(--color-surface-muted)]"><RefreshCw className="h-4 w-4" aria-hidden="true" /></button>
         </div>

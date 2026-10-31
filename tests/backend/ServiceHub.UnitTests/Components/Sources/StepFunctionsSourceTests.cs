@@ -169,4 +169,27 @@ public sealed class StepFunctionsSourceTests : ComponentSourceConformance
 
         place.ConsoleUrl.Should().StartWith($"https://{host}/");
     }
+
+    [Fact]
+    public async Task An_express_state_machine_is_not_a_place_and_is_never_read()
+    {
+        const string express = "arn:aws:states:us-east-1:123456789012:stateMachine:express";
+        _cloud.Setup(c => c.ListStateMachinesAsync(It.IsAny<ListStateMachinesRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ListStateMachinesResponse
+            {
+                StateMachines =
+                [
+                    new StateMachineListItem { Name = "orders", StateMachineArn = Machine, Type = StateMachineType.STANDARD },
+                    new StateMachineListItem { Name = "express", StateMachineArn = express, Type = StateMachineType.EXPRESS },
+                ],
+            });
+        ArrangeFailures(1);
+
+        var places = (await _source.ListPlacesAsync(_ns, default)).Value.Items;
+        var page = (await _source.ListFailedAsync(_ns, null, default)).Value;
+
+        places.Select(p => p.Id).Should().Equal(Machine);
+        page.Incomplete.Should().BeFalse();
+        _cloud.Verify(c => c.ListExecutionsAsync(It.Is<ListExecutionsRequest>(r => r.StateMachineArn == express), It.IsAny<CancellationToken>()), Times.Never);
+    }
 }

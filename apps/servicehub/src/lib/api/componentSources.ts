@@ -69,11 +69,15 @@ export async function fetchFailedItem(namespaceId: string, componentKey: string,
   return (await api.get<FailedItemDetail>(`/namespaces/${namespaceId}/components/${componentKey}/failed/detail`, { params: { itemId } })).data
 }
 
-/** Whether a person may ask the cloud to redrive one failed run now, and if not, why. Asks the server's gate; changes nothing. */
+/** Whether a person may ask the cloud to redrive (or resubmit) one failed run now, and if not, why. Asks the server's gate; changes nothing. */
 export interface RedriveCheck {
   readonly canRedrive: boolean
   readonly reasonCode: string | null
   readonly message: string
+  /** What the cloud calls the action: `redrive` or `resubmit`. */
+  readonly verb?: string
+  /** When the cloud last accepted this same run's request, or null/absent when it never did. A warning, never a block. */
+  readonly previousRequestAtUtc?: string | null
 }
 
 /** What a redrive request ended as: what the cloud accepted, and nothing more. The run's own result is never known. */

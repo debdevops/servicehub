@@ -33,6 +33,9 @@ public sealed class StepFunctionsMoveOn : IComponentMoveOn
     public CloudProviderType Provider => CloudProviderType.Aws;
 
     /// <inheritdoc />
+    public string Verb => "redrive";
+
+    /// <inheritdoc />
     public bool Owns(Namespace ns, string itemId)
     {
         ArgumentNullException.ThrowIfNull(ns);

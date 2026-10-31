@@ -138,7 +138,7 @@ internal sealed class AzureRestClient : IAzureRestClient
             ? string.Equals(url.Host, "management.azure.com", StringComparison.OrdinalIgnoreCase)
             : url.Host.EndsWith(".blob.core.windows.net", StringComparison.OrdinalIgnoreCase));
 
-    private static TokenCredential EntraCredentialFor(Namespace ns) => ns.AuthType switch
+    internal static TokenCredential EntraCredentialFor(Namespace ns) => ns.AuthType switch
     {
         ConnectionAuthType.ManagedIdentity => new ManagedIdentityCredential(ManagedIdentityId.SystemAssigned),
         ConnectionAuthType.DefaultAzureCredential => new DefaultAzureCredential(),

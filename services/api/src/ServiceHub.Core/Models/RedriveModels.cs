@@ -4,7 +4,9 @@ namespace ServiceHub.Core.Models;
 /// <param name="CanRedrive">True when the gate would allow it.</param>
 /// <param name="ReasonCode">The gate's stable code when it would not.</param>
 /// <param name="Message">One plain sentence for the dialog.</param>
-public sealed record RedriveCheck(bool CanRedrive, string? ReasonCode, string Message);
+/// <param name="Verb">What the cloud calls the action: <c>redrive</c> or <c>resubmit</c>.</param>
+/// <param name="PreviousRequestAtUtc">When the cloud last accepted this same run's request, or null when it never did. A warning, not a block.</param>
+public sealed record RedriveCheck(bool CanRedrive, string? ReasonCode, string Message, string Verb = "redrive", DateTimeOffset? PreviousRequestAtUtc = null);
 
 /// <summary>What a redrive request ended as. It says what the cloud accepted and nothing more: the run's result is never known.</summary>
 /// <param name="EntryId">The ledger entry.</param>
