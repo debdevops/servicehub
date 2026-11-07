@@ -107,6 +107,19 @@ describe('the 5.0.0 header (unit B3)', () => {
     expect(within(menu).getByLabelText('2 pending approvals')).toBeInTheDocument()
   })
 
+  it('shows a band, with a link to Agents, only while every acting agent is paused', async () => {
+    vi.mocked(agentsApi.fetchAgents).mockResolvedValue([agent({ isPaused: true })])
+    const { unmount } = await open('/next/azure')
+    expect(await screen.findByText(/The Agent will not act: it is paused/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Resume on Agents' })).toHaveAttribute('href', '/next/azure/agents')
+    unmount()
+    // Partly paused: something is still acting, so no band (the header names who is paused).
+    vi.mocked(agentsApi.fetchAgents).mockResolvedValue([agent({ isPaused: true }), agent({ id: 'second', name: 'Second' })])
+    await open('/next/azure')
+    await screen.findByText('Role: Approver')
+    expect(screen.queryByText(/The Agent will not act/)).not.toBeInTheDocument()
+  })
+
   it('colours the header by the cloud being looked at', async () => {
     await open('/next/aws')
     await screen.findByText('Role: Approver')

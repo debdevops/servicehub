@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { BodyBlock, Properties } from '../../components/message/MessageDrawer'
+import { PurgeAction } from '../../components/message/PurgeAction'
 import { useOverlayTitle } from '../../components/overlays/overlayTitle'
 import { useDeadLetter } from '../../hooks/useDeadLetter'
 import { useMe } from '../../hooks/useIdentity'
@@ -122,6 +123,10 @@ export default function MessageDialog({ close }: NextOverlayBodyProps) {
 
       <p role="note" className="rounded-xl border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-4 py-2.5 text-sm"><strong>Read-only.</strong> ServiceHub never changes a message’s body. A replay sends exactly what is shown here.</p>
       <p className="text-xs text-[var(--color-text-muted)]">What ServiceHub keeps of this message on this machine: a fingerprint of the body and the first 500 characters, as plain text.{d.bodyIsPreview ? ' The body above is that kept preview.' : ''}</p>
+
+      {/* Purge is the 4.2.0 control, moved not rewritten: it says itself where the cloud cannot delete one message, asks for a reason, and
+          goes through the same gate as a replay. A held message is answered by Review, so it is not offered here either. */}
+      {!held && <PurgeAction dlqMessageId={m.id} namespaceId={m.namespaceId} active={m.status === 'active'} onPurged={close} />}
 
       <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--color-border)] pt-3">
         {link && <a href={link} target="_blank" rel="noreferrer" className="rounded-lg border border-[var(--color-border)] px-3.5 py-2 text-sm font-semibold hover:bg-[var(--color-surface-muted)]">Open the trace</a>}

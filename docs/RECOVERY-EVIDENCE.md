@@ -168,3 +168,24 @@ A failed, timed-out or cancelled Logic Apps run can be **resubmitted** through A
 
 **Not observed, so not claimed:** a trigger history that has aged out; a Recurrence or other trigger type (only the HTTP request trigger was tried); a run that was still running (ServiceHub refuses it before calling Azure, tested offline only); Logic Apps Standard (single-tenant), which this component does not read.
 
+
+## 9. Retry of a failed Eventarc event (through Pub/Sub replay)
+
+ServiceHub has **no Eventarc-specific retry**. A failed Eventarc event is held in the dead-letter topic of the trigger's transport subscription, which the Pub/Sub component already lists. The Eventarc tab draws **Retry in Pub/Sub…**, which opens that subscription's dead letters, and the ordinary Pub/Sub replay does the rest (same gate, same ledger entry, same approval rules as any Pub/Sub replay). **Replay publishes a fresh copy to the subscription's topic, so every subscription on that topic receives the event again.** For a Pub/Sub-sourced trigger that topic is the customer's own source topic. The replay dialog says so ("Goes to the whole topic"), as a warning that never blocks. Class **R3**, no autonomy beyond what the Pub/Sub rules already earn.
+
+*Verified live 2026-10-31 against GCP (project `servicehub-502914`: a Pub/Sub-sourced Eventarc trigger to a workflow, its transport subscription with a dead-letter policy of 5 attempts and a push endpoint that always refuses, a dead-letter topic with a pull subscription), through the API and the screens, with Application Default Credentials (`GcpWorkloadIdentity`, no key created):*
+
+| Check | Observed |
+|---|---|
+| Access check | Passes with Eventarc Viewer, Pub/Sub Viewer and Subscriber on the dead-letter subscription |
+| Trigger discovery | `ListLocations` / `ListTriggers` found the project's one trigger |
+| Reason shown | `CloudPubSubDeadLetterSourceDeliveryCount` present ("tried 5 times"). The delivery-error attribute is **absent** on a held copy of a push failure, so no reason is shown and the summary is the generic "Undelivered event" (no `ce-type` on a raw Pub/Sub message) |
+| Link to Pub/Sub | The item's `heldIn` named `eventarc-…-sub-617`, exactly the id the Pub/Sub component lists; the dead-letters `q` filter found that subscription's dead letters (1, then 2) and an unrelated term found none |
+| Seeing the dead letters | Only after **Look now** (GCP has no repeatable peek); a look is a pull, so two looks brought in both events; ServiceHub reported `unconfirmed` honestly |
+| Replay | Proposal showed the target `servicehub-livetest-events` with every check passing; accepted; recovery marker applied; the dead-letter copy left the dead-letter topic |
+| After the replay | About 75 seconds later the event dead-lettered again as a **new** message; the ledger entry read **`Returned`, confidence `Exact`** (matched by recovery id). The replay really re-entered the trigger's delivery path; failing again is expected here because the endpoint refuses by design |
+| Fan-out | The earlier wording "puts it back on this trigger's transport topic only" was **wrong** and was corrected. Only this trigger subscribed in the livetest, so nothing else received the copy |
+
+**Not observed, so not claimed:** delivery to a destination that works; an Eventarc trigger from a Google source (Eventarc makes its own transport topic there, the one case where the target is unique); a trigger with no dead-letter policy; the "Not enabled" answer for an identity without the viewer roles; the fan-out itself (a second subscription on the topic receiving the copy). The row stays **BeingValidated** until those are run.
+
+Event Grid is deliberately different: ServiceHub **cannot retry** its events (no redelivery API, a blob holds an array, a republish to the topic reaches every subscription), so it lists the blobs and links to them. Its read side was run live on Azure on 2026-10-31 and is recorded in the wave doc, not here, because nothing was recovered.

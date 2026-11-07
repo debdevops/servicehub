@@ -24,8 +24,8 @@ vi.mock('@/lib/api/agents', async (o) => ({ ...(await o<typeof agentsApi>()), fe
 vi.mock('@/lib/api/settings', async (o) => ({ ...(await o<typeof settingsApi>()), fetchEmergencyStop: vi.fn() }))
 vi.mock('@/lib/api/pendingWork', async (o) => ({ ...(await o<typeof pendingApi>()), fetchPendingWork: vi.fn() }))
 vi.mock('@/lib/api/deadLetters', async (o) => ({ ...(await o<typeof deadLettersApi>()), fetchDeadLetter: vi.fn() }))
-vi.mock('@/lib/api/namespaces', async (o) => ({ ...(await o<typeof namespacesApi>()), fetchNamespace: vi.fn() }))
-vi.mock('@/lib/api/replay', async (o) => ({ ...(await o<typeof replayApi>()), fetchReplays: vi.fn() }))
+vi.mock('@/lib/api/namespaces', async (o) => ({ ...(await o<typeof namespacesApi>()), fetchNamespace: vi.fn(), fetchNamespaces: vi.fn() }))
+vi.mock('@/lib/api/replay', async (o) => ({ ...(await o<typeof replayApi>()), fetchReplays: vi.fn(), purgeMessage: vi.fn() }))
 
 const at = '2026-10-18T09:00:00Z'
 const detail = (over: Partial<deadLettersApi.DeadLetterDetail> = {}, item: Partial<deadLettersApi.DeadLetter> = {}): deadLettersApi.DeadLetterDetail => ({
@@ -65,6 +65,7 @@ describe('the Message dialog (unit D3)', () => {
     vi.mocked(agentsApi.fetchAgents).mockResolvedValue([agent()])
     vi.mocked(settingsApi.fetchEmergencyStop).mockResolvedValue({ active: false, by: null, at: null, reason: null })
     vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue(page([]))
+    vi.mocked(namespacesApi.fetchNamespaces).mockResolvedValue([])
     vi.mocked(namespacesApi.fetchNamespace).mockResolvedValue({ id: 'ns-azure', name: 'orders-sb', displayName: null } as namespacesApi.Namespace)
     vi.mocked(replayApi.fetchReplays).mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 })
   })
@@ -210,5 +211,41 @@ describe('the Message dialog (unit D3)', () => {
     const d = await dialog()
     await d.findByRole('link', { name: 'Review…' })
     await expectNoAxeViolations(document.body)
+  })
+  describe('purge', () => {
+    const azure = (supportsPurge: boolean) => vi.mocked(namespacesApi.fetchNamespaces).mockResolvedValue([
+      { id: 'ns-azure', name: 'orders-sb', displayName: null, capabilities: { supportsPurge } } as unknown as namespacesApi.Namespace,
+    ])
+
+    it('offers Purge instead, asks for a reason, and closes the dialog once the purge is accepted', async () => {
+      azure(true)
+      vi.mocked(replayApi.purgeMessage).mockResolvedValue({ result: 'accepted', message: 'Removed.' } as replayApi.ReplayOutcome)
+      const router = open(url)
+      const d = await dialog()
+      await userEvent.click(await d.findByRole('button', { name: /Purge instead/ }))
+      const submit = d.getByRole('button', { name: 'Purge for good' })
+      expect(submit).toBeDisabled()
+      await userEvent.type(d.getByLabelText('Why purge it'), 'poison message')
+      await userEvent.click(submit)
+      expect(replayApi.purgeMessage).toHaveBeenCalledWith(7, 'poison message')
+      await vi.waitFor(() => expect(router.state.location.search).not.toContain('dialog=message'))
+    })
+
+    it('says so instead of showing a button where the cloud cannot delete one message', async () => {
+      azure(false)
+      open(url)
+      const d = await dialog()
+      expect(await d.findByText(/Purge isn’t offered here/)).toBeInTheDocument()
+      expect(d.queryByRole('button', { name: /Purge instead/ })).not.toBeInTheDocument()
+    })
+
+    it('is not offered for a message that is waiting for approval: Review answers it', async () => {
+      azure(true)
+      vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue(page([approval({ dlqMessageId: 7, entryId: 'e1' })]))
+      open(url)
+      const d = await dialog()
+      await d.findByRole('region', { name: 'Why it failed' })
+      expect(d.queryByRole('button', { name: /Purge instead/ })).not.toBeInTheDocument()
+    })
   })
 })

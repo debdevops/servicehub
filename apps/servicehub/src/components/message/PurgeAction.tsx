@@ -15,7 +15,7 @@ import { NotAllowed } from '../ui/NotAllowed'
  * Purge one dead letter (unit 6.15), from the drawer. Offered only where the message's cloud can delete one message — elsewhere
  * it says so instead of showing a button that cannot work (R4). A reason is required and kept in the ledger.
  */
-export function PurgeAction({ dlqMessageId, namespaceId, active }: { dlqMessageId: number; namespaceId: string; active: boolean }) {
+export function PurgeAction({ dlqMessageId, namespaceId, active, onPurged }: { dlqMessageId: number; namespaceId: string; active: boolean; onPurged?: () => void }) {
   const ns = useNamespaces().data?.find((n) => n.id === namespaceId)
   const may = permission(useMe().data, 'Operator', 'purge this message', { recover: true, namespaceId })
   const client = useQueryClient()
@@ -27,7 +27,9 @@ export function PurgeAction({ dlqMessageId, namespaceId, active }: { dlqMessageI
       // A refusal or an unknown outcome leaves the message where it is, so the panel stays and says so beside the button.
       if (outcome.result !== 'accepted') return
       showNotice({ tone: 'good', title: 'Purged', text: outcome.message })
-      setParams((c) => { const n = new URLSearchParams(c); n.delete('message'); n.delete('view'); return n }, { replace: true })
+      // The 5.0.0 Message dialog passes its own way of closing; the 4.2.0 drawer closes by clearing its two address parts.
+      if (onPurged) onPurged()
+      else setParams((c) => { const n = new URLSearchParams(c); n.delete('message'); n.delete('view'); return n }, { replace: true })
     },
     onSettled: () => void client.invalidateQueries({ queryKey: deadLetterKeys.all }),
   })

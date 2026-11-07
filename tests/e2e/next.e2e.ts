@@ -233,7 +233,7 @@ test.describe('5.0.0 shell: a component that is not a message store (Step Functi
     await expect(page.getByText('Dead-lettered', { exact: true }).first()).toBeVisible()
     await sound(page, 'event-grid page')
     expect(await contentViolations(page), 'event grid records').toEqual([])
-    await expect(page.getByText(/does not move work on for Event Grid/)).toBeVisible()
+    await expect(page.getByText(/ServiceHub cannot retry these/)).toBeVisible()
     await page.getByRole('button', { name: /^Show details of / }).first().click()
     await expect(page.getByText('MaxDeliveryAttemptsExceeded').first()).toBeVisible()
     await expect(page.getByText('Earliest', { exact: true })).toBeVisible()
@@ -314,7 +314,7 @@ test.describe('5.0.0 shell: Add a component', () => {
     await expect(dialog.getByText(/never asks for a key/)).toBeVisible()
     // A message store is on and cannot be unticked here; a run history can.
     await expect(dialog.getByRole('checkbox', { name: 'SQS (Supported)' })).toBeDisabled()
-    const stepFunctions = dialog.getByRole('checkbox', { name: 'Step Functions (Not yet validated)' })
+    const stepFunctions = dialog.getByRole('checkbox', { name: 'Step Functions (Supported)' })
     await expect(stepFunctions).toBeChecked()
     expect(await violations(page), 'add a component').toEqual([])
 
@@ -330,7 +330,7 @@ test.describe('5.0.0 shell: Add a component', () => {
 
     // In-app, not a reload: the demo's world is written to the session a moment after a change.
     await page.getByRole('link', { name: /Add a component/ }).first().click()
-    await dialog.getByRole('checkbox', { name: 'Step Functions (Not yet validated)' }).check()
+    await dialog.getByRole('checkbox', { name: 'Step Functions (Supported)' }).check()
     await expect(dialog.getByText(/No key to paste/)).toBeVisible()
     await dialog.getByRole('button', { name: 'Check access', exact: true }).click()
     await expect(dialog.getByRole('status').filter({ hasText: /states:ListExecutions\s*present/ })).toBeVisible()

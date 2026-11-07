@@ -9,9 +9,8 @@ import type { NextOverlayBodyProps } from './registry'
  * Add a cloud dialog, moved not rewritten: one connection at a time, one credential per cloud, saved then TESTED, with what ServiceHub
  * can see said plainly; a failed test is never left behind by surprise (remove it and retry, or keep it and fix it later). Admin only.
  *
- * **What it does not have yet, and why:** the design's choice of *read-only or read-and-send* and the "this connection may send" check
- * need a stored declaration — one nullable column, which needs the owner's dated migration sign-off (build-plan C3, Q16 research). Until
- * then every connection is created as before, and which components a connection covers follows from its cloud (AWS covers SQS and SNS).
+ * The choice of *read-only or read-and-send* is the Add a cloud dialog's own radio (build-plan C3, migration 0017, `Namespaces.CanSend`);
+ * the Access tab can change it later.
  */
 export default function ConnectDialog({ close }: NextOverlayBodyProps) {
   const { pathname } = useLocation()

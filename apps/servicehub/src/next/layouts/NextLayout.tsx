@@ -5,6 +5,7 @@ import { useComponents } from '../../hooks/useComponents'
 import { HeaderStatus } from '../components/HeaderStatus'
 import { OverlayHost } from '../components/OverlayHost'
 import { StopBand } from '../components/StopBand'
+import { PausedBand } from '../components/PausedBand'
 import { useNextShortcuts } from '../lib/useNextShortcuts'
 import { cloudHeaderClass, cloudLabel, cloudOf, cloudScopes, parseScope, type CloudScope } from '../lib/clouds'
 import { NEXT_ROOT, nextEntriesIn, nextEntry, nextHref, type NextPage } from '../nav/navigation'
@@ -75,6 +76,7 @@ export function NextLayout() {
         <HeaderStatus />
       </header>
       <StopBand />
+      <PausedBand agentsHref={nextHref(nextEntry('agents') as NextPage, { cloud: scope })} />
 
       <div className="flex">
         <nav aria-label="ServiceHub" className="w-56 shrink-0 self-stretch border-r border-[var(--color-border)] bg-[var(--color-surface)] px-3 pb-6 pt-3">

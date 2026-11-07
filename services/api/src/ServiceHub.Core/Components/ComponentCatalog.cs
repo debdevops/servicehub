@@ -158,7 +158,7 @@ public static class ComponentCatalog
     public static string DetectionWords(DetectionKind kind) => kind switch
     {
         DetectionKind.Store => "Reads the place that holds the failed message",
-        DetectionKind.Runs => "Reads the history of failed runs",
+        DetectionKind.Runs => "Reads the failed runs",
         DetectionKind.Records => "Reads the failed records the service keeps",
         DetectionKind.Signal => "A metric or a state only",
         _ => "—",

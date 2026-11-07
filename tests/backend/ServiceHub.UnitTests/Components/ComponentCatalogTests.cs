@@ -213,7 +213,7 @@ public sealed class ComponentCatalogTests
     [Theory]
     [InlineData(DetectionKind.None, "—")]
     [InlineData(DetectionKind.Store, "Reads the place that holds the failed message")]
-    [InlineData(DetectionKind.Runs, "Reads the history of failed runs")]
+    [InlineData(DetectionKind.Runs, "Reads the failed runs")]
     [InlineData(DetectionKind.Records, "Reads the failed records the service keeps")]
     [InlineData(DetectionKind.Signal, "A metric or a state only")]
     public void Every_way_of_finding_something_has_plain_words(DetectionKind kind, string words)
