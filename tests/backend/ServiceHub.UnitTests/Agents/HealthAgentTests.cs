@@ -171,10 +171,14 @@ public sealed class HealthAgentTests : IDisposable
         var first = await _agent.ExecuteCycleAsync(default);
         var second = await _agent.ExecuteCycleAsync(default);
 
-        first.Changed.Should().Be(1);
+        // Regression, live defect 2026-11-08: an announcement was reported as Changed = 1, and AgentHost (R8) records an Observes agent that
+        // reports a change as a FAILED cycle, so the Health Keeper showed "failing" every time it did its job. It must never report a change.
+        first.Changed.Should().Be(0, "an announcement is a notification, not a change; an Observes agent reporting one is recorded as a failure");
         first.Summary.Should().Contain(EscalationReasons.HealthConnectionFailing);
-        second.Changed.Should().Be(0, "one announcement per episode, not one per cycle");
+        first.Summary.Should().Contain("1 announced just now");
+        second.Changed.Should().Be(0);
         second.Summary.Should().Contain("1 problem", "it is still a problem, only not news");
+        second.Summary.Should().NotContain("announced", "one announcement per episode, not one per cycle");
         var e = _events.Should().ContainSingle().Subject;
         e.EventType.Should().Be(EventTypes.EscalationRaised);
         e.Severity.Should().Be(EventSeverity.Error);

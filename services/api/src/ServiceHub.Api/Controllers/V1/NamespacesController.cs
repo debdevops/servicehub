@@ -742,7 +742,7 @@ public sealed class NamespacesController : ApiControllerBase
     [HttpGet("{id:guid}/components/{componentKey}/source")]
     [ProducesResponseType(typeof(ComponentSourceResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> ComponentSource(Guid id, string componentKey, CancellationToken cancellationToken)
+    public async Task<IActionResult> ComponentSource(Guid id, string componentKey, [FromServices] INamespaceComponentService stored, CancellationToken cancellationToken)
     {
         var resolved = await ResolveSourceAsync(id, componentKey, cancellationToken);
         if (resolved.Failure is not null)
@@ -755,6 +755,11 @@ public sealed class NamespacesController : ApiControllerBase
         if (access.IsFailure)
         {
             return Ok(new ComponentSourceResponse(source.ComponentKey, false, access.Error.Message, source.Capabilities.ReasonInList, []));
+        }
+
+        if (await NotTickedReasonAsync(ns, componentKey, stored, cancellationToken) is { } off)
+        {
+            return Ok(new ComponentSourceResponse(source.ComponentKey, false, off, source.Capabilities.ReasonInList, []));
         }
 
         var places = await source.ListPlacesAsync(ns, cancellationToken);
@@ -914,6 +919,33 @@ public sealed class NamespacesController : ApiControllerBase
         return Ok(enabled);
     }
 
+    /// <summary>Whether a person ticks this component on a connection (a run history read on demand), as opposed to a message store that is always watched.</summary>
+    private static bool IsToggleable(ComponentDescriptor row) =>
+        ComponentAccessRules.ReadsOnDemand(row) && ComponentAccessRules.Of(row) is ComponentAccess.SameConnection or ComponentAccess.OwnCredential;
+
+    /// <summary>
+    /// Why a component a person ticks is off on this connection, or null when it is on (or is not one a person ticks). Unticking means
+    /// ServiceHub neither reads nor acts on it here, so every read and the redrive refuse until it is ticked again.
+    /// </summary>
+    private async Task<string?> NotTickedReasonAsync(Namespace ns, string componentKey, INamespaceComponentService stored, CancellationToken cancellationToken)
+    {
+        if (ComponentCatalog.CloudOf(ns.Provider) is not { } cloud)
+        {
+            return null;
+        }
+
+        var row = ComponentAccessRules.Listed(cloud).FirstOrDefault(r => string.Equals(r.ComponentKey, componentKey, StringComparison.Ordinal));
+        if (row is null || !IsToggleable(row))
+        {
+            return null;
+        }
+
+        var choices = await stored.ListAsync(OwnerId, ns.Id, cancellationToken);
+        return choices.Any(c => c.ComponentKey == row.ComponentKey && c.Enabled)
+            ? null
+            : $"{row.Name} is not added on this connection. Add it under Add a component first: ServiceHub reads nothing and changes nothing here until then.";
+    }
+
     private static string Camel(string word) => char.ToLowerInvariant(word[0]) + word[1..];
 
     private static ComponentEntryResponse ToEntry(ComponentDescriptor row, Namespace ns, IReadOnlyDictionary<string, NamespaceComponent> choices)
@@ -921,7 +953,7 @@ public sealed class NamespacesController : ApiControllerBase
         var access = ComponentAccessRules.Of(row);
         var setup = ComponentAccessRules.SetupFor(row.ComponentKey);
         var alwaysOn = ComponentAccessRules.IsAlwaysOn(row);
-        var toggleable = ComponentAccessRules.ReadsOnDemand(row) && access is ComponentAccess.SameConnection or ComponentAccess.OwnCredential;
+        var toggleable = IsToggleable(row);
         var state = access switch
         {
             ComponentAccess.Included => "included",
@@ -940,12 +972,17 @@ public sealed class NamespacesController : ApiControllerBase
     [HttpGet("{id:guid}/components/{componentKey}/failed")]
     [ProducesResponseType(typeof(FailedItemsResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> ComponentFailed(Guid id, string componentKey, [FromQuery] string? place, CancellationToken cancellationToken)
+    public async Task<IActionResult> ComponentFailed(Guid id, string componentKey, [FromQuery] string? place, [FromServices] INamespaceComponentService stored, CancellationToken cancellationToken)
     {
         var resolved = await ResolveSourceAsync(id, componentKey, cancellationToken);
         if (resolved.Failure is not null)
         {
             return resolved.Failure;
+        }
+
+        if (await NotTickedReasonAsync(resolved.Namespace!, componentKey, stored, cancellationToken) is { } off)
+        {
+            return Problem(StatusCodes.Status409Conflict, ErrorCodes.ComponentNotEnabled, off);
         }
 
         var read = await resolved.Source!.ListFailedAsync(resolved.Namespace!, string.IsNullOrWhiteSpace(place) ? null : place, cancellationToken);
@@ -959,7 +996,7 @@ public sealed class NamespacesController : ApiControllerBase
     [ProducesResponseType(typeof(FailedItemDetailResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> ComponentFailedDetail(Guid id, string componentKey, [FromQuery] string? itemId, CancellationToken cancellationToken)
+    public async Task<IActionResult> ComponentFailedDetail(Guid id, string componentKey, [FromQuery] string? itemId, [FromServices] INamespaceComponentService stored, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(itemId))
         {
@@ -970,6 +1007,11 @@ public sealed class NamespacesController : ApiControllerBase
         if (resolved.Failure is not null)
         {
             return resolved.Failure;
+        }
+
+        if (await NotTickedReasonAsync(resolved.Namespace!, componentKey, stored, cancellationToken) is { } off)
+        {
+            return Problem(StatusCodes.Status409Conflict, ErrorCodes.ComponentNotEnabled, off);
         }
 
         var read = await resolved.Source!.GetFailedAsync(resolved.Namespace!, itemId.Trim(), cancellationToken);
@@ -990,7 +1032,7 @@ public sealed class NamespacesController : ApiControllerBase
     [ProducesResponseType(typeof(RedriveCheck), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> ComponentRedriveCheck(Guid id, string componentKey, [FromQuery] string? itemId, CancellationToken cancellationToken)
+    public async Task<IActionResult> ComponentRedriveCheck(Guid id, string componentKey, [FromQuery] string? itemId, [FromServices] INamespaceComponentService stored, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(itemId))
         {
@@ -1001,6 +1043,11 @@ public sealed class NamespacesController : ApiControllerBase
         if (found.IsFailure)
         {
             return Problem(found.Error);
+        }
+
+        if (await NotTickedReasonAsync(found.Value, componentKey, stored, cancellationToken) is { } off)
+        {
+            return Problem(StatusCodes.Status409Conflict, ErrorCodes.ComponentNotEnabled, off);
         }
 
         var check = await _redrive.CheckAsync(found.Value, componentKey, itemId.Trim(), Actor, cancellationToken);
@@ -1018,7 +1065,7 @@ public sealed class NamespacesController : ApiControllerBase
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> ComponentRedrive(Guid id, string componentKey, [FromQuery] string? itemId, CancellationToken cancellationToken)
+    public async Task<IActionResult> ComponentRedrive(Guid id, string componentKey, [FromQuery] string? itemId, [FromServices] INamespaceComponentService stored, CancellationToken cancellationToken)
     {
         if (!IntentHeaders.Declares(Request, IntentHeaders.RedriveExecution))
         {
@@ -1039,6 +1086,11 @@ public sealed class NamespacesController : ApiControllerBase
         }
 
         if (await DeniedUnlessAsync(GovernanceRole.Approver, found.Value.Id, PillarKind.Recover, "redrive this run", cancellationToken) is { } denied) return denied;
+        if (await NotTickedReasonAsync(found.Value, componentKey, stored, cancellationToken) is { } off)
+        {
+            return Problem(StatusCodes.Status409Conflict, ErrorCodes.ComponentNotEnabled, off);
+        }
+
         var outcome = await _redrive.RequestRedriveAsync(found.Value, componentKey, itemId.Trim(), Actor, IntentHeaders.RedriveExecution, HttpContext.TraceIdentifier, cancellationToken);
         return outcome.IsFailure ? Problem(outcome.Error) : Ok(outcome.Value);
     }

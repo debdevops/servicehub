@@ -23,6 +23,9 @@ public static class ErrorCodes
     /// <summary>The request was malformed or failed validation.</summary>
     public const string ValidationFailed = "validation_failed";
 
+    /// <summary>The component is not ticked on this connection, so ServiceHub neither reads nor acts on it there until a person adds it.</summary>
+    public const string ComponentNotEnabled = "component_not_enabled";
+
     /// <summary>The thing being asked about does not exist, or is not visible to this caller.</summary>
     public const string NotFound = "not_found";
 

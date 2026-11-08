@@ -110,7 +110,9 @@ describe('What ServiceHub covers', () => {
 
     expect(await screen.findByText('Loading what ServiceHub covers…')).toBeInTheDocument()
     fail(new Error('boom'))
-    expect(await screen.findByRole('alert')).toHaveTextContent('ServiceHub could not load the coverage list.')
+    // The shell can show other alerts too (e.g. the Emergency-stop banner), so find ours by its words rather than "the" alert.
+    const message = await screen.findByText(/ServiceHub could not load the coverage list\./)
+    expect(message.closest('[role="alert"]')).not.toBeNull()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 })

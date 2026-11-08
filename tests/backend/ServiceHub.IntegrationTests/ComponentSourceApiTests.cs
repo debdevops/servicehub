@@ -109,6 +109,21 @@ public sealed class ComponentSourceApiTests
         return (new DeadLettersApiTests.Handle(root, factory), source);
     }
 
+    private static async Task Tick(HttpClient client, Guid ns, bool enabled)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/namespaces/{ns}/enabled-components/step-functions") { Content = JsonContent.Create(new { enabled }) };
+        request.Headers.Add("X-ServiceHub-Intent", "manage-components");
+        (await client.SendAsync(request)).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    /// <summary>A connection with Step Functions ticked: reads and redrives only work once a person has added the component.</summary>
+    private static async Task<Guid> ConnectTicked(HttpClient client)
+    {
+        var aws = await DeadLettersApiTests.Connect(client, "aws");
+        await Tick(client, aws, true);
+        return aws;
+    }
+
     private static async Task<JsonElement> Get(HttpClient client, string url, HttpStatusCode expected = HttpStatusCode.OK)
     {
         var response = await client.GetAsync(url);
@@ -121,7 +136,7 @@ public sealed class ComponentSourceApiTests
     {
         var (host, source) = Host();
         using var _h = host;
-        var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
+        var aws = await ConnectTicked(host.Client);
 
         var body = await Get(host.Client, $"/api/v1/namespaces/{aws}/components/step-functions/source");
 
@@ -154,7 +169,7 @@ public sealed class ComponentSourceApiTests
     {
         var (host, source) = Host();
         using var _h = host;
-        var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
+        var aws = await ConnectTicked(host.Client);
 
         var body = await Get(host.Client, $"/api/v1/namespaces/{aws}/components/step-functions/failed?place=m1");
 
@@ -174,7 +189,7 @@ public sealed class ComponentSourceApiTests
         var (host, source) = Host();
         using var _h = host;
         source.HeldIn = new HeldIn("pubsub", "eventarc-orders-sub");
-        var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
+        var aws = await ConnectTicked(host.Client);
 
         var body = await Get(host.Client, $"/api/v1/namespaces/{aws}/components/step-functions/failed");
 
@@ -188,7 +203,7 @@ public sealed class ComponentSourceApiTests
     {
         var (host, _) = Host();
         using var _h = host;
-        var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
+        var aws = await ConnectTicked(host.Client);
 
         var found = await Get(host.Client, $"/api/v1/namespaces/{aws}/components/step-functions/failed/detail?itemId={Uri.EscapeDataString("arn:aws:states:x:y:execution:a:b")}");
         found.GetProperty("reason").GetString().Should().Be("States.TaskFailed");
@@ -254,7 +269,7 @@ public sealed class ComponentSourceApiTests
         var mover = new FakeMover();
         var (host, _) = Host(mover);
         using var _h = host;
-        var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
+        var aws = await ConnectTicked(host.Client);
 
         var check = await Get(host.Client, $"/api/v1/namespaces/{aws}/component-redrives/step-functions/check?itemId={Uri.EscapeDataString(RunArn)}");
         var response = await PostRedrive(host, aws);
@@ -271,7 +286,7 @@ public sealed class ComponentSourceApiTests
         var mover = new FakeMover();
         var (host, _) = Host(mover);
         using var _h = host;
-        var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
+        var aws = await ConnectTicked(host.Client);
         var readOnly = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/namespaces/{aws}/can-send") { Content = JsonContent.Create(new { canSend = false }) };
         readOnly.Headers.Add("X-ServiceHub-Intent", "declare-can-send");
         (await host.Client.SendAsync(readOnly)).StatusCode.Should().Be(HttpStatusCode.OK);
@@ -296,5 +311,65 @@ public sealed class ComponentSourceApiTests
         await Get(host.Client, $"/api/v1/namespaces/{aws}/component-redrives/step-functions/check", HttpStatusCode.BadRequest);
         await Get(host.Client, $"/api/v1/namespaces/{Guid.NewGuid()}/component-redrives/step-functions/check?itemId=x", HttpStatusCode.NotFound);
         (await PostRedrive(host, Guid.NewGuid())).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    /// <summary>
+    /// Regression, live defect 2026-11-08 (Azure Logic Apps): with the component UNTICKED the list, the detail, the redrive check and the
+    /// redrive itself all still worked, and a resubmit reached Azure. Unticking must mean ServiceHub neither reads nor acts on it there.
+    /// </summary>
+    [Fact]
+    public async Task An_unticked_component_is_neither_read_nor_redriven_and_ticking_it_again_restores_it()
+    {
+        var mover = new FakeMover();
+        var (host, source) = Host(mover);
+        using var _h = host;
+        var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
+        var item = Uri.EscapeDataString(RunArn);
+
+        // Never ticked: the same as unticked.
+        var src = await Get(host.Client, $"/api/v1/namespaces/{aws}/components/step-functions/source");
+        src.GetProperty("available").GetBoolean().Should().BeFalse();
+        src.GetProperty("reason").GetString().Should().Contain("not added on this connection");
+        await Refused(host.Client, $"/api/v1/namespaces/{aws}/components/step-functions/failed");
+        await Refused(host.Client, $"/api/v1/namespaces/{aws}/components/step-functions/failed/detail?itemId={item}");
+        await Refused(host.Client, $"/api/v1/namespaces/{aws}/component-redrives/step-functions/check?itemId={item}");
+        var post = await PostRedrive(host, aws);
+        post.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await post.Content.ReadAsStringAsync()).Should().Contain("component_not_enabled");
+        mover.Calls.Should().BeEmpty("nothing is sent to the cloud for a component that is not added");
+        source.Calls.Should().NotContain(c => c.StartsWith("failed") || c.StartsWith("detail") || c == "places", "nothing is read either");
+
+        // Ticked: everything works.
+        await Tick(host.Client, aws, true);
+        (await Get(host.Client, $"/api/v1/namespaces/{aws}/components/step-functions/source")).GetProperty("available").GetBoolean().Should().BeTrue();
+        (await Get(host.Client, $"/api/v1/namespaces/{aws}/components/step-functions/failed")).GetProperty("items").GetArrayLength().Should().Be(1);
+        (await PostRedrive(host, aws)).StatusCode.Should().Be(HttpStatusCode.OK);
+        mover.Calls.Should().Equal(RunArn);
+
+        // Unticked again: refused again, and the earlier history is not touched.
+        await Tick(host.Client, aws, false);
+        await Refused(host.Client, $"/api/v1/namespaces/{aws}/components/step-functions/failed");
+        (await PostRedrive(host, aws)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        mover.Calls.Should().Equal(RunArn);
+    }
+
+    [Fact]
+    public async Task A_credential_that_cannot_read_it_keeps_its_own_reason_even_when_the_component_is_not_added()
+    {
+        var (host, source) = Host();
+        using var _h = host;
+        var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
+        source.Access = Result.Failure(Error.Forbidden("AWS.StepFunctions.NotEnabled", "Not enabled for this connection: needs states:ListStateMachines."));
+
+        var body = await Get(host.Client, $"/api/v1/namespaces/{aws}/components/step-functions/source");
+
+        body.GetProperty("reason").GetString().Should().StartWith("Not enabled", "what the credential is missing is the more useful answer");
+    }
+
+    private static async Task Refused(HttpClient client, string url)
+    {
+        var response = await client.GetAsync(url);
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict, url);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("component_not_enabled");
     }
 }

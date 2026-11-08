@@ -96,7 +96,14 @@ public sealed class HealthAgent : IAgent
 
         _raised.IntersectWith(current); // a problem that went away is a new episode if it comes back
         var summary = all.Count == 0 ? "all clear" : $"{all.Count} problem{(all.Count == 1 ? "" : "s")}: {string.Join(", ", all.Distinct(StringComparer.Ordinal))}";
-        return new AgentCycleResult(namespaces.Value.Count, raisedNow, summary);
+        if (raisedNow > 0)
+        {
+            summary += $" ({raisedNow} announced just now)";
+        }
+
+        // Changed stays 0, as an Observes agent's must: an announcement is a notification, not a change to ServiceHub or a cloud. Reporting it as
+        // a change made AgentHost (rule R8) record this agent's cycle as a contract violation every time it announced anything (found live 2026-11-08).
+        return new AgentCycleResult(namespaces.Value.Count, 0, summary);
     }
 
     // The chain is verified at most once an hour per owner. Between checks the last answer stands, so a broken chain stays a finding.
