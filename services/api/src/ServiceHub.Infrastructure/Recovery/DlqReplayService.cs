@@ -111,10 +111,33 @@ public sealed class DlqReplayService : IDlqReplayService
         return Result<ReplayProposal>.Success(new ReplayProposal(
             message.Id, message.MessageId, message.EntityName, TargetOf(message),
             ns.DisplayName ?? ns.Name, ns.Provider.ToString().ToLowerInvariant(), ns.Environment.ToString(),
-            capabilities.SupportsRecoveryMarker, prior, RecoveryEligibilityGate.RecurrenceLineageCap, others,
+            capabilities.SupportsRecoveryMarker && HasRoomForMarker(message, capabilities), prior, RecoveryEligibilityGate.RecurrenceLineageCap, others,
             RecoveryLedgerService.ResolveObservationWindowHours(_configuration), capabilities.CanProveDlqAbsence,
             decision.Verdict.ToString(), decision.ReasonCode, decision.Verdict == EligibilityVerdict.Escalate,
             canExecute, canExecute ? null : (!active ? NotActive : decision.ReasonCode), checks, fansOut));
+    }
+
+    /// <summary>
+    /// False when the message is already known to carry as many attributes as its cloud allows (SQS: 10), so the recovery marker cannot be
+    /// added and the proposal must not promise one (seen live 2026-11-10: the proposal said it would, the replay honestly said it had not).
+    /// Counted from the properties recorded when the message was found; when those cannot be read, the cloud's general answer stands.
+    /// </summary>
+    internal static bool HasRoomForMarker(DlqMessage message, ProviderCapabilities capabilities)
+    {
+        if (capabilities.MaxMessageAttributes is not { } cap || string.IsNullOrWhiteSpace(message.ApplicationPropertiesJson))
+        {
+            return true;
+        }
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(message.ApplicationPropertiesJson);
+            return doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object || doc.RootElement.EnumerateObject().Count() < cap;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return true;
+        }
     }
 
     /// <inheritdoc />

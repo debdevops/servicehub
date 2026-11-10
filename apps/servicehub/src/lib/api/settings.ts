@@ -41,7 +41,7 @@ export async function addChannel(input: { format: ChannelFormat; label: string; 
 }
 
 export async function setChannelEnabled(id: string, enabled: boolean): Promise<NotificationChannel> {
-  return (await api.post<NotificationChannel>(`/settings/channels/${id}/enabled`, { enabled })).data
+  return (await api.post<NotificationChannel>(`/settings/channels/${id}/enabled`, { enabled }, { headers: withIntent(Intent.SwitchChannel) })).data
 }
 
 export async function removeChannel(id: string): Promise<void> {
@@ -49,7 +49,7 @@ export async function removeChannel(id: string): Promise<void> {
 }
 
 export async function testChannel(id: string): Promise<{ delivered: boolean; error: string | null }> {
-  return (await api.post<{ delivered: boolean; error: string | null }>(`/settings/channels/${id}/test`)).data
+  return (await api.post<{ delivered: boolean; error: string | null }>(`/settings/channels/${id}/test`, undefined, { headers: withIntent(Intent.TestChannel) })).data
 }
 
 export async function fetchEmergencyStop(): Promise<EmergencyStop> {

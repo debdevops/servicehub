@@ -166,11 +166,11 @@ describe('rules', () => {
 })
 
 describe('settings channels', () => {
-  it('toggles and tests a channel without an intent (reversible, read-only in effect)', async () => {
+  it('toggles and tests a channel, each with its own declared intent', async () => {
     await settings.setChannelEnabled('c1', true)
-    expect(last()).toMatchObject({ method: 'POST', url: '/settings/channels/c1/enabled', data: { enabled: true } })
+    expect(last()).toMatchObject({ method: 'POST', url: '/settings/channels/c1/enabled', data: { enabled: true }, intent: 'switch-channel' })
     await settings.testChannel('c1')
-    expect(last()).toMatchObject({ method: 'POST', url: '/settings/channels/c1/test' })
+    expect(last()).toMatchObject({ method: 'POST', url: '/settings/channels/c1/test', intent: 'test-channel' })
   })
 })
 

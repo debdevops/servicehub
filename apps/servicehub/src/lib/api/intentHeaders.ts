@@ -24,6 +24,8 @@ export const Intent = {
   ResolveUnknownOutcome: 'resolve-unknown-outcome',
   AddChannel: 'add-channel',
   RemoveChannel: 'remove-channel',
+  SwitchChannel: 'switch-channel',
+  TestChannel: 'test-channel',
   EmergencyStop: 'emergency-stop',
   SendMessage: 'send-message',
   RedriveExecution: 'redrive-execution',

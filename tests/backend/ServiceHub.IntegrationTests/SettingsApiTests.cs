@@ -67,7 +67,7 @@ public sealed class SettingsApiTests
             id = channel.Id;
         }
 
-        var result = await Json(await host.Client.SendAsync(Req(HttpMethod.Post, $"/api/v1/settings/channels/{id}/test")));
+        var result = await Json(await host.Client.SendAsync(Req(HttpMethod.Post, $"/api/v1/settings/channels/{id}/test", "test-channel")));
 
         result.GetProperty("delivered").GetBoolean().Should().BeFalse("a loopback address must never be reached from a webhook");
         result.GetProperty("error").GetString().Should().NotBeNullOrWhiteSpace();

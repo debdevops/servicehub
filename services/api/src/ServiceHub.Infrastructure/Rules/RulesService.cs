@@ -92,6 +92,15 @@ public sealed class RulesService : IRulesService
             return Result<RuleView>.Failure(paceError);
         }
 
+        // Two rules with the same conditions match the same messages, so each replay would be asked about twice and counted against two paces.
+        var (sameReason, sameEntity, sameSignature) = (Clean(reason), Clean(entity), Clean(signatureHash));
+        var twin = await _db.AutoReplayRules.AsNoTracking().FirstOrDefaultAsync(
+            r => r.OwnerId == ownerId && r.Provider == provider && r.Reason == sameReason && r.EntityName == sameEntity && r.SignatureHash == sameSignature, ct).ConfigureAwait(false);
+        if (twin is not null)
+        {
+            return Result<RuleView>.Failure(Error.Conflict("RULE_ALREADY_EXISTS", $"The rule '{twin.Name}' already has exactly these conditions. Change that rule, or give this one different conditions."));
+        }
+
         var rule = new AutoReplayRule
         {
             OwnerId = ownerId, Name = name.Trim(), Provider = provider, Reason = Clean(reason), EntityName = Clean(entity), SignatureHash = Clean(signatureHash),

@@ -58,6 +58,12 @@ public static class IntentHeaders
     /// <summary>Intent for removing a notification channel.</summary>
     public const string RemoveChannel = "remove-channel";
 
+    /// <summary>Intent for switching a notification channel on or off.</summary>
+    public const string SwitchChannel = "switch-channel";
+
+    /// <summary>Intent for sending a test message to a notification channel.</summary>
+    public const string TestChannel = "test-channel";
+
     /// <summary>Intent for switching emergency stop on or off.</summary>
     public const string EmergencyStop = "emergency-stop";
 

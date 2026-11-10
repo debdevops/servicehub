@@ -113,12 +113,12 @@ public sealed class DlqMonitorAgent : IAgent
 
         var parts = new List<string>
         {
-            $"looked at {QueuesOrSubscriptions(scanned.Sum(s => s.Result.EntitiesExamined))} in {Count(scanned.Count, "cloud")}",
+            $"looked at {QueuesOrSubscriptions(scanned.Sum(s => s.Result.EntitiesExamined))} in {Count(scanned.Count, "connection")}",
             $"{Count(scanned.Sum(s => s.Result.NewMessages), "new dead letter")}",
             $"{Count(scans.Sum(s => s.Result.Resolved), "gone from the queue")}",
         };
-        if (skipped.Count > 0) parts.Add($"{Count(skipped.Count, "cloud")} not watched automatically");
-        if (failed.Count > 0) parts.Add($"{Count(failed.Count, "cloud")} could not be read");
+        if (skipped.Count > 0) parts.Add($"{Count(skipped.Count, "connection")} not watched automatically");
+        if (failed.Count > 0) parts.Add($"{Count(failed.Count, "connection")} could not be read");
         if (unconfirmed > 0) parts.Add($"{Count(unconfirmed, "queue")} could not be confirmed and were left as they were");
         if (archived > 0) parts.Add($"{Count(archived, "record")} archived because their cloud was removed");
 

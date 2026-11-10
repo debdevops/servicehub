@@ -100,6 +100,16 @@ describe('Needs your attention (unit E1)', () => {
     expect(await screen.findByRole('columnheader', { name: 'Cloud' })).toBeInTheDocument()
   })
 
+  it('keeps the Reason column for the recorded failure and puts why it was held under what is needed', async () => {
+    // Found live on Pub/Sub 2026-11-10: with no recorded reason the column showed the gate's sentence as if it were the failure.
+    vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue(page([approval({ id: 'g1', entryId: 'g1', dlqMessageId: 77, deadLetterReason: null, reason: 'Stopped and asked' })]))
+    open('/next/azure/attention')
+    const cells = within((await screen.findByText('#77')).closest('tr')!).getAllByRole('cell')
+    const heads = screen.getAllByRole('columnheader').map((h) => h.textContent)
+    expect(cells[heads.indexOf('Reason')]).toHaveTextContent(/^No reason recorded$/)
+    expect(cells[heads.findIndex((h) => h?.startsWith('What'))]).toHaveTextContent('Approve or rejectStopped and asked')
+  })
+
   it('has no accessibility violations', async () => {
     const { container } = open('/next/azure/attention')
     await screen.findByRole('table')

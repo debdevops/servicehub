@@ -575,7 +575,7 @@ public sealed class DlqMonitorTests : IAsyncLifetime
         var result = await agent.ExecuteCycleAsync(CancellationToken.None);
 
         result.Degraded.Should().BeTrue();
-        result.Summary.Should().Contain("1 cloud could not be read");
+        result.Summary.Should().Contain("1 connection could not be read");
     }
 
     [Fact]

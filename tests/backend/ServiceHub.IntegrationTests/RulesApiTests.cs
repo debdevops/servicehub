@@ -414,4 +414,20 @@ public sealed class RulesApiTests : IDisposable
         rules[0].GetProperty("name").GetString().Should().Be("Keep me");
         rules[0].GetProperty("enabled").GetBoolean().Should().BeTrue();
     }
+
+    [Fact]
+    public async Task A_second_rule_with_exactly_the_same_conditions_is_refused_and_names_the_first()
+    {
+        // Found live 2026-11-10: the same rule could be made twice, so each matching dead letter was asked about by two rules.
+        using var host = DeadLettersApiTests.Host();
+        await Send(host.Client, "/api/v1/rules", new { provider = "azure", name = "Timeouts", reason = "Timeout", entityName = "orders" }, HttpStatusCode.Created);
+
+        var twin = await Send(host.Client, "/api/v1/rules", new { provider = "azure", name = "Timeouts again", reason = " Timeout ", entityName = "orders" }, HttpStatusCode.Conflict);
+        twin.GetProperty("detail").GetString().Should().Contain("Timeouts");
+
+        // Different conditions, or the same ones on another cloud, are a different rule.
+        await Send(host.Client, "/api/v1/rules", new { provider = "azure", name = "Timeouts", reason = "Timeout", entityName = "payments" }, HttpStatusCode.Created);
+        await Send(host.Client, "/api/v1/rules", new { provider = "aws", name = "Timeouts", reason = "Timeout", entityName = "orders" }, HttpStatusCode.Created);
+        (await ListRules(host.Client)).GetArrayLength().Should().Be(2);
+    }
 }

@@ -59,11 +59,15 @@ public sealed class ReadAndLifecycleEndpointsApiTests
             new { format = "slack", label = "#ops", url = "https://hooks.slack.com/services/T0/B0/secretpart" })));
         var id = added.GetProperty("id").GetGuid();
 
-        var off = await Json(await host.Client.SendAsync(Req(HttpMethod.Post, $"/api/v1/settings/channels/{id}/enabled", null, new { enabled = false })));
+        (await host.Client.SendAsync(Req(HttpMethod.Post, $"/api/v1/settings/channels/{id}/enabled", null, new { enabled = false }))).StatusCode
+            .Should().Be((HttpStatusCode)428, "switching a channel off silences alerts, so it has to be declared");
+        (await host.Client.SendAsync(Req(HttpMethod.Post, $"/api/v1/settings/channels/{id}/test"))).StatusCode
+            .Should().Be((HttpStatusCode)428, "a test sends a real message outward, so it has to be declared");
+        var off = await Json(await host.Client.SendAsync(Req(HttpMethod.Post, $"/api/v1/settings/channels/{id}/enabled", "switch-channel", new { enabled = false })));
         off.GetProperty("enabled").GetBoolean().Should().BeFalse();
-        var on = await Json(await host.Client.SendAsync(Req(HttpMethod.Post, $"/api/v1/settings/channels/{id}/enabled", null, new { enabled = true })));
+        var on = await Json(await host.Client.SendAsync(Req(HttpMethod.Post, $"/api/v1/settings/channels/{id}/enabled", "switch-channel", new { enabled = true })));
         on.GetProperty("enabled").GetBoolean().Should().BeTrue();
-        (await host.Client.SendAsync(Req(HttpMethod.Post, $"/api/v1/settings/channels/{Guid.NewGuid()}/enabled", null, new { enabled = true })))
+        (await host.Client.SendAsync(Req(HttpMethod.Post, $"/api/v1/settings/channels/{Guid.NewGuid()}/enabled", "switch-channel", new { enabled = true })))
             .StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         (await host.Client.SendAsync(Req(HttpMethod.Delete, $"/api/v1/settings/channels/{id}"))).StatusCode.Should().Be((HttpStatusCode)428);

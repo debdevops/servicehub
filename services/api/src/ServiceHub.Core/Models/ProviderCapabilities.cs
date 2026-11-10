@@ -83,6 +83,10 @@ namespace ServiceHub.Core.Models;
 /// Whether replaying a topic subscription's dead letter publishes to the <b>topic</b>, so every subscription on it that accepts the message receives it
 /// again, not only the one it failed on (Azure Service Bus and Google Pub/Sub have no way to publish to one subscription). False where a replay goes to one queue.
 /// </param>
+/// <param name="MaxMessageAttributes">
+/// The most application properties/attributes one message may carry, or null when the cloud sets no such count. 10 on AWS SQS/SNS:
+/// a message already carrying that many has no room for the recovery marker, so a replay proposal must not promise one.
+/// </param>
 public sealed record ProviderCapabilities(
     bool SupportsMessageCounts,
     bool SupportsManualDeadLetter,
@@ -95,7 +99,8 @@ public sealed record ProviderCapabilities(
     bool SupportsTopics = true,
     bool SupportsSubscriptions = true,
     bool CountsAreApproximate = false,
-    bool ReplayFansOutToTopic = false)
+    bool ReplayFansOutToTopic = false,
+    int? MaxMessageAttributes = null)
 {
     /// <summary>Capabilities of Microsoft Azure Service Bus.</summary>
     public static readonly ProviderCapabilities Azure = new(
@@ -119,7 +124,8 @@ public sealed record ProviderCapabilities(
         Notes: "Scheduled messages are not supported — SQS only offers DelaySeconds (max 15 minutes) at send time. Repeated/live polling is also not supported — SQS has no non-destructive peek, so every call is a receive that counts toward the queue's maxReceiveCount.",
         SupportsRecoveryMarker: true,
         CanProveDlqAbsence: false,
-        CountsAreApproximate: true);
+        CountsAreApproximate: true,
+        MaxMessageAttributes: 10);
 
     /// <summary>Capabilities of Google Cloud Pub/Sub.</summary>
     public static readonly ProviderCapabilities Gcp = new(

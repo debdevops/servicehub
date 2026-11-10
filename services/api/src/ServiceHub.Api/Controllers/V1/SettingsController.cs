@@ -125,14 +125,20 @@ public sealed class SettingsController : ApiControllerBase
         return StatusCode(StatusCodes.Status201Created, ToView(channel));
     }
 
-    /// <summary>Turns a channel on or off. Admin.</summary>
+    /// <summary>Turns a channel on or off. Admin. Intent <c>switch-channel</c>.</summary>
     [HttpPost("channels/{id:guid}/enabled")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
     public async Task<IActionResult> SetEnabled(Guid id, [FromBody] EnabledRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (!IntentHeaders.Declares(Request, IntentHeaders.SwitchChannel))
+        {
+            return Problem(StatusCodes.Status428PreconditionRequired, ErrorCodes.IntentRequired, IntentHeaders.MissingDetail("switch this channel on or off", IntentHeaders.SwitchChannel));
+        }
+
         if (await DeniedUnlessAsync(GovernanceRole.Admin, null, null, "change notifications", cancellationToken) is { } denied) return denied;
         var channel = await _db.NotificationChannels.FirstOrDefaultAsync(c => c.Id == id && c.OwnerId == OwnerId, cancellationToken);
         if (channel is null) return Problem(StatusCodes.Status404NotFound, ErrorCodes.NotFound, "That channel was not found.");
@@ -162,12 +168,18 @@ public sealed class SettingsController : ApiControllerBase
         return NoContent();
     }
 
-    /// <summary>Sends one clearly-marked test message to a channel and says how it went. Operator.</summary>
+    /// <summary>Sends one clearly-marked test message to a channel and says how it went. Operator. Intent <c>test-channel</c>.</summary>
     [HttpPost("channels/{id:guid}/test")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
     public async Task<IActionResult> Test(Guid id, CancellationToken cancellationToken)
     {
+        if (!IntentHeaders.Declares(Request, IntentHeaders.TestChannel))
+        {
+            return Problem(StatusCodes.Status428PreconditionRequired, ErrorCodes.IntentRequired, IntentHeaders.MissingDetail("send a test message to this channel", IntentHeaders.TestChannel));
+        }
+
         if (await DeniedUnlessAsync(GovernanceRole.Operator, null, null, "send a test message", cancellationToken) is { } denied) return denied;
         var (delivered, error) = await _delivery.SendTestAsync(id, OwnerId, cancellationToken);
         return Ok(new { delivered, error });
