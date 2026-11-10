@@ -35,6 +35,12 @@ public sealed class BackupRestoreService : IBackupRestore
 
     private const string ManifestFileName = "manifest.json";
     private const long MaxManifestBytes = 1_048_576;
+
+    /// <summary>
+    /// The largest database an import will unpack. The upload itself is capped by the controller, but a zip can hold far more than its
+    /// own size, and the manifest's size is the importer's own claim; without a ceiling a small crafted file could fill the disk.
+    /// </summary>
+    internal const long MaxImportedDatabaseBytes = 8L * 1024 * 1024 * 1024;
     private static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true };
 
     private readonly ServiceHubDbContext _db;
@@ -386,6 +392,11 @@ public sealed class BackupRestoreService : IBackupRestore
             if (dbEntry is null)
             {
                 return (null, "That zip does not hold the database its manifest names.");
+            }
+
+            if (manifest.Sqlite.SizeBytes <= 0 || manifest.Sqlite.SizeBytes > MaxImportedDatabaseBytes)
+            {
+                return (null, "That backup's manifest gives a database size ServiceHub will not unpack, so it was not imported.");
             }
 
             Directory.CreateDirectory(BackupRoot);

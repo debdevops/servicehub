@@ -279,6 +279,16 @@ public sealed class NamespacesController : ApiControllerBase
         }
 
         var probe = await _router.Resolve(ns.Provider).ValidateConnectionAsync(ns, cancellationToken);
+        if (probe.IsFailure && probe.Error.Code == ErrorCodes.Namespace.ConnectionStringRequired)
+        {
+            // A sign-in connection made only to read components has no message store, so there is nothing for this test to reach. It
+            // used to answer "Connection string is required for ConnectionString authentication" and record a failed test, on a
+            // connection that works (found live 2026-11-10). Nothing is recorded: no test was run.
+            return Ok(new ConnectionTestResponse(false,
+                "Nothing to test here: this connection signs in with your cloud identity and reads components only, so it has no queues or topics. Use Check access on its components instead.",
+                DateTimeOffset.UtcNow));
+        }
+
         ns.RecordConnectionTest(probe.IsSuccess);
 
         try

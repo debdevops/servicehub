@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 using ServiceHub.Core.Components;
 using ServiceHub.Core.Entities;
@@ -149,6 +150,11 @@ public sealed partial class EventGridSource : IComponentSource
             }
             else
             {
+                if (await NotADeadLetterContainerAsync(ns, place.Groups["a"].Value, place.Groups["c"].Value, budget.Token, ct).ConfigureAwait(false) is { } refused)
+                {
+                    return Result.Failure<FailedItemsPage>(refused);
+                }
+
                 containers = [(place.Groups["a"].Value, place.Groups["c"].Value)];
             }
 
@@ -192,6 +198,13 @@ public sealed partial class EventGridSource : IComponentSource
 
         try
         {
+            using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            budget.CancelAfter(ComponentSourceLimits.ListingBudget);
+            if (await NotADeadLetterContainerAsync(ns, m.Groups["a"].Value, m.Groups["c"].Value, budget.Token, ct).ConfigureAwait(false) is { } refused)
+            {
+                return Result.Failure<FailedItemDetail?>(refused);
+            }
+
             var read = await _reader.GetBlobAsync(ns, m.Groups["a"].Value, m.Groups["c"].Value, m.Groups["b"].Value, ct).ConfigureAwait(false);
             if (read is null)
             {
@@ -217,6 +230,57 @@ public sealed partial class EventGridSource : IComponentSource
     }
 
     private const string Status = "DEAD_LETTERED";
+
+    // The most containers looked through to confirm one. Far above what one identity's subscriptions hold in practice.
+    private const int MaxContainersToConfirm = 500;
+
+    private static readonly TimeSpan ConfirmedFor = TimeSpan.FromMinutes(2);
+
+    private readonly ConcurrentDictionary<Guid, (DateTimeOffset At, HashSet<string> Containers)> _confirmed = new();
+
+    /// <summary>
+    /// Null when the container is one an Event Grid subscription on this connection dead-letters to; otherwise why it is refused.
+    /// A place or item id comes from the caller, and a well-formed one can name any storage account and container the identity can
+    /// read. Without this check the source would list or open blobs that have nothing to do with Event Grid on a caller's say-so.
+    /// What Azure answered is remembered for two minutes, so opening several events does not repeat the discovery each time.
+    /// </summary>
+    private async Task<Error?> NotADeadLetterContainerAsync(Namespace ns, string account, string container, CancellationToken budget, CancellationToken caller)
+    {
+        var key = $"{account}/{container}";
+        if (_confirmed.TryGetValue(ns.Id, out var known) && DateTimeOffset.UtcNow - known.At < ConfirmedFor && known.Containers.Contains(key))
+        {
+            return null;
+        }
+
+        Found found;
+        try
+        {
+            found = await FindContainersAsync(ns, MaxContainersToConfirm, budget, caller).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (budget.IsCancellationRequested && !caller.IsCancellationRequested)
+        {
+            // Only this read's own time budget running out is an answer. Any other cancellation is passed on, never hidden.
+            return Error.ExternalService("Azure.EventGrid.ReadTimedOut", "Reading Event Grid took too long.");
+        }
+
+        // A caller who has gone away is passed on as a cancellation, never reported as a container that could not be confirmed.
+        caller.ThrowIfCancellationRequested();
+        if (found.Error is not null)
+        {
+            return found.Error;
+        }
+
+        var containers = found.Items.Select(c => $"{c.Account}/{c.Container}").ToHashSet(StringComparer.Ordinal);
+        _confirmed[ns.Id] = (DateTimeOffset.UtcNow, containers);
+        if (containers.Contains(key))
+        {
+            return null;
+        }
+
+        return found.Incomplete || found.More
+            ? Error.ExternalService("Azure.EventGrid.ContainerNotConfirmed", "ServiceHub could not confirm that Event Grid dead-letters to that container, so it was not read.")
+            : Error.Validation("Azure.EventGrid.NotADeadLetterContainer", "No Event Grid subscription on this connection dead-letters to that container.");
+    }
 
     private sealed record Found(IReadOnlyList<DeadLetterContainer> Items, bool More, bool Incomplete, Error? Error);
 

@@ -195,6 +195,26 @@ public sealed class NamespacesApiTests
     }
 
     [Fact]
+    public async Task Testing_a_components_only_connection_says_there_is_nothing_to_test_and_records_no_failure()
+    {
+        // Live 2026-11-10: the Azure sign-in connection (made to read Logic Apps and Event Grid) answered "Connection string is
+        // required for ConnectionString authentication" and was recorded as a failed test, although it works.
+        using var host = Host();
+        var created = await host.Client.SendAsync(Post("/api/v1/namespaces",
+            new { name = "azure-entra", provider = "azure", authType = "defaultAzureCredential", displayName = "Azure sign-in", environment = "dev" }));
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        var id = (await Json(created)).GetProperty("id").GetGuid();
+
+        var body = await Json(await host.Client.PostAsync($"/api/v1/namespaces/{id}/test-connection", null));
+
+        body.GetProperty("isConnected").GetBoolean().Should().BeFalse();
+        body.GetProperty("message").GetString().Should().Contain("Nothing to test here").And.NotContain("Connection string is required");
+        var after = await Json(await host.Client.GetAsync($"/api/v1/namespaces/{id}"));
+        (after.TryGetProperty("lastConnectionTestSucceeded", out var recorded) && recorded.ValueKind == System.Text.Json.JsonValueKind.False)
+            .Should().BeFalse("no test was run, so no failed test is recorded");
+    }
+
+    [Fact]
     public async Task A_namespace_whose_key_was_dropped_from_the_registry_is_an_answer_not_a_server_error()
     {
         // Key rotation gone wrong: the namespace was stored under key A, then ServiceHub restarted with a registry that does not
@@ -536,7 +556,10 @@ internal sealed class FakeProvider(CloudProviderType type, ProviderCapabilities 
     public ProviderCapabilities Capabilities => capabilities;
 
     public Task<Result> ValidateConnectionAsync(Namespace ns, CancellationToken ct) =>
-        Task.FromResult(failProbes
+        Task.FromResult(string.IsNullOrWhiteSpace(ns.ConnectionString)
+            // As the real Azure adapter answers for a sign-in connection: it holds no Service Bus credential.
+            ? Result.Failure(Error.Validation(ServiceHub.Core.Constants.ErrorCodes.Namespace.ConnectionStringRequired, "Connection string is required for ConnectionString authentication."))
+            : failProbes
             ? Result.Failure(Error.ExternalService("fake.probe", "probe refused"))
             : Result.Success());
 

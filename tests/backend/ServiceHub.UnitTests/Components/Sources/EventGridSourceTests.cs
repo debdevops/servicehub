@@ -363,6 +363,47 @@ public sealed class EventGridSourceTests : ComponentSourceConformance
     }
 
     /// <summary>Azure as the source sees it: records the operation names and answers from what a test arranged.</summary>
+    [Theory]
+    [InlineData("blob://otheraccount/deadletter/orders/2026/10/01/abc.json")]
+    [InlineData("blob://stgevents/payroll/salaries.json")]
+    public async Task A_blob_outside_event_grids_dead_letter_containers_is_never_opened(string item)
+    {
+        // An item id comes from the caller. A well-formed one can name any account and container the identity can read; only the
+        // containers an Event Grid subscription dead-letters to may be opened (found by review 2026-11-10).
+        ArrangeFailures(1);
+
+        var detail = await _source.GetFailedAsync(_ns, item, default);
+
+        detail.IsFailure.Should().BeTrue();
+        detail.Error.Code.Should().Be("Azure.EventGrid.NotADeadLetterContainer");
+        _azure.BlobsAsked.Should().BeEmpty("the blob must not be read at all");
+    }
+
+    [Fact]
+    public async Task A_container_event_grid_does_not_dead_letter_to_is_never_listed()
+    {
+        ArrangeFailures(1);
+
+        var page = await _source.ListFailedAsync(_ns, "blob://stgevents/payroll", default);
+
+        page.IsFailure.Should().BeTrue();
+        page.Error.Code.Should().Be("Azure.EventGrid.NotADeadLetterContainer");
+        _azure.Calls.Should().NotContain("ListBlobs");
+    }
+
+    [Fact]
+    public async Task When_the_containers_cannot_all_be_read_an_unconfirmed_one_is_refused_not_trusted()
+    {
+        ArrangeFailures(1);
+        _azure.ContainersIncomplete = true;
+
+        var detail = await _source.GetFailedAsync(_ns, "blob://otheraccount/deadletter/x.json", default);
+
+        detail.IsFailure.Should().BeTrue();
+        detail.Error.Code.Should().Be("Azure.EventGrid.ContainerNotConfirmed");
+        _azure.BlobsAsked.Should().BeEmpty();
+    }
+
     private sealed class FakeAzure : IAzureEventGridReader
     {
         private readonly List<string> _calls = [];

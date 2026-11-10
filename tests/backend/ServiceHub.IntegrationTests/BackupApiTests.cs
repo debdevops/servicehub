@@ -284,5 +284,35 @@ public sealed class BackupApiTests : IDisposable
         refused.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await Json(await client.GetAsync("/api/v1/admin/backup"))).GetProperty("backups").GetArrayLength().Should().Be(2, "a refused import leaves nothing behind");
         Directory.EnumerateDirectories(Path.Combine(_dir, "backups")).Should().HaveCount(2);
+
+        // A manifest that claims an enormous (or no) database: the size is the importer's own claim, so it is checked before any byte is unpacked.
+        foreach (var claimed in new[] { "9000000000000000000", "0", "-5" })
+        {
+            using var crafted = new MemoryStream();
+            using (var src = new ZipArchive(new MemoryStream(zipBytes)))
+            using (var dst = new ZipArchive(crafted, ZipArchiveMode.Create, leaveOpen: true))
+            {
+                foreach (var e in src.Entries)
+                {
+                    using var buf = new MemoryStream();
+                    await using (var s = e.Open()) await s.CopyToAsync(buf);
+                    var data = buf.ToArray();
+                    if (e.Name == "manifest.json")
+                    {
+                        var text = System.Text.RegularExpressions.Regex.Replace(
+                            System.Text.Encoding.UTF8.GetString(data), "\"sizeBytes\"\\s*:\\s*\\d+", $"\"sizeBytes\": {claimed}", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromSeconds(1));
+                        text.Should().Contain($"\"sizeBytes\": {claimed}");
+                        data = System.Text.Encoding.UTF8.GetBytes(text);
+                    }
+
+                    await using var o = dst.CreateEntry(e.Name).Open();
+                    await o.WriteAsync(data);
+                }
+            }
+
+            (await Import(crafted.ToArray())).StatusCode.Should().Be(HttpStatusCode.BadRequest, $"a manifest claiming {claimed} bytes is not unpacked");
+        }
+
+        Directory.EnumerateDirectories(Path.Combine(_dir, "backups")).Should().HaveCount(2, "a refused import leaves nothing behind");
     }
 }

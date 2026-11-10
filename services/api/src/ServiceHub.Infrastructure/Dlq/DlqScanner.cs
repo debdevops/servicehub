@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
@@ -41,6 +42,12 @@ public enum ScanOutcome
 
     /// <summary>Could not be scanned this time. Nothing was changed.</summary>
     Failed,
+
+    /// <summary>
+    /// Nothing to scan: the connection holds no message store (an Azure sign-in connection made only to read Logic Apps or Event Grid).
+    /// Not a failure and not a cloud left unwatched.
+    /// </summary>
+    NoStore,
 }
 
 /// <summary>
@@ -78,6 +85,7 @@ public sealed class DlqScanner
     private const string SubscriptionPathSegment = "/subscriptions/";
     private const string NotWatchedReason = "Looking at a message there counts as a delivery attempt, so it is not watched automatically.";
     private const string RecoveryMarkerProperty = "x-servicehub-recovery-id";
+    private const string NoStoreReason = "This connection reads components only; it holds no queues or subscriptions to look in.";
 
     private readonly ServiceHubDbContext _db;
     private readonly ICloudProviderRouter _router;
@@ -131,6 +139,13 @@ public sealed class DlqScanner
         // Listing is read-only on every cloud, so it is done either way: what no longer exists in the cloud
         // must not keep showing as stuck just because looking inside a queue is not allowed.
         var listed = await provider.ListEntitiesForReconciliationAsync(ns.Id, ct).ConfigureAwait(false);
+        if (listed.IsFailure && listed.Error.Code == ErrorCodes.Namespace.ConnectionStringRequired)
+        {
+            // The same rule as the fleet read (ComponentOverviewService): a connection with no store credential has no queues. Calling
+            // that "could not be read" left the monitor degraded for as long as the connection existed (found live 2026-11-10).
+            return new NamespaceScanResult(ScanOutcome.NoStore, Reason: NoStoreReason);
+        }
+
         if (listed.IsFailure)
         {
             // Nothing is reconciled on a failed listing.

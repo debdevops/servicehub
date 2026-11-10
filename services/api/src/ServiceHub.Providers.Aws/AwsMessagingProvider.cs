@@ -393,11 +393,16 @@ public sealed class AwsMessagingProvider : ICloudMessagingProvider
                 async token => await sqs.GetQueueAttributesAsync(new GetQueueAttributesRequest
                 {
                     QueueUrl = url.QueueUrl,
-                    AttributeNames = new List<string> { "VisibilityTimeout", "MessageRetentionPeriod", "DelaySeconds", "RedrivePolicy", "FifoQueue" }
+                    // "All", never FifoQueue by name: SQS refuses that name on a standard queue ("Unknown Attribute FifoQueue"), so every
+                    // standard queue's limits failed to read (found live 2026-11-10; the whole-queue scanner hit the same rule 2026-10-09).
+                    AttributeNames = new List<string> { "All" }
                 }, token).ConfigureAwait(false),
                 ct).ConfigureAwait(false);
 
-            return Result<IReadOnlyList<EntitySetting>?>.Success(BuildQueueSettings(attrs.Attributes));
+            // SQS returns FifoQueue only for a FIFO queue. The queue was read, so its absence is an answer: a standard queue.
+            var read = new Dictionary<string, string>(attrs.Attributes ?? [], StringComparer.Ordinal);
+            read.TryAdd("FifoQueue", "false");
+            return Result<IReadOnlyList<EntitySetting>?>.Success(BuildQueueSettings(read));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

@@ -8,6 +8,7 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Events;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
+using ServiceHub.Infrastructure;
 using ServiceHub.Infrastructure.Persistence;
 
 namespace ServiceHub.Api.Controllers.V1;
@@ -92,6 +93,14 @@ public sealed class SettingsController : ApiControllerBase
         if (!Uri.TryCreate(request.Url?.Trim(), UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
         {
             return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "Paste the webhook's full https:// address.");
+        }
+
+        // Found live 2026-11-10: https://127.0.0.1, https://169.254.169.254 and https://0.0.0.0 were saved, then refused on every send.
+        // Nothing reached them, but a channel that can never deliver should not be accepted in the first place.
+        if (WebhookNotifier.IsObviouslyInternal(uri))
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed,
+                "That address is this machine or a private network. ServiceHub only sends to a webhook on the public internet.");
         }
 
         var label = string.IsNullOrWhiteSpace(request.Label) ? DefaultLabel(request.Format) : request.Label.Trim();

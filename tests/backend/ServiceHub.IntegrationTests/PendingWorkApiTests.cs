@@ -201,6 +201,23 @@ public sealed class PendingWorkApiTests
     }
 
     [Fact]
+    public async Task The_replayed_list_answers_for_every_connection_when_no_cloud_is_named()
+    {
+        // Live 2026-11-10: the all-clouds Replay history page asks with no namespace, cloud or message. The server refused that with a
+        // 400, so the page was empty on a real server while the demo (which answers) looked fine.
+        var (host, _, _) = await Held(1);
+        using var _h = host;
+        await RunAutoReplay(host);
+        var entry = (await Json(await host.Client.GetAsync("/api/v1/pending-work"))).GetProperty("items")[0].GetProperty("entryId").GetGuid();
+        (await Post(host.Client, $"/api/v1/pending-work/{entry}/approve", "approve-escalation")).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var all = await host.Client.GetAsync("/api/v1/replays?window=7d&page=1&pageSize=25");
+
+        all.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await Json(all)).GetProperty("total").GetInt32().Should().Be(1, "the one replay on the caller's only connection");
+    }
+
+    [Fact]
     public async Task A_promotion_names_the_failure_and_the_levels_it_moved_between()
     {
         var (host, _, _) = await Held(1);

@@ -49,13 +49,50 @@ public sealed class SettingsApiTests
     [Fact]
     public async Task A_test_to_a_private_address_is_refused_by_the_same_ssrf_guard_every_channel_goes_through()
     {
+        // The channel is put straight into the store, as one saved before the save-time check existed would be: the guard on every
+        // send must hold on its own, whatever was accepted when the channel was added.
         using var host = DeadLettersApiTests.Host();
-        var added = await Json(await host.Client.SendAsync(Req(HttpMethod.Post, "/api/v1/settings/channels", "add-channel", new { format = "generic", label = "inside", url = "https://127.0.0.1/hook" })));
+        Guid id;
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ServiceHubDbContext>();
+            var protector = scope.ServiceProvider.GetRequiredService<ServiceHub.Core.Interfaces.IConnectionStringProtector>();
+            var channel = new ServiceHub.Core.Entities.NotificationChannel
+            {
+                OwnerId = ServiceHub.Core.Entities.Namespace.SpaOwnerId, Format = ServiceHub.Core.Models.WebhookFormat.Generic, Label = "inside",
+                UrlEncrypted = protector.Protect("https://127.0.0.1/hook").Value, CreatedAt = DateTimeOffset.UtcNow, CreatedBy = "test",
+            };
+            db.NotificationChannels.Add(channel);
+            await db.SaveChangesAsync();
+            id = channel.Id;
+        }
 
-        var result = await Json(await host.Client.SendAsync(Req(HttpMethod.Post, $"/api/v1/settings/channels/{added.GetProperty("id").GetGuid()}/test")));
+        var result = await Json(await host.Client.SendAsync(Req(HttpMethod.Post, $"/api/v1/settings/channels/{id}/test")));
 
         result.GetProperty("delivered").GetBoolean().Should().BeFalse("a loopback address must never be reached from a webhook");
         result.GetProperty("error").GetString().Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Theory]
+    [InlineData("https://localhost/hook")]
+    [InlineData("https://127.0.0.1/hook")]
+    [InlineData("https://[::1]/hook")]
+    [InlineData("https://[::ffff:127.0.0.1]/hook")]
+    [InlineData("https://169.254.169.254/latest/meta-data")]
+    [InlineData("https://10.0.0.5/hook")]
+    [InlineData("https://192.168.1.1/hook")]
+    [InlineData("https://0.0.0.0/hook")]
+    public async Task A_channel_pointing_at_this_machine_or_a_private_network_is_not_saved(string url)
+    {
+        // Live 2026-11-10: each of these was saved (201) and then refused on every send. Nothing was reached, but a channel that can
+        // never deliver was accepted without a word.
+        using var host = DeadLettersApiTests.Host();
+
+        var added = await host.Client.SendAsync(Req(HttpMethod.Post, "/api/v1/settings/channels", "add-channel", new { format = "generic", label = "inside", url }));
+
+        added.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var scope = host.Services.CreateScope();
+        (await scope.ServiceProvider.GetRequiredService<ServiceHubDbContext>().NotificationChannels.CountAsync()).Should().Be(0);
     }
 
     [Fact]

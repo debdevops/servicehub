@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
+using ServiceHub.Core.Constants;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
@@ -48,6 +49,7 @@ public sealed class DlqMonitorTests : IAsyncLifetime
         public List<CloudEntity> Entities { get; } = [];
         public Dictionary<string, List<Message>> DeadLetters { get; } = [];
         public bool ListingFails { get; set; }
+        public bool NoStore { get; set; }
         public HashSet<string> IncompleteQueues { get; } = [];
         public HashSet<string> PeekFailsFor { get; } = [];
         public int PeekFailsAfterBatch { get; set; } = -1;
@@ -63,7 +65,9 @@ public sealed class DlqMonitorTests : IAsyncLifetime
             Task.FromResult(Result.Success<IReadOnlyList<CloudEntity>>(Entities));
 
         public Task<Result<EntityScanResult>> ListEntitiesForReconciliationAsync(Guid namespaceId, CancellationToken ct) =>
-            Task.FromResult(ListingFails
+            Task.FromResult(NoStore
+                ? Result.Failure<EntityScanResult>(Error.Validation(ErrorCodes.Namespace.ConnectionStringRequired, "Namespace does not have a connection string configured."))
+                : ListingFails
                 ? Result.Failure<EntityScanResult>(Error.ExternalService("Test.Listing", "provider unreachable"))
                 : Result.Success(new EntityScanResult { Entities = Entities, IncompleteQueueNames = IncompleteQueues }));
 
@@ -543,6 +547,35 @@ public sealed class DlqMonitorTests : IAsyncLifetime
         result.Degraded.Should().BeFalse();
         result.Summary.Should().Contain("2 new dead letters");
         (await Rows()).Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task A_connection_with_no_message_store_is_not_a_cloud_that_could_not_be_read()
+    {
+        // Live 2026-11-10: an Azure sign-in connection (made only to read Logic Apps and Event Grid) has no Service Bus credential.
+        // Every cycle counted it as "1 cloud could not be read", so the monitor stayed degraded for as long as the connection existed.
+        var cloud = Azure();
+        cloud.NoStore = true;
+        var (agent, _) = BuildAgent(cloud, AzureNs());
+
+        var result = await agent.ExecuteCycleAsync(CancellationToken.None);
+
+        result.Degraded.Should().BeFalse();
+        result.Summary.Should().NotContain("could not be read").And.NotContain("not watched");
+        cloud.PeekCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_cloud_that_cannot_be_listed_still_degrades_the_cycle()
+    {
+        var cloud = Azure();
+        cloud.ListingFails = true;
+        var (agent, _) = BuildAgent(cloud, AzureNs());
+
+        var result = await agent.ExecuteCycleAsync(CancellationToken.None);
+
+        result.Degraded.Should().BeTrue();
+        result.Summary.Should().Contain("1 cloud could not be read");
     }
 
     [Fact]
