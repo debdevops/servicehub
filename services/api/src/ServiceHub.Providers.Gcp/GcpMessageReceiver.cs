@@ -774,6 +774,8 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
                 ? msg.Attributes.ToDictionary(k => k.Key, v => (object)v.Value)
                 : null;
 
+            var deliveryError = fromDlq ? DeliveryError(msg.Attributes) : null;
+
             mapped.Add(new Message
             {
                 MessageId = msg.MessageId,
@@ -795,11 +797,41 @@ public sealed class GcpMessageReceiver : IMessageReceiver, IAckDeadlineStatusPro
                 NamespaceId = namespaceId,
                 EntityName = entityName,
                 IsFromDeadLetter = fromDlq,
+                DeadLetterReason = deliveryError is null ? null : DeliveryErrorReason,
+                DeadLetterErrorDescription = deliveryError,
                 State = MessageState.Active
             });
         }
 
         return mapped;
+    }
+
+    /// <summary>The attribute Pub/Sub adds to a dead letter when it has an error text to give.</summary>
+    internal const string DeliveryErrorAttribute = "CloudPubSubDeadLetterSourceDeliveryErrorMessage";
+
+    /// <summary>The reason shown when Pub/Sub recorded a delivery error. The error text itself is the description.</summary>
+    internal const string DeliveryErrorReason = "Delivery error";
+
+    internal const int MaxDeliveryErrorLength = 1000;
+
+    /// <summary>
+    /// What Pub/Sub wrote about why delivery failed (build unit G8, plan 3a.5). Captured on a real project 2026-11-11: a dead letter from a
+    /// <b>pull</b> subscription and from a <b>push</b> subscription (an Eventarc trigger whose endpoint refuses) carries only the four
+    /// <c>CloudPubSubDeadLetterSource*</c> attributes (delivery count, subscription, project, publish time) and no error; a dead letter from
+    /// an <b>export</b> subscription (BigQuery, a row the table refused) also carries this attribute with the error text. So most Pub/Sub
+    /// dead letters have no reason to read, and this returns nothing for them.
+    /// </summary>
+    internal static string? DeliveryError(IEnumerable<KeyValuePair<string, string>> attributes)
+    {
+        foreach (var attribute in attributes)
+        {
+            if (attribute.Key == DeliveryErrorAttribute && !string.IsNullOrWhiteSpace(attribute.Value))
+            {
+                return attribute.Value.Length > MaxDeliveryErrorLength ? attribute.Value[..MaxDeliveryErrorLength] : attribute.Value;
+            }
+        }
+
+        return null;
     }
 
     private static long ComputeSequenceNumber(string messageId)
