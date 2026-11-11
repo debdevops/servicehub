@@ -74,7 +74,7 @@ describe('Home for one cloud (unit C1)', () => {
   it('lists a component added on request (Event Grid) in the table, beside the ones read from the queue store', async () => {
     vi.mocked(namespacesApi.fetchNamespaces).mockResolvedValue([{ id: 'ns-entra', name: 'azure-entra', displayName: 'Azure sign-in', provider: 'azure' } as namespacesApi.Namespace])
     vi.mocked(enablementApi.fetchEnabledComponents).mockResolvedValue([{ namespaceId: 'ns-entra', cloud: 'azure', componentKey: 'event-grid' }])
-    open('/next/azure')
+    open('/azure')
 
     const grid = await screen.findByRole('heading', { name: /Azure PaaS components \(2\)/ })
     expect(grid).toBeInTheDocument()
@@ -83,7 +83,7 @@ describe('Home for one cloud (unit C1)', () => {
   })
 
   it('asks for exactly its own cloud, from the two reads that feed every number', async () => {
-    open('/next/azure')
+    open('/azure')
     await screen.findByRole('heading', { name: 'Azure Dashboard' })
     // Queries start just after the first render, so wait for them rather than racing the heading.
     await waitFor(() => {
@@ -94,7 +94,7 @@ describe('Home for one cloud (unit C1)', () => {
   })
 
   it('a watched cloud with exact counts: the first tile is "In dead-letter now", there is no Recorded column and no Look now', async () => {
-    open('/next/azure')
+    open('/azure')
     expect(await screen.findByTestId('tile-first-value')).toHaveTextContent('12')
     expect(screen.getByRole('region', { name: 'In dead-letter now' })).toBeInTheDocument()
     expect(screen.getByTestId('tile-needs-you')).toHaveTextContent('1')
@@ -109,7 +109,7 @@ describe('Home for one cloud (unit C1)', () => {
 
   it('an approximate count is labelled approximate, and a cloud that is not watched says so, with Look now and a Recorded column', async () => {
     vi.mocked(componentsApi.fetchComponents).mockResolvedValue({ components: [awsRow()], generatedAtUtc })
-    open('/next/aws')
+    open('/aws')
     expect(await screen.findByTestId('tile-first-value')).toHaveTextContent('7,840(approx)')
     expect(screen.getByText(/200 recorded at last look/)).toBeInTheDocument()
     expect(screen.getByRole('note')).toHaveTextContent('AWS is not watched in the background.')
@@ -120,7 +120,7 @@ describe('Home for one cloud (unit C1)', () => {
 
   it('a cloud that reports no counts is "Dead letters recorded" and never shows 0 as a count', async () => {
     vi.mocked(componentsApi.fetchComponents).mockResolvedValue({ components: [gcpRow()], generatedAtUtc })
-    open('/next/gcp')
+    open('/gcp')
     expect(await screen.findByRole('region', { name: 'Dead letters recorded' })).toBeInTheDocument()
     expect(screen.getByTestId('tile-first-value')).toHaveTextContent('137')
     const table = screen.getByRole('region', { name: /Google Cloud PaaS components/ })
@@ -129,7 +129,7 @@ describe('Home for one cloud (unit C1)', () => {
 
   it('says "Not looked yet" for an entity nobody has looked at, once the row is expanded', async () => {
     vi.mocked(componentsApi.fetchComponents).mockResolvedValue({ components: [gcpRow()], generatedAtUtc })
-    open('/next/gcp')
+    open('/gcp')
     await userEvent.click(await screen.findByRole('button', { name: /Show the places in servicehub-prod Pub\/Sub/ }))
     const places = screen.getByRole('table', { name: 'Places in servicehub-prod Pub/Sub' })
     expect(within(places).getByText('orders-topic / orders-sub')).toBeInTheDocument()
@@ -138,7 +138,7 @@ describe('Home for one cloud (unit C1)', () => {
 
   it('shows a dead-letter queue beside its source and "(limit)" when a look stopped early', async () => {
     vi.mocked(componentsApi.fetchComponents).mockResolvedValue({ components: [awsRow()], generatedAtUtc })
-    open('/next/aws')
+    open('/aws')
     await userEvent.click(await screen.findByRole('button', { name: /Show the places/ }))
     const places = screen.getByRole('table', { name: /Places in/ })
     expect(within(places).getByRole('cell', { name: /orders-queue\s*→\s*orders-queue-dlq/ })).toBeInTheDocument()
@@ -148,10 +148,10 @@ describe('Home for one cloud (unit C1)', () => {
   it('no components: says so and offers Connect, rather than a table of zeros', async () => {
     vi.mocked(componentsApi.fetchComponents).mockResolvedValue({ components: [], generatedAtUtc })
     vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue(page([]))
-    open('/next/azure')
+    open('/azure')
     expect(await screen.findByText(/No Azure component is connected yet/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Add a component/ })).toHaveAttribute('href', '/next/azure?dialog=add-component')
-    expect(screen.getByRole('link', { name: 'Connect a cloud' })).toHaveAttribute('href', '/next/azure?dialog=connect')
+    expect(screen.getByRole('link', { name: /Add a component/ })).toHaveAttribute('href', '/azure?dialog=add-component')
+    expect(screen.getByRole('link', { name: 'Connect a cloud' })).toHaveAttribute('href', '/azure?dialog=connect')
     expect(screen.getByText('Nothing here needs a person right now.')).toBeInTheDocument()
   })
 
@@ -160,7 +160,7 @@ describe('Home for one cloud (unit C1)', () => {
       components: [component({ reachable: false, lastError: 'The cloud denied access', needsYou: 0, approvals: 0, deadLetters: { value: null, kind: 'notRead' }, observedAtUtc: null, entities: [] })], generatedAtUtc,
     })
     vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue(page([]))
-    open('/next/azure')
+    open('/azure')
     const row = within(await screen.findByRole('region', { name: /Azure PaaS components/ })).getAllByRole('row')[1]
     expect(within(row).getAllByText('Can’t reach')).toHaveLength(2) // the connection and the status
     expect(within(row).getByText('The cloud denied access')).toBeInTheDocument()
@@ -170,20 +170,20 @@ describe('Home for one cloud (unit C1)', () => {
 
   it('shows nothing rather than wrong numbers when the components cannot be read', async () => {
     vi.mocked(componentsApi.fetchComponents).mockRejectedValue(new Error('down'))
-    open('/next/azure')
+    open('/azure')
     expect(await screen.findByText(/components could not be read/)).toBeInTheDocument()
     expect(screen.queryByTestId('tile-first-value')).not.toBeInTheDocument()
   })
 
   it('the attention table splits approvals from hand-offs, shows the family only on a hand-off, and says all channels', async () => {
     vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue(page([approval(), handOff()]))
-    open('/next/azure')
+    open('/azure')
     const table = await screen.findByRole('region', { name: /Items that need your attention/ })
     expect(await within(table).findByText('Outcome unknown')).toBeInTheDocument()
     expect(within(table).queryByText('Policy blocked')).not.toBeInTheDocument()
     expect(within(table).getAllByText('All channels')).toHaveLength(2)
-    expect(within(table).getByRole('link', { name: 'Review' })).toHaveAttribute('href', '/next/azure?dialog=review&entry=e1')
-    expect(within(table).getByRole('link', { name: 'View' })).toHaveAttribute('href', '/next/azure?panel=hand-off&entry=e2')
+    expect(within(table).getByRole('link', { name: 'Review' })).toHaveAttribute('href', '/azure?dialog=review&entry=e1')
+    expect(within(table).getByRole('link', { name: 'View' })).toHaveAttribute('href', '/azure?panel=hand-off&entry=e2')
 
     await userEvent.click(within(table).getByRole('tab', { name: 'Hand-offs (1)' }))
     expect(within(table).queryByRole('link', { name: 'Review' })).not.toBeInTheDocument()
@@ -192,7 +192,7 @@ describe('Home for one cloud (unit C1)', () => {
   })
 
   it('one cloud’s Home has no Cloud column: the page already says which cloud it is', async () => {
-    open('/next/azure')
+    open('/azure')
     const table = await screen.findByRole('region', { name: /Items that need your attention/ })
     await within(table).findByRole('columnheader', { name: 'Message' })
     expect(within(table).queryByRole('columnheader', { name: 'Cloud' })).not.toBeInTheDocument()
@@ -201,7 +201,7 @@ describe('Home for one cloud (unit C1)', () => {
   it('pages the attention table 25 at a time, and a tab starts again at page 1', async () => {
     const many = Array.from({ length: 30 }, (_, i) => approval({ id: `a${i}`, entryId: `a${i}`, dlqMessageId: 100 + i }))
     vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue(page([...many, handOff()]))
-    open('/next/azure')
+    open('/azure')
     const table = await screen.findByRole('region', { name: /Items that need your attention/ })
     expect(await within(table).findByText('1–25 of 31')).toBeInTheDocument()
     expect(within(table).getAllByRole('row')).toHaveLength(26) // the header and 25 items
@@ -217,7 +217,7 @@ describe('Home for one cloud (unit C1)', () => {
   it('pages the component table, and each component’s places on their own', async () => {
     const manyComponents = Array.from({ length: 30 }, (_, i) => component({ namespaceId: `ns-${i}`, name: `conn-${i}`, entities: [] }))
     vi.mocked(componentsApi.fetchComponents).mockResolvedValue({ components: manyComponents, generatedAtUtc })
-    const { unmount } = open('/next/azure')
+    const { unmount } = open('/azure')
     const table = await screen.findByRole('region', { name: /Azure PaaS components/ })
     expect(await within(table).findByText('1–25 of 30')).toBeInTheDocument()
     expect(within(table).getByRole('navigation', { name: 'Pages of components' })).toBeInTheDocument()
@@ -225,7 +225,7 @@ describe('Home for one cloud (unit C1)', () => {
 
     const places = Array.from({ length: 40 }, (_, i) => entity({ name: `queue-${i}` }))
     vi.mocked(componentsApi.fetchComponents).mockResolvedValue({ components: [component({ entities: places })], generatedAtUtc })
-    open('/next/azure')
+    open('/azure')
     await userEvent.click(await screen.findByRole('button', { name: /Show the places/ }))
     const inner = screen.getByRole('table', { name: /Places in/ })
     expect(within(inner).getAllByRole('row')).toHaveLength(26)
@@ -235,7 +235,7 @@ describe('Home for one cloud (unit C1)', () => {
   it('an Operator sees "Needs an Approver" instead of Review, and a hand-off can still be viewed; an Approver sees Review', async () => {
     vi.mocked(identityApi.fetchMe).mockResolvedValue(me({ governanceActive: true, effectiveRole: 'Operator', recoverRole: 'Operator', grantors: ['maya'] }))
     vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue(page([approval(), handOff()]))
-    const { unmount } = open('/next/azure')
+    const { unmount } = open('/azure')
     const table = await screen.findByRole('region', { name: /Items that need your attention/ })
     await waitFor(() => expect(within(table).getByText('Needs an Approver')).toBeInTheDocument())
     expect(within(table).queryByRole('link', { name: 'Review' })).not.toBeInTheDocument()
@@ -243,14 +243,14 @@ describe('Home for one cloud (unit C1)', () => {
     unmount()
 
     vi.mocked(identityApi.fetchMe).mockResolvedValue(me({ governanceActive: true, effectiveRole: 'Approver', recoverRole: 'Approver' }))
-    open('/next/azure')
+    open('/azure')
     expect(await screen.findByRole('link', { name: 'Review' })).toBeInTheDocument()
   })
 
   it('Look now is disabled for a Viewer, with the reason, and records every unwatched namespace once for an Operator', async () => {
     vi.mocked(componentsApi.fetchComponents).mockResolvedValue({ components: [awsRow(), { ...awsRow(), componentKey: 'sns', componentName: 'SNS' }], generatedAtUtc })
     vi.mocked(identityApi.fetchMe).mockResolvedValue(me({ governanceActive: true, effectiveRole: 'Viewer', recoverRole: 'Viewer', grantors: ['maya'] }))
-    const { unmount } = open('/next/aws')
+    const { unmount } = open('/aws')
     const viewerButton = await screen.findByRole('button', { name: 'Look now' })
     await waitFor(() => expect(viewerButton).toBeDisabled())
     expect(viewerButton).toHaveAttribute('title', expect.stringContaining('Operator role'))
@@ -258,7 +258,7 @@ describe('Home for one cloud (unit C1)', () => {
 
     vi.mocked(identityApi.fetchMe).mockResolvedValue(me({ governanceActive: true, effectiveRole: 'Operator', recoverRole: 'Operator' }))
     vi.mocked(namespacesApi.lookAtDeadLetters).mockResolvedValue({ outcome: 'looked', queuesExamined: 2, newMessages: 5, resolved: 0, unconfirmed: 0, countsAsDeliveryAttempt: true, reason: null, lookedAtUtc: now })
-    open('/next/aws')
+    open('/aws')
     const button = await screen.findByRole('button', { name: 'Look now' })
     await waitFor(() => expect(button).toBeEnabled())
     await userEvent.click(button)
@@ -270,7 +270,7 @@ describe('Home for one cloud (unit C1)', () => {
     vi.mocked(componentsApi.fetchComponents).mockResolvedValue({ components: [awsRow()], generatedAtUtc })
     vi.mocked(signaturesApi.fetchSignatures).mockResolvedValue(signaturePage([signature({ provider: 'aws', reason: 'ReceiveLimitReached', messages: 110 })]))
     vi.mocked(signaturesApi.fetchSignatureTrust).mockResolvedValue(trust({ cloudCanConfirm: false }))
-    open('/next/aws')
+    open('/aws')
     const panel = await screen.findByRole('region', { name: 'Failure signatures' })
     expect(await within(panel).findByText('No')).toBeInTheDocument()
     expect(within(panel).getByText('ReceiveLimitReached')).toBeInTheDocument()
@@ -279,7 +279,7 @@ describe('Home for one cloud (unit C1)', () => {
   })
 
   it('the evidence panel has one sentence per covered component, chosen by class', async () => {
-    open('/next/azure')
+    open('/azure')
     const panel = await screen.findByRole('region', { name: 'Evidence and replay outcome (Azure)' })
     expect(panel).toHaveTextContent('Can reach Verified when a replayed message does not return')
     expect(panel).toHaveTextContent('Not yet validated')
@@ -288,7 +288,7 @@ describe('Home for one cloud (unit C1)', () => {
   })
 
   it('an unknown cloud segment is not found, not Home', async () => {
-    open('/next/oracle')
+    open('/oracle')
     expect(await screen.findByRole('heading', { name: 'That page doesn’t exist' })).toBeInTheDocument()
     // Only the shell's own menu-badge read (all clouds) ran; Home asked for nothing on its own.
     expect(vi.mocked(componentsApi.fetchComponents).mock.calls.every(([cloud]) => cloud === undefined)).toBe(true)
@@ -298,7 +298,7 @@ describe('Home for one cloud (unit C1)', () => {
   it('has no accessibility violations on a not-watched cloud with a row expanded', async () => {
     vi.mocked(componentsApi.fetchComponents).mockResolvedValue({ components: [awsRow()], generatedAtUtc })
     vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue(page([approval({ provider: 'aws' }), handOff({ provider: 'aws' })]))
-    const { container } = open('/next/aws')
+    const { container } = open('/aws')
     await userEvent.click(await screen.findByRole('button', { name: /Show the places/ }))
     await screen.findByRole('table', { name: /Places in/ })
     await expectNoAxeViolations(container)

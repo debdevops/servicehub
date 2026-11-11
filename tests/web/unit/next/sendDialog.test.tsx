@@ -52,7 +52,7 @@ describe('Send a test message (unit F8)', () => {
 
   it('opens from a connection’s page with that connection chosen, and sends nothing on open', async () => {
     const user = userEvent.setup()
-    const { router } = open('/next/azure/c/service-bus/ns-azure')
+    const { router } = open('/azure/c/service-bus/ns-azure')
     await user.click(await screen.findByRole('link', { name: 'Send a test message' }))
     await screen.findByRole('dialog')
     expect(router.state.location.search).toBe('?dialog=send&ns=ns-azure')
@@ -62,7 +62,7 @@ describe('Send a test message (unit F8)', () => {
 
   it('sends exactly one message, on the one click, to the chosen queue', async () => {
     const user = userEvent.setup()
-    open('/next/azure?dialog=send&ns=ns-azure')
+    open('/azure?dialog=send&ns=ns-azure')
     const dialog = await screen.findByRole('dialog')
     await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Send' })).toBeEnabled())
     await user.click(within(dialog).getByRole('button', { name: 'Send' }))
@@ -73,7 +73,7 @@ describe('Send a test message (unit F8)', () => {
 
   it('does not offer a Production connection, and says why', async () => {
     vi.mocked(namespacesApi.fetchNamespaces).mockResolvedValue([ns({ environment: 'prod' })])
-    open('/next/azure?dialog=send&ns=ns-azure')
+    open('/azure?dialog=send&ns=ns-azure')
     expect(await screen.findByText(/marked Production/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Send' })).not.toBeInTheDocument()
   })
@@ -81,7 +81,7 @@ describe('Send a test message (unit F8)', () => {
   it('keeps Send disabled for someone who may not send, and for a body that is not valid JSON', async () => {
     const user = userEvent.setup()
     vi.mocked(identityApi.fetchMe).mockResolvedValue(me({ governanceActive: true, effectiveRole: 'Viewer', recoverRole: 'Viewer' }))
-    open('/next/azure?dialog=send&ns=ns-azure')
+    open('/azure?dialog=send&ns=ns-azure')
     const dialog = await screen.findByRole('dialog')
     const send = await within(dialog).findByRole('button', { name: 'Send' })
     await waitFor(() => expect(send).toBeDisabled())
@@ -93,7 +93,7 @@ describe('Send a test message (unit F8)', () => {
   it('shows the server’s refusal and does not claim it sent', async () => {
     const user = userEvent.setup()
     vi.mocked(messagesApi.sendMessage).mockRejectedValue(new Error('refused'))
-    open('/next/azure?dialog=send&ns=ns-azure')
+    open('/azure?dialog=send&ns=ns-azure')
     const dialog = await screen.findByRole('dialog')
     await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Send' })).toBeEnabled())
     await user.click(within(dialog).getByRole('button', { name: 'Send' }))
@@ -102,7 +102,7 @@ describe('Send a test message (unit F8)', () => {
   })
 
   it('has no accessibility violations', async () => {
-    open('/next/azure?dialog=send&ns=ns-azure')
+    open('/azure?dialog=send&ns=ns-azure')
     const dialog = await screen.findByRole('dialog')
     await within(dialog).findByRole('button', { name: 'Send' })
     await expectNoAxeViolations(dialog)

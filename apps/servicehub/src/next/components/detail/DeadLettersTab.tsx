@@ -132,8 +132,10 @@ export function DeadLettersTab({ component: c, me }: { component: ConnectedCompo
             {filtering ? 'Nothing matches these filters.' : c.watched ? 'No message is in a dead-letter queue.' : 'Nothing is recorded yet. Look now records what is in the dead-letter queues.'}
           </p>
         ) : (
-          <div className="mt-3 overflow-x-auto">
-            {c.watched || items.length > 0 ? bulkBar('top') : null}
+          <>
+          {/* Outside the table's own side-scroll box: inside it the bar would stick to that box, 60 px down, on top of the header row. */}
+          <div className="mt-3">{c.watched || items.length > 0 ? bulkBar('top') : null}</div>
+          <div className="overflow-x-auto">
             <table className="w-full border-t border-[var(--color-border)]">
               <caption className="sr-only">Dead-letter messages of {c.name}</caption>
               <thead>
@@ -175,8 +177,9 @@ export function DeadLettersTab({ component: c, me }: { component: ConnectedCompo
                 })}
               </tbody>
             </table>
-            {bulkBar('bottom')}
           </div>
+          {bulkBar('bottom')}
+          </>
         )}
         <Pager page={page} pageSize={pageSize} total={total} filtered={filtering} onPage={(p) => change({ page: String(p) })} onPageSize={(n) => { setPageSize(n); change({}) }} label="dead-letter messages" />
       </section>

@@ -7,6 +7,7 @@ import { nextHelpAnswers } from '../content/help'
 import { cloudOf, parseScope } from '../lib/clouds'
 import { searchNext } from '../lib/searchIndex'
 import type { NextOverlayBodyProps } from './registry'
+import { scopeSegment } from '../nav/navigation'
 
 /**
  * Search (build-plan unit F7; design `d10-search`), at `?dialog=search` and on ⌘K / Ctrl-K: connections, queues and subscriptions, pages,
@@ -21,7 +22,7 @@ export default function SearchDialog(_props: NextOverlayBodyProps) {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const components = useComponents(null)
-  const cloud = cloudOf(parseScope(pathname.split('/')[2])) ?? 'all'
+  const cloud = cloudOf(parseScope(scopeSegment(pathname))) ?? 'all'
   useOverlayTitle('Search', '⌘K · connections, queues, pages and actions on every cloud')
   const results = searchNext(q, components.data?.components ?? [], nextHelpAnswers, cloud, pathname)
   useEffect(() => setActive(0), [q])

@@ -19,7 +19,10 @@ import { Th } from '../components/Tip'
 import { StatTile as Tile } from '../components/StatTile'
 import { Tip } from '../components/Tip'
 
-const td = 'px-3 py-2.5 align-top text-sm'
+// Narrow padding and long names that may break anywhere: the columns have to fit a 1280 px window without a side-scroll.
+const td = 'px-1.5 py-2.5 align-top text-sm'
+const th = 'px-1.5 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
+const wrap = '[overflow-wrap:anywhere]'
 const field = 'rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-sm'
 const keyOf = (s: Signature) => `${s.provider}:${s.signatureHash}`
 const asTab = (v: string | null): SignatureTab => (v === 'growing' || v === 'helps' || v === 'doesnt' ? v : 'all')
@@ -173,9 +176,9 @@ export default function SignaturesPage() {
                     <caption className="sr-only">Failure signatures</caption>
                     <thead>
                       <tr>
-                        {scope === 'all' && <Th>Cloud</Th>}
-                        <Th>Signature</Th><Th>Connection</Th><Th>Still in queue</Th>
-                        <Th>Does replay help?</Th><Th>Level</Th><Th>Agent may act</Th><Th>Why</Th><Th>Actions</Th>
+                        {scope === 'all' && <Th className={th}>Cloud</Th>}
+                        <Th className={th}>Signature</Th><Th className={th}>Connection</Th><Th className={th}>Still in queue</Th>
+                        <Th className={th}>Does replay help?</Th><Th className={th}>Level</Th><Th className={th}>Agent may act</Th><Th className={th}>Why</Th><Th className={th}>Actions</Th>
                       </tr>
                     </thead>
                     <tbody>
@@ -186,9 +189,9 @@ export default function SignaturesPage() {
                         return (
                           <tr key={keyOf(s)} aria-selected={keyOf(s) === selectedKey} className={`border-t border-[var(--color-border)] ${keyOf(s) === selectedKey ? 'bg-[var(--color-primary-50)]' : ''}`}>
                             {scope === 'all' && <td className={td}>{cloudLabel[s.provider]}</td>}
-                            <td className={`${td} font-semibold`}>{s.reason}{s.growing && <span className="ml-2 rounded-md bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-700">Growing</span>}
+                            <td className={`${td} ${wrap} font-semibold`}>{s.reason}{s.growing && <span className="ml-2 rounded-md bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-700">Growing</span>}
                               <span className="block max-w-xs truncate text-xs font-normal text-[var(--color-text-muted)]">{s.exampleError ?? s.entities.join(' · ')}</span></td>
-                            <td className={td}>{s.namespaces.map((n) => nameOfNs(n.id) ?? n.displayName ?? n.name).join(', ') || '—'}</td>
+                            <td className={`${td} ${wrap}`}>{s.namespaces.map((n) => nameOfNs(n.id) ?? n.displayName ?? n.name).join(', ') || '—'}</td>
                             <td className={td}>{s.activeNow.toLocaleString('en-US')}</td>
                             <td className={td}>{replayWords(s)}</td>
                             <td className={td}>{level ? <span className={`inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${level.chip}`}>{level.text}</span> : '…'}</td>

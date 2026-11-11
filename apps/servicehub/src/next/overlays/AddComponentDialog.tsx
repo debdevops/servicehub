@@ -15,7 +15,7 @@ import { NotAllowed } from '../../components/ui/NotAllowed'
 import { Select } from '../../components/ui/Select'
 import { Tip } from '../components/Tip'
 import { cloudBrand, cloudLabel, cloudOf, parseScope } from '../lib/clouds'
-import { nextEntry, nextHref } from '../nav/navigation'
+import { nextEntry, nextHref, scopeSegment } from '../nav/navigation'
 import type { NextOverlayBodyProps } from './registry'
 
 /**
@@ -60,7 +60,7 @@ export default function AddComponentDialog({ close }: NextOverlayBodyProps) {
   const wanted = useSearchParams()[0].get('ns') // opened from one connection's row: that connection first, whatever page this is
   const namespaces = useNamespaces()
   const all = namespaces.data ?? []
-  const first = all.find((n) => n.id === wanted)?.provider ?? cloudOf(parseScope(pathname.split('/')[2]))
+  const first = all.find((n) => n.id === wanted)?.provider ?? cloudOf(parseScope(scopeSegment(pathname)))
   const may = permission(useMe().data, 'Admin', 'add or remove a component')
   const queryClient = useQueryClient()
   const coverage = useCoverage()

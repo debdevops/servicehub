@@ -32,7 +32,7 @@ const letter = (id: number, over: Partial<deadLettersApi.DeadLetter> = {}) => ({
 const result = (items: deadLettersApi.DeadLetter[], total = items.length, over: Partial<deadLettersApi.DeadLetterPage> = {}): deadLettersApi.DeadLetterPage => ({
   items, paging: { total, page: 1, pageSize: 25 }, groups: [{ reason: 'ProcessingError', count: total }], otherReasons: null, entities: ['orders-queue', 'payments-topic/subscriptions/sub-1'], ...over,
 })
-const ok = '/next/azure/c/service-bus/ns-azure'
+const ok = '/azure/c/service-bus/ns-azure'
 
 function open(url: string, c = component(), watched = true) {
   vi.mocked(componentsApi.fetchComponent).mockResolvedValue(c)

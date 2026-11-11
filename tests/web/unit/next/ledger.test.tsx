@@ -60,15 +60,15 @@ describe('Evidence ledger (unit E7)', () => {
   })
 
   it('asks for its own cloud over the last 7 days, 25 a page; for every cloud when the scope is all', async () => {
-    open('/next/azure/ledger')
+    open('/azure/ledger')
     await screen.findByRole('heading', { level: 1, name: 'Evidence ledger' })
     await waitFor(() => expect(lastLedger()).toMatchObject({ provider: 'azure', window: '7d', page: 1, pageSize: 25 }))
-    open('/next/all/ledger')
+    open('/all/ledger')
     await waitFor(() => expect(lastLedger()?.provider).toBeUndefined())
   })
 
   it('words each state from what the ledger proved — Recovered is “did not return”, never “succeeded”', async () => {
-    open('/next/azure/ledger')
+    open('/azure/ledger')
     const table = await screen.findByRole('table', { name: /Recovery ledger entries/ })
     const rows = within(table).getAllByRole('row')
     expect(rows[1]).toHaveTextContent('Recovered')
@@ -80,7 +80,7 @@ describe('Evidence ledger (unit E7)', () => {
 
   it('counts the tabs from the summary and the pending-work read, and Watching asks for that state', async () => {
     const user = userEvent.setup()
-    const { router } = open('/next/azure/ledger')
+    const { router } = open('/azure/ledger')
     expect(await screen.findByRole('tab', { name: 'All (4)' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Watching (2)' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Waiting (2)' })).toBeInTheDocument()
@@ -91,7 +91,7 @@ describe('Evidence ledger (unit E7)', () => {
 
   it('lists what waits for a person, with Review or View in this shell’s dialogs', async () => {
     const user = userEvent.setup()
-    open('/next/azure/ledger?tab=waiting')
+    open('/azure/ledger?tab=waiting')
     const table = await screen.findByRole('table', { name: 'Entries waiting for a person' })
     expect(within(table).getByRole('link', { name: 'Review' })).toHaveAttribute('href', expect.stringContaining('dialog=review&entry=e1'))
     expect(within(table).getByRole('link', { name: 'View' })).toHaveAttribute('href', expect.stringContaining('panel=hand-off&entry=e2'))
@@ -100,7 +100,7 @@ describe('Evidence ledger (unit E7)', () => {
 
   it('keeps the filters in the address and asks the server for them', async () => {
     const user = userEvent.setup()
-    const { router } = open('/next/azure/ledger')
+    const { router } = open('/azure/ledger')
     await screen.findByRole('table', { name: /Recovery ledger entries/ })
     await user.selectOptions(screen.getByLabelText('State:'), 'Returned')
     await waitFor(() => expect(lastLedger()).toMatchObject({ state: 'Returned' }))
@@ -116,7 +116,7 @@ describe('Evidence ledger (unit E7)', () => {
   it('opens an entry beside the table, with a message link and a Replay link in this shell, only for a message still in dead-letter', async () => {
     const user = userEvent.setup()
     vi.mocked(deadLettersApi.fetchDeadLetter).mockResolvedValue({ item: { id: 101, status: 'active', messageId: 'm-e1', deadLetterReason: null, deadLetterErrorDescription: null } } as never)
-    open('/next/azure/ledger')
+    open('/azure/ledger')
     await user.click((await screen.findAllByRole('button', { name: /Open ledger entry/ }))[0])
     const panel = await screen.findByRole('complementary', { name: 'Entry' })
     expect(within(panel).getByRole('link', { name: 'Open the message →' })).toHaveAttribute('href', expect.stringContaining('dialog=message&id=101'))
@@ -125,7 +125,7 @@ describe('Evidence ledger (unit E7)', () => {
 
   it('checks the chain only when asked, and says what it found', async () => {
     const user = userEvent.setup()
-    open('/next/azure/ledger')
+    open('/azure/ledger')
     await screen.findByRole('table', { name: /Recovery ledger entries/ })
     expect(recoveryApi.verifyChain).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Check the chain' }))
@@ -134,15 +134,15 @@ describe('Evidence ledger (unit E7)', () => {
 
   it('says so when nothing was recorded, and shows an error rather than an empty table when the read fails', async () => {
     vi.mocked(recoveryApi.fetchLedger).mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 25 })
-    open('/next/azure/ledger')
+    open('/azure/ledger')
     expect(await screen.findByText(/No recovery action in this period/)).toBeInTheDocument()
     vi.mocked(recoveryApi.fetchLedger).mockRejectedValue(new Error('boom'))
-    open('/next/aws/ledger')
+    open('/aws/ledger')
     expect(await screen.findByRole('alert')).toHaveTextContent('could not be read')
   })
 
   it('has no accessibility violations', async () => {
-    const { container } = open('/next/azure/ledger')
+    const { container } = open('/azure/ledger')
     await screen.findByRole('table', { name: /Recovery ledger entries/ })
     await expectNoAxeViolations(container)
   })

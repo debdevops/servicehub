@@ -17,7 +17,6 @@ function sourceFiles(dir: string): string[] {
  * or be named here with the reason it is not a data grid.
  */
 const NOT_A_DATA_GRID: Readonly<Record<string, string>> = {
-  'src/components/TrendChart.tsx': 'the text alternative of a chart: one row per day of a fixed window, not a list that grows',
   'src/components/ui/DataTable.tsx': 'the table shell; the caller pages the rows it is given',
   'src/next/components/home/SignaturePanel.tsx': 'a four-row summary beside "View all", which opens the paged grid',
   'src/next/overlays/SecurityPanel.tsx': 'two fixed reference tables of a handful of rows each; written text, not a list that grows',

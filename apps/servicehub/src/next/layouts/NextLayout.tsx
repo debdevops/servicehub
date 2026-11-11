@@ -2,13 +2,15 @@ import { Link, NavLink, Outlet, useParams } from 'react-router-dom'
 import { sidebarComponents, useCoverage } from '../../hooks/useCoverage'
 import { useEnabledComponents } from '../../hooks/useComponentEnablement'
 import { useComponents } from '../../hooks/useComponents'
+import { DemoBanner } from '../../components/banners/DemoEntry'
+import { NotFoundPage } from '../../pages/NotFoundPage'
 import { HeaderStatus } from '../components/HeaderStatus'
 import { OverlayHost } from '../components/OverlayHost'
 import { StopBand } from '../components/StopBand'
 import { PausedBand } from '../components/PausedBand'
 import { useNextShortcuts } from '../lib/useNextShortcuts'
 import { cloudHeaderClass, cloudLabel, cloudOf, cloudScopes, parseScope, type CloudScope } from '../lib/clouds'
-import { NEXT_ROOT, nextEntriesIn, nextEntry, nextHref, type NextPage } from '../nav/navigation'
+import { NEXT_HOME, nextEntriesIn, nextEntry, nextHref, type NextPage } from '../nav/navigation'
 import type { ColumnHelp } from '../../content/columns'
 import { Tip } from '../components/Tip'
 
@@ -50,6 +52,8 @@ export function NextLayout() {
   useNextShortcuts() // ⌘K, ?, / and R (content/shortcuts.ts)
   // `configuration` and `coverage` are not clouds: on those pages the menu shows every cloud's components.
   const scope: CloudScope = parseScope(params.cloud)
+  // `/nonsense/attention` names no cloud. It is not "all clouds" under another name: it is an address that does not exist.
+  const unknownCloud = params.cloud !== undefined && !(cloudScopes as readonly string[]).includes(params.cloud)
   const cloud = cloudOf(scope)
   const { data } = useCoverage()
   const rows = data?.rows ?? []
@@ -62,7 +66,7 @@ export function NextLayout() {
         approvals: components.data.components.reduce((sum, c) => sum + c.approvals, 0),
       }
     : null
-  const home = scope === 'all' ? NEXT_ROOT : nextHref(nextEntry('home'), { cloud: scope })
+  const home = scope === 'all' ? NEXT_HOME : nextHref(nextEntry('home'), { cloud: scope })
   const tools = nextEntriesIn('tool') as readonly NextPage[]
   // Connections is the first thing under Home: it is where every cloud is connected, so it must not sit at the bottom of a long menu.
   const connections = nextEntry('connections') as NextPage
@@ -70,11 +74,12 @@ export function NextLayout() {
 
   return (
     <div className="min-h-screen bg-[var(--color-surface-muted)]">
-      <header className={`flex h-[var(--header-height)] items-center gap-4 px-5 text-white ${cloudHeaderClass[scope]}`}>
-        <span className="text-lg font-bold">ServiceHub <span className="font-semibold text-white/80">5.0.0</span></span>
+      <header className={`flex min-h-[var(--header-height)] flex-wrap items-center gap-x-4 gap-y-2 px-5 py-2 text-white ${cloudHeaderClass[scope]}`}>
+        <span className="text-lg font-bold">ServiceHub <span className="font-semibold text-white/80">{import.meta.env.VITE_APP_VERSION}</span></span>
         <span className="text-sm font-semibold">{cloudLabel[scope]}</span>
         <HeaderStatus />
       </header>
+      <DemoBanner />
       <StopBand />
       <PausedBand agentsHref={nextHref(nextEntry('agents') as NextPage, { cloud: scope })} />
 
@@ -84,7 +89,7 @@ export function NextLayout() {
             {cloudScopes.map((s) => (
               <li key={s}>
                 <Link
-                  to={s === 'all' ? NEXT_ROOT : nextHref(nextEntry('home'), { cloud: s })}
+                  to={s === 'all' ? NEXT_HOME : nextHref(nextEntry('home'), { cloud: s })}
                   aria-current={s === scope ? 'true' : undefined}
                   className={`block rounded-md border px-2 py-1 text-xs font-semibold ${s === scope ? 'border-[var(--color-primary-600)] bg-[var(--color-primary-50)] text-[var(--color-primary-700)]' : 'border-[var(--color-border)] text-[var(--color-text)]'}`}
                 >
@@ -140,7 +145,7 @@ export function NextLayout() {
         </nav>
 
         <main className="min-w-0 flex-1">
-          <Outlet />
+          {unknownCloud ? <NotFoundPage /> : <Outlet />}
         </main>
       </div>
       <OverlayHost />

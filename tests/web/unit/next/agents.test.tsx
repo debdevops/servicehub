@@ -53,7 +53,7 @@ describe('Agents (unit E8)', () => {
   })
 
   it('lists every registered agent in the descriptor’s own words, with health from its cycles', async () => {
-    open('/next/azure/agents')
+    open('/azure/agents')
     await screen.findByRole('heading', { level: 1, name: 'Agents' })
     const table = await screen.findByRole('table', { name: /Agents registered/ })
     const rows = within(table).getAllByRole('row')
@@ -66,7 +66,7 @@ describe('Agents (unit E8)', () => {
 
   it('counts failing, degraded and late agents as needing a look, and a paused one as a choice, not a fault', async () => {
     vi.mocked(agentsApi.fetchAgents).mockResolvedValue([acting({ health: 'failing', lastFailure: 'cloud unreachable' }), watching({ late: true }), acting({ id: 'bulk', name: 'Bulk replay', isPaused: true, health: 'paused' })])
-    open('/next/azure/agents')
+    open('/azure/agents')
     await screen.findByRole('table', { name: /Agents registered/ })
     await waitFor(() => expect(screen.getByText('Need a look', { selector: 'p' }).parentElement).toHaveTextContent('2'))
     expect(screen.getByText('Paused', { selector: 'p' }).parentElement).toHaveTextContent('1')
@@ -76,7 +76,7 @@ describe('Agents (unit E8)', () => {
 
   it('pauses exactly one agent, on a click, and offers no Resume for one that is running', async () => {
     const user = userEvent.setup()
-    open('/next/azure/agents')
+    open('/azure/agents')
     await user.click(await screen.findByRole('button', { name: 'Pause Auto Replay' }))
     await waitFor(() => expect(agentsApi.pauseAgent).toHaveBeenCalledWith('auto-replay'))
     expect(agentsApi.pauseAgent).toHaveBeenCalledTimes(1)
@@ -86,7 +86,7 @@ describe('Agents (unit E8)', () => {
 
   it('disables Pause, with the reason, for someone who may not pause', async () => {
     vi.mocked(identityApi.fetchMe).mockResolvedValue(me({ governanceActive: true, effectiveRole: 'Viewer', recoverRole: 'Viewer' }))
-    open('/next/azure/agents')
+    open('/azure/agents')
     const button = await screen.findByRole('button', { name: 'Pause Auto Replay' })
     await waitFor(() => expect(button).toBeDisabled())
     expect(button).toHaveAttribute('title', expect.stringContaining('Operator'))
@@ -94,11 +94,11 @@ describe('Agents (unit E8)', () => {
 
   it('opens an agent’s detail in the address, with a link to the ledger in this shell', async () => {
     const user = userEvent.setup()
-    const { router } = open('/next/azure/agents')
+    const { router } = open('/azure/agents')
     await user.click(await screen.findByRole('button', { name: 'View Auto Replay' }))
     expect(router.state.location.search).toBe('?agent=auto-replay')
     const detail = await screen.findByRole('complementary', { name: 'Auto Replay details' })
-    expect(within(detail).getByRole('link', { name: 'Everything it did, in the Ledger ›' })).toHaveAttribute('href', '/next/azure/ledger')
+    expect(within(detail).getByRole('link', { name: 'Everything it did, in the Ledger ›' })).toHaveAttribute('href', '/azure/ledger')
   })
 
   describe('Resume lives on this page, for Admins (owner decision 2026-10-19)', () => {
@@ -109,7 +109,7 @@ describe('Agents (unit E8)', () => {
       const user = userEvent.setup()
       paused()
       vi.mocked(agentsApi.resumeAgent).mockResolvedValue(acting())
-      open('/next/azure/agents')
+      open('/azure/agents')
       await user.click(await screen.findByRole('button', { name: 'Resume Auto Replay' }))
       await waitFor(() => expect(resumed()).toEqual(['auto-replay']))
       expect(agentsApi.pauseAgent).not.toHaveBeenCalled()
@@ -119,7 +119,7 @@ describe('Agents (unit E8)', () => {
       const user = userEvent.setup()
       paused()
       vi.mocked(agentsApi.resumeAgent).mockResolvedValue(acting())
-      open('/next/azure/agents?agent=auto-replay')
+      open('/azure/agents?agent=auto-replay')
       const detail = await screen.findByRole('complementary', { name: 'Auto Replay details' })
       expect(within(detail).getByText(/recorded with your name/)).toBeInTheDocument()
       await user.click(within(detail).getByRole('button', { name: 'Resume Auto Replay' }))
@@ -129,7 +129,7 @@ describe('Agents (unit E8)', () => {
     it('is an Admin’s: an Operator who may pause may not resume, and is told who can grant it', async () => {
       paused()
       vi.mocked(identityApi.fetchMe).mockResolvedValue(me({ governanceActive: true, effectiveRole: 'Operator', recoverRole: 'Operator' }))
-      open('/next/azure/agents')
+      open('/azure/agents')
       const button = await screen.findByRole('button', { name: 'Resume Auto Replay' })
       await waitFor(() => expect(button).toBeDisabled())
       expect(button).toHaveAttribute('title', expect.stringContaining('Admin'))
@@ -140,7 +140,7 @@ describe('Agents (unit E8)', () => {
       const user = userEvent.setup()
       paused()
       vi.mocked(agentsApi.resumeAgent).mockRejectedValue(new Error('refused'))
-      open('/next/azure/agents')
+      open('/azure/agents')
       await user.click(await screen.findByRole('button', { name: 'Resume Auto Replay' }))
       expect(await screen.findByRole('alert')).toHaveTextContent('Nothing changed')
     })
@@ -148,21 +148,21 @@ describe('Agents (unit E8)', () => {
 
   it('names an agent that stopped reporting, from the pending-work item it raised', async () => {
     vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue(page([approval({ id: 'a1', kind: 'agent', agentId: 'auto-replay', reason: 'This agent has stopped reporting.' })]))
-    open('/next/azure/agents')
+    open('/azure/agents')
     expect(await screen.findByText('This agent has stopped reporting.')).toBeInTheDocument()
   })
 
   it('says why an agent is not listed, and shows an error rather than a list when the read fails', async () => {
     vi.mocked(agentsApi.fetchDormantAgents).mockResolvedValue([{ id: 'observer', name: 'Observer', needs: 'ObserverCloud' }])
-    open('/next/azure/agents')
+    open('/azure/agents')
     expect(await screen.findByText(/1 agent is off because none of your connected clouds needs it: Observer/)).toBeInTheDocument()
     vi.mocked(agentsApi.fetchAgents).mockRejectedValue(new Error('boom'))
-    open('/next/aws/agents')
+    open('/aws/agents')
     expect(await screen.findByRole('alert')).toHaveTextContent('couldn’t read its agents')
   })
 
   it('has no accessibility violations', async () => {
-    const { container } = open('/next/azure/agents')
+    const { container } = open('/azure/agents')
     await screen.findByRole('table', { name: /Agents registered/ })
     await expectNoAxeViolations(container)
   })

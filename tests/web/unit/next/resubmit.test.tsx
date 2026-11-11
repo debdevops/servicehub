@@ -35,7 +35,7 @@ const logicApps = (offers: boolean): coverageApi.CoverageRow => ({
 const azure = { id: 'ns-az', name: 'contoso', displayName: 'Contoso', provider: 'azure', environment: 'dev', authType: 'defaultAzureCredential', awsRegion: null, gcpProjectId: null, isActive: true, capabilities: null } as unknown as namespacesApi.Namespace
 const item: sourcesApi.FailedItem = { id: RUN, place: '/subscriptions/x/workflows/orders', atUtc: '2026-10-01T10:00:00Z', status: 'Failed', reasonCode: null, summary: 'Failed: run-1', copy: 'none', consoleUrl: null }
 const source: sourcesApi.ComponentSource = { componentKey: 'logic-apps', available: true, reason: null, reasonInList: false, placesReachedLimit: false, placesIncomplete: false, places: [{ id: '/subscriptions/x/workflows/orders', name: 'orders', kind: 'logic app', consoleUrl: null }] }
-const dialogUrl = `/next/azure?dialog=redrive&ns=ns-az&component=logic-apps&item=${encodeURIComponent(RUN)}`
+const dialogUrl = `/azure?dialog=redrive&ns=ns-az&component=logic-apps&item=${encodeURIComponent(RUN)}`
 
 function open(url: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -60,7 +60,7 @@ describe('Resubmit a failed Logic Apps run (unit R2)', () => {
   })
 
   it('draws a Resubmit… link, not a Redrive… link, and the footnote says every step runs again', async () => {
-    open('/next/azure/c/logic-apps/ns-az')
+    open('/azure/c/logic-apps/ns-az')
     const link = await screen.findByRole('link', { name: 'Resubmit Failed: run-1' })
     expect(link.textContent).toBe('Resubmit…')
     expect(link.getAttribute('href')).toContain(`?dialog=redrive&ns=ns-az&component=logic-apps&item=${encodeURIComponent(RUN)}`)

@@ -54,16 +54,16 @@ describe('Configuration (unit E9)', () => {
   })
 
   it('opens on Connections, from the same connections read as everywhere, and Add goes to this shell’s Connect dialog', async () => {
-    open('/next/configuration')
+    open('/configuration')
     await screen.findByRole('heading', { level: 1, name: 'Configuration' })
     expect(await screen.findByText('orders-sb')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Connections' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('link', { name: '+ Add a cloud' })).toHaveAttribute('href', '/next/configuration?dialog=connect')
+    expect(screen.getByRole('link', { name: '+ Add a cloud' })).toHaveAttribute('href', '/configuration?dialog=connect')
   })
 
   it('switches tabs in the address and shows that section: notifications, access, preferences, backup', async () => {
     const user = userEvent.setup()
-    const { router } = open('/next/configuration')
+    const { router } = open('/configuration')
     await screen.findByText('orders-sb')
     await user.click(screen.getByRole('tab', { name: 'Notifications' }))
     expect(router.state.location.search).toBe('?tab=notifications')
@@ -79,33 +79,33 @@ describe('Configuration (unit E9)', () => {
   })
 
   it('opens straight onto a tab from the address', async () => {
-    open('/next/configuration?tab=access')
+    open('/configuration?tab=access')
     expect(await screen.findByRole('region', { name: 'Access and security' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Access' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('keeps each control’s own permission: removing a connection is Admin only, and says who can grant it', async () => {
     vi.mocked(identityApi.fetchMe).mockResolvedValue(me({ governanceActive: true, effectiveRole: 'Operator', recoverRole: 'Operator' }))
-    open('/next/configuration')
+    open('/configuration')
     const remove = await screen.findByRole('button', { name: 'Remove orders-sb' })
     await waitFor(() => expect(remove).toBeDisabled())
     expect(screen.getAllByText(/you need the Admin role/).length).toBeGreaterThan(0)
   })
 
   it('keeps the emergency stop behind its own confirmation: nothing is sent from opening the tab', async () => {
-    open('/next/configuration?tab=access')
+    open('/configuration?tab=access')
     await screen.findByRole('region', { name: 'Access and security' })
     expect(settingsApi.setEmergencyStop).not.toHaveBeenCalled()
   })
 
   it('shows an error, not an empty tab, when the settings cannot be read', async () => {
     vi.mocked(settingsApi.fetchSettings).mockRejectedValue(new Error('boom'))
-    open('/next/configuration?tab=notifications')
+    open('/configuration?tab=notifications')
     expect(await screen.findByRole('alert')).toHaveTextContent('couldn’t read its settings')
   })
 
   it('has no accessibility violations', async () => {
-    const { container } = open('/next/configuration')
+    const { container } = open('/configuration')
     await screen.findByText('orders-sb')
     await expectNoAxeViolations(container)
   })

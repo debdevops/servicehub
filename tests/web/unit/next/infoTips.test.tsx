@@ -40,7 +40,7 @@ beforeEach(() => {
 describe('the (i) beside everything', () => {
   it('opens on hover with the explanation, and closes when the pointer leaves', async () => {
     const user = userEvent.setup()
-    open('/next/azure/attention')
+    open('/azure/attention')
     const table = await screen.findByRole('table')
     const tip = within(table).getByRole('button', { name: 'About Age' })
     await user.hover(tip)
@@ -51,7 +51,7 @@ describe('the (i) beside everything', () => {
 
   it('opens on click and stays open until Esc, a click elsewhere, or the same button again', async () => {
     const user = userEvent.setup()
-    open('/next/azure/attention')
+    open('/azure/attention')
     const tip = within(await screen.findByRole('table')).getByRole('button', { name: 'About Age' })
     await user.click(tip)
     expect(await screen.findByRole('note')).toHaveTextContent(labels['Age'].text)
@@ -63,7 +63,7 @@ describe('the (i) beside everything', () => {
 
   it('opens from the keyboard (focus, then Enter) too', async () => {
     const user = userEvent.setup()
-    open('/next/azure/attention')
+    open('/azure/attention')
     const tip = (await screen.findAllByRole('button', { name: 'About Needs your attention' }))[0]
     tip.focus()
     expect(await screen.findByRole('note')).toBeInTheDocument()
@@ -73,7 +73,7 @@ describe('the (i) beside everything', () => {
 
   it('has one on every column of the Needs your attention table, and says what Type means THERE (not what Type means on a queue)', async () => {
     const user = userEvent.setup()
-    open('/next/azure/attention')
+    open('/azure/attention')
     const table = await screen.findByRole('table')
     for (const th of within(table).getAllByRole('columnheader')) {
       if (!th.textContent?.trim()) continue
@@ -84,7 +84,7 @@ describe('the (i) beside everything', () => {
   })
 
   it('has one on the page title, each tile, the header items and every menu link', async () => {
-    open('/next/azure/attention')
+    open('/azure/attention')
     await screen.findByRole('heading', { level: 1, name: /Needs your attention/ })
     for (const name of ['About Approvals', 'About Hand-offs', 'About Oldest', 'About The Agent', 'About Emergency stop', 'About Help', 'About Search', 'About Your role', 'About Pending approvals', 'About Active messages', 'About Replay history', 'About Auto Replay rules', 'About Failure signatures', 'About Evidence ledger', 'About Agents', 'About Configuration', 'About What ServiceHub covers']) {
       expect((await screen.findAllByRole('button', { name })).length, name).toBeGreaterThan(0)
@@ -92,14 +92,14 @@ describe('the (i) beside everything', () => {
   })
 
   it('has one on the filters, and keeps the filters’ own names clean for screen readers', async () => {
-    open('/next/azure/attention')
+    open('/azure/attention')
     expect(await screen.findByLabelText('Family:')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'About Family filter' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'About Age filter' })).toBeInTheDocument()
   })
 
   it('has one in the dialogs too: the hand-off panel’s three choices', async () => {
-    open('/next/azure?panel=hand-off&entry=e2')
+    open('/azure?panel=hand-off&entry=e2')
     const dialog = await screen.findByRole('dialog')
     for (const name of ['About Replay it again', 'About Mark as settled', 'About Leave it']) expect(await within(dialog).findByRole('button', { name })).toBeInTheDocument()
   })

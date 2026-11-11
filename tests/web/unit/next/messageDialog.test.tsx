@@ -45,7 +45,7 @@ function open(url: string, d = detail()) {
   render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>)
   return router
 }
-const url = '/next/azure?dialog=message&id=7'
+const url = '/azure?dialog=message&id=7'
 const dialog = async () => within(await screen.findByRole('dialog'))
 
 describe('messageIdOf', () => {
@@ -142,7 +142,7 @@ describe('the Message dialog (unit D3)', () => {
     open(url)
     const d = await dialog()
     expect(await d.findByText(/Waiting for approval/)).toBeInTheDocument()
-    expect(await d.findByRole('link', { name: 'Review…' })).toHaveAttribute('href', '/next/azure?dialog=review&entry=e1')
+    expect(await d.findByRole('link', { name: 'Review…' })).toHaveAttribute('href', '/azure?dialog=review&entry=e1')
   })
 
   it('a Viewer is told it needs an Approver, with no Review link', async () => {
@@ -179,7 +179,7 @@ describe('the Message dialog (unit D3)', () => {
   })
 
   it('an id that is not whole digits asks the API for nothing', async () => {
-    open('/next/azure?dialog=message&id=7%20or%201%3D1')
+    open('/azure?dialog=message&id=7%20or%201%3D1')
     const d = await dialog()
     expect(await d.findByText('This address names no message.')).toBeInTheDocument()
     expect(deadLettersApi.fetchDeadLetter).not.toHaveBeenCalled()

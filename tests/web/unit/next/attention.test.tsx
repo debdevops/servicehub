@@ -44,15 +44,15 @@ describe('Needs your attention (unit E1)', () => {
   })
 
   it('asks for its own cloud, and for every cloud when the scope is all', async () => {
-    open('/next/azure/attention')
+    open('/azure/attention')
     await screen.findByRole('heading', { level: 1, name: /Needs your attention/ })
     await waitFor(() => expect(pendingApi.fetchPendingWork).toHaveBeenCalledWith({ provider: 'azure' }))
-    open('/next/all/attention')
+    open('/all/attention')
     await waitFor(() => expect(pendingApi.fetchPendingWork).toHaveBeenCalledWith({}))
   })
 
   it('counts only what needs a person (a rule item is not one), split into approvals and hand-offs, with the oldest', async () => {
-    open('/next/azure/attention')
+    open('/azure/attention')
     const approvals = (await screen.findByText('The Agent stopped and asked')).closest('div')!.parentElement!
     expect(within(approvals).getByText('2')).toBeInTheDocument()
     expect(screen.getByText('ServiceHub stopped; a person decides').closest('div')!.parentElement!).toHaveTextContent('1')
@@ -62,7 +62,7 @@ describe('Needs your attention (unit E1)', () => {
 
   it('keeps the tab and the filters in the address, and narrows the tiles with them', async () => {
     const user = userEvent.setup()
-    const { router } = open('/next/azure/attention')
+    const { router } = open('/azure/attention')
     await user.click(await screen.findByRole('tab', { name: /Hand-offs \(1\)/ }))
     expect(router.state.location.search).toContain('type=handOffs')
     await user.click(screen.getByRole('tab', { name: /^All/ }))
@@ -75,7 +75,7 @@ describe('Needs your attention (unit E1)', () => {
   })
 
   it('offers only components and families that have something waiting', async () => {
-    open('/next/azure/attention')
+    open('/azure/attention')
     const component = await screen.findByLabelText('Component:')
     expect(within(component).getAllByRole('option').map((o) => o.textContent)).toEqual(['all', 'Service Bus', 'Storage Queues'])
     expect(within(screen.getByLabelText('Family:')).getAllByRole('option')).toHaveLength(2)
@@ -83,27 +83,27 @@ describe('Needs your attention (unit E1)', () => {
 
   it('says so when nothing waits, and when the read fails shows no list at all', async () => {
     vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue(page([]))
-    open('/next/azure/attention')
+    open('/azure/attention')
     expect(await screen.findByText('Nothing here needs a person right now.')).toBeInTheDocument()
     expect(screen.getByText('Nothing is waiting')).toBeInTheDocument()
   })
 
   it('shows an error, not an empty list, when the read fails', async () => {
     vi.mocked(pendingApi.fetchPendingWork).mockRejectedValue(new Error('boom'))
-    open('/next/azure/attention')
+    open('/azure/attention')
     expect(await screen.findByRole('alert')).toHaveTextContent('could not be read')
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 
   it('adds a Cloud column only for all clouds', async () => {
-    open('/next/all/attention')
+    open('/all/attention')
     expect(await screen.findByRole('columnheader', { name: 'Cloud' })).toBeInTheDocument()
   })
 
   it('keeps the Reason column for the recorded failure and puts why it was held under what is needed', async () => {
     // Found live on Pub/Sub 2026-11-10: with no recorded reason the column showed the gate's sentence as if it were the failure.
     vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue(page([approval({ id: 'g1', entryId: 'g1', dlqMessageId: 77, deadLetterReason: null, reason: 'Stopped and asked' })]))
-    open('/next/azure/attention')
+    open('/azure/attention')
     const cells = within((await screen.findByText('#77')).closest('tr')!).getAllByRole('cell')
     const heads = screen.getAllByRole('columnheader').map((h) => h.textContent)
     expect(cells[heads.indexOf('Reason')]).toHaveTextContent(/^No reason recorded$/)
@@ -111,7 +111,7 @@ describe('Needs your attention (unit E1)', () => {
   })
 
   it('has no accessibility violations', async () => {
-    const { container } = open('/next/azure/attention')
+    const { container } = open('/azure/attention')
     await screen.findByRole('table')
     await expectNoAxeViolations(container)
   })

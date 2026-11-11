@@ -56,6 +56,9 @@ public static class ErrorCodes
     /// <summary>The request's <c>Host</c> header is not one this ServiceHub answers to (<c>AllowedHosts</c>).</summary>
     public const string HostNotAllowed = "host_not_allowed";
 
+    /// <summary>A request that changes something was sent by a page on another website, through the browser.</summary>
+    public const string CrossSiteRequest = "cross_site_request";
+
     /// <summary>Codes for failures that belong to no single screen.</summary>
     /// <remarks>Raised by <c>ConnectionStringProtector</c>.</remarks>
     public static class General

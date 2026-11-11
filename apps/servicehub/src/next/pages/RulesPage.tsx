@@ -21,7 +21,10 @@ import { Th } from '../components/Tip'
 import { StatTile as Tile } from '../components/StatTile'
 import { Tip } from '../components/Tip'
 
-const td = 'px-3 py-2.5 align-top text-sm'
+// Narrow padding and long names that may break anywhere: ten columns have to fit a 1366 px window without a side-scroll.
+const td = 'px-2 py-2.5 align-top text-sm'
+const th = 'px-2 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
+const wrap = '[overflow-wrap:anywhere]'
 const rulesKey = (p: CloudProvider) => ['rules', p] as const
 
 const waits = (seconds: number) => (seconds >= 60 ? `${Math.round(seconds / 60)} min` : `${seconds} s`)
@@ -172,9 +175,9 @@ export default function RulesPage() {
                   <caption className="sr-only">Auto Replay rules</caption>
                   <thead>
                     <tr>
-                      {!cloud && <Th context="rules">Cloud</Th>}
-                      <Th context="rules">Rule</Th><Th context="rules">Matches reason</Th><Th context="rules">Where</Th><Th context="rules">Pace</Th>
-                      <Th context="rules">Waits</Th><Th context="rules">State</Th><Th context="rules">Result so far</Th><Th context="rules">Last replay</Th><Th context="rules">Actions</Th>
+                      {!cloud && <Th className={th} context="rules">Cloud</Th>}
+                      <Th className={th} context="rules">Rule</Th><Th className={th} context="rules">Matches reason</Th><Th className={th} context="rules">Where</Th><Th className={th} context="rules">Pace</Th>
+                      <Th className={th} context="rules">Waits</Th><Th className={th} context="rules">State</Th><Th className={th} context="rules">Result so far</Th><Th className={th} context="rules">Last replay</Th><Th className={th} context="rules">Actions</Th>
                     </tr>
                   </thead>
                   <tbody>
@@ -184,9 +187,9 @@ export default function RulesPage() {
                       return [
                         <tr key={r.id} className="border-t border-[var(--color-border)]">
                           {!cloud && <td className={td}>{cloudLabel[r.provider]}</td>}
-                          <td className={`${td} font-semibold`}>{ruleTitle(r.name)}</td>
-                          <td className={td}>{r.reason ?? 'Any'}</td>
-                          <td className={td}>{r.entityName ?? 'Any entity'}</td>
+                          <td className={`${td} ${wrap} font-semibold`}>{ruleTitle(r.name)}</td>
+                          <td className={`${td} ${wrap}`}>{r.reason ?? 'Any'}</td>
+                          <td className={`${td} ${wrap}`}>{r.entityName ?? 'Any entity'}</td>
                           <td className={td}>{r.maxPerHour} an hour</td>
                           <td className={td}>{waits(r.waitSeconds)}</td>
                           <td className={td}><span className={`inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${st.chip}`}>{st.text}</span></td>

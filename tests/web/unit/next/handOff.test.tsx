@@ -23,7 +23,7 @@ vi.mock('@/lib/api/pendingWork', async (o) => ({ ...(await o<typeof pendingApi>(
 vi.mock('@/lib/api/recovery', async (o) => ({ ...(await o<typeof recoveryApi>()), fetchLedgerEntry: vi.fn() }))
 
 const at = '2026-10-18T10:00:00Z'
-const url = '/next/azure?panel=hand-off&entry=e2'
+const url = '/azure?panel=hand-off&entry=e2'
 
 function open(u = url) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -64,7 +64,7 @@ describe('Hand-off panel (unit F4)', () => {
   it('offers Replay again as a link to the Replay dialog, never a replay itself', async () => {
     open()
     const link = await screen.findByRole('link', { name: 'Replay…' })
-    expect(link).toHaveAttribute('href', '/next/azure?dialog=replay&id=42') // the Replay dialog replaces the panel; it has its own preview and checks
+    expect(link).toHaveAttribute('href', '/azure?dialog=replay&id=42') // the Replay dialog replaces the panel; it has its own preview and checks
   })
 
   it('settles only with a written reason, recorded in the person’s words', async () => {
@@ -96,7 +96,7 @@ describe('Hand-off panel (unit F4)', () => {
   })
 
   it('says so when nothing is handed to a person under that link, and when the read fails', async () => {
-    open('/next/azure?panel=hand-off&entry=nope')
+    open('/azure?panel=hand-off&entry=nope')
     expect(await screen.findByText(/Nothing is handed to a person under that link/)).toBeInTheDocument()
     vi.mocked(pendingApi.fetchPendingWork).mockRejectedValue(new Error('boom'))
     open()

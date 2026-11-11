@@ -2,13 +2,13 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 
 /**
- * The 5.0.0 shell (`/next`, build-plan unit I4), in a real browser and in DEMO MODE like the rest of this folder: every page opens with
+ * The 5.0.0 shell (`/`, build-plan unit I4), in a real browser and in DEMO MODE like the rest of this folder: every page opens with
  * content on each cloud and on all three, nothing falls back to an error, axe finds nothing with colour contrast ON, and the
  * keyboard routes (⌘K Search, Help's guides, Show limits) work. Served from the production build, so it is the bundle people get.
  */
 const pages = ['', '/attention', '/approvals', '/active', '/replays', '/rules', '/signatures', '/ledger', '/agents'] as const
 const scopes = ['azure', 'aws', 'gcp', 'all'] as const
-const standalone = ['/next/connections', '/next/configuration', '/next/coverage'] as const
+const standalone = ['/connections', '/configuration', '/coverage'] as const
 const overlays = ['help', 'security', 'autonomy', 'search'] as const
 
 async function enterDemo(page: Page) {
@@ -51,7 +51,7 @@ test.describe('5.0.0 shell: every page opens with content', () => {
       page.on('pageerror', (e) => failed.push(e.message))
       await enterDemo(page)
       for (const p of pages) {
-        const path = scope === 'all' && p === '' ? '/next' : `/next/${scope}${p}`
+        const path = scope === 'all' && p === '' ? '/' : `/${scope}${p}`
         await open(page, path)
         await sound(page, path)
       }
@@ -73,7 +73,7 @@ test.describe('5.0.0 shell: every page opens with content', () => {
   for (const overlay of overlays) {
     test(`${overlay} opens over a page`, async ({ page }) => {
       await enterDemo(page)
-      await open(page, `/next/azure?${overlay === 'search' || overlay === 'help' ? (overlay === 'help' ? 'panel' : 'dialog') : 'panel'}=${overlay}`)
+      await open(page, `/azure?${overlay === 'search' || overlay === 'help' ? (overlay === 'help' ? 'panel' : 'dialog') : 'panel'}=${overlay}`)
       await expect(page.getByRole('dialog')).toBeVisible()
       await sound(page, overlay)
     })
@@ -81,7 +81,7 @@ test.describe('5.0.0 shell: every page opens with content', () => {
 })
 
 test.describe('5.0.0 shell: axe, zero violations', () => {
-  for (const path of ['/next', '/next/azure', '/next/aws', '/next/gcp', '/next/azure/attention', '/next/azure/rules', '/next/configuration', '/next/coverage']) {
+  for (const path of ['/', '/azure', '/aws', '/gcp', '/azure/attention', '/azure/rules', '/configuration', '/coverage']) {
     test(path, async ({ page }) => {
       await enterDemo(page)
       await open(page, path)
@@ -91,7 +91,7 @@ test.describe('5.0.0 shell: axe, zero violations', () => {
 
   test('Help, open', async ({ page }) => {
     await enterDemo(page)
-    await open(page, '/next/azure?panel=help')
+    await open(page, '/azure?panel=help')
     await expect(page.getByRole('dialog')).toBeVisible()
     expect(await violations(page)).toEqual([])
   })
@@ -100,7 +100,7 @@ test.describe('5.0.0 shell: axe, zero violations', () => {
 test.describe('5.0.0 shell: the keyboard and the guides', () => {
   test('⌘K / Ctrl-K opens Search from a page', async ({ page }) => {
     await enterDemo(page)
-    await open(page, '/next/azure')
+    await open(page, '/azure')
     await page.keyboard.press('Control+K')
     await expect(page.getByRole('dialog')).toBeVisible()
     await page.keyboard.press('Escape')
@@ -109,7 +109,7 @@ test.describe('5.0.0 shell: the keyboard and the guides', () => {
 
   test('Help carries the step-by-step guides, and one opens from ?topic=', async ({ page }) => {
     await enterDemo(page)
-    await open(page, '/next/azure?panel=help&topic=guide-aws')
+    await open(page, '/azure?panel=help&topic=guide-aws')
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByText(/4\.2\.0 layout/)).toBeVisible()
     await expect(dialog.locator('#help-guide-aws')).toHaveAttribute('open', '')
@@ -122,7 +122,7 @@ test.describe('5.0.0 shell: the left menu', () => {
     test(`${scope}: no menu row lets its text spill out, at a narrow window too`, async ({ page }) => {
       await page.setViewportSize({ width: 1100, height: 700 })
       await enterDemo(page)
-      await open(page, `/next/${scope}`)
+      await open(page, `/${scope}`)
       // A row that is too short for its wrapped text lets the text spill out of it (scrollHeight > clientHeight).
       const overlaps = await page.evaluate(() => Array.from(document.querySelectorAll('aside li a, aside li > span, nav li a, nav li > span'))
         .filter((el) => el.scrollHeight > el.clientHeight + 1)
@@ -138,7 +138,7 @@ test.describe('5.0.0 shell: a component that is not a message store (Step Functi
     page.on('pageerror', (e) => failed.push(e.message))
     await enterDemo(page)
 
-    await open(page, '/next/aws/c/step-functions')
+    await open(page, '/aws/c/step-functions')
     await sound(page, 'step-functions list')
     expect(await violations(page), 'list').toEqual([])
     await page.getByRole('link', { name: /^View / }).first().click()
@@ -165,7 +165,7 @@ test.describe('5.0.0 shell: a component that is not a message store (Step Functi
     page.on('pageerror', (e) => failed.push(e.message))
     await enterDemo(page)
 
-    await open(page, '/next/gcp/c/workflows')
+    await open(page, '/gcp/c/workflows')
     await sound(page, 'workflows list')
     await page.getByRole('link', { name: /^View / }).first().click()
 
@@ -184,7 +184,7 @@ test.describe('5.0.0 shell: a component that is not a message store (Step Functi
     page.on('pageerror', (e) => failed.push(e.message))
     await enterDemo(page)
 
-    await open(page, '/next/gcp/c/cloud-scheduler')
+    await open(page, '/gcp/c/cloud-scheduler')
     await sound(page, 'cloud scheduler list')
     await page.getByRole('link', { name: /^View / }).first().click()
 
@@ -203,7 +203,7 @@ test.describe('5.0.0 shell: a component that is not a message store (Step Functi
     page.on('pageerror', (e) => failed.push(e.message))
     await enterDemo(page)
 
-    await open(page, '/next/azure/c/logic-apps')
+    await open(page, '/azure/c/logic-apps')
     await sound(page, 'logic-apps list')
     await page.getByRole('link', { name: /^View / }).first().click()
 
@@ -224,7 +224,7 @@ test.describe('5.0.0 shell: a component that is not a message store (Step Functi
     page.on('pageerror', (e) => failed.push(e.message))
     await enterDemo(page)
 
-    await open(page, '/next/azure/c/event-grid')
+    await open(page, '/azure/c/event-grid')
     await sound(page, 'event-grid list')
     await page.getByRole('link', { name: /^View / }).first().click()
 
@@ -247,7 +247,7 @@ test.describe('5.0.0 shell: a component that is not a message store (Step Functi
     page.on('pageerror', (e) => failed.push(e.message))
     await enterDemo(page)
 
-    await open(page, '/next/aws/c/aws-streams')
+    await open(page, '/aws/c/aws-streams')
     await sound(page, 'aws-streams list')
     await page.getByRole('link', { name: /^View / }).first().click()
 
@@ -266,7 +266,7 @@ test.describe('5.0.0 shell: a component that is not a message store (Step Functi
     page.on('pageerror', (e) => failed.push(e.message))
     await enterDemo(page)
 
-    await open(page, '/next/gcp/c/eventarc')
+    await open(page, '/gcp/c/eventarc')
     await sound(page, 'eventarc list')
     await page.getByRole('link', { name: /^View / }).first().click()
 
@@ -283,7 +283,7 @@ test.describe('5.0.0 shell: a component that is not a message store (Step Functi
   test('all four components that were on request are in their cloud’s menu', async ({ page }) => {
     await enterDemo(page)
     for (const [scope, names] of [['azure', [/Event Grid/, /Logic Apps/]], ['aws', [/Kinesis, DynamoDB streams/]], ['gcp', [/Eventarc/]]] as const) {
-      await open(page, `/next/${scope}`)
+      await open(page, `/${scope}`)
       const menu = page.getByRole('navigation', { name: 'ServiceHub' })
       for (const name of names) await expect(menu.getByRole('link', { name })).toBeVisible()
     }
@@ -291,11 +291,11 @@ test.describe('5.0.0 shell: a component that is not a message store (Step Functi
 
   test('it is in the AWS menu, and the menu has no Later (On request) section', async ({ page }) => {
     await enterDemo(page)
-    await open(page, '/next/aws')
+    await open(page, '/aws')
     const menu = page.getByRole('navigation', { name: 'ServiceHub' })
     await expect(menu.getByRole('link', { name: /Step Functions/ })).toBeVisible()
     await expect(page.getByText('Later (On request)')).toHaveCount(0)
-    await open(page, '/next/gcp')
+    await open(page, '/gcp')
     await expect(page.getByRole('navigation', { name: 'ServiceHub' }).getByRole('link', { name: /Workflows/ })).toBeVisible()
   })
 })
@@ -305,11 +305,11 @@ test.describe('5.0.0 shell: Add a component', () => {
     const failed: string[] = []
     page.on('pageerror', (e) => failed.push(e.message))
     await enterDemo(page)
-    await open(page, '/next/aws')
+    await open(page, '/aws')
     const menu = page.getByRole('navigation', { name: 'ServiceHub' })
     await expect(menu.getByRole('link', { name: /Step Functions/ })).toBeVisible()
 
-    await page.goto('/next/aws?dialog=add-component')
+    await page.goto('/aws?dialog=add-component')
     const dialog = page.getByRole('dialog', { name: 'Add a component' })
     await expect(dialog.getByText(/never asks for a key/)).toBeVisible()
     // A message store is on and cannot be unticked here; a run history can.
@@ -347,7 +347,7 @@ test.describe('5.0.0 shell: Connections', () => {
     const failed: string[] = []
     page.on('pageerror', (e) => failed.push(e.message))
     await enterDemo(page)
-    await open(page, '/next')
+    await open(page, '/')
     await page.getByRole('navigation', { name: 'ServiceHub' }).getByRole('link', { name: /^Connections/ }).click()
     await expect(page.getByRole('heading', { level: 1, name: /Connections/ })).toBeVisible()
     for (const cloud of ['Azure', 'AWS', 'Google Cloud']) {

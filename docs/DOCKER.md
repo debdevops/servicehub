@@ -89,20 +89,20 @@ Go to **<http://localhost:8080>**. You will see the Welcome page.
 
 ## Update to a newer version
 
-Your data is in the volume, so it carries over to a newer **4.2.x** image. Use the same key.
+Your data is in the volume, so it carries over to a newer image, including from 4.2.x to **5.0.x** (the database is migrated on first start; take a backup first). Use the same key.
 
 ```bash
-docker pull ghcr.io/debdevops/servicehub:latest          # or an exact tag, e.g. :4.2.0
+docker pull ghcr.io/debdevops/servicehub:latest          # or an exact tag, e.g. :5.0.0
 docker stop servicehub && docker rm servicehub           # removes the container, NOT the volume
 # then run the Step 2 command again with the new tag, and the same SERVICEHUB_ENCRYPTION_KEY
 ```
 
-> **Moving from 4.0.0 is different.** 4.1.0 and later are a from-scratch rewrite: they cannot open a 4.0.0 database and there is no upgrade path. Run 4.2.0 beside
+> **Moving from 4.0.0 is different.** 4.1.0 and later are a from-scratch rewrite: they cannot open a 4.0.0 database and there is no upgrade path. Run 5.0.0 beside
 > 4.0.0 with a different **container name**, port and volume, in case 4.0.0 already uses `servicehub` and 8080
 > (for example `--name servicehub-41 -p 127.0.0.1:8081:8080 -v servicehub-data-41:/data`; use `servicehub-41` in place of `servicehub` in the commands on this page).
 > Connect your clouds again and retire 4.0.0 when you are ready. See the [changelog](../CHANGELOG.md).
 
-Tags: `latest` is what the commands above use. `4.2.0` is one exact release, `4.2` follows the newest 4.2.x patch, and `latest` follows the newest release overall. Pin an exact version for
+Tags: `latest` is what the commands above use. `5.0.0` is one exact release, `5.0` follows the newest 5.0.x patch, and `latest` follows the newest release overall. Pin an exact version for
 anything you depend on.
 
 ## Back up your data

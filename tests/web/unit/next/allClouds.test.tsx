@@ -35,7 +35,7 @@ function open(components: ReturnType<typeof component>[], items = [approval()]) 
   vi.mocked(componentsApi.fetchComponents).mockResolvedValue({ components, generatedAtUtc })
   vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue(page(items))
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={client}><RouterProvider router={createMemoryRouter([nextRoute], { initialEntries: ['/next'] })} /></QueryClientProvider>)
+  return render(<QueryClientProvider client={client}><RouterProvider router={createMemoryRouter([nextRoute], { initialEntries: ['/'] })} /></QueryClientProvider>)
 }
 
 describe('Home for all clouds (unit C2)', () => {
@@ -92,8 +92,8 @@ describe('Home for all clouds (unit C2)', () => {
 
   it('Open takes you to that cloud’s own Home', async () => {
     open([azure(), aws()])
-    expect(await screen.findByRole('link', { name: 'Open AWS' })).toHaveAttribute('href', '/next/aws')
-    expect(screen.getByRole('link', { name: 'Open Azure' })).toHaveAttribute('href', '/next/azure')
+    expect(await screen.findByRole('link', { name: 'Open AWS' })).toHaveAttribute('href', '/aws')
+    expect(screen.getByRole('link', { name: 'Open Azure' })).toHaveAttribute('href', '/azure')
   })
 
   it('two clouds: only those two get a card, and the sentence names only them', async () => {
@@ -125,6 +125,10 @@ describe('Home for all clouds (unit C2)', () => {
     open([], [])
     expect(await screen.findByText(/No cloud is connected yet/)).toBeInTheDocument()
     expect(screen.getByTestId('all-connected')).toHaveTextContent('0 clouds')
+    // A first visit has two ways forward: connect a real cloud, or the made-up data. The demo link is a full page address.
+    const start = screen.getByRole('region', { name: 'Get started' })
+    expect(within(start).getByRole('link', { name: 'Connect a cloud' })).toHaveAttribute('href', expect.stringContaining('dialog=connect'))
+    expect(within(start).getByRole('link', { name: 'Try it with sample data' })).toHaveAttribute('href', '/demo')
   })
 
   it('one attention table across clouds, with a Cloud column', async () => {

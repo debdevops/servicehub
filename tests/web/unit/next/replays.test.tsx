@@ -60,16 +60,16 @@ describe('Replay history (unit E4)', () => {
   })
 
   it('asks for its own cloud over the last 7 days, 25 a page; for every cloud when the scope is all', async () => {
-    open('/next/azure/replays')
+    open('/azure/replays')
     await screen.findByRole('heading', { level: 1, name: 'Replay history' })
     await waitFor(() => expect(lastReplays()).toMatchObject({ provider: 'azure', window: '7d', page: 1, pageSize: 25 }))
     expect(lastSummary()).toMatchObject({ provider: 'azure', window: '7d' })
-    open('/next/all/replays')
+    open('/all/replays')
     await waitFor(() => expect(lastReplays()?.provider).toBeUndefined())
   })
 
   it('shows the five outcome tiles from the one recovery summary, and the outcome in the product’s words', async () => {
-    open('/next/azure/replays')
+    open('/azure/replays')
     const tile = async (title: string) => (await screen.findByText(title, { selector: 'p' })).parentElement!
     await waitFor(async () => expect(await tile('Replays')).toHaveTextContent('3')) // "…" until the summary arrives
     expect(await tile('Verified')).toHaveTextContent('1')
@@ -84,7 +84,7 @@ describe('Replay history (unit E4)', () => {
 
   it('keeps the filters in the address and asks the server for them', async () => {
     const user = userEvent.setup()
-    const { router } = open('/next/azure/replays')
+    const { router } = open('/azure/replays')
     await screen.findByRole('table', { name: 'Messages put back' })
     await user.selectOptions(screen.getByLabelText('Outcome:'), 'Came back')
     await waitFor(() => expect(lastReplays()).toMatchObject({ ending: 'returned' }))
@@ -100,7 +100,7 @@ describe('Replay history (unit E4)', () => {
   })
 
   it('narrows to one Auto Replay rule from the address, and says so', async () => {
-    open('/next/azure/replays?rule=7')
+    open('/azure/replays?rule=7')
     expect(await screen.findByText('Only what one Auto Replay rule sent.')).toBeInTheDocument()
     await waitFor(() => expect(lastReplays()).toMatchObject({ ruleId: 7 }))
   })
@@ -108,26 +108,26 @@ describe('Replay history (unit E4)', () => {
   it('says so, and draws no outcome zeros, when nothing was replayed', async () => {
     vi.mocked(replayApi.fetchReplays).mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25 })
     vi.mocked(recoveryApi.fetchRecoverySummary).mockResolvedValue(summary({}))
-    open('/next/aws/replays')
+    open('/aws/replays')
     expect(await screen.findByText(/Nothing has been replayed on AWS/)).toBeInTheDocument()
     expect(screen.queryByText('Came back', { selector: 'p' })).not.toBeInTheDocument()
   })
 
   it('shows an error, not an empty table, when the read fails', async () => {
     vi.mocked(replayApi.fetchReplays).mockRejectedValue(new Error('boom'))
-    open('/next/azure/replays')
+    open('/azure/replays')
     expect(await screen.findByRole('alert')).toHaveTextContent('could not be read')
   })
 
   it('opens the Message dialog from a row', async () => {
     const user = userEvent.setup()
-    const { router } = open('/next/azure/replays')
+    const { router } = open('/azure/replays')
     await user.click((await screen.findAllByRole('link', { name: /Open message m-1/ }))[0])
     expect(router.state.location.search).toBe('?dialog=message&id=101')
   })
 
   it('has no accessibility violations', async () => {
-    const { container } = open('/next/azure/replays')
+    const { container } = open('/azure/replays')
     await screen.findByRole('table', { name: 'Messages put back' })
     await expectNoAxeViolations(container)
   })

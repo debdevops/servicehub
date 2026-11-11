@@ -11,8 +11,10 @@ import { countWords, recordedWords, statusWords } from '../../lib/words'
 import { Th, ThHidden } from '../Tip'
 import { Tip } from '../Tip'
 
-const th = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
-const td = 'px-3 py-2.5 align-top text-sm text-[var(--color-text)]'
+// Narrow padding and names that may break anywhere: ten columns have to fit a 1366 px window without a side-scroll.
+const th = 'px-2 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
+const td = 'px-2 py-2.5 align-top text-sm text-[var(--color-text)]'
+const wrap = '[overflow-wrap:anywhere]'
 const tone = { bad: 'bg-red-50 text-red-700', warn: 'bg-amber-50 text-amber-800', ok: 'text-[var(--color-text-muted)]' } as const
 
 type Entry = { readonly kind: 'store'; readonly c: ConnectedComponent } | { readonly kind: 'demand'; readonly o: OnDemandRow }
@@ -31,12 +33,12 @@ function EntityTable({ component: c, showRecorded, now, detail }: {
       <table className="w-full" aria-label={`Places in ${c.name} ${c.componentName}`}>
         <thead>
           <tr>
-            <Th label="Queues and subscriptions">Queues and subscriptions ({c.entities.length})</Th>
-            <Th>Type</Th>
-            <Th>In dead-letter now</Th>
-            {showRecorded && <Th>Recorded</Th>}
-            <Th>Needs you</Th>
-            <Th label={showRecorded ? 'Last look' : 'Last observed'}>{showRecorded ? 'Last look' : 'Last observed'}</Th>
+            <Th className={th} label="Queues and subscriptions">Queues and subscriptions ({c.entities.length})</Th>
+            <Th className={th}>Type</Th>
+            <Th className={th}>In dead-letter now</Th>
+            {showRecorded && <Th className={th}>Recorded</Th>}
+            <Th className={th}>Needs you</Th>
+            <Th className={th} label={showRecorded ? 'Last look' : 'Last observed'}>{showRecorded ? 'Last look' : 'Last observed'}</Th>
             <ThHidden><span className="sr-only">View</span></ThHidden>
           </tr>
         </thead>
@@ -113,15 +115,15 @@ export function ComponentTable({ components, cloudName, canConnect = true, lookN
             <thead>
               <tr>
                 <ThHidden className={`${th} w-8`}><span className="sr-only">Expand</span></ThHidden>
-                <Th>Component</Th>
-                <Th>Connection name</Th>
-                <Th>Connection</Th>
-                <Th>Status</Th>
-                <Th>In dead-letter now</Th>
-                {showRecorded && <Th>Recorded</Th>}
-                <Th>Needs you</Th>
-                <Th label={showRecorded ? 'Last look' : 'Last observed'}>{showRecorded ? 'Last look' : 'Last observed'}</Th>
-                <Th>Actions</Th>
+                <Th className={th}>Component</Th>
+                <Th className={th}>Connection name</Th>
+                <Th className={th}>Connection</Th>
+                <Th className={th}>Status</Th>
+                <Th className={th}>In dead-letter now</Th>
+                {showRecorded && <Th className={th}>Recorded</Th>}
+                <Th className={th}>Needs you</Th>
+                <Th className={th} label={showRecorded ? 'Last look' : 'Last observed'}>{showRecorded ? 'Last look' : 'Last observed'}</Th>
+                <Th className={th}>Actions</Th>
               </tr>
             </thead>
             {pageRows.map((entry) => {
@@ -139,7 +141,7 @@ export function ComponentTable({ components, cloudName, canConnect = true, lookN
                       </button>
                     </td>
                     <td className={`${td} font-semibold`}>{c.componentName}</td>
-                    <td className={td}>{c.name}</td>
+                    <td className={`${td} ${wrap}`}>{c.name}</td>
                     <td className={td}>
                       {c.reachable
                         ? <><span className="font-semibold text-green-700">Connected</span><span className="block text-xs text-[var(--color-text-muted)]">{c.canSend ? 'Read + Send' : 'Read only'}</span></>

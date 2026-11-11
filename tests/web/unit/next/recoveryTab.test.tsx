@@ -27,7 +27,7 @@ vi.mock('@/lib/api/replay', async (o) => ({ ...(await o<typeof replayApi>()), fe
 vi.mock('@/lib/api/namespaces', async (o) => ({ ...(await o<typeof namespacesApi>()), fetchNamespace: vi.fn(), fetchEntities: vi.fn(), fetchNamespaces: vi.fn() }))
 
 const at = '2026-10-18T09:00:00Z'
-const ok = '/next/azure/c/service-bus/ns-azure?tab=recovery'
+const ok = '/azure/c/service-bus/ns-azure?tab=recovery'
 const replay = (id: number, status: string, over: Partial<replayApi.ReplayListItem> = {}) => ({
   id, dlqMessageId: id + 100, namespaceId: 'ns-azure', provider: 'azure', messageId: `m-${id}`, sourceEntity: 'orders-queue', targetEntity: 'orders-queue', replayedAt: at, replayedBy: 'maya',
   actor: { identity: 'maya', kind: 'user', label: 'Maya (Approver)', isSession: false }, outcomeStatus: 'accepted', entryState: null, observationWindowEndsAt: null, markerApplied: true,
@@ -102,7 +102,7 @@ describe('the Recovery tab (unit D4)', () => {
     const back = within(table).getByRole('row', { name: /m-2/ })
     expect(within(back).getByText('Came back')).toBeInTheDocument()
     expect(back).toHaveTextContent('matched by its recovery ID')
-    expect(within(back).getByRole('link', { name: 'Open message m-2' })).toHaveAttribute('href', '/next/azure/c/service-bus/ns-azure?tab=recovery&dialog=message&id=102')
+    expect(within(back).getByRole('link', { name: 'Open message m-2' })).toHaveAttribute('href', '/azure/c/service-bus/ns-azure?tab=recovery&dialog=message&id=102')
   })
 
   it('shows a subscription as topic / name, not its stored path', async () => {
@@ -166,7 +166,7 @@ describe('the Recovery tab (unit D4)', () => {
 
   it('links to Replay history across connections', async () => {
     open()
-    expect(await screen.findByRole('link', { name: 'Open Replay history →' })).toHaveAttribute('href', '/next/azure/replays')
+    expect(await screen.findByRole('link', { name: 'Open Replay history →' })).toHaveAttribute('href', '/azure/replays')
   })
 
   it('says it could not read, rather than showing an empty list that looks like nothing happened', async () => {

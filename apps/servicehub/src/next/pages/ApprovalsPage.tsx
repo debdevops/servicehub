@@ -18,7 +18,10 @@ import { roleWords } from '../lib/words'
 import { Th, ThHidden } from '../components/Tip'
 import { Tip } from '../components/Tip'
 
-const td = 'px-3 py-2.5 align-top text-sm'
+// Narrow padding and long names that may break anywhere: the columns have to fit a 1280 px window without a side-scroll.
+const td = 'px-2 py-2.5 align-top text-sm'
+const th = 'px-2 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
+const wrap = '[overflow-wrap:anywhere]'
 /** An address carries the ticked ids; this many keeps it well inside what every browser and proxy accepts. */
 const MAX_REVIEW = 100
 
@@ -100,10 +103,10 @@ export default function ApprovalsPage() {
                         <input type="checkbox" className="h-4 w-4" checked={allTicked} aria-label={`Select all ${items.length} waiting replays`}
                           onChange={() => setTicked(allTicked ? new Set() : new Set(items.map(idOf)))} />
                       </ThHidden>
-                      {scope === 'all' && <Th context="attention">Cloud</Th>}
-                      <Th context="attention">Message</Th><Th context="attention">Component</Th><Th context="attention">Entity</Th>
-                      <Th context="attention">Reason</Th><Th context="attention">Why the Agent asked</Th><Th context="attention">Waiting</Th>
-                      <Th context="attention">Owner (notification channel)</Th><Th context="attention">Actions</Th>
+                      {scope === 'all' && <Th className={th} context="attention">Cloud</Th>}
+                      <Th className={th} context="attention">Message</Th><Th className={th} context="attention">Component</Th><Th className={th} context="attention">Entity</Th>
+                      <Th className={th} context="attention">Reason</Th><Th className={th} context="attention">Why the Agent asked</Th><Th className={th} context="attention">Waiting</Th>
+                      <Th className={th} context="attention">Owner (notification channel)</Th><Th className={th} context="attention">Actions</Th>
                     </tr>
                   </thead>
                   <tbody>
@@ -112,17 +115,17 @@ export default function ApprovalsPage() {
                       const id = idOf(i)
                       return (
                         <tr key={i.id} className="border-t border-[var(--color-border)]">
-                          <td className="px-3 py-2.5 align-top">
+                          <td className="px-2 py-2.5 align-top">
                             <input type="checkbox" className="h-4 w-4" checked={ticked.has(id)} onChange={() => toggle(id)} aria-label={`Select message ${i.dlqMessageId ?? id}`} />
                           </td>
                           {scope === 'all' && <td className={td}>{i.provider ? cloudLabel[i.provider] : '—'}</td>}
                           <td className={`${td} font-mono text-xs`}>{i.dlqMessageId !== null ? `#${i.dlqMessageId}` : '—'}</td>
-                          <td className={td}>{nameOf(i.componentKey)}{i.namespaceName && <span className="block text-xs text-[var(--color-text-muted)]">{i.namespaceName}</span>}</td>
-                          <td className={td}>{i.entity ?? '—'}</td>
-                          <td className={td}>{i.deadLetterReason ?? '—'}</td>
+                          <td className={`${td} ${wrap}`}>{nameOf(i.componentKey)}{i.namespaceName && <span className="block text-xs text-[var(--color-text-muted)]">{i.namespaceName}</span>}</td>
+                          <td className={`${td} ${wrap}`}>{i.entity ?? '—'}</td>
+                          <td className={`${td} ${wrap}`}>{i.deadLetterReason ?? '—'}</td>
                           <td className={`${td} max-w-md`}>{i.reason}</td>
                           <td className={td}>{formatAge(i.since, now)}</td>
-                          <td className={td}>{ownerOf(i.namespaceId)}</td>
+                          <td className={`${td} ${wrap}`}>{ownerOf(i.namespaceId)}</td>
                           <td className={td}>
                             {may.allowed
                               ? <Link to={`${pathname}?dialog=review&entry=${encodeURIComponent(id)}`} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">Review</Link>

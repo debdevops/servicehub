@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Cloud, Clock, Info, Mail, RefreshCw, TriangleAlert } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { Pager } from '../../components/ui/Pager'
 import { useComponents } from '../../hooks/useComponents'
 import { useCoverage } from '../../hooks/useCoverage'
@@ -9,6 +9,7 @@ import { usePagedList } from '../../hooks/usePagedList'
 import { usePendingWork } from '../../hooks/usePendingWork'
 import type { ConnectedComponent } from '../../lib/api/components'
 import type { CloudKind } from '../../lib/api/coverage'
+import { isDemo } from '../../lib/demo/state'
 import { formatWhen } from '../../lib/format'
 import { AttentionTable } from '../components/home/AttentionTable'
 import { HowItWorks } from '../components/home/HowItWorks'
@@ -81,6 +82,7 @@ function CloudCard({ cloud, components, covered }: { cloud: CloudKind; component
  * ServiceHub's own count of items waiting for a person.
  */
 export default function AllCloudsPage() {
+  const { pathname } = useLocation()
   const client = useQueryClient()
   const components = useComponents(null)
   const pending = usePendingWork({})
@@ -141,7 +143,15 @@ export default function AllCloudsPage() {
           {reason && <p role="note" className="rounded-xl border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-4 py-2.5 text-sm"><strong>No total across clouds.</strong> {reason}</p>}
 
           {clouds.length === 0 ? (
-            <p className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-6 text-sm text-[var(--color-text-muted)]">No cloud is connected yet. Pick a cloud in the menu, then use <strong>Connect a cloud</strong>.</p>
+            <section aria-label="Get started" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-6">
+              <p className="text-base font-semibold">No cloud is connected yet.</p>
+              <p className="mt-1 max-w-2xl text-sm text-[var(--color-text-muted)]">Connect Azure, AWS or Google Cloud to see its dead-lettered messages here. Or look around first: the sample data is made up, and nothing you do in it is sent anywhere.</p>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Link to={nextHref(nextEntry('connect'), {}, pathname)} className="rounded-lg bg-[var(--color-primary-600)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--color-primary-700)]">Connect a cloud</Link>
+                {/* A full page load on purpose: the demo is the same app under /demo, and entering it is decided when the router is made. */}
+                {!isDemo() && <a href={`${import.meta.env.BASE_URL.replace(/\/$/, '')}/demo`} className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-sm font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">Try it with sample data</a>}
+              </div>
+            </section>
           ) : (
             <div className="grid gap-4 lg:grid-cols-3">
               {clouds.map(({ cloud, components: mine }) => (

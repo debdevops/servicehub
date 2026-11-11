@@ -59,7 +59,7 @@ describe('Replay dialog (unit F2)', () => {
   })
 
   it('reads the message from ?dialog=replay&id= and shows the proposal BEFORE anything is sent', async () => {
-    open('/next/azure?dialog=replay&id=7')
+    open('/azure?dialog=replay&id=7')
     const dialog = await screen.findByRole('dialog')
     await waitFor(() => expect(replayApi.fetchReplayProposal).toHaveBeenCalledWith(7))
     // The 4.2.0 dialog repeats the one button at the top and the foot, so a long list of checks never hides it.
@@ -70,38 +70,38 @@ describe('Replay dialog (unit F2)', () => {
   it('sends exactly one replay on the one click, then shows the honest ending with this shell’s links', async () => {
     const user = userEvent.setup()
     vi.mocked(replayApi.replayMessage).mockResolvedValue(outcome)
-    open('/next/azure?dialog=replay&id=7')
+    open('/azure?dialog=replay&id=7')
     await user.click((await screen.findAllByRole('button', { name: 'Replay 1 message' }))[0])
     expect(await screen.findByText('Sent back')).toBeInTheDocument()
     expect(replayApi.replayMessage).toHaveBeenCalledTimes(1)
     expect(replayApi.replayMessage).toHaveBeenCalledWith(7)
     const dialog = screen.getByRole('dialog')
-    expect(within(dialog).getByRole('link', { name: 'Replayed' })).toHaveAttribute('href', '/next/azure/replays')
-    expect(within(dialog).getByRole('link', { name: 'Active messages' })).toHaveAttribute('href', '/next/azure/active')
+    expect(within(dialog).getByRole('link', { name: 'Replayed' })).toHaveAttribute('href', '/azure/replays')
+    expect(within(dialog).getByRole('link', { name: 'Active messages' })).toHaveAttribute('href', '/azure/active')
   })
 
   it('keeps the button, disabled, when replay is blocked — it is never hidden', async () => {
     vi.mocked(replayApi.fetchReplayProposal).mockResolvedValue(proposal({ canExecute: false, verdict: 'Deny', blockedCode: 'EMERGENCY_STOP_ACTIVE', checks: [{ id: 'stop', label: 'Emergency stop is off', state: 'blocked', detail: null }] }))
-    open('/next/azure?dialog=replay&id=7')
+    open('/azure?dialog=replay&id=7')
     for (const b of await screen.findAllByRole('button', { name: 'Replay 1 message' })) expect(b).toBeDisabled()
   })
 
   it('does not replay, and says so, when the proposal cannot be worked out', async () => {
     vi.mocked(replayApi.fetchReplayProposal).mockRejectedValue(new Error('boom'))
-    open('/next/azure?dialog=replay&id=7')
+    open('/azure?dialog=replay&id=7')
     expect(await screen.findByRole('alert')).toHaveTextContent('so it won’t replay')
     expect(screen.queryByRole('button', { name: 'Replay 1 message' })).not.toBeInTheDocument()
   })
 
   it('offers Replay from the Message dialog only for a message still in dead-letter that nothing is holding', async () => {
-    const { router } = open('/next/azure?dialog=message&id=7')
+    const { router } = open('/azure?dialog=message&id=7')
     const link = await screen.findByRole('link', { name: 'Replay…' })
-    expect(link).toHaveAttribute('href', '/next/azure?dialog=replay&id=7')
+    expect(link).toHaveAttribute('href', '/azure?dialog=replay&id=7')
     expect(router.state.location.search).toContain('dialog=message')
   })
 
   it('has no accessibility violations', async () => {
-    open('/next/azure?dialog=replay&id=7')
+    open('/azure?dialog=replay&id=7')
     const dialog = await screen.findByRole('dialog')
     await within(dialog).findAllByRole('button', { name: 'Replay 1 message' })
     await expectNoAxeViolations(dialog)

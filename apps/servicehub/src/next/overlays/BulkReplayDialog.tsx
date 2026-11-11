@@ -3,6 +3,7 @@ import BulkReplayModal from '../../components/message/BulkReplayModal'
 import { ProviderScopeContext } from '../../components/provider/providerScope'
 import { cloudOf, parseScope } from '../lib/clouds'
 import type { NextOverlayBodyProps } from './registry'
+import { scopeSegment } from '../nav/navigation'
 
 /**
  * Bulk replay (build-plan unit F3; design `d03-bulk-replay`), at `?dialog=bulk-replay`: the PREVIEW first, then the run, then watching
@@ -12,7 +13,7 @@ import type { NextOverlayBodyProps } from './registry'
  * "Purge instead" is offered only where THAT cloud can delete one message; under "all clouds" it is offered where any can.
  */
 export default function BulkReplayDialog({ close }: NextOverlayBodyProps) {
-  const cloud = cloudOf(parseScope(useLocation().pathname.split('/')[2]))
+  const cloud = cloudOf(parseScope(scopeSegment(useLocation().pathname)))
   return (
     <ProviderScopeContext.Provider value={{ selected: cloud, select: () => {} }}>
       <BulkReplayModal close={close} />

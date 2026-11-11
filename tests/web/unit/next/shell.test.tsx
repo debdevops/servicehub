@@ -44,10 +44,10 @@ describe('the 5.0.0 shell', () => {
   })
 
   it('builds the menu from the coverage catalogue and the navigation array, and names nothing by hand', async () => {
-    await open('/next/azure')
+    await open('/azure')
     const menu = screen.getByRole('navigation', { name: 'ServiceHub' })
 
-    expect(await within(menu).findByRole('link', { name: 'Service Bus' })).toHaveAttribute('href', '/next/azure/c/service-bus')
+    expect(await within(menu).findByRole('link', { name: 'Service Bus' })).toHaveAttribute('href', '/azure/c/service-bus')
     // A component that is in 5.0.0 but has no recorded live run says so in the menu itself.
     expect(within(menu).getByRole('link', { name: /Storage Queues.*Not yet validated/ })).toBeInTheDocument()
     // Another cloud's component is not listed while Azure is the scope.
@@ -55,16 +55,16 @@ describe('the 5.0.0 shell', () => {
     // There is no "Later (On request)" section: what is only on request is listed in Add a component, not in the menu.
     expect(within(menu).queryByText(/Later \(On request\)/)).not.toBeInTheDocument()
     expect(within(menu).queryByText('Event Grid')).not.toBeInTheDocument()
-    expect(within(menu).getByRole('link', { name: /^Connections/ })).toHaveAttribute('href', '/next/connections')
-    expect(within(menu).getByRole('link', { name: 'Needs your attention' })).toHaveAttribute('href', '/next/azure/attention')
-    expect(within(menu).getByRole('link', { name: 'What ServiceHub covers' })).toHaveAttribute('href', '/next/coverage')
+    expect(within(menu).getByRole('link', { name: /^Connections/ })).toHaveAttribute('href', '/connections')
+    expect(within(menu).getByRole('link', { name: 'Needs your attention' })).toHaveAttribute('href', '/azure/attention')
+    expect(within(menu).getByRole('link', { name: 'What ServiceHub covers' })).toHaveAttribute('href', '/coverage')
   })
 
   it('shows every cloud’s components when no single cloud is the scope', async () => {
-    await open('/next')
+    await open('/')
     const menu = screen.getByRole('navigation', { name: 'ServiceHub' })
 
-    expect(await within(menu).findByRole('link', { name: 'SQS' })).toHaveAttribute('href', '/next/aws/c/sqs')
+    expect(await within(menu).findByRole('link', { name: 'SQS' })).toHaveAttribute('href', '/aws/c/sqs')
     expect(within(menu).getByRole('link', { name: 'Pub/Sub' })).toBeInTheDocument()
     expect(within(menu).getByRole('link', { name: 'All clouds' })).toHaveAttribute('aria-current', 'true')
   })
@@ -77,7 +77,7 @@ describe('the 5.0.0 shell', () => {
   })
 
   it('answers an address that names no page with the not-found screen, inside the shell', async () => {
-    await open('/next/azure/c/service-bus/ns-1/extra/deeper')
+    await open('/azure/c/service-bus/ns-1/extra/deeper')
     expect(await screen.findByRole('heading', { level: 1, name: /doesn’t exist/ })).toBeInTheDocument()
     expect(screen.getByRole('navigation', { name: 'ServiceHub' })).toBeInTheDocument()
   })
@@ -90,7 +90,7 @@ describe('What ServiceHub covers', () => {
 
   it('shows one table per cloud with the server’s own words, and counts each status', async () => {
     vi.mocked(api.fetchCoverage).mockResolvedValue({ rows })
-    const { container } = await open('/next/coverage')
+    const { container } = await open('/coverage')
 
     const azure = await screen.findByRole('region', { name: 'Azure' })
     expect(within(azure).getByRole('rowheader', { name: 'Cosmos DB' })).toBeInTheDocument()
@@ -106,7 +106,7 @@ describe('What ServiceHub covers', () => {
   it('says it is loading, then says in words when the list cannot be read — never an empty table', async () => {
     let fail: (reason: unknown) => void = () => {}
     vi.mocked(api.fetchCoverage).mockReturnValue(new Promise((_resolve, reject) => { fail = reject }))
-    await open('/next/coverage')
+    await open('/coverage')
 
     expect(await screen.findByText('Loading what ServiceHub covers…')).toBeInTheDocument()
     fail(new Error('boom'))

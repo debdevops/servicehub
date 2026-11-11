@@ -23,7 +23,7 @@ vi.mock('@/lib/api/pendingWork', async (o) => ({ ...(await o<typeof pendingApi>(
 vi.mock('@/lib/api/namespaces', async (o) => ({ ...(await o<typeof namespacesApi>()), fetchNamespace: vi.fn(), fetchEntities: vi.fn(), fetchNamespaces: vi.fn(), testConnection: vi.fn(), declareCanSend: vi.fn(), setOwnerChannel: vi.fn() }))
 
 const at = '2026-10-18T09:00:00Z'
-const ok = '/next/azure/c/service-bus/ns-azure?tab=access'
+const ok = '/azure/c/service-bus/ns-azure?tab=access'
 const grant = (id: string, over: Partial<settingsApi.Grant> = {}): settingsApi.Grant => ({
   id, granteeIdentity: 'dana', granteeKind: 'User', role: 'Approver', namespaceId: 'ns-azure', pillarKind: null, grantedAt: '2026-10-02T09:00:00Z', grantedByIdentity: 'admin', ...over,
 })
@@ -202,7 +202,7 @@ describe('the Access tab (unit D5)', () => {
 
   it('Manage access goes to Configuration', async () => {
     open()
-    expect(await screen.findByRole('link', { name: 'Manage access' })).toHaveAttribute('href', '/next/configuration')
+    expect(await screen.findByRole('link', { name: 'Manage access' })).toHaveAttribute('href', '/configuration')
   })
 
   it('has no accessibility violations', async () => {

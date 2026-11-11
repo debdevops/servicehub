@@ -1,7 +1,7 @@
 import { useLocation } from 'react-router-dom'
 import AddCloudModal from '../../components/connect/AddCloudModal'
 import { cloudOf, parseScope } from '../lib/clouds'
-import { nextEntry, nextHref } from '../nav/navigation'
+import { nextEntry, nextHref, scopeSegment } from '../nav/navigation'
 import type { NextOverlayBodyProps } from './registry'
 
 /**
@@ -14,6 +14,6 @@ import type { NextOverlayBodyProps } from './registry'
  */
 export default function ConnectDialog({ close }: NextOverlayBodyProps) {
   const { pathname } = useLocation()
-  const cloud = cloudOf(parseScope(pathname.split('/')[2])) ?? undefined
+  const cloud = cloudOf(parseScope(scopeSegment(pathname))) ?? undefined
   return <AddCloudModal close={close} initialCloud={cloud} homeHref={(provider) => nextHref(nextEntry('home'), { cloud: provider })} />
 }

@@ -28,6 +28,8 @@ function CloudTable({ name, rows }: { name: string; rows: readonly CoverageRow[]
   return (
     <section aria-label={name} className="mb-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
       <h2 className="mb-3 text-base font-semibold text-[var(--color-text)]">{name}<Tip label="section:Cloud coverage" /></h2>
+      {/* Its own side-scroll box: on a narrow window the table scrolls, never the page. */}
+      <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="border-y border-[var(--color-border)] bg-[var(--color-surface-muted)] text-xs text-[var(--color-text-muted)]">
@@ -54,6 +56,7 @@ function CloudTable({ name, rows }: { name: string; rows: readonly CoverageRow[]
           ))}
         </tbody>
       </table>
+      </div>
       <Pager {...pager} label={name} />
     </section>
   )

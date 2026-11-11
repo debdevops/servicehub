@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ServiceHub 4.2.0 — run from source.
+# ServiceHub 5.0.0 — run from source.
 #
 # One command for anyone, developer or not:   ./run.sh
 #

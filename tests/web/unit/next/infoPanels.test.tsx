@@ -43,7 +43,7 @@ beforeEach(() => {
 
 describe('Security and data (unit F10)', () => {
   it('says what is kept and what ServiceHub may do — and nothing it has not checked', async () => {
-    open('/next/azure?panel=security')
+    open('/azure?panel=security')
     const panel = await screen.findByRole('dialog')
     expect(await within(panel).findByText('Connection strings and keys')).toBeInTheDocument()
     expect(within(panel).getByText('Plain text')).toBeInTheDocument()
@@ -56,13 +56,13 @@ describe('Security and data (unit F10)', () => {
 
   it('opens from Help', async () => {
     const user = userEvent.setup()
-    open('/next/azure?panel=help')
+    open('/azure?panel=help')
     await user.click(await screen.findByRole('link', { name: 'Security and data →' }))
     expect(await screen.findByText('What ServiceHub keeps on this machine')).toBeInTheDocument()
   })
 
   it('has no accessibility violations', async () => {
-    open('/next/azure?panel=security')
+    open('/azure?panel=security')
     const panel = await screen.findByRole('dialog')
     await within(panel).findByText('What ServiceHub keeps on this machine')
     await expectNoAxeViolations(panel)
@@ -71,7 +71,7 @@ describe('Security and data (unit F10)', () => {
 
 describe('How autonomy is earned (unit F11)', () => {
   it('reads the Standing threshold from the server, never from its own copy', async () => {
-    open('/next/azure?panel=autonomy')
+    open('/azure?panel=autonomy')
     const panel = await screen.findByRole('dialog')
     expect(await within(panel).findByText('7 verified fixes at 90% or better, no duplicate')).toBeInTheDocument()
     expect(panel.textContent).not.toMatch(/10 verified fixes at 95%/)
@@ -80,13 +80,13 @@ describe('How autonomy is earned (unit F11)', () => {
 
   it('says “Not read”, not a guess, when the thresholds cannot be read', async () => {
     vi.mocked(signaturesApi.fetchAuthority).mockRejectedValue(new Error('boom'))
-    open('/next/azure?panel=autonomy')
+    open('/azure?panel=autonomy')
     const panel = await screen.findByRole('dialog')
     expect(await within(panel).findByText('Not read')).toBeInTheDocument()
   })
 
   it('says which components can earn it from the coverage catalogue (capability, not a name)', async () => {
-    open('/next/azure?panel=autonomy')
+    open('/azure?panel=autonomy')
     const panel = await screen.findByRole('dialog')
     const table = await within(panel).findByRole('table', { name: 'Which components can earn autonomy' })
     expect(within(table).getByText('Azure Service Bus').closest('tr')).toHaveTextContent('Yes')
@@ -94,7 +94,7 @@ describe('How autonomy is earned (unit F11)', () => {
   })
 
   it('claims only the settings ServiceHub keeps, and says the cloud\'s own limits are not watched', async () => {
-    open('/next/azure?panel=autonomy')
+    open('/azure?panel=autonomy')
     const panel = await screen.findByRole('dialog')
     expect(await within(panel).findByText(/The component’s settings change/)).toBeInTheDocument()
     expect(within(panel).getByText(/Only what ServiceHub keeps is watched/)).toBeInTheDocument()
@@ -103,7 +103,7 @@ describe('How autonomy is earned (unit F11)', () => {
 
   it('is reached from Failure signatures, and has no accessibility violations', async () => {
     const user = userEvent.setup()
-    open('/next/azure/signatures')
+    open('/azure/signatures')
     await user.click(await screen.findByRole('link', { name: 'How autonomy is earned →' }))
     const panel = await screen.findByRole('dialog')
     await within(panel).findByRole('table', { name: 'Which components can earn autonomy' })

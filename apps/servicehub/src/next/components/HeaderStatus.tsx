@@ -24,7 +24,7 @@ export function HeaderStatus() {
   const on = stop.kind === 'on' || stop.kind === 'unreadable'
 
   return (
-    <div className="ml-auto flex items-center gap-3">
+    <div className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
       <div className="flex items-center gap-2" role="status" aria-label="Agent" title={agent.detail}>
         <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${dot[agent.status]}`} />
         <span className="leading-tight">

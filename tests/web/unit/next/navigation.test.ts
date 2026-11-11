@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  componentTabs, NEXT_ROOT, nextEntriesIn, nextEntry, nextHref, nextNavigation, nextPages, nextProgress,
+  componentTabs, NEXT_ROOT, nextEntriesIn, nextEntry, nextHref, nextNavigation, nextPages, nextProgress, scopeSegment,
 } from '@/next/nav/navigation'
-import { nextRoute } from '@/next/router'
+import { legacyTarget, nextRoute } from '@/next/router'
 import { routes } from '@/router'
 
 /**
@@ -27,15 +27,42 @@ describe('the 5.0.0 navigation array', () => {
   it('routes exactly the pages it lists — no orphan routes, no unrouted pages', () => {
     const routed = (nextRoute.children ?? [])
       .filter((child) => (child as { path?: string }).path !== '*')
+      // 4.2.0 addresses kept as redirects are not pages; the test below pins where each one goes.
+      .filter((child) => !child.id?.startsWith('legacy:'))
       .map((child) => ('index' in child && child.index ? '' : (child as { path: string }).path))
 
     expect([...routed].sort()).toEqual([...nextPages.map((p) => p.path)].sort())
   })
 
-  it('is mounted beside the 4.2.0 routes, not inside them, so the 4.2.0 array and its tests are untouched', () => {
-    expect(routes).toContain(nextRoute)
-    expect(routes[0].children ?? []).not.toContain(nextRoute)
-    expect(nextRoute.path).toBe(NEXT_ROOT)
+  it('is the app: mounted at the root, with no prefix on any address (cutover, I1)', () => {
+    expect(routes[0]).toBe(nextRoute)
+    expect(NEXT_ROOT).toBe('')
+    expect(nextRoute.path).toBe('/')
+    expect(nextHref(nextEntry('home-all'))).toBe('/')
+    expect(nextHref(nextEntry('attention'), { cloud: 'aws' })).toBe('/aws/attention')
+    expect(nextHref(nextEntry('connections'))).toBe('/connections')
+  })
+
+  it('sends every 4.2.0 address somewhere real: a bookmark never 404s', () => {
+    expect(legacyTarget('?tab=dlq&provider=aws')).toBe('/aws')
+    expect(legacyTarget('?tab=dlq')).toBe('/')
+    expect(legacyTarget('?tab=active&provider=gcp')).toBe('/gcp/active')
+    expect(legacyTarget('?tab=replayed')).toBe('/all/replays')
+    expect(legacyTarget('?panel=rules')).toBe('/all/rules')
+    expect(legacyTarget('?panel=approvals&provider=AZURE')).toBe('/azure/approvals')
+    // A query this layout owns, or none, is simply the first screen.
+    expect(legacyTarget('')).toBeNull()
+    expect(legacyTarget('?dialog=connect')).toBeNull()
+    expect(legacyTarget('?tab=dlq&provider=other')).toBe('/')
+
+    const legacy = (nextRoute.children ?? []).filter((child) => child.id?.startsWith('legacy:')).map((child) => (child as { path: string }).path)
+    expect(legacy.sort()).toEqual(['advanced', 'advanced/agents', 'advanced/ledger', 'advanced/signatures', 'fleet', 'next', 'next/*'])
+  })
+
+  it('reads the scope from the first segment of an address, and nothing from an address without one', () => {
+    expect(scopeSegment('/aws/attention')).toBe('aws')
+    expect(scopeSegment('/connections')).toBe('connections')
+    expect(scopeSegment('/')).toBeUndefined()
   })
 
   it('names the build-plan unit and the accepted design for every screen, so nothing is built from memory', () => {
@@ -54,14 +81,14 @@ describe('the 5.0.0 navigation array', () => {
   })
 
   it('carries the scope, the component and the connection in the path, and overlays in the query', () => {
-    expect(nextHref(nextEntry('home-all'))).toBe('/next')
-    expect(nextHref(nextEntry('home'), { cloud: 'azure' })).toBe('/next/azure')
-    expect(nextHref(nextEntry('attention'), { cloud: 'aws' })).toBe('/next/aws/attention')
-    expect(nextHref(nextEntry('component-list'), { cloud: 'azure', component: 'service-bus' })).toBe('/next/azure/c/service-bus')
-    expect(nextHref(nextEntry('component-detail'), { cloud: 'gcp', component: 'pubsub', namespaceId: 'a b' })).toBe('/next/gcp/c/pubsub/a%20b')
-    expect(nextHref(nextEntry('coverage'))).toBe('/next/coverage')
-    expect(nextHref(nextEntry('replay'), {}, '/next/azure')).toBe('/next/azure?dialog=replay')
-    expect(nextHref(nextEntry('help'), {}, '/next/azure')).toBe('/next/azure?panel=help')
+    expect(nextHref(nextEntry('home-all'))).toBe('/')
+    expect(nextHref(nextEntry('home'), { cloud: 'azure' })).toBe('/azure')
+    expect(nextHref(nextEntry('attention'), { cloud: 'aws' })).toBe('/aws/attention')
+    expect(nextHref(nextEntry('component-list'), { cloud: 'azure', component: 'service-bus' })).toBe('/azure/c/service-bus')
+    expect(nextHref(nextEntry('component-detail'), { cloud: 'gcp', component: 'pubsub', namespaceId: 'a b' })).toBe('/gcp/c/pubsub/a%20b')
+    expect(nextHref(nextEntry('coverage'))).toBe('/coverage')
+    expect(nextHref(nextEntry('replay'), {}, '/azure')).toBe('/azure?dialog=replay')
+    expect(nextHref(nextEntry('help'), {}, '/azure')).toBe('/azure?panel=help')
   })
 
   it('refuses to build an address with a missing part rather than writing "undefined" into it', () => {

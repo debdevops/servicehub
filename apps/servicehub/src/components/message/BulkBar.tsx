@@ -63,7 +63,8 @@ export function BulkBar({
       className={edge === 'top'
         ? `sticky z-20 flex flex-wrap items-center gap-3 rounded-t-xl border-b py-2.5 pl-4 pr-4 text-sm ${none ? 'border-[var(--color-border)] bg-[var(--color-surface-muted)]' : 'border-[var(--color-primary-200)] bg-[var(--color-primary-50)] shadow-[0_4px_10px_rgba(2,132,199,0.10)]'}`
         : `flex flex-wrap items-center gap-3 rounded-b-xl border-t px-4 py-2.5 text-sm ${none ? 'border-[var(--color-border)] bg-[var(--color-surface-muted)]' : 'border-[var(--color-primary-200)] bg-[var(--color-primary-50)]'}`}
-      style={edge === 'top' ? { top: 'var(--header-height)' } : undefined}
+      // The page header scrolls away with the page, so the bar sticks to the very top of the window.
+      style={edge === 'top' ? { top: 0 } : undefined}
     >
       {edge === 'top' && onTogglePage && (
         <input type="checkbox" aria-label="Select this whole page" checked={allOnPage} onChange={onTogglePage} className="block h-4 w-4" />

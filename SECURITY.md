@@ -20,7 +20,8 @@ We aim to respond within 48 hours.
 
 | Version | Status |
 |---|---|
-| **4.2.x** | Current — 4.2.0 is the last planned release. Security reports are handled against this line. |
+| **5.0.x** | Current. Security reports are handled against this line. |
+| 4.2.x | Superseded by 5.0.x (same data folder and key; the move applies its migrations on start-up). |
 | 4.1.x | Superseded by 4.2.x (same database format; the move applies one migration on start-up). |
 | 4.0.x | Frozen in `archive/servicehub-4.0.0/` and still published from `v4.0.x` tags. It receives no new work, and **there is no upgrade path from 4.0.0 to 4.1.0 or later** (see the [changelog](CHANGELOG.md)). |
 | 3.x and older | Not supported. |

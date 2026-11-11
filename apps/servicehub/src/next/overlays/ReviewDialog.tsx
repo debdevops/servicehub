@@ -1,6 +1,6 @@
 import { useLocation } from 'react-router-dom'
 import ApproveModal from '../../components/approve/ApproveModal'
-import { nextEntry, nextHref } from '../nav/navigation'
+import { nextEntry, nextHref, scopeSegment } from '../nav/navigation'
 import type { NextOverlayBodyProps } from './registry'
 
 /**
@@ -11,7 +11,7 @@ import type { NextOverlayBodyProps } from './registry'
  */
 export default function ReviewDialog({ close }: NextOverlayBodyProps) {
   const { pathname } = useLocation()
-  // `/next/<cloud>/…` — the scope is the first segment after the root; anything else falls back to all clouds.
-  const cloud = pathname.split('/')[2]
+  // `/<cloud>/…` — the scope is the first segment after the root; anything else falls back to all clouds.
+  const cloud = scopeSegment(pathname) ?? ''
   return <ApproveModal close={close} replayedHref={nextHref(nextEntry('replays'), { cloud: ['azure', 'aws', 'gcp'].includes(cloud) ? cloud : 'all' })} />
 }

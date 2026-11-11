@@ -89,7 +89,7 @@ function CloudHome({ cloud }: { cloud: CloudKind }) {
       ) : components.isPending ? (
         <p role="status" className="text-sm text-[var(--color-text-muted)]">Loading…</p>
       ) : (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_26rem]">
+        <div className="grid gap-4 min-[1700px]:grid-cols-[minmax(0,1fr)_26rem]">
           <div className="min-w-0 space-y-4">
             <Tiles totals={totals} observedAtUtc={components.data.generatedAtUtc} cloudName={cloudName} reachable={rows.filter((c) => c.reachable).length} />
             {unwatched.length > 0 && <NotWatchedNotice cloudName={cloudName} provider={cloud} namespaceIds={lookIds} me={me.data} onLook={refresh} />}

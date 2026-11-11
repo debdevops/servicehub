@@ -1,6 +1,6 @@
 import { useLocation } from 'react-router-dom'
 import ReplayModal from '../../components/message/ReplayModal'
-import { nextEntry, nextHref } from '../nav/navigation'
+import { nextEntry, nextHref, scopeSegment } from '../nav/navigation'
 import type { NextOverlayBodyProps } from './registry'
 
 /**
@@ -11,7 +11,7 @@ import type { NextOverlayBodyProps } from './registry'
  */
 export default function ReplayDialog({ close }: NextOverlayBodyProps) {
   const { pathname } = useLocation()
-  const segment = pathname.split('/')[2]
+  const segment = scopeSegment(pathname) ?? ''
   const cloud = ['azure', 'aws', 'gcp'].includes(segment) ? segment : 'all'
   return <ReplayModal close={close} links={{ active: nextHref(nextEntry('active'), { cloud }), replayed: nextHref(nextEntry('replays'), { cloud }) }} />
 }

@@ -3,6 +3,7 @@ import SendMessageModal from '../../components/message/SendMessageModal'
 import { ProviderScopeContext } from '../../components/provider/providerScope'
 import { cloudOf, parseScope } from '../lib/clouds'
 import type { NextOverlayBodyProps } from './registry'
+import { scopeSegment } from '../nav/navigation'
 
 /**
  * Send a test message (build-plan unit F8; design `d11-send-test-message`), at `?dialog=send&ns=<connection>`: one test message onto a
@@ -12,7 +13,7 @@ import type { NextOverlayBodyProps } from './registry'
  * at, so the picker lists that cloud's connections.
  */
 export default function SendDialog({ close }: NextOverlayBodyProps) {
-  const cloud = cloudOf(parseScope(useLocation().pathname.split('/')[2]))
+  const cloud = cloudOf(parseScope(scopeSegment(useLocation().pathname)))
   return (
     <ProviderScopeContext.Provider value={{ selected: cloud, select: () => {} }}>
       <SendMessageModal close={close} />

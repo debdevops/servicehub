@@ -7,8 +7,8 @@ import {
 /**
  * THE 5.0.0 navigation array — every destination of the new layout, of every kind.
  *
- * It lives beside the 4.2.0 array (`src/nav/navigation.ts`) until the cutover (build-plan unit I1), and is mounted under
- * `/next` so both can run in one build. At the cutover this file replaces that one and `NEXT_ROOT` becomes `''`.
+ * Until the cutover (build-plan unit I1, 2026-11-11) it lived beside the 4.2.0 array and was mounted under `/next`. It is now
+ * the only navigation array, mounted at the root.
  *
  * The rules it keeps from 4.1.0 (ARCHITECTURE §4.5): one array drives the menu, the route table, the overlay host, search and
  * the breadcrumbs; adding a destination is one entry; a test asserts the router and this array cannot disagree
@@ -19,8 +19,11 @@ import {
  * they open the same dialogs as everywhere else.
  */
 
-/** Where the 5.0.0 layout is mounted until the cutover. */
-export const NEXT_ROOT = '/next'
+/** The prefix every address of the layout starts with. Empty since the cutover (build-plan unit I1): the layout is the app. */
+export const NEXT_ROOT = ''
+
+/** The address of the first screen (All clouds). */
+export const NEXT_HOME = NEXT_ROOT || '/'
 
 /** page — a route. dialog / panel — opens over the page you are on, carried in the URL. */
 export type NextKind = 'page' | 'dialog' | 'panel'
@@ -281,14 +284,22 @@ export interface NextParams {
  * Where an entry takes you. A page's path is filled from `params`; a dialog or panel opens over `currentPath`.
  * This is the only place an address of the new layout is built.
  */
-export function nextHref(entry: NextEntry, params: NextParams = {}, currentPath: string = NEXT_ROOT): string {
+export function nextHref(entry: NextEntry, params: NextParams = {}, currentPath: string = NEXT_HOME): string {
   if (entry.kind !== 'page') return `${currentPath}?${entry.kind}=${entry.value}`
   const filled = entry.path.replace(/:(\w+)/g, (_whole, name: string) => {
     const value = params[name as keyof NextParams]
     if (!value) throw new Error(`"${entry.id}" needs "${name}" to build its address`)
     return encodeURIComponent(value)
   })
-  return filled ? `${NEXT_ROOT}/${filled}` : NEXT_ROOT
+  return filled ? `${NEXT_ROOT}/${filled}` : NEXT_HOME
+}
+
+/**
+ * The first segment of an address after the root: the cloud scope on a scoped page (`/aws/attention` gives `aws`), something else
+ * elsewhere (`/connections`). The only place that knows where the scope sits in an address; callers pass it to `parseScope`.
+ */
+export function scopeSegment(pathname: string): string | undefined {
+  return pathname.slice(NEXT_ROOT.length).split('/')[1] || undefined
 }
 
 /** How much of the new layout is real. Used by the placeholder and by the progress test. */

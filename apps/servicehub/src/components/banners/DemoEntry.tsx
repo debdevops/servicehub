@@ -1,11 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { FlaskConical } from 'lucide-react'
 import { useEffect } from 'react'
-import { Navigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useParams } from 'react-router-dom'
 import { storeProvider } from '../provider/providerScope'
 import { DEMO_ONLY, demoProviders, enterDemo, isDemo, leaveDemo, resetDemo } from '../../lib/demo/state'
 import type { CloudProvider } from '../../lib/api/namespaces'
-import { startTour } from '../demo/tour'
 
 /** Where "Get ServiceHub" goes on the public demo page, which has no real app behind it to leave to. */
 const REPOSITORY = 'https://github.com/debdevops/servicehub'
@@ -27,7 +26,7 @@ export function DemoEntry() {
   if (enters) enterDemo()
   if (cloud) storeProvider(cloud)
   useEffect(() => { if (enters) client.clear() }, [enters, cloud, client])
-  return <Navigate to={cloud ? `/?tab=dlq&provider=${cloud}` : '/'} replace />
+  return <Navigate to={cloud ? `/${cloud}` : '/'} replace />
 }
 
 /** Where leaving the demo lands: the real app at the site root (the router's `/demo` basename is not involved), or the repository on the public demo page. */
@@ -54,7 +53,8 @@ export function DemoBanner() {
       <span className="flex flex-wrap items-center gap-2 font-semibold">
         <a href={at('/demo')} className={link}>All clouds</a>
         {demoProviders.map((p) => <a key={p} href={at(`/demo/${p}`)} className={link}>{cloudNames[p]}</a>)}
-        <button type="button" onClick={startTour} className={`ml-2 ${button}`}>Show me around</button>
+        {/* Help carries the step-by-step guides; it opens over whichever page you are on. */}
+        <Link to={{ search: '?panel=help' }} className={`ml-2 ${button}`}>Show me around</Link>
         <button type="button" onClick={() => { void resetDemo().then(() => client.invalidateQueries()) }} className={button}>Reset demo</button>
         {DEMO_ONLY
           ? <a href={REPOSITORY} className={button}>Get ServiceHub</a>

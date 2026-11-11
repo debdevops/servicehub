@@ -15,7 +15,10 @@ import { Tip } from '../Tip'
 
 export type AttentionTab = 'all' | 'approvals' | 'handOffs'
 type Tab = AttentionTab
-const td = 'px-3 py-2.5 align-top text-sm'
+// Narrow padding and long names that may break anywhere: eleven columns have to fit a 1366 px window without a side-scroll.
+const td = 'px-2 py-2.5 align-top text-sm'
+const th = 'px-2 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
+const wrap = '[overflow-wrap:anywhere]'
 
 const isMine = (i: PendingWorkItem) => i.kind === 'approval' || i.kind === 'unresolved'
 const typeOf = (i: PendingWorkItem) => i.type ?? (i.kind === 'unresolved' ? 'handOff' : 'approval')
@@ -66,10 +69,10 @@ export function AttentionTable({ items, coverage, me, showCloud = false, tab: co
           <table className="w-full">
             <thead>
               <tr>
-                {showCloud && <Th context="attention">Cloud</Th>}
-                <Th context="attention">Message</Th><Th context="attention">Component</Th><Th context="attention">Entity</Th><Th context="attention">Reason</Th>
-                <Th context="attention">Family (if hand-off)</Th><Th context="attention">Age</Th><Th context="attention">Type</Th><Th context="attention">What’s needed</Th>
-                <Th context="attention">Owner (notification channel)</Th><Th context="attention">Actions</Th>
+                {showCloud && <Th className={th} context="attention">Cloud</Th>}
+                <Th className={th} context="attention">Message</Th><Th className={th} context="attention">Component</Th><Th className={th} context="attention">Entity</Th><Th className={th} context="attention">Reason</Th>
+                <Th className={th} context="attention">Family (if hand-off)</Th><Th className={th} context="attention">Age</Th><Th className={th} context="attention">Type</Th><Th className={th} context="attention">What’s needed</Th>
+                <Th className={th} context="attention">Owner (notification channel)</Th><Th className={th} context="attention">Actions</Th>
               </tr>
             </thead>
             <tbody>
@@ -81,14 +84,14 @@ export function AttentionTable({ items, coverage, me, showCloud = false, tab: co
                   <tr key={i.id} className="border-t border-[var(--color-border)]">
                     {showCloud && <td className={td}>{i.provider ? cloudLabel[i.provider] : '—'}</td>}
                     <td className={`${td} font-mono text-xs`}>{i.dlqMessageId !== null ? `#${i.dlqMessageId}` : '—'}</td>
-                    <td className={td}>{nameOf(i.componentKey)}{i.namespaceName && <span className="block text-xs text-[var(--color-text-muted)]">{i.namespaceName}</span>}</td>
-                    <td className={td}>{i.entity ?? '—'}</td>
-                    <td className={td}>{i.deadLetterReason ?? <span className="text-[var(--color-text-muted)]">No reason recorded</span>}</td>
+                    <td className={`${td} ${wrap}`}>{nameOf(i.componentKey)}{i.namespaceName && <span className="block text-xs text-[var(--color-text-muted)]">{i.namespaceName}</span>}</td>
+                    <td className={`${td} ${wrap}`}>{i.entity ?? '—'}</td>
+                    <td className={`${td} ${wrap}`}>{i.deadLetterReason ?? <span className="text-[var(--color-text-muted)]">No reason recorded</span>}</td>
                     <td className={td}>{hand && familyWords(i.family) ? <span className="rounded-md bg-purple-50 px-2 py-0.5 text-xs font-semibold text-purple-800">{familyWords(i.family)}</span> : '—'}</td>
                     <td className={td}>{formatAge(i.since, now)}</td>
                     <td className={`${td} font-semibold ${hand ? 'text-amber-700' : 'text-red-700'}`}>{hand ? 'Hand-off' : 'Approval'}</td>
                     <td className={td}>{hand ? 'Investigate and decide' : 'Approve or reject'}<span className="block text-xs text-[var(--color-text-muted)]">{i.reason}</span></td>
-                    <td className={td}>{ownerOf(i.namespaceId)}</td>
+                    <td className={`${td} ${wrap}`}>{ownerOf(i.namespaceId)}</td>
                     <td className={td}>
                       {hand || may.allowed
                         ? <Link to={open} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">{hand ? 'View' : 'Review'}</Link>

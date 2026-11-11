@@ -65,7 +65,7 @@ describe('Add a component (one dialog: choose, connect, bring in)', () => {
   })
 
   it('lists every cloud’s components, uses the existing connection, shows what is on, and locks what cannot be ticked', async () => {
-    open('/next/aws?dialog=add-component')
+    open('/aws?dialog=add-component')
     const d = await dialog()
     expect(await d.findByText('Acme Payments')).toBeInTheDocument()
     expect(d.getByText(/never asks for a key/)).toBeInTheDocument()
@@ -84,7 +84,7 @@ describe('Add a component (one dialog: choose, connect, bring in)', () => {
   })
 
   it('has one tab per cloud: the cloud you are on is selected, switching shows that cloud only, and each says what it holds', async () => {
-    open('/next/aws?dialog=add-component')
+    open('/aws?dialog=add-component')
     const d = await dialog()
     const aws = await d.findByRole('tab', { name: 'AWS' })
     const azure = d.getByRole('tab', { name: 'Azure' })
@@ -104,7 +104,7 @@ describe('Add a component (one dialog: choose, connect, bring in)', () => {
   })
 
   it('a tick on a tab that is then switched away is kept and counted on its tab', async () => {
-    open('/next/aws?dialog=add-component')
+    open('/aws?dialog=add-component')
     const d = await dialog()
     await userEvent.click(await d.findByRole('checkbox', { name: 'Step Functions (Not yet validated)' }))
     await userEvent.click(d.getByRole('tab', { name: 'Azure' }))
@@ -115,7 +115,7 @@ describe('Add a component (one dialog: choose, connect, bring in)', () => {
   })
 
   it('ticking opens the row in place with its prerequisites, a copyable policy and a read-only check', async () => {
-    open('/next/aws?dialog=add-component')
+    open('/aws?dialog=add-component')
     const d = await dialog()
     await userEvent.click(await d.findByRole('checkbox', { name: 'Step Functions (Not yet validated)' }))
     expect(d.getByText(/No key to paste/)).toBeInTheDocument()
@@ -144,7 +144,7 @@ describe('Add a component (one dialog: choose, connect, bring in)', () => {
         }),
       ],
     })
-    open('/next/azure?dialog=add-component')
+    open('/azure?dialog=add-component')
     const d = await dialog()
 
     const box = await d.findByRole('checkbox', { name: 'Event Grid (Not yet validated)' })
@@ -166,7 +166,7 @@ describe('Add a component (one dialog: choose, connect, bring in)', () => {
     })
     vi.mocked(enablementApi.fetchComponentList).mockImplementation(async (id: string) => ({ namespaceId: id, connectionName: 'Azure', cloud: 'Azure', components: [eventGrid] }))
     vi.mocked(enablementApi.checkComponent).mockResolvedValue({ componentKey: 'event-grid', ok: true, reason: null, permissions: ['Reader'] })
-    open('/next/azure?dialog=add-component')
+    open('/azure?dialog=add-component')
     const d = await dialog()
 
     await userEvent.click(await d.findByRole('checkbox', { name: 'Event Grid (Not yet validated)' }))
@@ -182,7 +182,7 @@ describe('Add a component (one dialog: choose, connect, bring in)', () => {
   it('a cloud with no connection still names a failed-records component it can bring in', async () => {
     const eventGrid = { ...coverageRows[0]!, id: 'event-grid.dead-letter-blobs', componentKey: 'event-grid', cloud: 'azure' as const, cloudName: 'Azure', name: 'Event Grid', detection: 'records' as const, status: 'beingValidated' as const, statusWords: 'Being validated', inSidebar: true }
     vi.mocked(coverageApi.fetchCoverage).mockResolvedValue({ rows: [...coverageRows, eventGrid] })
-    open('/next/aws?dialog=add-component')
+    open('/aws?dialog=add-component')
     const d = await dialog()
 
     await userEvent.click(await d.findByRole('tab', { name: 'Azure' }))
@@ -192,7 +192,7 @@ describe('Add a component (one dialog: choose, connect, bring in)', () => {
 
   it('Add saves the ticked row, says so on the row, and Done closes', async () => {
     vi.mocked(enablementApi.setComponent).mockResolvedValue({ ...list.components[1]!, state: 'on' })
-    open('/next/aws?dialog=add-component')
+    open('/aws?dialog=add-component')
     const d = await dialog()
     await userEvent.click(await d.findByRole('checkbox', { name: 'Step Functions (Not yet validated)' }))
     await userEvent.click(d.getByRole('button', { name: 'Add 1 component' }))
@@ -205,7 +205,7 @@ describe('Add a component (one dialog: choose, connect, bring in)', () => {
   it('a refused row says what is missing, saves nothing for it, and never blocks the others', async () => {
     const problem = Object.assign(new Error('x'), { isAxiosError: true, response: { status: 409, data: { code: 'capability_unavailable', detail: 'Not added. Not enabled for this connection: needs states:ListExecutions.' } } })
     vi.mocked(enablementApi.setComponent).mockRejectedValue(problem)
-    open('/next/aws?dialog=add-component')
+    open('/aws?dialog=add-component')
     const d = await dialog()
     await userEvent.click(await d.findByRole('checkbox', { name: 'Step Functions (Not yet validated)' }))
     await userEvent.click(d.getByRole('button', { name: 'Add 1 component' }))
@@ -215,7 +215,7 @@ describe('Add a component (one dialog: choose, connect, bring in)', () => {
 
   it('a Viewer is told why they cannot add, before the click', async () => {
     vi.mocked(identityApi.fetchMe).mockResolvedValue(me({ governanceActive: true, effectiveRole: 'Viewer', grantors: ['maya'] }))
-    open('/next/aws?dialog=add-component')
+    open('/aws?dialog=add-component')
     const d = await dialog()
     expect(await d.findByText(/you need the Admin role/)).toBeInTheDocument()
     expect(d.getByRole('checkbox', { name: 'Step Functions (Not yet validated)' })).toBeDisabled()
@@ -223,15 +223,15 @@ describe('Add a component (one dialog: choose, connect, bring in)', () => {
 
   it('a cloud with no connection says so and links to Connect a cloud, never to a key box', async () => {
     vi.mocked(namespacesApi.fetchNamespaces).mockResolvedValue([])
-    open('/next/gcp?dialog=add-component')
+    open('/gcp?dialog=add-component')
     const d = await dialog()
     expect(await d.findByText(/Connect Google Cloud first/)).toBeInTheDocument()
-    expect(d.getByRole('link', { name: 'Connect Google Cloud' })).toHaveAttribute('href', '/next/gcp?dialog=connect')
+    expect(d.getByRole('link', { name: 'Connect Google Cloud' })).toHaveAttribute('href', '/gcp?dialog=connect')
     expect(enablementApi.fetchComponentList).not.toHaveBeenCalled()
   })
 
   it('has no accessibility violations and an (i) on its headings', async () => {
-    const { container } = open('/next/aws?dialog=add-component')
+    const { container } = open('/aws?dialog=add-component')
     const d = await dialog()
     await d.findByRole('checkbox', { name: 'Step Functions (Not yet validated)' })
     await expectNoAxeViolations(container)

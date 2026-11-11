@@ -2,7 +2,52 @@
 
 ## [Unreleased]
 
-### Added — the 5.0.0 shell (work in progress on `feat/servicehub-5.0.0`, served under `/next`)
+## [5.0.0] — 2026-11-12
+
+**The layout changed.** 4.2.0 had a Simple surface (Home with tabs, panels and modals) and four read-only Advanced pages. 5.0.0 has one layout: a left menu with Home,
+Connections, the PaaS components you have ticked, and the Operational Tools; the cloud you are looking at is in the address (`/azure`, `/aws`, `/gcp`, `/all/…`).
+Until this release it was served under `/next`; it is now the app.
+
+### Changed — the cutover
+
+- **Every 4.2.0 address still works.** `/?tab=dlq&provider=aws` opens AWS Home, `/?tab=active` Active messages, `/?tab=replayed` Replay history, `/?panel=rules` Auto Replay
+  rules, `/advanced/ledger`, `/advanced/signatures` and `/advanced/agents` their pages, `/advanced` and `/fleet` the first screen, and `/next/…` the same page without the prefix.
+- **The demo addresses kept their meaning.** `/demo` is all three clouds, `/demo/azure`, `/demo/aws` and `/demo/gcp` one cloud, and every page stays beneath
+  (`/demo/aws/attention`). An address that names no cloud says the page does not exist instead of showing another cloud.
+- **Removed on purpose** (decided 2026-11-08): the Advanced Overview page and its Insights charts (Home and Failure signatures show the recovery summary), the in-app
+  bell and escalation toast (the menu badges, Needs your attention and the owner notification channel replace them), and the guided demo tour ("Show me around" now
+  opens Help, which carries the step-by-step guides).
+- **Upgrading from 4.2.0:** keep the same data folder and encryption key. The database is migrated on first start (`0016` to `0019`: per-connection components, trust
+  preconditions, the owner channel). Take a backup first (Settings → Backup in 4.2.0).
+
+### Added — reasons the cloud already wrote
+
+- **AWS: the failure reason inside Lambda and EventBridge dead letters.** A dead letter that reached SQS from an EventBridge rule target, a Lambda dead-letter queue or a
+  Lambda on-failure destination now shows the reason AWS itself recorded (`NO_PERMISSIONS`, the function's error type and message), and failure signatures use it. The
+  shapes were captured from a real account. **SNS subscription dead letters carry no reason at all**, so they still read "No reason recorded". Replay is unchanged.
+- **Google Cloud: the delivery error on an export subscription's dead letter.** Pub/Sub adds an error text only when a BigQuery or Cloud Storage export subscription
+  dead-letters a message; that text is now the description, under the reason "Delivery error". Dead letters from pull and push subscriptions carry no error (checked on
+  a real project), so they are unchanged.
+
+### Security
+
+- **A request that changes something is refused when another website sent it through your browser.** ServiceHub does not log the browser in, so on your own machine
+  every request is yours. Most changing endpoints already need an intent header or a JSON body, which a page on another site cannot send. Four took neither (pause an
+  agent, cancel a bulk run, test a connection, check a component's access) and could be triggered by any page you had open. Changing requests the browser labels as
+  coming from another site now get `403 cross_site_request`. Reads, ServiceHub's own page, and tools that are not web pages (curl, scripts, the MCP tool) are unaffected.
+- Dependency check on the release: no known-vulnerable .NET package (direct or transitive) and no advisory in the web app's production dependencies.
+
+### Fixed
+
+- **The "selected messages" bar on a connection's Dead-letter messages tab covered the table's header row and the top of the first message**, so the first "Open" could
+  not be clicked. It sat inside the table's own scroll box and stuck 60 px down. It now sits above the table and sticks to the top of the window.
+- **Tables no longer need a sideways scroll at 1280 px and wider** (Home's component table, Needs your attention, Pending approvals, Auto Replay rules, Failure
+  signatures): narrower padding, long names wrap, and Home's side panels move below the table until the window is 1700 px wide. On a 768 px tablet the header wraps and
+  the coverage table scrolls inside its own box, so the page itself never scrolls sideways.
+- **Seven dialogs read the cloud from the wrong place in the address** once the layout moved to the root (Replay, Bulk replay, Review, Send, Search, Help, Connect,
+  Add a component); they would have opened on "all clouds" whatever cloud you were on. One function now knows where the cloud sits in an address.
+
+### Added — the 5.0.0 layout
 
 - **Add a component.** One window, with a tab per cloud, lists every PaaS component ServiceHub can bring in. Each says where its failures end up, what it needs, and is
   access-checked (list and describe calls only) before it is added. Ticking needs the `manage-components` intent and the Admin role; unticking keeps every record the
@@ -33,9 +78,7 @@
 
 ### Fixed
 
-- **5.0.0 shell: the first screen of the 5.0.0 shell no longer slows the 4.2.0 core loop.** The shell and the 52 kB of explanation text it carries are now loaded
-  with the first `/next` screen instead of with the page everyone opens first; the initial script is back under its 460 kB budget (467 kB → 398 kB).
-- **5.0.0 shell: the cloud cards on `/next` and the failure-signatures panel on a cloud's Home fit their columns.** On real names ("ServiceHub Lab (dev) — AWS")
+- **The cloud cards on the first screen and the failure-signatures panel on a cloud's Home fit their columns.** On real names ("ServiceHub Lab (dev) — AWS")
   their tables were wider than the card and the whole page scrolled sideways at 1366 px; headers now wrap and long names break.
 
 ### Tests

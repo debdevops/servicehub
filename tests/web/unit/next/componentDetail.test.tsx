@@ -77,7 +77,7 @@ function open(url: string, c = azure(), ns = namespace(), active: Partial<namesp
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={client}><RouterProvider router={createMemoryRouter([nextRoute], { initialEntries: [url] })} /></QueryClientProvider>)
 }
-const ok = '/next/azure/c/service-bus/ns-azure'
+const ok = '/azure/c/service-bus/ns-azure'
 
 describe('entityRows', () => {
   const e = (name: string, parent: string | null = null) => entity({ name, parent, kind: parent ? 'subscription' : 'queue' })
@@ -130,8 +130,8 @@ describe('one connection’s page (unit D2)', () => {
     open(ok, azure(), namespace(), [{ name: 'orders-queue', activeMessages: 412 }, { name: 'payments-topic/subscriptions/sub-1', activeMessages: 96 }, { name: 'payments-topic/subscriptions/sub-2', activeMessages: 0 }])
     expect(await screen.findByRole('heading', { level: 1, name: /orders-sb/ })).toHaveTextContent('Needs you (1)')
     const crumbs = screen.getByRole('navigation', { name: 'Breadcrumb' })
-    expect(within(crumbs).getByRole('link', { name: 'Azure' })).toHaveAttribute('href', '/next/azure')
-    expect(within(crumbs).getByRole('link', { name: 'Service Bus' })).toHaveAttribute('href', '/next/azure/c/service-bus')
+    expect(within(crumbs).getByRole('link', { name: 'Azure' })).toHaveAttribute('href', '/azure')
+    expect(within(crumbs).getByRole('link', { name: 'Service Bus' })).toHaveAttribute('href', '/azure/c/service-bus')
 
     expect(await screen.findByTestId('tile-first')).toHaveTextContent('12')
     expect(screen.getByTestId('tile-needs')).toHaveTextContent('1')
@@ -153,7 +153,7 @@ describe('one connection’s page (unit D2)', () => {
   })
 
   it('an unwatched, approximate cloud: Recorded tile and column, the not-watched notice, a dead-letter place column, "None set"', async () => {
-    open('/next/aws/c/sqs/ns-aws', aws(), namespace({ id: 'ns-aws', provider: 'aws', awsRegion: 'ap-south-1', authType: 'awsAccessKey', capabilities: caps({ supportsRepeatablePeek: false, canProveDlqAbsence: false, countsAreApproximate: true }) }),
+    open('/aws/c/sqs/ns-aws', aws(), namespace({ id: 'ns-aws', provider: 'aws', awsRegion: 'ap-south-1', authType: 'awsAccessKey', capabilities: caps({ supportsRepeatablePeek: false, canProveDlqAbsence: false, countsAreApproximate: true }) }),
       [{ name: 'orders-queue', activeMessages: 1870 }, { name: 'audit-queue', activeMessages: 450 }])
     expect(await screen.findByTestId('tile-first')).toHaveTextContent('7,840(approx)')
     expect(screen.getByTestId('tile-recorded')).toHaveTextContent('200')
@@ -171,7 +171,7 @@ describe('one connection’s page (unit D2)', () => {
   })
 
   it('a cloud that reports no counts: "Dead letters recorded", no Active column or tile, "Not looked yet" counted', async () => {
-    open('/next/gcp/c/pubsub/ns-gcp', gcp(), namespace({ id: 'ns-gcp', provider: 'gcp', gcpProjectId: 'servicehub-prod', authType: 'gcpWorkloadIdentity', capabilities: caps({ supportsMessageCounts: false, supportsRepeatablePeek: false }) }))
+    open('/gcp/c/pubsub/ns-gcp', gcp(), namespace({ id: 'ns-gcp', provider: 'gcp', gcpProjectId: 'servicehub-prod', authType: 'gcpWorkloadIdentity', capabilities: caps({ supportsMessageCounts: false, supportsRepeatablePeek: false }) }))
     expect(await screen.findByRole('region', { name: 'Dead letters recorded' })).toBeInTheDocument()
     expect(screen.getByTestId('tile-first')).toHaveTextContent('137')
     expect(screen.queryByTestId('tile-active')).not.toBeInTheDocument()
@@ -224,7 +224,7 @@ describe('one connection’s page (unit D2)', () => {
 
   it('an unwatched connection calls its messages recorded, never "in dead-letter"', async () => {
     vi.mocked(deadLettersApi.fetchDeadLetters).mockResolvedValue({ items: [letter(1)], paging: { total: 200, page: 1, pageSize: 5 }, groups: [], otherReasons: null, entities: [] })
-    open('/next/aws/c/sqs/ns-aws', aws(), namespace({ id: 'ns-aws', provider: 'aws', capabilities: caps({ supportsRepeatablePeek: false }) }))
+    open('/aws/c/sqs/ns-aws', aws(), namespace({ id: 'ns-aws', provider: 'aws', capabilities: caps({ supportsRepeatablePeek: false }) }))
     const preview = await screen.findByRole('region', { name: /Recorded dead-letter messages \(showing 1 of 200\)/ })
     expect(within(preview).getByText('Recorded', { selector: 'td span' })).toBeInTheDocument() // the state chip (the column is also headed Recorded)
     expect(within(preview).queryByText('In dead-letter')).not.toBeInTheDocument()
@@ -258,8 +258,8 @@ describe('one connection’s page (unit D2)', () => {
   })
 
   it.each([
-    ['a component on the wrong cloud', '/next/aws/c/service-bus/ns-azure'],
-    ['a component the catalogue does not list', '/next/azure/c/event-grid/ns-azure'],
+    ['a component on the wrong cloud', '/aws/c/service-bus/ns-azure'],
+    ['a component the catalogue does not list', '/azure/c/event-grid/ns-azure'],
   ])('%s is not a page', async (_name, url) => {
     open(url)
     expect(await screen.findByRole('heading', { name: 'That page doesn’t exist' })).toBeInTheDocument()
@@ -280,7 +280,7 @@ describe('one connection’s page (unit D2)', () => {
   it('has no accessibility violations on an unwatched connection with everything showing', async () => {
     vi.mocked(deadLettersApi.fetchDeadLetters).mockResolvedValue({ items: [letter(1), letter(2)], paging: { total: 2, page: 1, pageSize: 5 }, groups: [], otherReasons: null, entities: [] })
     vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue(page([approval({ dlqMessageId: 1 }), handOff({ dlqMessageId: 2 })]))
-    const { container } = open('/next/gcp/c/pubsub/ns-gcp', gcp(), namespace({ id: 'ns-gcp', provider: 'gcp', capabilities: caps({ supportsMessageCounts: false, supportsRepeatablePeek: false }) }))
+    const { container } = open('/gcp/c/pubsub/ns-gcp', gcp(), namespace({ id: 'ns-gcp', provider: 'gcp', capabilities: caps({ supportsMessageCounts: false, supportsRepeatablePeek: false }) }))
     await screen.findByRole('region', { name: /Recorded dead-letter messages/ })
     await screen.findByText('Waiting for approval')
     await expectNoAxeViolations(container)

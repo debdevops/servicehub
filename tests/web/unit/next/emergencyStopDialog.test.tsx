@@ -23,7 +23,7 @@ vi.mock('@/lib/api/settings', async (o) => ({ ...(await o<typeof settingsApi>())
 const at = '2026-10-18T10:00:00Z'
 const off = { active: false, by: null, at: null, reason: null }
 const sent = () => vi.mocked(settingsApi.setEmergencyStop).mock.calls.map((c) => c[0])
-const open = (u = '/next/azure?dialog=emergency-stop') => {
+const open = (u = '/azure?dialog=emergency-stop') => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const router = createMemoryRouter([nextRoute], { initialEntries: [u] })
   return { router, ...render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>) }
@@ -42,7 +42,7 @@ describe('Emergency stop dialog (unit F5)', () => {
   })
 
   it('opens from the header link, says what stops and what does NOT, and sends nothing on open', async () => {
-    const { router } = open('/next/azure')
+    const { router } = open('/azure')
     await userEvent.setup().click(await screen.findByRole('link', { name: /Emergency stop/ }))
     const dialog = await screen.findByRole('dialog')
     expect(router.state.location.search).toBe('?dialog=emergency-stop')

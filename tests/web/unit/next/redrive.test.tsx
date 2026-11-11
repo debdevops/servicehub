@@ -35,7 +35,7 @@ const stepFunctions = (offers: boolean): coverageApi.CoverageRow => ({
 const aws = { id: 'ns-1', name: 'acme', displayName: 'Acme Payments', provider: 'aws', environment: 'dev', authType: 'awsIamRole', awsRegion: 'eu-west-1', gcpProjectId: null, isActive: true, capabilities: null } as namespacesApi.Namespace
 const item: sourcesApi.FailedItem = { id: RUN, place: 'arn:m1', atUtc: '2026-10-01T10:00:00Z', status: 'FAILED', reasonCode: null, summary: 'Failed: run-1', copy: 'none', consoleUrl: null }
 const source: sourcesApi.ComponentSource = { componentKey: 'step-functions', available: true, reason: null, reasonInList: false, placesReachedLimit: false, placesIncomplete: false, places: [{ id: 'arn:m1', name: 'orders', kind: 'state machine', consoleUrl: null }] }
-const dialogUrl = `/next/aws?dialog=redrive&ns=ns-1&component=step-functions&item=${encodeURIComponent(RUN)}`
+const dialogUrl = `/aws?dialog=redrive&ns=ns-1&component=step-functions&item=${encodeURIComponent(RUN)}`
 
 function open(url: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -64,21 +64,21 @@ describe('Redrive a failed run (unit PP5)', () => {
 
   it('draws no Redrive link while the catalogue row offers none, however much the caller may do', async () => {
     arrange(false)
-    open('/next/aws/c/step-functions/ns-1')
+    open('/aws/c/step-functions/ns-1')
     expect(await screen.findByRole('table', { name: /Failed Step Functions runs/ })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Redrive/ })).toBeNull()
   })
 
   it('draws the link, carrying the connection, component and run, once the row offers it and the caller is an Approver', async () => {
     arrange(true)
-    open('/next/aws/c/step-functions/ns-1')
+    open('/aws/c/step-functions/ns-1')
     const link = await screen.findByRole('link', { name: 'Redrive Failed: run-1' })
     expect(link.getAttribute('href')).toContain(`?dialog=redrive&ns=ns-1&component=step-functions&item=${encodeURIComponent(RUN)}`)
   })
 
   it('draws no link for a Viewer', async () => {
     arrange(true, 'Viewer')
-    open('/next/aws/c/step-functions/ns-1')
+    open('/aws/c/step-functions/ns-1')
     expect(await screen.findByRole('table', { name: /Failed Step Functions runs/ })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Redrive/ })).toBeNull()
   })

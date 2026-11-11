@@ -43,7 +43,7 @@ beforeEach(() => {
 
 describe('Help (unit F6)', () => {
   it('carries the per-cloud step-by-step guides, opened by ?topic=guide-<cloud>', async () => {
-    open('/next/azure?panel=help&topic=guide-aws')
+    open('/azure?panel=help&topic=guide-aws')
     const panel = await screen.findByRole('dialog')
     const summary = await within(panel).findByText(/AWS/, { selector: 'summary' })
     expect(summary.closest('details')).toHaveAttribute('open')
@@ -52,7 +52,7 @@ describe('Help (unit F6)', () => {
 
   it('opens from the header, filters its answers as you type, and links to pages in the cloud you are on', async () => {
     const user = userEvent.setup()
-    open('/next/azure')
+    open('/azure')
     await user.click(await screen.findByRole('link', { name: 'Help' }))
     const panel = await screen.findByRole('dialog')
     const box = await within(panel).findByPlaceholderText('Search help…')
@@ -60,18 +60,18 @@ describe('Help (unit F6)', () => {
     await user.type(box, 'replay history')
     expect(within(panel).queryByText('Stop everything')).not.toBeInTheDocument()
     await user.click(within(panel).getByText('Know whether a replay worked'))
-    expect(within(panel).getAllByRole('link', { name: 'Open Replay history ›' })[0]).toHaveAttribute('href', '/next/azure/replays')
+    expect(within(panel).getAllByRole('link', { name: 'Open Replay history ›' })[0]).toHaveAttribute('href', '/azure/replays')
   })
 
   it('opens straight on one answer from ?topic=', async () => {
-    open('/next/azure?panel=help&topic=stop-all')
+    open('/azure?panel=help&topic=stop-all')
     const panel = await screen.findByRole('dialog')
     expect(await within(panel).findByText(/It stops every replay ServiceHub would do on its own/)).toBeVisible()
   })
 
   it('says so when nothing matches', async () => {
     const user = userEvent.setup()
-    open('/next/azure?panel=help')
+    open('/azure?panel=help')
     await user.type(await screen.findByPlaceholderText('Search help…'), 'zzzzqqq')
     expect(await screen.findByText(/Nothing matches/)).toBeInTheDocument()
   })
@@ -81,7 +81,7 @@ describe('Help (unit F6)', () => {
   })
 
   it('has no accessibility violations', async () => {
-    open('/next/azure?panel=help')
+    open('/azure?panel=help')
     const panel = await screen.findByRole('dialog')
     await within(panel).findByPlaceholderText('Search help…')
     await expectNoAxeViolations(panel)
@@ -91,28 +91,28 @@ describe('Help (unit F6)', () => {
 describe('Search (unit F7)', () => {
   const c = [withQueue]
   it('finds connections, queues and subscriptions, built pages and actions — and ignores topics', () => {
-    const r = searchNext('orders', c, nextHelpAnswers, 'azure', '/next/azure')
+    const r = searchNext('orders', c, nextHelpAnswers, 'azure', '/azure')
     expect(r.map((x) => x.title)).toContain('orders-sb')
     expect(r.map((x) => x.title)).toContain('orders-queue')
-    expect(searchNext('payments', c, nextHelpAnswers, 'azure', '/next/azure').map((x) => x.title)).toEqual(['payments-topic / sub-1'])
-    expect(searchNext('replay history', c, nextHelpAnswers, 'azure', '/next/azure').find((x) => x.group === 'Pages')?.href).toBe('/next/azure/replays')
-    expect(searchNext('emergency', c, nextHelpAnswers, 'azure', '/next/azure/replays').find((x) => x.group === 'Do')?.href).toBe('/next/azure/replays?dialog=emergency-stop')
+    expect(searchNext('payments', c, nextHelpAnswers, 'azure', '/azure').map((x) => x.title)).toEqual(['payments-topic / sub-1'])
+    expect(searchNext('replay history', c, nextHelpAnswers, 'azure', '/azure').find((x) => x.group === 'Pages')?.href).toBe('/azure/replays')
+    expect(searchNext('emergency', c, nextHelpAnswers, 'azure', '/azure/replays').find((x) => x.group === 'Do')?.href).toBe('/azure/replays?dialog=emergency-stop')
   })
 
   it('never offers a page that is not built, and never searches message contents', () => {
-    expect(searchNext('connect a component', c, [], 'azure', '/next/azure').filter((x) => x.group === 'Do')).toEqual([]) // Connect is not built yet
-    expect(searchNext('zzz-body-text', c, nextHelpAnswers, 'azure', '/next/azure')).toEqual([])
+    expect(searchNext('connect a component', c, [], 'azure', '/azure').filter((x) => x.group === 'Do')).toEqual([]) // Connect is not built yet
+    expect(searchNext('zzz-body-text', c, nextHelpAnswers, 'azure', '/azure')).toEqual([])
   })
 
   it('under all clouds, Home is the all-clouds page, not a page for a cloud called “all”', () => {
-    const hrefs = searchNext('all clouds', c, [], 'all', '/next').map((x) => x.href)
-    expect(searchNext('home', c, [], 'all', '/next').map((x) => x.href)).not.toContain('/next/all')
-    expect(hrefs).toContain('/next')
+    const hrefs = searchNext('all clouds', c, [], 'all', '/').map((x) => x.href)
+    expect(searchNext('home', c, [], 'all', '/').map((x) => x.href)).not.toContain('/all')
+    expect(hrefs).toContain('/')
   })
 
   it('opens on ⌘K and Ctrl-K from anywhere, finds a queue, and Enter goes there with arrow keys to choose', async () => {
     const user = userEvent.setup()
-    const { router } = open('/next/azure')
+    const { router } = open('/azure')
     await screen.findByRole('heading', { level: 1, name: /Dashboard/ })
     await user.keyboard('{Control>}k{/Control}')
     const box = await screen.findByRole('combobox')
@@ -121,21 +121,21 @@ describe('Search (unit F7)', () => {
     const options = await screen.findAllByRole('option')
     expect(options.length).toBeGreaterThan(1)
     await user.keyboard('{ArrowDown}{Enter}')
-    await waitFor(() => expect(router.state.location.pathname).toBe('/next/azure/c/service-bus/ns-azure'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/azure/c/service-bus/ns-azure'))
     expect(router.state.location.search).toContain('tab=dead-letters&entity=orders-queue')
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument()) // navigating closed it
   })
 
   it('says it never searches inside message bodies, and what matches nothing', async () => {
     const user = userEvent.setup()
-    open('/next/azure?dialog=search')
+    open('/azure?dialog=search')
     expect(await screen.findByText(/never searches inside message bodies/)).toBeInTheDocument()
     await user.type(screen.getByRole('combobox'), 'zzzqqq')
     expect(await screen.findByText(/Nothing matches/)).toBeInTheDocument()
   })
 
   it('has no accessibility violations', async () => {
-    open('/next/azure?dialog=search')
+    open('/azure?dialog=search')
     const dialog = await screen.findByRole('dialog')
     await within(dialog).findByRole('combobox')
     await expectNoAxeViolations(dialog)

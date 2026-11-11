@@ -24,7 +24,7 @@ vi.mock('@/lib/api/pendingWork', async (o) => ({ ...(await o<typeof pendingApi>(
 vi.mock('@/lib/api/namespaces', async (o) => ({ ...(await o<typeof namespacesApi>()), fetchNamespace: vi.fn(), fetchEntities: vi.fn(), fetchNamespaces: vi.fn() }))
 
 const at = '2026-10-18T09:00:00Z'
-const ok = '/next/azure/c/service-bus/ns-azure?tab=audit'
+const ok = '/azure/c/service-bus/ns-azure?tab=audit'
 const entry = (id: string, over: Partial<identityApi.AuditEntry> = {}): identityApi.AuditEntry => ({
   id, timestamp: at, actor: { identity: 'dana', kind: 'user', label: 'Dana (Approver)', isSession: false }, action: 'Replay.Message', outcome: 'Success', namespaceId: 'ns-azure',
   namespaceName: 'orders-sb', cloudProvider: 'azure', environment: 'Dev', resourceName: 'orders-queue', errorDetails: null, correlationId: null, ...over,

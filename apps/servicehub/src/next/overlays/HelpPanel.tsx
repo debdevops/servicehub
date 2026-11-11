@@ -5,7 +5,7 @@ import { useOverlayTitle } from '../../components/overlays/overlayTitle'
 import { nextHelpAnswers } from '../content/help'
 import { nextShortcuts } from '../content/shortcuts'
 import { cloudOf, parseScope } from '../lib/clouds'
-import { nextEntry, nextHref } from '../nav/navigation'
+import { nextEntry, nextHref, scopeSegment } from '../nav/navigation'
 import type { NextOverlayBodyProps } from './registry'
 import { Tip } from '../components/Tip'
 import { guideClouds, guideTopic } from '../../content/guides/links'
@@ -24,7 +24,7 @@ export default function HelpPanel(_props: NextOverlayBodyProps) { // eslint-disa
   const { pathname } = useLocation()
   const topic = params.get('topic')
   const [q, setQ] = useState('')
-  const segment = pathname.split('/')[2]
+  const segment = scopeSegment(pathname)
   const cloud = cloudOf(parseScope(segment)) ?? 'all'
   useOverlayTitle('Help', 'Answers by task')
   const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean)

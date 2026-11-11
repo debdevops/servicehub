@@ -55,15 +55,15 @@ describe('Failure signatures (unit E6)', () => {
   })
 
   it('asks for its own cloud over the last 7 days, 25 a page; for every cloud when the scope is all', async () => {
-    open('/next/azure/signatures')
+    open('/azure/signatures')
     await screen.findByRole('heading', { level: 1, name: 'Failure signatures' })
     await waitFor(() => expect(lastQuery()).toMatchObject({ provider: 'azure', days: 7, tab: 'all', page: 1, pageSize: 25 }))
-    open('/next/all/signatures')
+    open('/all/signatures')
     await waitFor(() => expect(lastQuery()?.provider).toBeUndefined())
   })
 
   it('shows the server’s own totals in the tiles, never a count it did not read', async () => {
-    open('/next/azure/signatures')
+    open('/azure/signatures')
     const tile = async (t: string) => (await screen.findByText(t, { selector: 'p' })).parentElement!
     expect(await tile('Signatures')).toHaveTextContent('7')
     expect(await tile('Growing')).toHaveTextContent('1')
@@ -71,7 +71,7 @@ describe('Failure signatures (unit E6)', () => {
   })
 
   it('says, per row, what replay did, the trust level, and whether the Agent may act — from the trust report', async () => {
-    open('/next/azure/signatures')
+    open('/azure/signatures')
     const table = await screen.findByRole('table', { name: 'Failure signatures' })
     await waitFor(() => expect(within(table).getAllByRole('row')[1]).toHaveTextContent('L4 · Standing'))
     const rows = within(table).getAllByRole('row')
@@ -86,7 +86,7 @@ describe('Failure signatures (unit E6)', () => {
 
   it('keeps the tab and the filters in the address and asks the server for them', async () => {
     const user = userEvent.setup()
-    const { router } = open('/next/azure/signatures')
+    const { router } = open('/azure/signatures')
     await user.click(await screen.findByRole('tab', { name: /Growing/ }))
     await waitFor(() => expect(lastQuery()).toMatchObject({ tab: 'growing' }))
     expect(router.state.location.search).toContain('tab=growing')
@@ -100,12 +100,12 @@ describe('Failure signatures (unit E6)', () => {
 
   it('opens a signature’s detail with this shell’s addresses', async () => {
     const user = userEvent.setup()
-    open('/next/azure/signatures')
+    open('/azure/signatures')
     await user.click(await screen.findByRole('button', { name: 'View LockLost' }))
     const detail = await screen.findByRole('complementary', { name: 'Signature details' })
-    expect(within(detail).getByRole('link', { name: /See the 6 messages/ })).toHaveAttribute('href', '/next/azure/c/service-bus/ns-azure?tab=dead-letters&reason=LockLost')
-    expect(within(detail).getByRole('link', { name: /Create an auto-replay rule/ })).toHaveAttribute('href', '/next/azure/rules?rule=h1')
-    expect(within(detail).getByRole('link', { name: /Ledger entries/ })).toHaveAttribute('href', '/next/azure/ledger')
+    expect(within(detail).getByRole('link', { name: /See the 6 messages/ })).toHaveAttribute('href', '/azure/c/service-bus/ns-azure?tab=dead-letters&reason=LockLost')
+    expect(within(detail).getByRole('link', { name: /Create an auto-replay rule/ })).toHaveAttribute('href', '/azure/rules?rule=h1')
+    expect(within(detail).getByRole('link', { name: /Ledger entries/ })).toHaveAttribute('href', '/azure/ledger')
   })
 
   it('shows the Incident tab, whose Evidence links open this shell’s ledger on that entry', async () => {
@@ -114,11 +114,11 @@ describe('Failure signatures (unit E6)', () => {
       signatureHash: 'h1', provider: 'azure', reason: 'LockLost', firstSeenAt: at, lastSeenAt: at, messages: 6, stillStuck: 4, replays: 18, stayedFixed: 18, cameBackAfterReplay: 0,
       timeline: [{ at, kind: 'replayed', text: 'Replayed 3 messages', entryId: 'e9', dlqMessageId: 7 }],
     })
-    open('/next/azure/signatures')
+    open('/azure/signatures')
     await user.click(await screen.findByRole('button', { name: 'View LockLost' }))
     const detail = await screen.findByRole('complementary', { name: 'Signature details' })
     await user.click(within(detail).getByText('Incident'))
-    expect(await within(detail).findByRole('link', { name: 'Evidence ›' })).toHaveAttribute('href', '/next/azure/ledger?entry=e9&window=all')
+    expect(await within(detail).findByRole('link', { name: 'Evidence ›' })).toHaveAttribute('href', '/azure/ledger?entry=e9&window=all')
   })
 
   it('traces a correlation id across clouds from recorded sightings, with links into this shell and no live look', async () => {
@@ -127,13 +127,13 @@ describe('Failure signatures (unit E6)', () => {
       correlationId: 'order-42', clouds: ['azure'], note: '',
       hops: [{ at, kind: 'dead_lettered', place: { provider: 'azure', namespaceName: 'orders-sb', environment: 'dev' }, entity: 'orders-queue', dlqMessageId: 7, namespaceId: 'ns-azure', detail: null, entryId: 'e9', messageId: 'm-7' }],
     })
-    const { router } = open('/next/azure/signatures')
+    const { router } = open('/azure/signatures')
     await user.click(await screen.findByRole('radio', { name: 'Trace a message' }))
     expect(router.state.location.search).toBe('?view=trace')
     expect(signaturesApi.fetchTrace).not.toHaveBeenCalled() // nothing is looked up until a person asks
     await user.type(screen.getByLabelText('Correlation id'), 'order-42')
     await user.click(screen.getByRole('button', { name: 'Trace' }))
-    expect(await screen.findByRole('link', { name: 'Evidence ›' })).toHaveAttribute('href', '/next/azure/ledger?entry=e9&window=all')
+    expect(await screen.findByRole('link', { name: 'Evidence ›' })).toHaveAttribute('href', '/azure/ledger?entry=e9&window=all')
     expect(screen.getByRole('link', { name: 'Open ›' }).getAttribute('href')).toContain('dialog=message&id=7')
     expect(signaturesApi.fetchTrace).toHaveBeenCalledWith('order-42')
     await user.click(screen.getByRole('radio', { name: 'Signatures' }))
@@ -142,20 +142,20 @@ describe('Failure signatures (unit E6)', () => {
 
   it('shows an error, not an empty table, when the read fails; and says so when none was recorded', async () => {
     vi.mocked(signaturesApi.fetchSignatures).mockResolvedValueOnce(result([]))
-    open('/next/azure/signatures')
+    open('/azure/signatures')
     expect(await screen.findByText(/No failure has been recorded yet/)).toBeInTheDocument()
     vi.mocked(signaturesApi.fetchSignatures).mockRejectedValue(new Error('boom'))
-    open('/next/aws/signatures')
+    open('/aws/signatures')
     expect(await screen.findByRole('alert')).toHaveTextContent('could not be read')
   })
 
   it('adds a Cloud column for all clouds', async () => {
-    open('/next/all/signatures')
+    open('/all/signatures')
     expect(await screen.findByRole('columnheader', { name: 'Cloud' })).toBeInTheDocument()
   })
 
   it('has no accessibility violations', async () => {
-    const { container } = open('/next/azure/signatures')
+    const { container } = open('/azure/signatures')
     await screen.findByRole('table', { name: 'Failure signatures' })
     await expectNoAxeViolations(container)
   })

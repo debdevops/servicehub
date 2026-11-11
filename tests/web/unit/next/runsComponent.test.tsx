@@ -61,16 +61,16 @@ describe('a component that is not a message store (Step Functions, unit PP1/PP2)
   })
 
   it('is in the menu and its list offers each AWS connection', async () => {
-    open('/next/aws/c/step-functions')
+    open('/aws/c/step-functions')
     expect(await screen.findByRole('heading', { name: /Step Functions connections \(1\)/ })).toBeInTheDocument()
     const menu = screen.getByRole('navigation', { name: 'ServiceHub' })
-    expect(within(menu).getByRole('link', { name: /Step Functions/ })).toHaveAttribute('href', '/next/aws/c/step-functions')
+    expect(within(menu).getByRole('link', { name: /Step Functions/ })).toHaveAttribute('href', '/aws/c/step-functions')
     expect(within(menu).getByText('Not yet validated')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'View Acme Payments' })).toHaveAttribute('href', '/next/aws/c/step-functions/ns-1')
+    expect(screen.getByRole('link', { name: 'View Acme Payments' })).toHaveAttribute('href', '/aws/c/step-functions/ns-1')
   })
 
   it('shows the failed runs, newest first, by the cloud’s own status words', async () => {
-    open('/next/aws/c/step-functions/ns-1')
+    open('/aws/c/step-functions/ns-1')
     const table = await screen.findByRole('table', { name: /Failed Step Functions runs, newest first/ })
     const rows = within(table).getAllByRole('row').slice(1)
     expect(rows).toHaveLength(2)
@@ -81,7 +81,7 @@ describe('a component that is not a message store (Step Functions, unit PP1/PP2)
 
   it('opens one run on demand and reads its reason then, not for every row', async () => {
     vi.mocked(sourcesApi.fetchFailedItem).mockResolvedValue({ item: item(2), reason: 'States.TaskFailed', cause: 'The gateway returned 502', startedUtc: '2026-10-02T09:58:00Z', stoppedUtc: '2026-10-02T10:00:00Z' })
-    open('/next/aws/c/step-functions/ns-1')
+    open('/aws/c/step-functions/ns-1')
     await screen.findByRole('table')
     expect(sourcesApi.fetchFailedItem).not.toHaveBeenCalled()
 
@@ -94,7 +94,7 @@ describe('a component that is not a message store (Step Functions, unit PP1/PP2)
 
   it('shows the details in a side window that expands to a modal and closes', async () => {
     vi.mocked(sourcesApi.fetchFailedItem).mockResolvedValue({ item: item(2), reason: 'States.TaskFailed', cause: 'The gateway returned 502', startedUtc: '2026-10-02T09:58:00Z', stoppedUtc: '2026-10-02T10:00:00Z' })
-    open('/next/aws/c/step-functions/ns-1')
+    open('/aws/c/step-functions/ns-1')
     await screen.findByRole('table')
 
     await userEvent.click(screen.getByRole('button', { name: 'Show details of Failed: run-2' }))
@@ -113,7 +113,7 @@ describe('a component that is not a message store (Step Functions, unit PP1/PP2)
   })
 
   it('offers a console link and no way to replay, re-run, redrive or purge', async () => {
-    open('/next/aws/c/step-functions/ns-1')
+    open('/aws/c/step-functions/ns-1')
     await screen.findByRole('table')
 
     const link = screen.getByRole('link', { name: 'Open Failed: run-2 in the cloud console' })
@@ -127,20 +127,20 @@ describe('a component that is not a message store (Step Functions, unit PP1/PP2)
 
   it('says when the list stopped at its limit and when part of the read failed', async () => {
     vi.mocked(sourcesApi.fetchFailedItems).mockResolvedValue({ componentKey: 'step-functions', items: [item(1)], reachedLimit: true, incomplete: true })
-    open('/next/aws/c/step-functions/ns-1')
+    open('/aws/c/step-functions/ns-1')
     expect(await screen.findByText(/Part of this read failed or took too long/)).toBeInTheDocument()
     expect(screen.getByText(/There are more than this/)).toBeInTheDocument()
   })
 
   it('says plainly when there are no failed runs, and that it is not a guess when the read was partial', async () => {
     vi.mocked(sourcesApi.fetchFailedItems).mockResolvedValue({ componentKey: 'step-functions', items: [], reachedLimit: false, incomplete: true })
-    open('/next/aws/c/step-functions/ns-1')
+    open('/aws/c/step-functions/ns-1')
     expect(await screen.findByText(/No failed, timed-out or aborted Step Functions runs were found in what could be read/)).toBeInTheDocument()
   })
 
   it('a connection that cannot read it says why, reads nothing, and never shows an empty list', async () => {
     vi.mocked(sourcesApi.fetchComponentSource).mockResolvedValue({ ...readable, available: false, reason: 'Not enabled for this connection: needs states:ListExecutions.', places: [] })
-    open('/next/aws/c/step-functions/ns-1')
+    open('/aws/c/step-functions/ns-1')
 
     expect(await screen.findByRole('heading', { name: 'Not enabled' })).toBeInTheDocument()
     expect(screen.getByText(/needs states:ListExecutions/)).toBeInTheDocument()
@@ -149,7 +149,7 @@ describe('a component that is not a message store (Step Functions, unit PP1/PP2)
   })
 
   it('the Access tab says how the connection signs in and whether it can read the component', async () => {
-    open('/next/aws/c/step-functions/ns-1?tab=access')
+    open('/aws/c/step-functions/ns-1?tab=access')
     expect(await screen.findByRole('heading', { name: 'Access' })).toBeInTheDocument()
     expect(screen.getByText('Can read Step Functions')).toBeInTheDocument()
     expect(screen.getByText('Yes')).toBeInTheDocument()
@@ -157,13 +157,13 @@ describe('a component that is not a message store (Step Functions, unit PP1/PP2)
 
   it('is a 404 for a connection on another cloud, and for a read that fails with 404', async () => {
     vi.mocked(namespacesApi.fetchNamespace).mockResolvedValue({ ...aws, provider: 'azure' } as namespacesApi.Namespace)
-    open('/next/aws/c/step-functions/ns-1')
+    open('/aws/c/step-functions/ns-1')
     expect(await screen.findByText(/not found|doesn’t exist|can’t find/i)).toBeInTheDocument()
   })
 
   it('the same page serves a second component on another cloud: Workflows on Google Cloud, with its own words', async () => {
     vi.mocked(sourcesApi.fetchFailedItems).mockResolvedValue({ componentKey: 'workflows', items: [item(2, { status: 'CANCELLED', summary: 'Cancelled: run-2' }), item(1)], reachedLimit: false, incomplete: false })
-    open('/next/gcp/c/workflows/ns-2')
+    open('/gcp/c/workflows/ns-2')
 
     const table = await screen.findByRole('table', { name: /Failed Workflows runs, newest first/ })
     expect(within(table).getByText('Cancelled', { selector: 'span' })).toBeInTheDocument()
@@ -172,35 +172,35 @@ describe('a component that is not a message store (Step Functions, unit PP1/PP2)
   })
 
   it('Workflows lists only the Google connection, and Step Functions only the AWS one', async () => {
-    const { unmount } = open('/next/gcp/c/workflows')
-    expect(await screen.findByRole('link', { name: 'View Globex Events' })).toHaveAttribute('href', '/next/gcp/c/workflows/ns-2')
+    const { unmount } = open('/gcp/c/workflows')
+    expect(await screen.findByRole('link', { name: 'View Globex Events' })).toHaveAttribute('href', '/gcp/c/workflows/ns-2')
     expect(screen.queryByRole('link', { name: 'View Acme Payments' })).not.toBeInTheDocument()
     unmount()
-    open('/next/aws/c/step-functions')
+    open('/aws/c/step-functions')
     expect(await screen.findByRole('link', { name: 'View Acme Payments' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'View Globex Events' })).not.toBeInTheDocument()
   })
 
   it('says when the Place filter is cut short, and when part of the places could not be read', async () => {
     vi.mocked(sourcesApi.fetchComponentSource).mockResolvedValue({ ...readable, placesReachedLimit: true })
-    const { unmount } = open('/next/aws/c/step-functions/ns-1')
+    const { unmount } = open('/aws/c/step-functions/ns-1')
     expect(await screen.findByText(/Only the first 1 places are listed/)).toBeInTheDocument()
     unmount()
 
     vi.mocked(sourcesApi.fetchComponentSource).mockResolvedValue({ ...readable, placesIncomplete: true })
-    open('/next/aws/c/step-functions/ns-1')
+    open('/aws/c/step-functions/ns-1')
     expect(await screen.findByText(/Part of the list of places could not be read/)).toBeInTheDocument()
   })
 
   it('leaves a message-store component on its own page, unchanged', async () => {
     vi.mocked(componentsApi.fetchComponent).mockRejectedValue(Object.assign(new Error('x'), { isAxiosError: true, response: { status: 500, data: {} } }))
-    open('/next/aws/c/sqs/ns-1')
+    open('/aws/c/sqs/ns-1')
     expect(await screen.findByRole('alert')).toBeInTheDocument()
     expect(sourcesApi.fetchComponentSource).not.toHaveBeenCalled()
   })
 
   it('has no accessibility violations', async () => {
-    const { container } = open('/next/aws/c/step-functions/ns-1')
+    const { container } = open('/aws/c/step-functions/ns-1')
     await screen.findByRole('table')
     await expectNoAxeViolations(container)
   })

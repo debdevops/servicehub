@@ -39,7 +39,7 @@ const preview = (over: Partial<bulkApi.BulkPreview> = {}): bulkApi.BulkPreview =
   previewId: 'pv1', selected: 2, willReplay: 2, heldBackCount: 0, groups: [{ reason: 'ProcessingError', selected: 2, willReplay: 2, heldBack: 0 }], heldBack: [], perSecond: 5,
   stopAfterConsecutiveFailures: 3, expiresInMinutes: 10, canProveDlqAbsence: true, ...over,
 })
-const ok = '/next/azure/c/service-bus/ns-azure?tab=dead-letters'
+const ok = '/azure/c/service-bus/ns-azure?tab=dead-letters'
 
 function open(url: string) {
   const c = component()

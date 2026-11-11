@@ -60,15 +60,15 @@ describe('Active messages (unit E3)', () => {
   })
 
   it('asks for its own cloud, and for every cloud when the scope is all', async () => {
-    open('/next/azure/active')
+    open('/azure/active')
     await screen.findByRole('heading', { level: 1, name: 'Active messages' })
     await waitFor(() => expect(componentsApi.fetchComponents).toHaveBeenCalledWith('azure'))
-    open('/next/all/active')
+    open('/all/active')
     await waitFor(() => expect(componentsApi.fetchComponents).toHaveBeenCalledWith(undefined))
   })
 
   it('lists the places that hold messages with their exact count, and leaves a topic out', async () => {
-    open('/next/azure/active')
+    open('/azure/active')
     const row = (await screen.findByText('orders-queue')).closest('tr')!
     // The counts come from a second read, so the row first says "Not read" rather than a number it does not have.
     await waitFor(() => expect(within(row).getByText('412')).toBeInTheDocument())
@@ -81,7 +81,7 @@ describe('Active messages (unit E3)', () => {
     vi.mocked(componentsApi.fetchComponents).mockResolvedValue({ components: [sqs()], generatedAtUtc: at })
     vi.mocked(namespacesApi.fetchNamespaces).mockResolvedValue([ns({ id: 'ns-aws', provider: 'aws', capabilities: caps({ supportsRepeatablePeek: false, countsAreApproximate: true }) })])
     vi.mocked(namespacesApi.fetchEntities).mockResolvedValue(live({ name: 'files-queue', activeMessages: 310 }))
-    open('/next/aws/active')
+    open('/aws/active')
     const row = (await screen.findByText('files-queue')).closest('tr')!
     expect(within(row).getByText('310 (approx)')).toBeInTheDocument()
     expect(within(row).getByText('Browsing not offered')).toBeInTheDocument()
@@ -92,14 +92,14 @@ describe('Active messages (unit E3)', () => {
 
   it('says "Can’t count here", never 0, for a cloud that reports no counts', async () => {
     vi.mocked(namespacesApi.fetchNamespaces).mockResolvedValue([ns({ capabilities: caps({ supportsMessageCounts: false, supportsRepeatablePeek: false }) })])
-    open('/next/azure/active')
+    open('/azure/active')
     const row = (await screen.findByText('orders-queue')).closest('tr')!
     expect(within(row).getByText('Can’t count here')).toBeInTheDocument()
     expect(screen.getByText('Active on Azure').parentElement).toHaveTextContent('Can’t count here')
   })
 
   it('opens the browser on the chosen place from the address, and the peek is for that place only', async () => {
-    const { router } = open('/next/azure/active?queue=ns-azure%7Corders-queue')
+    const { router } = open('/azure/active?queue=ns-azure%7Corders-queue')
     await screen.findByRole('heading', { name: 'Browsing active messages' })
     await waitFor(() => expect(messagesApi.peekMessages).toHaveBeenCalledWith('ns-azure', expect.objectContaining({ entity: 'orders-queue' })))
     expect(router.state.location.search).toContain('queue=')
@@ -107,17 +107,17 @@ describe('Active messages (unit E3)', () => {
 
   it('shows an error, not a table, when the read fails; and says so when nothing is connected', async () => {
     vi.mocked(componentsApi.fetchComponents).mockRejectedValueOnce(new Error('boom'))
-    open('/next/azure/active')
+    open('/azure/active')
     expect(await screen.findByRole('alert')).toHaveTextContent('could not be read')
     vi.mocked(componentsApi.fetchComponents).mockResolvedValue({ components: [], generatedAtUtc: at })
-    open('/next/gcp/active')
+    open('/gcp/active')
     expect(await screen.findByText(/No queue or subscription is connected/)).toBeInTheDocument()
   })
 
   it('adds a Cloud column for all clouds, and no sum across them', async () => {
     vi.mocked(componentsApi.fetchComponents).mockResolvedValue({ components: [component(), sqs()], generatedAtUtc: at })
     vi.mocked(namespacesApi.fetchNamespaces).mockResolvedValue([ns(), ns({ id: 'ns-aws', provider: 'aws' })])
-    open('/next/all/active')
+    open('/all/active')
     expect((await screen.findAllByRole('columnheader', { name: 'Cloud' })).length).toBe(2) // the table, and the capabilities table
     expect(screen.getByText('Active on Azure')).toBeInTheDocument()
     expect(screen.getByText('Active on AWS')).toBeInTheDocument()
@@ -125,7 +125,7 @@ describe('Active messages (unit E3)', () => {
   })
 
   it('has no accessibility violations', async () => {
-    const { container } = open('/next/azure/active')
+    const { container } = open('/azure/active')
     await screen.findByText('orders-queue')
     await expectNoAxeViolations(container)
   })

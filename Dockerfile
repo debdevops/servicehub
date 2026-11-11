@@ -1,4 +1,4 @@
-# ServiceHub 4.2.0 — one image, one process, one origin.
+# ServiceHub 5.0.0 — one image, one process, one origin.
 #
 # The archive folder is excluded in .dockerignore and is never present in any layer
 # (ADR-0013 D6, ADR-0014 D3).

@@ -18,7 +18,7 @@ vi.mock('@/lib/api/settings', async (o) => ({ ...(await o<typeof settingsApi>())
 
 const off = { active: false, by: null, at: null, reason: null }
 
-async function open(url = '/next/coverage') {
+async function open(url = '/coverage') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const view = render(<QueryClientProvider client={client}><RouterProvider router={createMemoryRouter([nextRoute], { initialEntries: [url] })} /></QueryClientProvider>)
   // The shell is a lazy chunk (initial-bundle budget), so wait for it before anything asks for the header or the menu.
@@ -71,9 +71,9 @@ describe('the 5.0.0 header (unit B3)', () => {
   })
 
   it('links the Emergency stop button to its dialog and shows no band while the stop is off', async () => {
-    await open('/next/coverage')
+    await open('/coverage')
     const button = await within(header()).findByRole('link', { name: 'Emergency stop' })
-    expect(button).toHaveAttribute('href', '/next/coverage?dialog=emergency-stop')
+    expect(button).toHaveAttribute('href', '/coverage?dialog=emergency-stop')
     expect(await screen.findByText('Role: Approver')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
@@ -101,7 +101,7 @@ describe('the 5.0.0 header (unit B3)', () => {
       components: [component({ needsYou: 3, approvals: 2, handOffs: 1 }), component({ componentKey: 'storage-queues', needsYou: 0, approvals: 0, handOffs: 0 })],
       generatedAtUtc: '2026-10-18T10:00:00Z',
     })
-    await open('/next/azure')
+    await open('/azure')
     const menu = screen.getByRole('navigation', { name: 'ServiceHub' })
     expect(await within(menu).findByLabelText('3 need your attention')).toBeInTheDocument()
     expect(within(menu).getByLabelText('2 pending approvals')).toBeInTheDocument()
@@ -109,19 +109,19 @@ describe('the 5.0.0 header (unit B3)', () => {
 
   it('shows a band, with a link to Agents, only while every acting agent is paused', async () => {
     vi.mocked(agentsApi.fetchAgents).mockResolvedValue([agent({ isPaused: true })])
-    const { unmount } = await open('/next/azure')
+    const { unmount } = await open('/azure')
     expect(await screen.findByText(/The Agent will not act: it is paused/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Resume on Agents' })).toHaveAttribute('href', '/next/azure/agents')
+    expect(screen.getByRole('link', { name: 'Resume on Agents' })).toHaveAttribute('href', '/azure/agents')
     unmount()
     // Partly paused: something is still acting, so no band (the header names who is paused).
     vi.mocked(agentsApi.fetchAgents).mockResolvedValue([agent({ isPaused: true }), agent({ id: 'second', name: 'Second' })])
-    await open('/next/azure')
+    await open('/azure')
     await screen.findByText('Role: Approver')
     expect(screen.queryByText(/The Agent will not act/)).not.toBeInTheDocument()
   })
 
   it('colours the header by the cloud being looked at', async () => {
-    await open('/next/aws')
+    await open('/aws')
     await screen.findByText('Role: Approver')
     expect(header().className).toContain('bg-[#232f3e]')
   })

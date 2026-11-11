@@ -61,18 +61,18 @@ describe('Auto Replay rules (unit E5)', () => {
   })
 
   it('asks for its own cloud’s rules; for all clouds it asks once per connected cloud', async () => {
-    open('/next/azure/rules')
+    open('/azure/rules')
     await screen.findByRole('heading', { level: 1, name: 'Auto Replay rules' })
     await waitFor(() => expect(rulesApi.fetchRules).toHaveBeenCalledWith('azure'))
     vi.clearAllMocks()
     vi.mocked(rulesApi.fetchRules).mockResolvedValue([])
-    open('/next/all/rules')
+    open('/all/rules')
     await waitFor(() => expect(rulesApi.fetchRules).toHaveBeenCalledWith('azure'))
     expect(rulesApi.fetchRules).not.toHaveBeenCalledWith('aws')
   })
 
   it('counts the rules by state and words each state from why the server says it is off', async () => {
-    open('/next/azure/rules')
+    open('/azure/rules')
     const table = await screen.findByRole('table', { name: 'Auto Replay rules' })
     const rows = within(table).getAllByRole('row')
     expect(rows[1]).toHaveTextContent('Order lock losses')
@@ -89,7 +89,7 @@ describe('Auto Replay rules (unit E5)', () => {
 
   it('opens the rule card under its row, with Replay all disabled while nothing matching is waiting', async () => {
     const user = userEvent.setup()
-    open('/next/azure/rules')
+    open('/azure/rules')
     await user.click(await screen.findByRole('button', { name: 'Manage Order lock losses' }))
     expect(await screen.findByRole('switch', { name: 'Order lock losses is on' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Edit/ })).toBeInTheDocument()
@@ -100,7 +100,7 @@ describe('Auto Replay rules (unit E5)', () => {
     const user = userEvent.setup()
     vi.mocked(rulesApi.fetchRuleMatches).mockResolvedValue([5, 6])
     vi.mocked(bulkApi.previewBulk).mockRejectedValue(new Error('not needed here'))
-    const { router } = open('/next/azure/rules')
+    const { router } = open('/azure/rules')
     await user.click(await screen.findByRole('button', { name: 'Manage Order lock losses' }))
     const button = await screen.findByRole('button', { name: 'Replay all' })
     await waitFor(() => expect(button).toBeEnabled())
@@ -113,16 +113,16 @@ describe('Auto Replay rules (unit E5)', () => {
   it('sends a held rule’s person to this shell’s approvals, not the old Home tab', async () => {
     const user = userEvent.setup()
     vi.mocked(rulesApi.fetchRules).mockResolvedValue([rule({ askedCount: 3, lastAskedReason: 'AUTONOMY_GRANT_INSUFFICIENT' })])
-    open('/next/azure/rules')
+    open('/azure/rules')
     await user.click(await screen.findByRole('button', { name: 'Manage Order lock losses' }))
-    expect(await screen.findByRole('link', { name: /See them/ })).toHaveAttribute('href', '/next/azure/approvals')
+    expect(await screen.findByRole('link', { name: /See them/ })).toHaveAttribute('href', '/azure/approvals')
   })
 
   it('turns an Operator’s switch-on into a refusal that says who can grant it', async () => {
     const user = userEvent.setup()
     vi.mocked(identityApi.fetchMe).mockResolvedValue(me({ governanceActive: true, effectiveRole: 'Operator', recoverRole: 'Operator' }))
     vi.mocked(rulesApi.fetchRules).mockResolvedValue([off])
-    open('/next/azure/rules')
+    open('/azure/rules')
     await user.click(await screen.findByRole('button', { name: 'Manage Image retries' }))
     expect(await screen.findByRole('switch', { name: 'Image retries is off' })).toBeDisabled()
     expect(screen.getByRole('button', { name: /^New rule$|^\+?\s*New rule$/ })).toBeInTheDocument()
@@ -131,16 +131,16 @@ describe('Auto Replay rules (unit E5)', () => {
 
   it('opens the new-rule form from the page, and from a failure’s link (?rule=)', async () => {
     const user = userEvent.setup()
-    open('/next/azure/rules')
+    open('/azure/rules')
     await user.click(await screen.findByRole('button', { name: /^New rule$|^\+?\s*New rule$/ }))
     expect(await screen.findByRole('form', { name: 'New rule' })).toBeInTheDocument()
-    open('/next/azure/rules?rule=h1')
+    open('/azure/rules?rule=h1')
     expect((await screen.findAllByRole('form', { name: 'New rule' })).length).toBeGreaterThan(0)
   })
 
   it('makes rules only after a confirmation, and says when there was nothing to make', async () => {
     const user = userEvent.setup()
-    open('/next/azure/rules')
+    open('/azure/rules')
     await user.click(await screen.findByRole('button', { name: /^Auto generate rules$/ }))
     expect(rulesApi.generateRules).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Yes, make them' }))
@@ -149,25 +149,25 @@ describe('Auto Replay rules (unit E5)', () => {
   })
 
   it('shows the verification note only where a connected cloud cannot verify a fix', async () => {
-    open('/next/azure/rules')
+    open('/azure/rules')
     await screen.findByRole('table', { name: 'Auto Replay rules' })
     expect(screen.queryByText(/can only prove itself/)).not.toBeInTheDocument()
     vi.mocked(namespacesApi.fetchNamespaces).mockResolvedValue([{ id: 'n', provider: 'azure', capabilities: { canProveDlqAbsence: false } } as unknown as namespacesApi.Namespace])
-    open('/next/azure/rules')
+    open('/azure/rules')
     expect((await screen.findAllByText(/can only prove itself/)).length).toBeGreaterThan(0)
   })
 
   it('says so when there are no rules, and shows an error rather than an empty list when the read fails', async () => {
     vi.mocked(rulesApi.fetchRules).mockResolvedValueOnce([])
-    open('/next/azure/rules')
+    open('/azure/rules')
     expect(await screen.findByText(/No rules yet/)).toBeInTheDocument()
     vi.mocked(rulesApi.fetchRules).mockRejectedValue(new Error('boom'))
-    open('/next/aws/rules')
+    open('/aws/rules')
     expect(await screen.findByRole('alert')).toHaveTextContent('could not be read')
   })
 
   it('has no accessibility violations', async () => {
-    const { container } = open('/next/azure/rules')
+    const { container } = open('/azure/rules')
     await screen.findByRole('table', { name: 'Auto Replay rules' })
     await expectNoAxeViolations(container)
   })

@@ -32,7 +32,7 @@ const entry = (key: string, name: string, state: enablementApi.ComponentState): 
   note: null, what: null, appears: null, needs: null, steps: [], snippets: [], permissions: [], includedIn: null,
 })
 
-function open(url = '/next/connections') {
+function open(url = '/connections') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={client}><RouterProvider router={createMemoryRouter([nextRoute], { initialEntries: [url] })} /></QueryClientProvider>)
 }
@@ -57,7 +57,7 @@ describe('Connections: every connection, every provider, in one place', () => {
     open()
     expect(await screen.findByRole('heading', { level: 1, name: /Connections/ })).toBeInTheDocument()
     const menu = screen.getByRole('navigation', { name: 'ServiceHub' })
-    expect(within(menu).getByRole('link', { name: /Connections/ })).toHaveAttribute('href', '/next/connections')
+    expect(within(menu).getByRole('link', { name: /Connections/ })).toHaveAttribute('href', '/connections')
     expect(await screen.findByRole('region', { name: 'Azure connections' })).toHaveTextContent('Orders bus')
     expect(screen.getByRole('region', { name: 'AWS connections' })).toHaveTextContent('Acme Payments')
     expect(screen.getByRole('region', { name: 'Google Cloud connections' })).toHaveTextContent(/No Google Cloud connection yet/)
@@ -76,12 +76,12 @@ describe('Connections: every connection, every provider, in one place', () => {
 
   it('offers Connect a cloud, and Add a component for one connection opens the dialog on that connection', async () => {
     open()
-    expect(await screen.findByRole('link', { name: /Connect a cloud/ })).toHaveAttribute('href', '/next/connections?dialog=connect')
-    expect(await screen.findByRole('link', { name: 'Add a component to Acme Payments' })).toHaveAttribute('href', '/next/connections?dialog=add-component&ns=ns-aws')
+    expect(await screen.findByRole('link', { name: /Connect a cloud/ })).toHaveAttribute('href', '/connections?dialog=connect')
+    expect(await screen.findByRole('link', { name: 'Add a component to Acme Payments' })).toHaveAttribute('href', '/connections?dialog=add-component&ns=ns-aws')
   })
 
   it('opening Add a component from a connection lands on that connection’s cloud, whatever page it is opened over', async () => {
-    open('/next/connections?dialog=add-component&ns=ns-aws')
+    open('/connections?dialog=add-component&ns=ns-aws')
     const dialog = within(await screen.findByRole('dialog', { name: 'Add a component' }))
     expect(await dialog.findByText('Acme Payments')).toBeInTheDocument()
     expect(enablementApi.fetchComponentList).toHaveBeenCalledWith('ns-aws')

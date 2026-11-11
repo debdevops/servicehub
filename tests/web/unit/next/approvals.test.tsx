@@ -52,15 +52,15 @@ describe('Pending approvals (unit E2)', () => {
   })
 
   it('asks for its own cloud, and for every cloud when the scope is all', async () => {
-    open('/next/azure/approvals')
+    open('/azure/approvals')
     await screen.findByRole('heading', { level: 1, name: /Pending approvals/ })
     await waitFor(() => expect(pendingApi.fetchPendingWork).toHaveBeenCalledWith({ provider: 'azure' }))
-    open('/next/all/approvals')
+    open('/all/approvals')
     await waitFor(() => expect(pendingApi.fetchPendingWork).toHaveBeenCalledWith({}))
   })
 
   it('lists approvals only: a hand-off is not something to approve', async () => {
-    open('/next/azure/approvals')
+    open('/azure/approvals')
     expect(await screen.findByRole('heading', { name: 'Waiting for approval (2)' })).toBeInTheDocument()
     expect(screen.getByText('#41')).toBeInTheDocument()
     expect(screen.queryByText('#42')).not.toBeInTheDocument()
@@ -69,18 +69,18 @@ describe('Pending approvals (unit E2)', () => {
 
   it('opens the Review dialog for one row, and for exactly the ticked rows', async () => {
     const user = userEvent.setup()
-    const { router } = open('/next/azure/approvals')
+    const { router } = open('/azure/approvals')
     await user.click(await screen.findByLabelText('Select message 41'))
     await user.click(screen.getByLabelText('Select message 43'))
     await user.click(screen.getByRole('link', { name: 'Review 2 selected…' }))
     expect(router.state.location.search).toBe('?dialog=review&entries=a1,a2')
-    await router.navigate('/next/azure/approvals')
+    await router.navigate('/azure/approvals')
     await user.click((await screen.findAllByRole('link', { name: 'Review' }))[0])
     expect(router.state.location.search).toBe('?dialog=review&entry=a1')
   })
 
   it('shows only the ticked replays in the dialog, and sends nothing until a person approves', async () => {
-    open('/next/azure/approvals?dialog=review&entries=a2')
+    open('/azure/approvals?dialog=review&entries=a2')
     const dialog = await screen.findByRole('dialog')
     expect(await within(dialog).findByRole('button', { name: /^Approve/ })).toBeInTheDocument()
     expect(within(dialog).getByText(/1 replay waiting/)).toBeInTheDocument()
@@ -89,7 +89,7 @@ describe('Pending approvals (unit E2)', () => {
 
   it('says "Needs an Approver" and offers no review to someone who cannot approve', async () => {
     vi.mocked(identityApi.fetchMe).mockResolvedValue(me({ governanceActive: true, effectiveRole: 'Operator', recoverRole: 'Operator' }))
-    open('/next/azure/approvals')
+    open('/azure/approvals')
     expect((await screen.findAllByText('Needs an Approver')).length).toBe(2)
     expect(screen.queryByRole('link', { name: 'Review' })).not.toBeInTheDocument()
     expect(screen.getByText('Approving needs the Approver role.').parentElement).toHaveTextContent('You do not have it')
@@ -97,15 +97,15 @@ describe('Pending approvals (unit E2)', () => {
 
   it('says so when nothing waits, and shows an error rather than an empty list when the read fails', async () => {
     vi.mocked(pendingApi.fetchPendingWork).mockResolvedValueOnce(page([]))
-    open('/next/azure/approvals')
+    open('/azure/approvals')
     expect(await screen.findByText('Nothing is waiting for approval right now.')).toBeInTheDocument()
     vi.mocked(pendingApi.fetchPendingWork).mockRejectedValue(new Error('boom'))
-    open('/next/aws/approvals')
+    open('/aws/approvals')
     expect(await screen.findByRole('alert')).toHaveTextContent('could not be read')
   })
 
   it('has no accessibility violations', async () => {
-    const { container } = open('/next/azure/approvals')
+    const { container } = open('/azure/approvals')
     await screen.findByRole('table')
     await expectNoAxeViolations(container)
   })

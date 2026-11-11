@@ -23,7 +23,7 @@ vi.mock('@/lib/api/pendingWork', async (o) => ({ ...(await o<typeof pendingApi>(
 vi.mock('@/lib/api/namespaces', async (o) => ({ ...(await o<typeof namespacesApi>()), fetchNamespace: vi.fn(), fetchEntities: vi.fn(), fetchNamespaces: vi.fn(), fetchDlqObserver: vi.fn(), fetchEntitySettings: vi.fn() }))
 
 const at = '2026-10-18T09:00:00Z'
-const ok = '/next/azure/c/service-bus/ns-azure?tab=configuration'
+const ok = '/azure/c/service-bus/ns-azure?tab=configuration'
 const settings = (channels: settingsApi.NotificationChannel[]) => ({ notifications: { bellAlwaysOn: true, serverChannel: null, channels }, security: { apiKeysConfigured: 0, credentialsEncryptedAtRest: true, keyFingerprint: 'x' }, emergencyStop: { active: false, by: null, at: null, reason: null } }) as settingsApi.Settings
 const channel = (label: string, enabled = true) => ({ id: label, format: 'slack', label, enabled, createdAt: at, createdBy: 'x', lastDeliveredAt: null, lastError: null }) as unknown as settingsApi.NotificationChannel
 const ns = (canProve: boolean) => ({
@@ -111,7 +111,7 @@ describe('the Configuration tab (unit D6)', () => {
     expect(await within(own).findByText('Every enabled channel (1): #payments-alerts')).toBeInTheDocument()
     expect(own).toHaveTextContent('Environmentdev')
     expect(own).toHaveTextContent('LooksAutomatically')
-    expect(within(own).getByRole('link', { name: 'Change' })).toHaveAttribute('href', '/next/configuration')
+    expect(within(own).getByRole('link', { name: 'Change' })).toHaveAttribute('href', '/configuration')
   })
 
   it('says only the bell tells you when no channel is set up', async () => {

@@ -45,7 +45,7 @@ describe('Connect dialog (unit F1)', () => {
 
   it('opens from a connection list on the cloud you are on, and creates nothing on open', async () => {
     const user = userEvent.setup()
-    open('/next/aws/c/sqs')
+    open('/aws/c/sqs')
     await user.click(await screen.findByRole('link', { name: /Connect a/ }))
     const dialog = await screen.findByRole('dialog')
     expect(await within(dialog).findByRole('button', { name: 'Connect' })).toBeInTheDocument()
@@ -54,14 +54,14 @@ describe('Connect dialog (unit F1)', () => {
 
   it('refuses someone who is not an Admin, saying who can grant it, and creates nothing', async () => {
     vi.mocked(identityApi.fetchMe).mockResolvedValue(me({ governanceActive: true, effectiveRole: 'Operator', recoverRole: 'Operator' }))
-    open('/next/azure?dialog=connect')
+    open('/azure?dialog=connect')
     const dialog = await screen.findByRole('dialog')
     expect((await within(dialog).findAllByText(/you need the Admin role/)).length).toBeGreaterThan(0)
     expect(namespacesApi.connectNamespace).not.toHaveBeenCalled()
   })
 
   it('is no longer the “not built yet” frame, and has no accessibility violations', async () => {
-    open('/next/azure?dialog=connect')
+    open('/azure?dialog=connect')
     const dialog = await screen.findByRole('dialog')
     expect(screen.queryByText(/Not built yet/)).not.toBeInTheDocument()
     await waitFor(() => expect(within(dialog).getAllByRole('textbox').length).toBeGreaterThan(0))

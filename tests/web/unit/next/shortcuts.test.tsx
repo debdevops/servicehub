@@ -63,7 +63,7 @@ describe('Keyboard shortcuts', () => {
 
   it('Ctrl-K and ⌘K open Search; Esc closes it', async () => {
     const user = userEvent.setup()
-    const { router } = open('/next/azure')
+    const { router } = open('/azure')
     await screen.findByRole('heading', { level: 1, name: /Dashboard/ })
     await user.keyboard('{Control>}k{/Control}')
     await waitFor(() => expect(router.state.location.search).toBe('?dialog=search'))
@@ -75,7 +75,7 @@ describe('Keyboard shortcuts', () => {
 
   it('? opens Help, from any page, and does not stack a second one', async () => {
     const user = userEvent.setup()
-    const { router } = open('/next/azure/replays?window=30d')
+    const { router } = open('/azure/replays?window=30d')
     await screen.findByRole('heading', { level: 1, name: 'Replay history' })
     await user.keyboard('?')
     await waitFor(() => expect(router.state.location.search).toContain('panel=help'))
@@ -87,7 +87,7 @@ describe('Keyboard shortcuts', () => {
 
   it('/ moves focus to the list’s search box', async () => {
     const user = userEvent.setup()
-    open('/next/azure/c/service-bus/ns-azure?tab=dead-letters')
+    open('/azure/c/service-bus/ns-azure?tab=dead-letters')
     const box = await screen.findByLabelText('Search messages')
     expect(box).not.toHaveFocus()
     await user.keyboard('/')
@@ -96,7 +96,7 @@ describe('Keyboard shortcuts', () => {
 
   it('R presses the open message’s Replay link — the preview, never a replay', async () => {
     const user = userEvent.setup()
-    const { router } = open('/next/azure?dialog=message&id=7')
+    const { router } = open('/azure?dialog=message&id=7')
     await screen.findByRole('link', { name: 'Replay…' })
     await user.keyboard('r')
     await waitFor(() => expect(router.state.location.search).toBe('?dialog=replay&id=7'))
@@ -106,7 +106,7 @@ describe('Keyboard shortcuts', () => {
   it('R does nothing where the Replay link is not offered (a message no longer in dead-letter)', async () => {
     const user = userEvent.setup()
     vi.mocked(deadLettersApi.fetchDeadLetter).mockResolvedValue(detail('resolved'))
-    const { router } = open('/next/azure?dialog=message&id=7')
+    const { router } = open('/azure?dialog=message&id=7')
     await screen.findByText('Why it failed') // the message has loaded, and offers no Replay link
     expect(screen.queryByRole('link', { name: 'Replay…' })).not.toBeInTheDocument()
     await user.keyboard('r')
@@ -116,7 +116,7 @@ describe('Keyboard shortcuts', () => {
   it('R does nothing for someone who may not replay', async () => {
     const user = userEvent.setup()
     vi.mocked(identityApi.fetchMe).mockResolvedValue(me({ governanceActive: true, effectiveRole: 'Viewer', recoverRole: 'Viewer' }))
-    const { router } = open('/next/azure?dialog=message&id=7')
+    const { router } = open('/azure?dialog=message&id=7')
     expect(await screen.findByText(/Needs an Operator to replay/)).toBeInTheDocument()
     await user.keyboard('r')
     expect(router.state.location.search).toBe('?dialog=message&id=7')
@@ -124,7 +124,7 @@ describe('Keyboard shortcuts', () => {
 
   it('a single key never fires inside a text field, or with a modifier', async () => {
     const user = userEvent.setup()
-    const { router } = open('/next/azure/c/service-bus/ns-azure?tab=dead-letters')
+    const { router } = open('/azure/c/service-bus/ns-azure?tab=dead-letters')
     const box = await screen.findByLabelText('Search messages')
     await user.click(box)
     await user.keyboard('?/r')
@@ -137,14 +137,14 @@ describe('Keyboard shortcuts', () => {
 
   it('has no “A” switch: there is no Simple / Advanced any more', async () => {
     const user = userEvent.setup()
-    const { router } = open('/next/azure')
+    const { router } = open('/azure')
     await screen.findByRole('heading', { level: 1, name: /Dashboard/ })
     await user.keyboard('a')
-    expect(router.state.location.pathname).toBe('/next/azure')
+    expect(router.state.location.pathname).toBe('/azure')
   })
 
   it('Help lists the same shortcuts', async () => {
-    open('/next/azure?panel=help')
+    open('/azure?panel=help')
     const dialog = await screen.findByRole('dialog')
     for (const k of nextShortcuts) expect(dialog.textContent).toContain(k.keys)
   })
