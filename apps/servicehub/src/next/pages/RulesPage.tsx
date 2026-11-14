@@ -168,7 +168,7 @@ export default function RulesPage() {
             {creating && target && <div className="m-4"><NewRule provider={target} onDone={closeForm} /></div>}
 
             {rules.length === 0 ? (
-              <p className="px-4 py-6 text-sm text-[var(--color-text-muted)]">No rules yet. A rule names a failure ServiceHub has already seen, and how carefully to retry it.</p>
+              <p className="px-4 py-6 text-sm text-[var(--color-text-muted)]">No rules yet. A rule names a failure ServiceHub has already seen, and how carefully to retry it. Choose where it applies in “New rule on” above, then press New rule.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full">

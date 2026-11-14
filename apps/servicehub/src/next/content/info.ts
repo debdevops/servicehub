@@ -199,7 +199,7 @@ export const labels: Readonly<Record<string, ColumnHelp>> = {
   'section:Ledger entries': h('Ledger entries', 'Every recovery action ServiceHub recorded. Each is chained to the one before it, so nothing can be changed or removed without it showing.'),
   'section:Reading the evidence': h('Reading the evidence', 'What each observation lets ServiceHub say, and what it does not. The observations are separate facts, not steps on one ladder.'),
   'section:Agents table': h('Agents', 'Every registered agent, what it does and how it is doing.'),
-  'section:Connections': h('Connections', 'The clouds and namespaces ServiceHub is connected to, whether each last tested well, and what it can see.'),
+  'section:Connections': h('Connections', 'The clouds ServiceHub is connected to, whether each last tested well, and what it can see.'),
   'section:Notifications': h('Notifications', 'Where ServiceHub tells people when it needs them. It tells you only when the Agent stops and needs a person, never for routine activity.'),
   'section:Access': h('Access and security', 'Who you are to ServiceHub, who may do what, and the emergency stop.'),
   'section:Preferences': h('Preferences', 'How ServiceHub looks and behaves for you on this browser.'),

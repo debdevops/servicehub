@@ -104,7 +104,7 @@ public sealed class DeadLettersController : ApiControllerBase
             if (!candidates.Any())
             {
                 // Someone else's namespace looks exactly like one that is not there.
-                return Problem(StatusCodes.Status404NotFound, ErrorCodes.Namespace.NotFound, $"Namespace with ID '{id}' was not found.");
+                return Problem(StatusCodes.Status404NotFound, ErrorCodes.Namespace.NotFound, $"Connection with ID '{id}' was not found.");
             }
         }
 
@@ -172,7 +172,7 @@ public sealed class DeadLettersController : ApiControllerBase
             candidates = candidates.Where(n => n.Id == id);
             if (!candidates.Any())
             {
-                return Problem(StatusCodes.Status404NotFound, ErrorCodes.Namespace.NotFound, $"Namespace with ID '{id}' was not found.");
+                return Problem(StatusCodes.Status404NotFound, ErrorCodes.Namespace.NotFound, $"Connection with ID '{id}' was not found.");
             }
         }
 

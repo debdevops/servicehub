@@ -95,7 +95,7 @@ export default function ApprovalsPage() {
               <p className="px-4 py-6 text-sm text-[var(--color-text-muted)]">Nothing is waiting for approval right now.</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full">
+                <table className="stack-table w-full">
                   <caption className="sr-only">Replays waiting for approval</caption>
                   <thead>
                     <tr>
@@ -118,14 +118,14 @@ export default function ApprovalsPage() {
                           <td className="px-2 py-2.5 align-top">
                             <input type="checkbox" className="h-4 w-4" checked={ticked.has(id)} onChange={() => toggle(id)} aria-label={`Select message ${i.dlqMessageId ?? id}`} />
                           </td>
-                          {scope === 'all' && <td className={td}>{i.provider ? cloudLabel[i.provider] : '—'}</td>}
-                          <td className={`${td} font-mono text-xs`}>{i.dlqMessageId !== null ? `#${i.dlqMessageId}` : '—'}</td>
-                          <td className={`${td} ${wrap}`}>{nameOf(i.componentKey)}{i.namespaceName && <span className="block text-xs text-[var(--color-text-muted)]">{i.namespaceName}</span>}</td>
-                          <td className={`${td} ${wrap}`}>{i.entity ?? '—'}</td>
-                          <td className={`${td} ${wrap}`}>{i.deadLetterReason ?? '—'}</td>
-                          <td className={`${td} max-w-md`}>{i.reason}</td>
-                          <td className={td}>{formatAge(i.since, now)}</td>
-                          <td className={`${td} ${wrap}`}>{ownerOf(i.namespaceId)}</td>
+                          {scope === 'all' && <td data-label="Cloud" className={td}>{i.provider ? cloudLabel[i.provider] : '—'}</td>}
+                          <td data-label="Message" className={`${td} font-mono text-xs`}>{i.dlqMessageId !== null ? `#${i.dlqMessageId}` : '—'}</td>
+                          <td data-label="Component" className={`${td} ${wrap}`}>{nameOf(i.componentKey)}{i.namespaceName && <span className="block text-xs text-[var(--color-text-muted)]">{i.namespaceName}</span>}</td>
+                          <td data-label="Entity" className={`${td} ${wrap}`}>{i.entity ?? '—'}</td>
+                          <td data-label="Reason" className={`${td} ${wrap}`}>{i.deadLetterReason ?? '—'}</td>
+                          <td data-label="Why the Agent asked" className={`${td} max-w-md`}>{i.reason}</td>
+                          <td data-label="Waiting" className={td}>{formatAge(i.since, now)}</td>
+                          <td data-label="Owner" className={`${td} ${wrap}`}>{ownerOf(i.namespaceId)}</td>
                           <td className={td}>
                             {may.allowed
                               ? <Link to={`${pathname}?dialog=review&entry=${encodeURIComponent(id)}`} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">Review</Link>

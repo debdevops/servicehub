@@ -42,7 +42,7 @@ public sealed class NamespaceRepository : INamespaceRepository
         var ns = await _dbContext.Namespaces.AsNoTracking().FirstOrDefaultAsync(n => n.Id == id, cancellationToken);
         return ns is null
             ? Result.Failure<Namespace>(Error.NotFound(
-                ErrorCodes.Namespace.NotFound, $"Namespace with ID '{id}' was not found."))
+                ErrorCodes.Namespace.NotFound, $"Connection with ID '{id}' was not found."))
             : Result.Success(ns);
     }
 
@@ -141,7 +141,7 @@ public sealed class NamespaceRepository : INamespaceRepository
         if (existing is null)
         {
             return Result.Failure(Error.NotFound(
-                ErrorCodes.Namespace.NotFound, $"Namespace with ID '{@namespace.Id}' was not found."));
+                ErrorCodes.Namespace.NotFound, $"Connection with ID '{@namespace.Id}' was not found."));
         }
 
         if (!string.Equals(existing.OwnerId, @namespace.OwnerId, StringComparison.Ordinal))
@@ -176,7 +176,7 @@ public sealed class NamespaceRepository : INamespaceRepository
         if (ns is null)
         {
             return Result.Failure(Error.NotFound(
-                ErrorCodes.Namespace.NotFound, $"Namespace with ID '{id}' was not found."));
+                ErrorCodes.Namespace.NotFound, $"Connection with ID '{id}' was not found."));
         }
 
         _dbContext.Namespaces.Remove(ns);

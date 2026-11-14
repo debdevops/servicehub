@@ -1,8 +1,12 @@
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, NavLink, Outlet, useParams } from 'react-router-dom'
 import { sidebarComponents, useCoverage } from '../../hooks/useCoverage'
 import { useEnabledComponents } from '../../hooks/useComponentEnablement'
 import { useComponents } from '../../hooks/useComponents'
+import { useNamespaces } from '../../hooks/useNamespaces'
 import { DemoBanner } from '../../components/banners/DemoEntry'
+import { isDemo } from '../../lib/demo/state'
 import { NotFoundPage } from '../../pages/NotFoundPage'
 import { HeaderStatus } from '../components/HeaderStatus'
 import { OverlayHost } from '../components/OverlayHost'
@@ -18,14 +22,44 @@ const linkBase = 'flex min-h-9 items-center py-1 gap-2.5 rounded-lg px-2.5 text-
 const linkOn = 'bg-[var(--color-primary-50)] font-semibold text-[var(--color-primary-700)]'
 const groupTitle = 'mx-2.5 mb-1 mt-4 text-xs font-bold text-[var(--color-text)]'
 
-/** A menu link with its (i) beside it: hovering the (i) says what the page is, in the words of the navigation array itself. */
+/**
+ * A menu link that explains itself without an icon: hovering the row (after a short pause) or putting keyboard focus on it opens the same
+ * note an (i) would, and Escape closes it. The words are always on the link for a screen reader (`aria-description`, so the page text is not repeated), so nothing is lost
+ * by leaving the icon off; 16 fewer icons on every page, and the rows have their width back.
+ */
 function MenuLink({ to, end, children, help }: { to: string; end?: boolean; children: React.ReactNode; help?: ColumnHelp }) {
+  const row = useRef<HTMLDivElement>(null)
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  const show = (delay: number) => {
+    clearTimeout(timer.current)
+    timer.current = setTimeout(() => {
+      const r = row.current?.getBoundingClientRect()
+      if (r) setPos({ top: r.top + r.height / 2 - 24, left: r.right + 8 })
+    }, delay)
+  }
+  const hide = () => { clearTimeout(timer.current); setPos(null) }
+  useEffect(() => () => clearTimeout(timer.current), [])
+  useEffect(() => {
+    if (!pos) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPos(null) }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [pos])
+
   return (
-    <div className="flex items-center">
-      <NavLink to={to} end={end} className={({ isActive }) => `${linkBase} min-w-0 flex-1 ${isActive ? linkOn : ''}`}>
+    <div ref={row} onMouseEnter={() => show(350)} onMouseLeave={hide} onFocus={() => show(0)} onBlur={hide}>
+      <NavLink to={to} end={end} aria-description={help?.text} className={({ isActive }) => `${linkBase} min-w-0 flex-1 ${isActive ? linkOn : ''}`}>
         {children}
       </NavLink>
-      {help && <Tip help={help} />}
+      {help && pos && createPortal(
+        <div role="note" style={{ position: 'fixed', top: pos.top, left: pos.left, width: 288, zIndex: 60 }}
+          className="pointer-events-none rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3.5 text-left shadow-[0_10px_30px_rgba(0,0,0,0.14)]">
+          <p className="text-[13px] font-bold text-[var(--color-text)]">{help.title}</p>
+          <p className="mt-1 text-[12.5px] font-normal leading-relaxed text-[var(--color-text-muted)]">{help.text}</p>
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }
@@ -58,6 +92,11 @@ export function NextLayout() {
   const { data } = useCoverage()
   const rows = data?.rows ?? []
   const enabled = useEnabledComponents().data ?? []
+  // Until a connection exists, the menu is only what a first-time person can use: Home, Connections and the reference pages. The components and
+  // the tools appear with the first connection (any record, even a failing one, so a broken key never hides the tools that fix it). A read that
+  // has not finished, or has failed, keeps the full menu: nothing is hidden on a guess.
+  const connections$ = useNamespaces()
+  const nothingConnected = connections$.isSuccess && connections$.data.length === 0 && !isDemo()
   // The badges are the same sums the Home tiles show, from the same read, so they cannot disagree with the page.
   const components = useComponents(cloud)
   const badges = components.data
@@ -106,13 +145,14 @@ export function NextLayout() {
             {connections.label}
           </MenuLink>
 
+          {!nothingConnected && <>
           <h2 className={groupTitle}>PaaS Components<Tip label="menu:PaaS Components" /></h2>
           <ul>
             {sidebarComponents(rows, cloud, enabled).map((row) => (
               <li key={row.componentKey}>
                 <MenuLink to={nextHref(nextEntry('component-list'), { cloud: row.cloud, component: row.componentKey })} help={{ title: row.name, text: `Failed messages end up in: ${row.stuckPlace}. ${row.statusWords}.${row.note ? ` ${row.note}.` : ''} Open it to see your connections to ${row.name}.` }}>
                   {row.name}
-                  {row.status === 'beingValidated' && <span className="ml-auto shrink-0 whitespace-nowrap text-[11px] text-amber-800">Not yet validated</span>}
+                  {row.status === 'beingValidated' && <span role="img" aria-label="Not yet validated" title="Not yet validated" className="ml-auto h-2 w-2 shrink-0 rounded-full bg-amber-500" />}
                 </MenuLink>
               </li>
             ))}
@@ -131,6 +171,8 @@ export function NextLayout() {
               </li>
             ))}
           </ul>
+
+          </>}
 
           <ul className="mt-4 border-t border-[var(--color-border)] pt-3">
             {reference.map((entry) => (

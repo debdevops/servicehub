@@ -13,7 +13,7 @@ export function EvidencePanel({ cloudName, rows, heading }: { cloudName: string;
     <section aria-labelledby="evidence-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
       <h2 id="evidence-title" className="mb-3 text-base font-semibold">{heading ?? `Evidence and replay outcome (${cloudName})`}<Tip label="section:What the evidence can show" /></h2>
       {rows.length === 0 ? (
-        <p className="text-sm text-[var(--color-text-muted)]">Nothing is covered here yet.</p>
+        <p className="text-sm text-[var(--color-text-muted)]">Nothing is covered here yet. Switch a component on from Add a component, and what it can prove appears here.</p>
       ) : (
         <dl className="space-y-3">
           {rows.map((row) => {

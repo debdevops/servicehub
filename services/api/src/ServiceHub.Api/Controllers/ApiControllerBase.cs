@@ -66,7 +66,7 @@ public abstract class ApiControllerBase : ControllerBase
         return visible
             ? result
             : Result.Failure<Namespace>(Error.NotFound(
-                ErrorCodes.Namespace.NotFound, $"Namespace with ID '{id}' was not found."));
+                ErrorCodes.Namespace.NotFound, $"Connection with ID '{id}' was not found."));
     }
 
     /// <summary>

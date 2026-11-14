@@ -116,7 +116,7 @@ export function RecoveryTab({ component: c, canProve }: { component: ConnectedCo
         ) : (
           <ReplayTable items={items} caption={`Replays from ${c.name} on ${cloudLabel[c.cloud]}`} openHref={(r) => open(r.dlqMessageId)} fmt={fmt} />
         )}
-        {items.length > 0 && <p className="border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-muted)]">{outcomeFootnote(canProve)}</p>}
+        {items.length > 0 && <p className="border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-muted)]">{outcomeFootnote(canProve)}{!canProve && <> To have ServiceHub confirm fixes on this connection, set up <Link to={`${pathname}?tab=configuration`} className="font-semibold text-[var(--color-primary-700)] underline">Confirming fixes in Configuration</Link>.</>}</p>}
         <Pager page={page} pageSize={pageSize} total={total} filtered={filtering} onPage={(p) => change({ page: String(p) })} onPageSize={(n) => { setPageSize(n); change({}) }} label="replays" />
       </section>
     </div>

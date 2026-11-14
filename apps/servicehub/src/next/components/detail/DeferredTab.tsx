@@ -35,7 +35,7 @@ export function DeferredTab({ component: c }: { component: ConnectedComponent })
   return (
     <div className="space-y-4">
       <aside aria-label="Being validated" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-        <p><span className="font-semibold">Being validated.</span> This tab lists deferred messages and nothing more. Whether one can be received by its sequence number and sent again safely, and what that repeats, has to be confirmed on a real namespace first, so there is no button to move one.</p>
+        <p><span className="font-semibold">Being validated.</span> This tab lists deferred messages and nothing more. Whether one can be received by its sequence number and sent again safely, and what that repeats, has to be confirmed on a real connection first, so there is no button to move one.</p>
       </aside>
       <section aria-labelledby="deferred-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
         <h2 id="deferred-title" className="px-4 pt-4 text-base font-semibold">Deferred messages<Tip label="section:Deferred messages" /></h2>

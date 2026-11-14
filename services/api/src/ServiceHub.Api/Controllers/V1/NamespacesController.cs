@@ -102,7 +102,7 @@ public sealed class NamespacesController : ApiControllerBase
             return Problem(
                 StatusCodes.Status503ServiceUnavailable,
                 ErrorCodes.CapabilityUnavailable,
-                $"This build of ServiceHub has no adapter for '{request.Provider}', so a namespace on it cannot be connected.");
+                $"This build of ServiceHub has no adapter for '{request.Provider}', so a connection to it cannot be made.");
         }
 
         var credentialCheck = NamespaceCredentials.Validate(request.Provider, request.AuthType, request.ConnectionString);
@@ -124,7 +124,7 @@ public sealed class NamespacesController : ApiControllerBase
         if (pool.Value.Any(n => string.Equals(n.Name, name, StringComparison.Ordinal)))
         {
             return Problem(StatusCodes.Status409Conflict, ErrorCodes.Namespace.AlreadyExists,
-                $"A namespace named '{request.Name}' is already connected.");
+                $"A connection named '{request.Name}' already exists.");
         }
 
         // The hash is taken from the plaintext so the same credential is recognised without ever

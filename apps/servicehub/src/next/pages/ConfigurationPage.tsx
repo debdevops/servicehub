@@ -50,7 +50,7 @@ export default function ConfigurationPage() {
       </div>
 
       <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-        {tab === 'connections' && <Connections admin={permission(me, 'Admin', 'remove a namespace')} addHref={connect} />}
+        {tab === 'connections' && <Connections admin={permission(me, 'Admin', 'remove a connection')} addHref={connect} />}
         {tab === 'preferences' && <Preferences />}
         {tab !== 'connections' && tab !== 'preferences' && (
           settings.isPending ? <Skeleton label="Reading settings…" rows={4} />

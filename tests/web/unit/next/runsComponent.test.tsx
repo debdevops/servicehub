@@ -65,7 +65,7 @@ describe('a component that is not a message store (Step Functions, unit PP1/PP2)
     expect(await screen.findByRole('heading', { name: /Step Functions connections \(1\)/ })).toBeInTheDocument()
     const menu = screen.getByRole('navigation', { name: 'ServiceHub' })
     expect(within(menu).getByRole('link', { name: /Step Functions/ })).toHaveAttribute('href', '/aws/c/step-functions')
-    expect(within(menu).getByText('Not yet validated')).toBeInTheDocument()
+    expect(within(menu).getByRole('img', { name: 'Not yet validated' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'View Acme Payments' })).toHaveAttribute('href', '/aws/c/step-functions/ns-1')
   })
 

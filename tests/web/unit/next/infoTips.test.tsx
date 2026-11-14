@@ -83,12 +83,29 @@ describe('the (i) beside everything', () => {
     expect(await screen.findByRole('note')).toHaveTextContent(/An Approval is a replay the Agent prepared/)
   })
 
-  it('has one on the page title, each tile, the header items and every menu link', async () => {
+  it('has one on the page title, each tile and the header items; the menu rows explain themselves without one', async () => {
     open('/azure/attention')
     await screen.findByRole('heading', { level: 1, name: /Needs your attention/ })
-    for (const name of ['About Approvals', 'About Hand-offs', 'About Oldest', 'About The Agent', 'About Emergency stop', 'About Help', 'About Search', 'About Your role', 'About Pending approvals', 'About Active messages', 'About Replay history', 'About Auto Replay rules', 'About Failure signatures', 'About Evidence ledger', 'About Agents', 'About Configuration', 'About What ServiceHub covers']) {
-      expect((await screen.findAllByRole('button', { name })).length, name).toBeGreaterThan(0)
+    for (const name of ['About Approvals', 'About Hand-offs', 'About Oldest', 'About The Agent', 'About Emergency stop', 'About Help', 'About Search', 'About Your role']) {
+      expect((await screen.findAllByRole('button', { name }), name).length).toBeGreaterThan(0)
     }
+    // No (i) on a menu row (16 fewer on every page); the row itself carries the explanation, for a screen reader and for focus.
+    const menu = screen.getByRole('navigation', { name: 'ServiceHub' })
+    expect(within(menu).queryByRole('button', { name: 'About Pending approvals' })).not.toBeInTheDocument()
+    const link = await within(menu).findByRole('link', { name: /^Pending approvals/ })
+    expect(link).toHaveAttribute('aria-description', expect.stringMatching(/Replays the Agent prepared/))
+    // The group titles keep theirs.
+    expect(within(menu).getByRole('button', { name: 'About Operational Tools' })).toBeInTheDocument()
+  })
+
+  it('a menu row opens its note on keyboard focus, and Escape closes it', async () => {
+    open('/azure/attention')
+    await screen.findByRole('heading', { level: 1, name: /Needs your attention/ })
+    const menu = screen.getByRole('navigation', { name: 'ServiceHub' })
+    ;(await within(menu).findByRole('link', { name: /^Failure signatures/ })).focus()
+    expect(await screen.findByRole('note')).toHaveTextContent('Failure signatures')
+    await userEvent.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('note')).not.toBeInTheDocument())
   })
 
   it('has one on the filters, and keeps the filters’ own names clean for screen readers', async () => {

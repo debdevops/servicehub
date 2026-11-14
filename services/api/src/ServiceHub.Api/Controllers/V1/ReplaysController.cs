@@ -79,7 +79,7 @@ public sealed class ReplaysController : ApiControllerBase
             candidates = candidates.Where(n => n.Id == id);
             if (!candidates.Any())
             {
-                return Problem(StatusCodes.Status404NotFound, ErrorCodes.Namespace.NotFound, $"Namespace with ID '{id}' was not found.");
+                return Problem(StatusCodes.Status404NotFound, ErrorCodes.Namespace.NotFound, $"Connection with ID '{id}' was not found.");
             }
         }
 

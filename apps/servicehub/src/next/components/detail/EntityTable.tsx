@@ -38,7 +38,7 @@ export function EntityTable({ component, active, transfer, detail }: {
       <h2 id="places-title" className="px-4 pt-4 text-base font-semibold">Queues, topics and subscriptions<Tip label="section:Queues, topics and subscriptions" /></h2>
       {component.entities.length === 0 ? (
         <p className="px-4 py-6 text-sm text-[var(--color-text-muted)]">
-          {component.reachable ? 'No queue or subscription is listed for this connection.' : 'Its places cannot be listed until it can be reached.'}
+          {component.reachable ? 'No queue or subscription is listed for this connection. Create one in the cloud’s own console, then press Refresh.' : 'Its places cannot be listed until it can be reached.'}
         </p>
       ) : (
         <div className="mt-3 overflow-x-auto">

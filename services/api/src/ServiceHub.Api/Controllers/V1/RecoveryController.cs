@@ -50,7 +50,7 @@ public sealed class RecoveryController : ApiControllerBase
 
         if (await ScopeAsync(provider, namespaceId, environment, cancellationToken, connectedOnly == true) is not { } scope)
         {
-            return Problem(StatusCodes.Status404NotFound, ErrorCodes.Namespace.NotFound, $"Namespace with ID '{namespaceId}' was not found.");
+            return Problem(StatusCodes.Status404NotFound, ErrorCodes.Namespace.NotFound, $"Connection with ID '{namespaceId}' was not found.");
         }
 
         return Ok(await _queries.SummariseAsync(scope, w, cancellationToken));
@@ -106,7 +106,7 @@ public sealed class RecoveryController : ApiControllerBase
 
         if (await ScopeAsync(provider, namespaceId, environment, cancellationToken) is not { } scope)
         {
-            return Problem(StatusCodes.Status404NotFound, ErrorCodes.Namespace.NotFound, $"Namespace with ID '{namespaceId}' was not found.");
+            return Problem(StatusCodes.Status404NotFound, ErrorCodes.Namespace.NotFound, $"Connection with ID '{namespaceId}' was not found.");
         }
 
         return Ok(await _queries.ListAsync(scope, w, wanted, page ?? 1, pageSize ?? 25, cancellationToken, new RecoveryListFilter(by is "people" or "autonomous" ? by : null, entity, q)));

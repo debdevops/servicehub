@@ -66,7 +66,7 @@ export function AttentionTable({ items, coverage, me, showCloud = false, tab: co
         <p className="px-4 py-6 text-sm text-[var(--color-text-muted)]">Nothing here needs a person right now.</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="stack-table w-full">
             <thead>
               <tr>
                 {showCloud && <Th className={th} context="attention">Cloud</Th>}
@@ -82,16 +82,16 @@ export function AttentionTable({ items, coverage, me, showCloud = false, tab: co
                 const open = `${pathname}?${hand ? 'panel=hand-off' : 'dialog=review'}&entry=${encodeURIComponent(i.entryId ?? i.id)}`
                 return (
                   <tr key={i.id} className="border-t border-[var(--color-border)]">
-                    {showCloud && <td className={td}>{i.provider ? cloudLabel[i.provider] : '—'}</td>}
-                    <td className={`${td} font-mono text-xs`}>{i.dlqMessageId !== null ? `#${i.dlqMessageId}` : '—'}</td>
-                    <td className={`${td} ${wrap}`}>{nameOf(i.componentKey)}{i.namespaceName && <span className="block text-xs text-[var(--color-text-muted)]">{i.namespaceName}</span>}</td>
-                    <td className={`${td} ${wrap}`}>{i.entity ?? '—'}</td>
-                    <td className={`${td} ${wrap}`}>{i.deadLetterReason ?? <span className="text-[var(--color-text-muted)]">No reason recorded</span>}</td>
-                    <td className={td}>{hand && familyWords(i.family) ? <span className="rounded-md bg-purple-50 px-2 py-0.5 text-xs font-semibold text-purple-800">{familyWords(i.family)}</span> : '—'}</td>
-                    <td className={td}>{formatAge(i.since, now)}</td>
-                    <td className={`${td} font-semibold ${hand ? 'text-amber-700' : 'text-red-700'}`}>{hand ? 'Hand-off' : 'Approval'}</td>
-                    <td className={td}>{hand ? 'Investigate and decide' : 'Approve or reject'}<span className="block text-xs text-[var(--color-text-muted)]">{i.reason}</span></td>
-                    <td className={`${td} ${wrap}`}>{ownerOf(i.namespaceId)}</td>
+                    {showCloud && <td data-label="Cloud" className={td}>{i.provider ? cloudLabel[i.provider] : '—'}</td>}
+                    <td data-label="Message" className={`${td} font-mono text-xs`}>{i.dlqMessageId !== null ? `#${i.dlqMessageId}` : '—'}</td>
+                    <td data-label="Component" className={`${td} ${wrap}`}>{nameOf(i.componentKey)}{i.namespaceName && <span className="block text-xs text-[var(--color-text-muted)]">{i.namespaceName}</span>}</td>
+                    <td data-label="Entity" className={`${td} ${wrap}`}>{i.entity ?? '—'}</td>
+                    <td data-label="Reason" className={`${td} ${wrap}`}>{i.deadLetterReason ?? <span className="text-[var(--color-text-muted)]">No reason recorded</span>}</td>
+                    <td data-label="Family" className={td}>{hand && familyWords(i.family) ? <span className="rounded-md bg-purple-50 px-2 py-0.5 text-xs font-semibold text-purple-800">{familyWords(i.family)}</span> : '—'}</td>
+                    <td data-label="Age" className={td}>{formatAge(i.since, now)}</td>
+                    <td data-label="Type" className={`${td} font-semibold ${hand ? 'text-amber-700' : 'text-red-700'}`}>{hand ? 'Hand-off' : 'Approval'}</td>
+                    <td data-label="What’s needed" className={td}>{hand ? 'Investigate and decide' : 'Approve or reject'}<span className="block text-xs text-[var(--color-text-muted)]">{i.reason}</span></td>
+                    <td data-label="Owner" className={`${td} ${wrap}`}>{ownerOf(i.namespaceId)}</td>
                     <td className={td}>
                       {hand || may.allowed
                         ? <Link to={open} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">{hand ? 'View' : 'Review'}</Link>

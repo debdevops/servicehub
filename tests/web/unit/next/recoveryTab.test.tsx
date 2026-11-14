@@ -90,6 +90,15 @@ describe('the Recovery tab (unit D4)', () => {
     expect(await screen.findByTestId('tile-unverified')).toHaveTextContent('6')
     expect(screen.queryByTestId('tile-verified')).not.toBeInTheDocument()
     expect(screen.getByText(/ends Unverified, never Verified/)).toBeInTheDocument()
+    // It says what to do next, with a link to where it is done.
+    expect(screen.getByRole('link', { name: 'Confirming fixes in Configuration' })).toHaveAttribute('href', '/azure/c/service-bus/ns-azure?tab=configuration')
+  })
+
+  it('where the cloud can prove it, there is no Confirming fixes pointer', async () => {
+    vi.mocked(recoveryApi.fetchRecoverySummary).mockResolvedValue(summary({ Recovered: 2 }))
+    open(ok, true)
+    await screen.findByTestId('tile-verified')
+    expect(screen.queryByRole('link', { name: 'Confirming fixes in Configuration' })).not.toBeInTheDocument()
   })
 
   it('lists each replay with who did it and what was observed, and a Came back says how it was matched', async () => {

@@ -55,7 +55,7 @@ export function ConfigurationTab({ component: c, namespace: ns, cloudName }: { c
       <section aria-labelledby="cloud-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
         <h2 id="cloud-title" className="px-4 pt-4 text-base font-semibold">Settings read from {cloudName}<Tip label="section:Settings read from the cloud" /></h2>
         {c.entities.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-[var(--color-text-muted)]">{c.reachable ? 'No queue or subscription is listed for this connection.' : 'Its places cannot be listed until it can be reached.'}</p>
+          <p className="px-4 py-6 text-sm text-[var(--color-text-muted)]">{c.reachable ? 'No queue or subscription is listed for this connection. Create one in the cloud’s own console, then press Refresh on the Overview.' : 'Its places cannot be listed until it can be reached.'}</p>
         ) : (
           <div className="mt-3 overflow-x-auto">
             <table className="w-full border-t border-[var(--color-border)]">

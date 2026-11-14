@@ -12,6 +12,7 @@ import { BULK_LIMIT, bulkSelection } from '../../../lib/bulkSelection'
 import { formatWhen } from '../../../lib/format'
 import { usePageSize } from '../../../lib/pageSize'
 import { permission } from '../../../lib/permissions'
+import { cloudLabel } from '../../lib/clouds'
 import { entityLabel } from '../../lib/entityRows'
 import { Th, ThHidden } from '../Tip'
 import { Tip } from '../Tip'
@@ -93,6 +94,8 @@ export function DeadLettersTab({ component: c, me }: { component: ConnectedCompo
       onClear={() => setSelection({ sig: signature, ids: new Set(), all: false })}
       onOpen={() => bulkSelection.set(current.all ? { query: { ...filter, page: 1, pageSize: 100 }, total } : { ids: [...current.ids] })} />
   )
+  // Where the cloud wrote no reason for any message on this page, one line says so instead of two columns of dashes.
+  const noReasons = items.length > 0 && items.every((m) => !m.deadLetterReason && !m.deadLetterErrorDescription)
   const filtering = !!(reason || entity || q || showing !== 'active')
   const now = new Date()
   const title = c.watched ? `Dead-letter messages (${total.toLocaleString('en-US')})` : `Recorded dead-letter messages (showing ${items.length.toLocaleString('en-US')} of ${total.toLocaleString('en-US')})`
@@ -135,11 +138,12 @@ export function DeadLettersTab({ component: c, me }: { component: ConnectedCompo
           <>
           {/* Outside the table's own side-scroll box: inside it the bar would stick to that box, 60 px down, on top of the header row. */}
           <div className="mt-3">{c.watched || items.length > 0 ? bulkBar('top') : null}</div>
+          {noReasons && <p className="px-4 pb-2 text-sm text-[var(--color-text-muted)]">{cloudLabel[c.cloud]} recorded no reason for these messages, so the table has no Reason or Description column. Open one to see its body and properties.</p>}
           <div className="overflow-x-auto">
             <table className="w-full border-t border-[var(--color-border)]">
               <caption className="sr-only">Dead-letter messages of {c.name}</caption>
               <thead>
-                <tr><ThHidden><span className="sr-only">Select</span></ThHidden><Th>Message</Th><Th>Entity</Th><Th>Reason</Th><Th>Description</Th><Th>Deliveries</Th><Th>Enqueued</Th><Th label={c.watched ? 'Detected' : 'Recorded'}>{c.watched ? 'Detected' : 'Recorded'}</Th><Th>State</Th><Th>Actions</Th></tr>
+                <tr><ThHidden><span className="sr-only">Select</span></ThHidden><Th>Message</Th><Th>Entity</Th>{!noReasons && <Th>Reason</Th>}{!noReasons && <Th>Description</Th>}<Th>Deliveries</Th><Th>Enqueued</Th><Th label={c.watched ? 'Detected' : 'Recorded'}>{c.watched ? 'Detected' : 'Recorded'}</Th><Th>State</Th><Th>Actions</Th></tr>
               </thead>
               <tbody>
                 {items.map((m) => {
@@ -158,8 +162,8 @@ export function DeadLettersTab({ component: c, me }: { component: ConnectedCompo
                       </td>
                       <td className={`${td} font-mono text-xs`}>{m.messageId}</td>
                       <td className={td}>{entityLabel(m.entityName, m.topicName)}</td>
-                      <td className={td}>{m.deadLetterReason ?? '—'}</td>
-                      <td className={td}>{m.deadLetterErrorDescription ?? '—'}</td>
+                      {!noReasons && <td className={td}>{m.deadLetterReason ?? '—'}</td>}
+                      {!noReasons && <td className={td}>{m.deadLetterErrorDescription ?? '—'}</td>}
                       <td className={td}>{m.deliveryCount}</td>
                       <td className={td}>{formatWhen(m.enqueuedTimeUtc, now)}</td>
                       <td className={td}>{formatWhen(m.detectedAtUtc, now)}</td>

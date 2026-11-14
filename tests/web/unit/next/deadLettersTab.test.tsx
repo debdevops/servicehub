@@ -67,6 +67,23 @@ describe('the Dead-letter messages tab (unit D3)', () => {
     expect(screen.getByRole('link', { name: /Dead-letter messages/ })).toHaveAttribute('aria-current', 'page')
   })
 
+  it('says once that the cloud recorded no reason, instead of two columns of dashes', async () => {
+    vi.mocked(deadLettersApi.fetchDeadLetters).mockResolvedValue(result([letter(1, { deadLetterReason: null, deadLetterErrorDescription: null }), letter(2, { deadLetterReason: null, deadLetterErrorDescription: null })]))
+    open(`${ok}?tab=dead-letters`)
+    const table = await screen.findByRole('table', { name: /Dead-letter messages of orders-sb/ })
+    expect(screen.getByText(/recorded no reason for these messages/)).toBeInTheDocument()
+    expect(within(table).queryByRole('columnheader', { name: /^Reason/ })).not.toBeInTheDocument()
+    expect(within(table).queryByRole('columnheader', { name: /^Description/ })).not.toBeInTheDocument()
+  })
+
+  it('keeps the Reason column when even one message on the page has a reason', async () => {
+    vi.mocked(deadLettersApi.fetchDeadLetters).mockResolvedValue(result([letter(1, { deadLetterReason: null, deadLetterErrorDescription: null }), letter(2)]))
+    open(`${ok}?tab=dead-letters`)
+    const table = await screen.findByRole('table', { name: /Dead-letter messages of orders-sb/ })
+    expect(within(table).getByRole('columnheader', { name: /^Reason/ })).toBeInTheDocument()
+    expect(screen.queryByText(/recorded no reason for these messages/)).not.toBeInTheDocument()
+  })
+
   it('lists each message with its reason, description, deliveries and state, and opens the Message dialog', async () => {
     open(`${ok}?tab=dead-letters`)
     const table = await screen.findByRole('table', { name: /Dead-letter messages of orders-sb/ })

@@ -97,6 +97,91 @@ test.describe('5.0.0 shell: axe, zero violations', () => {
   })
 })
 
+/** The first Azure Service Bus connection of the demo, opened on its Dead-letter messages tab. */
+async function openDeadLetters(page: Page) {
+  await enterDemo(page)
+  await open(page, '/azure/c/service-bus')
+  await page.getByRole('link', { name: /^View / }).first().click()
+  await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible()
+  await page.getByRole('link', { name: /^Dead-letter messages/ }).click()
+  await expect(page.getByRole('table', { name: /Dead-letter messages of/ })).toBeVisible()
+  await page.waitForLoadState('networkidle')
+}
+
+test.describe('5.0.0 shell: the dialogs, axe clean and keyboard-reachable', () => {
+  test('Connect', async ({ page }) => {
+    await enterDemo(page)
+    await open(page, '/azure?dialog=connect')
+    await expect(page.getByRole('dialog')).toBeVisible()
+    expect(await violations(page)).toEqual([])
+  })
+
+  test('Message, then Replay from it', async ({ page }) => {
+    await openDeadLetters(page)
+    await page.getByRole('link', { name: /^Open message / }).first().click()
+    await expect(page.getByRole('dialog')).toBeVisible()
+    expect(await violations(page), 'Message dialog').toEqual([])
+    await page.getByRole('dialog').getByRole('link', { name: /^Replay/ }).first().click()
+    await expect(page.getByRole('dialog', { name: /Replay/ })).toBeVisible()
+    expect(await violations(page), 'Replay dialog').toEqual([])
+  })
+
+  test('Bulk replay', async ({ page }) => {
+    await openDeadLetters(page)
+    await page.getByRole('checkbox', { name: /^Select message / }).first().check()
+    await page.getByRole('link', { name: /Replay selected/ }).first().click()
+    await expect(page.getByRole('dialog')).toBeVisible()
+    expect(await violations(page), 'Bulk replay dialog').toEqual([])
+  })
+
+  test('Review, from Pending approvals', async ({ page }) => {
+    await enterDemo(page)
+    await open(page, '/all/approvals')
+    await page.getByRole('link', { name: /^Review$/ }).first().click()
+    await expect(page.getByRole('dialog')).toBeVisible()
+    expect(await violations(page), 'Review dialog').toEqual([])
+  })
+})
+
+test.describe('5.0.0 shell: the core loop by keyboard alone', () => {
+  const inDialog = (page: Page) => page.evaluate(() => !!document.activeElement?.closest('[role="dialog"]'))
+
+  test('a dead letter opens with Enter, Tab stays inside the dialog, Escape closes it and focus comes back to where it was', async ({ page }) => {
+    await openDeadLetters(page)
+    const opener = page.getByRole('link', { name: /^Open message / }).first()
+    const label = await opener.getAttribute('aria-label')
+    await opener.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('dialog')).toBeVisible()
+
+    // Focus goes into the dialog, and Tab (and Shift+Tab) never leaves it, however many times it is pressed.
+    for (let i = 0; i < 30; i++) {
+      await page.keyboard.press(i % 10 === 9 ? 'Shift+Tab' : 'Tab')
+      expect(await inDialog(page), `Tab ${i + 1} left the dialog`).toBe(true)
+    }
+
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toBeHidden()
+    await expect.poll(async () => page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.tagName), { message: 'focus did not return to the link that opened the dialog' }).toBe(label)
+  })
+
+  test('from the top of a page, 25 Tabs each land on something with a name, and keep moving on rather than getting stuck', async ({ page }) => {
+    await enterDemo(page)
+    await open(page, '/azure')
+    const stops: string[] = []
+    for (let i = 0; i < 25; i++) {
+      await page.keyboard.press('Tab')
+      stops.push(await page.evaluate(() => {
+        const el = document.activeElement as HTMLElement | null
+        if (!el || el === document.body) return ''
+        return (el.getAttribute('aria-label') ?? el.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 60)
+      }))
+    }
+    expect(stops.filter((s) => s === ''), 'a Tab stop with no name: ' + JSON.stringify(stops)).toEqual([])
+    expect(new Set(stops).size, 'Tab keeps landing on the same few things: ' + JSON.stringify(stops)).toBeGreaterThan(15)
+  })
+})
+
 test.describe('5.0.0 shell: the keyboard and the guides', () => {
   test('⌘K / Ctrl-K opens Search from a page', async ({ page }) => {
     await enterDemo(page)
@@ -114,6 +199,33 @@ test.describe('5.0.0 shell: the keyboard and the guides', () => {
     await expect(dialog.getByText(/4\.2\.0 layout/)).toBeVisible()
     await expect(dialog.locator('#help-guide-aws')).toHaveAttribute('open', '')
   })
+})
+
+test.describe('5.0.0 shell: tables you act on become cards on a narrow window', () => {
+  for (const [name, path] of [['Needs your attention', '/all/attention'], ['Pending approvals', '/all/approvals']] as const) {
+    test(`${name}: at 1024 px each row is a card with no sideways scroll; at 1366 px it is still a table`, async ({ page }) => {
+      await page.setViewportSize({ width: 1024, height: 768 })
+      await enterDemo(page)
+      await open(page, path)
+      const table = page.locator('table.stack-table').first()
+      await expect(table).toBeVisible()
+      const narrow = await table.evaluate((t) => {
+        const wrap = t.parentElement as HTMLElement
+        const row = t.querySelector('tbody tr') as HTMLElement
+        return { rowDisplay: getComputedStyle(row).display, scrolls: wrap.scrollWidth > wrap.clientWidth + 1, labels: Array.from(row.querySelectorAll('td[data-label]')).map((td) => getComputedStyle(td, '::before').content) }
+      })
+      expect(narrow.rowDisplay).toBe('block')
+      expect(narrow.scrolls, 'the card list still scrolls sideways').toBe(false)
+      expect(narrow.labels.length, 'cells carry their label').toBeGreaterThan(4)
+      expect(await violations(page)).toEqual([])
+      // The actions are still there, by name.
+      await expect(page.getByRole('link', { name: /^(Review|View)$/ }).first()).toBeVisible()
+
+      await page.setViewportSize({ width: 1366, height: 768 })
+      const wide = await table.evaluate((t) => getComputedStyle(t.querySelector('tbody tr') as HTMLElement).display)
+      expect(wide).toBe('table-row')
+    })
+  }
 })
 
 test.describe('5.0.0 shell: the left menu', () => {
