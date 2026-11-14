@@ -17,18 +17,21 @@ const td = 'px-3 py-2.5 align-top text-sm'
  * only when ServiceHub does not watch. The entity's own limits (max deliveries, receives, attempts) are not returned by the entities
  * read, so they are not drawn; unit D6 shows them where an adapter supplies them.
  */
-export function EntityTable({ component, active, detail }: {
+export function EntityTable({ component, active, transfer, detail }: {
   component: ConnectedComponent
   active: (fullPath: string) => Count | null
+  /** Messages in a place's transfer dead-letter queue, or null where the cloud has none. */
+  transfer: (fullPath: string) => number | null
   detail: (entity: string) => string
 }) {
   const rows = entityRows(component.entities, active)
   const { items, pager } = usePagedList(rows)
   const showStore = component.entities.some((e) => e.deadLetterStore !== null)
   const showActive = component.entities.some((e) => active(fullName(e)) !== null)
+  const showTransfer = component.entities.some((e) => transfer(fullName(e)) !== null)
   const showRecorded = !component.watched
   const now = new Date()
-  const columns = 5 + (showStore ? 1 : 0) + (showActive ? 1 : 0) + (showRecorded ? 1 : 0)
+  const columns = 5 + (showStore ? 1 : 0) + (showActive ? 1 : 0) + (showTransfer ? 1 : 0) + (showRecorded ? 1 : 0)
 
   return (
     <section aria-labelledby="places-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -48,6 +51,7 @@ export function EntityTable({ component, active, detail }: {
                 {showStore && <Th>Dead-letter place</Th>}
                 {showActive && <Th>Active</Th>}
                 <Th>In dead-letter now</Th>
+                {showTransfer && <Th>Transfer dead-letter</Th>}
                 {showRecorded && <Th>Recorded</Th>}
                 <Th>Needs you</Th>
                 <Th label={showRecorded ? 'Last look' : 'Last observed'}>{showRecorded ? 'Last look' : 'Last observed'}</Th>
@@ -72,6 +76,7 @@ export function EntityTable({ component, active, detail }: {
                     {showStore && <td className={td}>{r.entity.deadLetterStore ?? <span className="text-[var(--color-text-muted)]">None set</span>}</td>}
                     {showActive && <td className={td}>{r.active ? countWords(r.active) : '—'}</td>}
                     <td className={td}>{r.entity.noStoreReason ?? (r.entity.deadLetterStore === null && showStore ? '—' : countWords(r.entity.deadLetters))}</td>
+                    {showTransfer && <td className={td}>{transfer(fullName(r.entity))?.toLocaleString('en-US') ?? '—'}</td>}
                     {showRecorded && <td className={td}>{recordedWords(r.entity.recorded)}</td>}
                     <td className={`${td} font-semibold ${r.entity.needsYou > 0 ? 'text-red-700' : ''}`}>{r.entity.needsYou}</td>
                     <td className={td}>{r.entity.observedAtUtc ? formatWhen(r.entity.observedAtUtc, now) : '—'}</td>

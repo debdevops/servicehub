@@ -83,6 +83,10 @@ namespace ServiceHub.Core.Models;
 /// Whether replaying a topic subscription's dead letter publishes to the <b>topic</b>, so every subscription on it that accepts the message receives it
 /// again, not only the one it failed on (Azure Service Bus and Google Pub/Sub have no way to publish to one subscription). False where a replay goes to one queue.
 /// </param>
+/// <param name="SupportsTransferDeadLetter">
+/// Whether the cloud has a transfer dead-letter queue that can be peeked: Azure Service Bus, where a failed send-via transaction leaves the message on the entity the
+/// transaction went through. Read only: the intended destination appears only in the reason text, so nothing is replayed from it.
+/// </param>
 /// <param name="MaxMessageAttributes">
 /// The most application properties/attributes one message may carry, or null when the cloud sets no such count. 10 on AWS SQS/SNS:
 /// a message already carrying that many has no room for the recovery marker, so a replay proposal must not promise one.
@@ -100,7 +104,8 @@ public sealed record ProviderCapabilities(
     bool SupportsSubscriptions = true,
     bool CountsAreApproximate = false,
     bool ReplayFansOutToTopic = false,
-    int? MaxMessageAttributes = null)
+    int? MaxMessageAttributes = null,
+    bool SupportsTransferDeadLetter = false)
 {
     /// <summary>Capabilities of Microsoft Azure Service Bus.</summary>
     public static readonly ProviderCapabilities Azure = new(
@@ -112,7 +117,8 @@ public sealed record ProviderCapabilities(
         Notes: "Purge is not supported — the SDK has no reliable single-message delete by sequence number.",
         SupportsRecoveryMarker: true,
         CanProveDlqAbsence: true,
-        ReplayFansOutToTopic: true);
+        ReplayFansOutToTopic: true,
+        SupportsTransferDeadLetter: true);
 
     /// <summary>Capabilities of Amazon SQS/SNS.</summary>
     public static readonly ProviderCapabilities Aws = new(

@@ -698,7 +698,8 @@ public sealed class NamespacesController : ApiControllerBase
                 Kind(e),
                 counts ? e.ActiveMessageCount : null,
                 counts ? e.DeadLetterCount : null,
-                e.DeadLetterTargetName))
+                e.DeadLetterTargetName,
+                counts && capabilities.SupportsTransferDeadLetter ? e.TransferDeadLetterCount : null))
             .ToList();
 
         return Ok(new EntityListResponse(id, items));

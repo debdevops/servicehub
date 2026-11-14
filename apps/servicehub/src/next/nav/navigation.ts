@@ -248,7 +248,7 @@ export interface ComponentTab {
 export const componentTabs: readonly ComponentTab[] = [
   { value: 'overview', label: 'Overview', unit: 'D2', design: 'azure-service-bus-detail', built: true },
   { value: 'dead-letters', label: 'Dead-letter messages', unit: 'D3', design: 'p05a-service-bus-dead-letters', built: true },
-  { value: 'stuck', label: 'Stuck messages', unit: 'G5', design: 'p05b-service-bus-stuck', built: false },
+  { value: 'stuck', label: 'Deferred messages', unit: 'G5', design: 'p05b-service-bus-deferred', built: true },
   { value: 'recovery', label: 'Recovery', unit: 'D4', design: 'p05c-service-bus-recovery', built: true },
   { value: 'access', label: 'Access', unit: 'D5', design: 'p05d-service-bus-access', built: true },
   { value: 'configuration', label: 'Configuration', unit: 'D6', design: 'p05e-service-bus-configuration', built: true },

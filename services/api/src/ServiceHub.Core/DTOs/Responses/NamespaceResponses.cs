@@ -82,12 +82,14 @@ public sealed record NamespaceStatsResponse(
 /// <param name="ActiveMessages">Active messages, or null when the provider cannot count.</param>
 /// <param name="DeadLetterMessages">Dead-lettered messages, or null when the provider cannot count.</param>
 /// <param name="DeadLetterTargetName">Where a separate dead-letter queue redrives, when the provider has one.</param>
+/// <param name="TransferDeadLetterMessages">Messages in the transfer dead-letter queue, or null when the cloud has none or cannot count.</param>
 public sealed record EntityResponse(
     string Name,
     string Kind,
     long? ActiveMessages,
     long? DeadLetterMessages,
-    string? DeadLetterTargetName);
+    string? DeadLetterTargetName,
+    long? TransferDeadLetterMessages = null);
 
 /// <summary>The entities of one namespace, filtered to one kind when asked.</summary>
 /// <param name="NamespaceId">The namespace listed.</param>

@@ -231,9 +231,9 @@ describe('one connection’s page (unit D2)', () => {
   })
 
   it('the tabs are links in the URL: a named tab opens, an unknown or missing one is the Overview, and Stuck appears only where the catalogue has it', async () => {
-    // `stuck` is the one tab still unbuilt (unit G5); the address names it even though its link appears only where the catalogue has it.
+    // `stuck` (Deferred messages, unit G5) opens from its address even though its link appears only where the catalogue has it.
     const { unmount } = open(`${ok}?tab=stuck`)
-    expect(await screen.findByRole('heading', { level: 1, name: 'Component detail · Stuck messages' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 2, name: 'Deferred messages' })).toBeInTheDocument()
     unmount()
 
     const { unmount: again } = open(`${ok}?tab=nonsense`)
@@ -244,7 +244,7 @@ describe('one connection’s page (unit D2)', () => {
     coverageRows.push({ ...coverageRows[0], id: 'service-bus.stuck', detection: 'signal', status: 'beingValidated', inSidebar: false })
     try {
       open(ok)
-      expect(await screen.findByRole('link', { name: 'Stuck messages' })).toHaveAttribute('href', `${ok}?tab=stuck`)
+      expect(await screen.findByRole('link', { name: 'Deferred messages' })).toHaveAttribute('href', `${ok}?tab=stuck`)
     } finally {
       coverageRows.pop()
     }

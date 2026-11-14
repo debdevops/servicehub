@@ -92,6 +92,34 @@ public sealed class MessagesApiTests
         json.GetProperty("messages")[0].GetProperty("body").GetString().Should().NotBeNullOrEmpty();
     }
 
+    // ── Transfer dead-letter queue (G4): Service Bus only, read only ─────────────────────────────
+
+    [Fact]
+    public async Task The_transfer_dead_letter_queue_is_refused_on_a_cloud_that_has_none()
+    {
+        using var host = Host();
+        var aws = await ConnectAsync(host.Client, "aws");
+
+        var response = await host.Client.GetAsync($"/api/v1/namespaces/{aws}/dead-letter/peek?entity=orders&transfer=true");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await Json(response)).GetProperty("detail").GetString().Should().Contain("no transfer dead-letter queue");
+    }
+
+    [Fact]
+    public async Task The_transfer_dead_letter_queue_is_read_where_the_cloud_has_one_and_the_flag_reaches_the_provider()
+    {
+        using var host = Host();
+        var azure = await ConnectAsync(host.Client, "azure");
+
+        var response = await host.Client.GetAsync($"/api/v1/namespaces/{azure}/dead-letter/peek?entity=orders&max=3&transfer=true");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        host.Log.LastTransfer.Should().BeTrue();
+        (await host.Client.GetAsync($"/api/v1/namespaces/{azure}/dead-letter/peek?entity=orders&max=3")).StatusCode.Should().Be(HttpStatusCode.OK);
+        host.Log.LastTransfer.Should().BeFalse("the ordinary dead-letter queue stays the default");
+    }
+
     // ── Paging: the API pages, so the UI pages ──────────────────────────────────────────────────
 
     [Fact]
@@ -241,6 +269,8 @@ internal sealed class PeekLog
 {
     private int _calls;
     public int Calls => _calls;
+    /// <summary>Whether the last peek asked for the transfer dead-letter queue.</summary>
+    public bool LastTransfer { get; set; }
     public void Hit() => Interlocked.Increment(ref _calls);
     public void Reset() => Interlocked.Exchange(ref _calls, 0);
 
@@ -297,6 +327,7 @@ internal sealed class PeekableProvider(CloudProviderType type, ProviderCapabilit
     private Task<Result<IReadOnlyList<Message>>> Peek(GetMessagesRequest r, bool dead)
     {
         log.Hit();
+        log.LastTransfer = r.FromTransferDeadLetter;
         if (r.EntityName == "broken")
         {
             return Task.FromResult(Result.Failure<IReadOnlyList<Message>>(Error.ExternalService("fake.peek", "the cloud did not answer")));

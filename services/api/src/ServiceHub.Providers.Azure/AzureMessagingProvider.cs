@@ -217,6 +217,7 @@ public sealed class AzureMessagingProvider : ICloudMessagingProvider
                     EntityType = "Queue",
                     ActiveMessageCount = queue.ActiveMessageCount,
                     DeadLetterCount = queue.DeadLetterMessageCount,
+                    TransferDeadLetterCount = queue.TransferDeadLetterMessageCount,
                     Provider = CloudProviderType.Azure,
                 });
             }
@@ -246,6 +247,7 @@ public sealed class AzureMessagingProvider : ICloudMessagingProvider
                         EntityType = "Subscription",
                         ActiveMessageCount = subscription.ActiveMessageCount,
                         DeadLetterCount = subscription.DeadLetterMessageCount,
+                        TransferDeadLetterCount = subscription.TransferDeadLetterMessageCount,
                         Provider = CloudProviderType.Azure,
                     });
                 }

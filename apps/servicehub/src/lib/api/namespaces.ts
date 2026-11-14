@@ -105,6 +105,8 @@ export interface Entity {
   readonly activeMessages: number | null
   readonly deadLetterMessages: number | null
   readonly deadLetterTargetName: string | null
+  /** Messages in the transfer dead-letter queue (Service Bus only); null where the cloud has none. */
+  readonly transferDeadLetterMessages?: number | null
 }
 
 export interface EntityList {

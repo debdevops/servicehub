@@ -8,7 +8,9 @@ import { AccessTab } from '../components/detail/AccessTab'
 import { AuditTab } from '../components/detail/AuditTab'
 import { ConfigurationTab } from '../components/detail/ConfigurationTab'
 import { DeadLettersTab } from '../components/detail/DeadLettersTab'
+import { DeferredTab } from '../components/detail/DeferredTab'
 import { DetailTabs } from '../components/detail/DetailTabs'
+import { TransferDeadLetters } from '../components/detail/TransferDeadLetters'
 import { RecoveryTab } from '../components/detail/RecoveryTab'
 import { EntityTable } from '../components/detail/EntityTable'
 import { fullName } from '../lib/entityRows'
@@ -95,6 +97,9 @@ function Detail({ cloudKey: cloud, componentKey, namespaceId }: { cloudKey: NonN
     const v = activeByName.get(path)
     return v === undefined || v === null ? null : { value: v, kind: caps?.countsAreApproximate ? 'approximate' : 'exact' }
   }
+  const transferByName = new Map((entities.data?.entities ?? []).map((e) => [e.name, e.transferDeadLetterMessages ?? null]))
+  const transferOf = (path: string): number | null => transferByName.get(path) ?? null
+  const transferPlaces = [...transferByName].filter((e): e is [string, number] => e[1] !== null && e[1] > 0).map(([name, count]) => ({ name, count }))
   const holders = c.entities.map((e) => activeOf(fullName(e))).filter((x): x is Count => x !== null)
   const activeTotal = holders.length > 0 ? holders.reduce((sum, x) => sum + (x.value ?? 0), 0) : null
   const withStore = c.entities.filter((e) => e.deadLetterStore !== null).length
@@ -151,6 +156,8 @@ function Detail({ cloudKey: cloud, componentKey, namespaceId }: { cloudKey: NonN
           {!c.watched && ns.data && <NotWatchedNotice cloudName={cloudName} provider={ns.data.provider} namespaceIds={[namespaceId]} me={me.data} onLook={refresh} />}
           <DeadLettersTab component={c} me={me.data} />
         </>
+      ) : tab === 'stuck' ? (
+        <DeferredTab component={c} />
       ) : tab === 'audit' ? (
         <AuditTab component={c} />
       ) : tab === 'configuration' ? (
@@ -199,7 +206,8 @@ function Detail({ cloudKey: cloud, componentKey, namespaceId }: { cloudKey: NonN
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
             <div className="min-w-0 space-y-4">
-              <EntityTable component={c} active={activeOf} detail={detail} />
+              <EntityTable component={c} active={activeOf} transfer={transferOf} detail={detail} />
+              <TransferDeadLetters namespaceId={namespaceId} places={transferPlaces} />
               <MessagesPreview namespaceId={namespaceId} watched={c.watched} me={me.data} tabHref={`${here}?tab=dead-letters`} />
             </div>
             <div className="space-y-4">

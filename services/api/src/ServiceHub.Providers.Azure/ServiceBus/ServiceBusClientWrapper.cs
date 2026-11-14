@@ -175,8 +175,8 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         ServiceBusReceiver? receiver = null;
         try
         {
-            var entityPath = BuildEntityPath(request.EntityName, request.SubscriptionName, request.FromDeadLetter);
-            receiver = CreateReceiver(request.EntityName, request.SubscriptionName, request.FromDeadLetter);
+            var entityPath = BuildEntityPath(request.EntityName, request.SubscriptionName, request.FromDeadLetter, request.FromTransferDeadLetter);
+            receiver = CreateReceiver(request.EntityName, request.SubscriptionName, request.FromDeadLetter, request.FromTransferDeadLetter);
 
             IReadOnlyList<ServiceBusReceivedMessage> peekedMessages;
 
@@ -840,7 +840,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         }
     }
 
-    private ServiceBusReceiver CreateReceiver(string entityName, string? subscriptionName, bool fromDeadLetter)
+    private ServiceBusReceiver CreateReceiver(string entityName, string? subscriptionName, bool fromDeadLetter, bool fromTransfer = false)
     {
         var options = new ServiceBusReceiverOptions
         {
@@ -848,7 +848,11 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             PrefetchCount = 0
         };
 
-        if (fromDeadLetter)
+        if (fromTransfer)
+        {
+            options.SubQueue = SubQueue.TransferDeadLetter;
+        }
+        else if (fromDeadLetter)
         {
             options.SubQueue = SubQueue.DeadLetter;
         }
@@ -879,7 +883,7 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
         return false;
     }
 
-    private static string BuildEntityPath(string entityName, string? subscriptionName, bool fromDeadLetter)
+    private static string BuildEntityPath(string entityName, string? subscriptionName, bool fromDeadLetter, bool fromTransfer = false)
     {
         var path = entityName;
 
@@ -888,7 +892,11 @@ public sealed class ServiceBusClientWrapper : IServiceBusClientWrapper
             path = $"{entityName}/Subscriptions/{subscriptionName}";
         }
 
-        if (fromDeadLetter)
+        if (fromTransfer)
+        {
+            path = $"{path}/$Transfer/$DeadLetterQueue";
+        }
+        else if (fromDeadLetter)
         {
             path = $"{path}/$DeadLetterQueue";
         }

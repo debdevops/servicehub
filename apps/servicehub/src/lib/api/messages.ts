@@ -21,6 +21,8 @@ export interface Message {
   readonly applicationProperties: Readonly<Record<string, unknown>> | null
   readonly sizeInBytes: number
   readonly isFromDeadLetter: boolean
+  /** Set aside by a consumer to be received later by its sequence number (Service Bus). The cloud counts it as active. */
+  readonly isDeferred?: boolean
 }
 
 export interface PeekPaging {
@@ -70,6 +72,14 @@ export async function peekMessages(namespaceId: string, query: PeekQuery): Promi
 /** A page of the dead-lettered messages of a queue or subscription. */
 export async function peekDeadLetters(namespaceId: string, query: PeekQuery): Promise<PeekPage> {
   return (await api.get<PeekPage>(`/namespaces/${namespaceId}/dead-letter/peek`, { params: params(query) })).data
+}
+
+/**
+ * A page of the TRANSFER dead-letter queue of a queue or subscription (Service Bus only). Read only: where a failed send-via transaction
+ * leaves its message, with the intended destination only in the reason text, so nothing here is replayed. Refused (409) elsewhere.
+ */
+export async function peekTransferDeadLetters(namespaceId: string, query: PeekQuery): Promise<PeekPage> {
+  return (await api.get<PeekPage>(`/namespaces/${namespaceId}/dead-letter/peek`, { params: { ...params(query), transfer: true } })).data
 }
 
 /**

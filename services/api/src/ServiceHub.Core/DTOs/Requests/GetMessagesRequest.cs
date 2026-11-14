@@ -11,6 +11,7 @@ namespace ServiceHub.Core.DTOs.Requests;
 /// <param name="FromDeadLetter">Whether to retrieve from the dead-letter queue.</param>
 /// <param name="MaxMessages">Maximum number of messages to retrieve (1-1000).</param>
 /// <param name="FromSequenceNumber">Optional sequence number to start reading from.</param>
+/// <param name="FromTransferDeadLetter">Read the transfer dead-letter queue instead of the ordinary one. Only clouds with <c>SupportsTransferDeadLetter</c> honour it; read only, never replayed.</param>
 public sealed record GetMessagesRequest(
     [Required(ErrorMessage = "Namespace ID is required")]
     Guid NamespaceId,
@@ -30,7 +31,9 @@ public sealed record GetMessagesRequest(
     int MaxMessages = 100,
 
     [Range(0, long.MaxValue, ErrorMessage = "FromSequenceNumber must be non-negative")]
-    long? FromSequenceNumber = null)
+    long? FromSequenceNumber = null,
+
+    bool FromTransferDeadLetter = false)
 {
     /// <summary>
     /// Maximum allowed value for MaxMessages.
