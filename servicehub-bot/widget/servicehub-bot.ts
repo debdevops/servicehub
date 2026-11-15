@@ -61,35 +61,49 @@ export function safeHref(href: string, cloud: string | null, appBase = ''): { hr
 /**
  * The small Markdown the knowledge base uses: paragraphs, `-` and `1.` lists (one level of nesting), ``` code blocks,
  * `code`, **bold**, *italic* / _italic_, and <https://…> links. Everything is escaped first; nothing else becomes markup.
+ *
+ * As in Markdown, a single line break inside a paragraph or a list item is a space (the docs are hard-wrapped, and bold
+ * often spans the wrap); a blank line ends the paragraph.
  */
 export function renderMarkdown(markdown: string): string {
   const out: string[] = []
   const lines = markdown.replace(/\r\n?/g, '\n').split('\n')
   let paragraph: string[] = []
+  /** The text lines of the list item that is open, formatted together when it ends. */
+  let itemText: string[] | null = null
   const lists: { tag: 'ul' | 'ol'; indent: number }[] = []
 
   const flushParagraph = () => {
-    if (paragraph.length) out.push(`<p>${paragraph.map(inline).join('<br>')}</p>`)
+    if (paragraph.length) out.push(`<p>${inline(paragraph.join(' '))}</p>`)
     paragraph = []
   }
+  const flushItem = () => {
+    if (itemText) out.push(inline(itemText.join(' ')))
+    itemText = null
+  }
   const closeLists = (toIndent = -1) => {
+    flushItem()
     while (lists.length && (lists.at(-1)?.indent ?? 0) > toIndent) out.push(`</li></${lists.pop()?.tag}>`)
   }
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? ''
+    // A quote marker is dropped and its text kept: the bubble has no quote style, and a stray ">" reads as noise.
+    const line = (lines[i] ?? '').replace(/^\s*>\s?/, '')
     const fence = /^(\s*)```/.exec(line)
     if (fence) {
       flushParagraph()
+      flushItem()
       const code: string[] = []
       const indent = fence[1]?.length ?? 0
       for (i++; i < lines.length && !/^\s*```/.test(lines[i] ?? ''); i++) code.push((lines[i] ?? '').slice(Math.min(indent, /^\s*/.exec(lines[i] ?? '')?.[0].length ?? 0)))
-      out.push(`<pre><code>${escapeHtml(code.join('\n'))}</code></pre>`)
+      // Focusable, so a code block wider than the bubble can be scrolled from the keyboard.
+      out.push(`<pre tabindex="0"><code>${escapeHtml(code.join('\n'))}</code></pre>`)
       continue
     }
     const item = /^(\s*)([-*]|\d+\.)\s+(.*)$/.exec(line)
     if (item) {
       flushParagraph()
+      flushItem()
       const indent = item[1]?.length ?? 0
       const tag = /\d/.test(item[2] ?? '') ? 'ol' : 'ul'
       const top = lists.at(-1)
@@ -106,7 +120,8 @@ export function renderMarkdown(markdown: string): string {
           out.push('</li>')
         }
       }
-      out.push(`<li>${inline(item[3] ?? '')}`)
+      out.push('<li>')
+      itemText = [item[3] ?? '']
       continue
     }
     if (!line.trim()) {
@@ -115,7 +130,9 @@ export function renderMarkdown(markdown: string): string {
       continue
     }
     if (lists.length && /^\s+/.test(line)) {
-      out.push(`<br>${inline(line.trim())}`)
+      // A wrapped list item (or text after a code block inside one) continues that item.
+      if (itemText) itemText.push(line.trim())
+      else itemText = [line.trim()]
       continue
     }
     closeLists()
@@ -126,19 +143,24 @@ export function renderMarkdown(markdown: string): string {
   return out.join('')
 }
 
+const CODE_TOKEN = /\u0000(\d+)\u0000/g
+
 function inline(text: string): string {
-  // Code spans first, so nothing inside them becomes markup.
-  return text
-    .split(/(`[^`]+`)/)
-    .map((part) => {
-      if (/^`[^`]+`$/.test(part)) return `<code>${escapeHtml(part.slice(1, -1))}</code>`
-      return escapeHtml(part)
-        .replace(/&lt;(https?:\/\/[^\s&]+)&gt;/g, (_m, url: string) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`)
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/(^|[^\w*])\*(?!\s)(.+?)\*(?!\w)/g, '$1<em>$2</em>')
-        .replace(/(^|[^\w])_(?!\s)(.+?)_(?!\w)/g, '$1<em>$2</em>')
-    })
-    .join('')
+  // Code spans are set aside first, so nothing inside them becomes markup, yet bold and italic can wrap them
+  // ("**`IRecoveryLedger`**", "**It answers only to `localhost`.**"). The tokens use a character no answer contains.
+  const codes: string[] = []
+  const tokenised = text.replace(/\u0000/g, '').replace(/`([^`]+)`/g, (_m, code: string) => {
+    codes.push(`<code>${escapeHtml(code)}</code>`)
+    return `\u0000${codes.length - 1}\u0000`
+  })
+  return escapeHtml(tokenised)
+    // [text](url) keeps its text only: links come from the answer's checked `links` list, never from its prose.
+    .replace(/\[([^\]]+)\]\([^)\s]*\)/g, '$1')
+    .replace(/&lt;(https?:\/\/[^\s&]+)&gt;/g, (_m, url: string) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^\w*])\*(?!\s)(.+?)\*(?!\w)/g, '$1<em>$2</em>')
+    .replace(/(^|[^\w])_(?!\s)(.+?)_(?!\w)/g, '$1<em>$2</em>')
+    .replace(CODE_TOKEN, (_m, i: string) => codes[Number(i)] ?? '')
 }
 
 /** "as of 17:20" in the person's own time. */
@@ -161,7 +183,7 @@ const STYLES = `
 button { font: inherit; }
 .fab { width: 56px; height: 56px; border-radius: 50%; border: 0; background: var(--bot-accent); color: var(--bot-accent-text);
   box-shadow: 0 6px 20px rgb(0 0 0 / .25); cursor: pointer; display: grid; place-items: center; }
-.fab:focus-visible, button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
+.fab:focus-visible, button:focus-visible, a:focus-visible, input:focus-visible, .log:focus-visible, pre:focus-visible { outline: 3px solid #93c5fd; outline-offset: 2px; }
 .panel { position: absolute; right: 0; bottom: 68px; width: min(400px, calc(100vw - 32px)); height: min(600px, calc(100vh - 110px));
   background: var(--bot-bg); border: 1px solid var(--bot-line); border-radius: 16px; box-shadow: 0 16px 48px rgb(0 0 0 / .25);
   display: flex; flex-direction: column; overflow: hidden; }
@@ -231,7 +253,7 @@ export function defineServiceHubBot(): void {
             </div>
             <button class="close" type="button" aria-label="Close the bot">×</button>
           </div>
-          <div class="log" role="log" aria-live="polite" aria-relevant="additions"></div>
+          <div class="log" role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversation" tabindex="0"></div>
           <form>
             <label class="sr" for="q">Your question</label>
             <input id="q" name="q" autocomplete="off" maxlength="500" placeholder="Ask about ServiceHub…">
@@ -299,7 +321,12 @@ export function defineServiceHubBot(): void {
         })
         const body = (await response.json().catch(() => ({}))) as BotAnswer & { error?: string }
         thinking.remove()
-        if (!response.ok) this.#botMessage({ status: 'unknown', markdown: body.error ?? "The bot couldn't answer that right now.", links: [], suggestions: [] })
+        if (!response.ok) {
+          // 502–504 come from the proxy in front of the bot: the bot itself is not running. ServiceHub is unaffected.
+          const down = response.status >= 502 && response.status <= 504
+          const markdown = body.error ?? (down ? "ServiceHub Bot isn't running right now. ServiceHub itself is fine; restart `./run.sh` to bring the bot back." : "The bot couldn't answer that right now.")
+          this.#botMessage({ status: 'unknown', markdown, links: [], suggestions: [] })
+        }
         else this.#botMessage(body)
       } catch {
         thinking.remove()

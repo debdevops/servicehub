@@ -10,13 +10,17 @@ export const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 let built: string | undefined
 
 /**
- * Builds a fresh knowledge base from the ServiceHub repo this project lives in, into a temp folder, once per test file.
- * Tests never read `data/knowledge.db`, so a stale build cannot make them pass.
+ * Builds a fresh knowledge base from the ServiceHub repo this project lives in, into a temp folder, once per test file,
+ * and returns its path. Tests never read `data/knowledge.db`, so a stale build cannot make them pass.
  */
-export function openFreshKb(): KnowledgeBase {
+export function freshKbPath(): string {
   if (!built) {
     built = join(mkdtempSync(join(tmpdir(), 'servicehub-bot-')), 'knowledge.db')
     execFileSync(process.execPath, [join(root, 'scripts/build-kb.ts')], { env: { ...process.env, KB_OUT: built }, stdio: 'pipe' })
   }
-  return KnowledgeBase.open(built)
+  return built
+}
+
+export function openFreshKb(): KnowledgeBase {
+  return KnowledgeBase.open(freshKbPath())
 }

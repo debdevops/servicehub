@@ -8,7 +8,8 @@
  * Docker image does not include it).
  *
  * Environment: BOT_PORT (5160), BOT_HOST (127.0.0.1), SERVICEHUB_API_URL (http://localhost:5153), KB_PATH
- * (data/knowledge.db, relative to this project). It listens on this machine only unless BOT_HOST says otherwise.
+ * (data/knowledge.db, relative to this project), BOT_LOG (`all` to log every request; otherwise only failed ones).
+ * It listens on this machine only unless BOT_HOST says otherwise.
  */
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -22,7 +23,14 @@ const host = process.env.BOT_HOST ?? '127.0.0.1'
 const apiUrl = process.env.SERVICEHUB_API_URL ?? 'http://localhost:5153'
 
 const kb = KnowledgeBase.open(resolve(project, process.env.KB_PATH ?? 'data/knowledge.db'))
-const server = createBotServer({ kb, apiUrl, widgetSource: resolve(project, 'widget/servicehub-bot.ts'), tryPage: values.try })
+const server = createBotServer({
+  kb,
+  apiUrl,
+  widgetSource: resolve(project, 'widget/servicehub-bot.ts'),
+  tryPage: values.try,
+  // Every request with --try or BOT_LOG=all; otherwise only failed ones (run.sh's terminal is shared with the API and Vite).
+  logRequests: values.try || process.env.BOT_LOG === 'all' ? 'all' : 'problems',
+})
 
 server.on('error', (error: NodeJS.ErrnoException) => {
   console.error(error.code === 'EADDRINUSE' ? `ServiceHub Bot: port ${port} is already in use. Set BOT_PORT to another port.` : `ServiceHub Bot: ${error.message}`)

@@ -9,12 +9,13 @@
  * KB_OUT to data/knowledge.db). It only reads the rest of the repo; it writes nothing outside servicehub-bot/.
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { entries as curated } from '../knowledge/entries.ts'
 import { helpAliases } from '../knowledge/help-aliases.ts'
+import { cleanMarkdown } from './clean-markdown.ts'
 import { synonyms } from '../knowledge/synonyms.ts'
 import { SCHEMA } from '../src/kb.ts'
 import type { EntryKind, EntryLink, KnowledgeEntry, Link, LiveIntent } from '../src/types.ts'
@@ -92,9 +93,12 @@ async function main(): Promise<void> {
   const duplicate = rows.map((r) => r.id).find((id, i, all) => all.indexOf(id) !== i)
   if (duplicate) throw new Error(`Duplicate entry id: ${duplicate}`)
 
+  // Built beside the real file, then renamed over it in one step: a bot that opens the file meanwhile (another ./run.sh
+  // starting at the same moment) sees the old knowledge base or the new one, never a half-written one.
   mkdirSync(dirname(outPath), { recursive: true })
-  rmSync(outPath, { force: true })
-  const db = new DatabaseSync(outPath)
+  const building = `${outPath}.building-${process.pid}`
+  rmSync(building, { force: true })
+  const db = new DatabaseSync(building)
   try {
     db.exec(SCHEMA)
     db.exec('BEGIN')
@@ -118,9 +122,13 @@ async function main(): Promise<void> {
     }
     db.exec('COMMIT')
     db.exec("INSERT INTO entries_fts (entries_fts) VALUES ('optimize')")
-  } finally {
+  } catch (error) {
     db.close()
+    rmSync(building, { force: true })
+    throw error
   }
+  db.close()
+  renameSync(building, outPath)
 
   const count = (k: EntryKind): number => rows.filter((r) => r.kind === k).length
   console.log(
@@ -233,15 +241,6 @@ function splitSections(markdown: string): { heading: string | null; body: string
   }
   sections.push({ heading: current.heading, body: current.lines.join('\n') })
   return sections
-}
-
-/** Drops images and HTML; keeps text, lists, tables and code, which is what answers a question. */
-function cleanMarkdown(body: string): string {
-  return body
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
-    .replace(/<[^>]+>/g, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
 }
 
 /** Cuts at a paragraph boundary, never inside a code block. */

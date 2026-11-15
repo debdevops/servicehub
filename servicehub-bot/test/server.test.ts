@@ -131,6 +131,26 @@ describe('bot server', () => {
   })
 })
 
+describe('bot server logging under run.sh', () => {
+  it('logs only failed requests, so the shared terminal stays readable', async () => {
+    const kb = openFreshKb()
+    const lines: string[] = []
+    const server = createBotServer({ kb, apiUrl: 'http://unused.invalid', logRequests: 'problems', log: (l) => lines.push(l), readerFor: () => fakeReader() })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+    try {
+      await fetch(`${base}/bot/health`)
+      await fetch(`${base}/bot/ask`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"question":"replay","live":false}' })
+      assert.equal(lines.length, 0, lines.join('\n'))
+      await fetch(`${base}/bot/nope`)
+      assert.deepEqual(lines.map((l) => l.replace(/\d+ms$/, 'Nms')), ['GET /bot/nope 404 Nms'])
+    } finally {
+      server.close()
+      kb.close()
+    }
+  })
+})
+
 describe('bot server rate limit', () => {
   it('slows a runaway client down, with a sentence and Retry-After', async () => {
     const kb = openFreshKb()

@@ -366,6 +366,8 @@ bot_check() {
   [ "$MODE" = "both" ] || [ "$MODE" = "check" ] || { BOT_WHY="it starts only when the API and the web server start together"; return 0; }
   [ "${SERVICEHUB_BOT:-1}" != 0 ] || { BOT_WHY="SERVICEHUB_BOT=0"; return 0; }
   [ -f "$ROOT/servicehub-bot/src/serve.ts" ] || { BOT_WHY="servicehub-bot/ is not in this checkout"; return 0; }
+  # --check installs nothing: when Node is unusable, run.sh would install Node ${NODE_LTS_LINE}, which the bot runs on.
+  if [ "$MODE" = "check" ] && [ -z "$NODE_FOUND" ] && [ "$AUTO_INSTALL" = 1 ]; then BOT_WANTED=1; return 0; fi
   local v ma; v="$(node --version 2>/dev/null || echo '?')"; ma="$(major "$v")"
   case "$ma" in ''|*[!0-9]*) BOT_WHY="the Node.js version could not be read"; return 0 ;; esac
   [ "$ma" -ge 24 ] || { BOT_WHY="it needs Node.js 24 or later, and this is ${v}"; return 0; }

@@ -16,7 +16,7 @@ describe('renderMarkdown is safe', () => {
     '- <iframe src=//evil>',
     '"><svg onload=alert(1)>',
   ]
-  const ALLOWED_TAG = /^<\/?(p|br|ul|ol|li|strong|em|code|pre)>$|^<a href="https?:\/\/[^"<>\s]+" target="_blank" rel="noopener noreferrer">$|^<\/a>$/
+  const ALLOWED_TAG = /^<\/?(p|br|ul|ol|li|strong|em|code)>$|^<pre tabindex="0">$|^<\/pre>$|^<a href="https?:\/\/[^"<>\s]+" target="_blank" rel="noopener noreferrer">$|^<\/a>$/
   for (const input of hostile) {
     it(`escapes ${JSON.stringify(input)}`, () => {
       const html = renderMarkdown(input)
@@ -51,10 +51,27 @@ describe('renderMarkdown formats the knowledge base\'s Markdown', () => {
     assert.equal(renderMarkdown('1. Open\n2. Replay'), '<ol><li>Open</li><li>Replay</li></ol>')
   })
   it('code blocks, indented under a list item too', () => {
-    assert.equal(renderMarkdown('2. Start it:\n   ```bash\n   docker run x\n   ```\n3. Done'), '<ol><li>Start it:<pre><code>docker run x</code></pre></li><li>Done</li></ol>')
+    assert.equal(renderMarkdown('2. Start it:\n   ```bash\n   docker run x\n   ```\n3. Done'), '<ol><li>Start it:<pre tabindex="0"><code>docker run x</code></pre></li><li>Done</li></ol>')
   })
-  it('paragraphs', () => {
-    assert.equal(renderMarkdown('One.\n\nTwo\nlines.'), '<p>One.</p><p>Two<br>lines.</p>')
+  it('drops quote markers, but never inside a code block', () => {
+    assert.equal(renderMarkdown('> **Short answer:** it works.'), '<p><strong>Short answer:</strong> it works.</p>')
+    assert.equal(renderMarkdown('```\n> Healthy\n```'), '<pre tabindex="0"><code>&gt; Healthy</code></pre>')
+  })
+  it('keeps the text of a [text](url) link, never the link', () => {
+    assert.equal(renderMarkdown('Use the [VM runbook](HOSTING-AZURE.md#vm).'), '<p>Use the VM runbook.</p>')
+  })
+  it('paragraphs: a blank line ends one, a single line break is a space (hard-wrapped docs)', () => {
+    assert.equal(renderMarkdown('One.\n\nTwo\nlines.'), '<p>One.</p><p>Two lines.</p>')
+  })
+  it('bold across a hard wrap', () => {
+    assert.equal(renderMarkdown('lives in **one\nSQLite file**, here.'), '<p>lives in <strong>one SQLite file</strong>, here.</p>')
+  })
+  it('bold around code, and code inside bold', () => {
+    assert.equal(renderMarkdown('- **`IRecoveryLedger`** — the header'), '<ul><li><strong><code>IRecoveryLedger</code></strong> — the header</li></ul>')
+    assert.equal(renderMarkdown('**It answers only to `localhost` and `[::1]`.**'), '<p><strong>It answers only to <code>localhost</code> and <code>[::1]</code>.</strong></p>')
+  })
+  it('a wrapped list item stays one item', () => {
+    assert.equal(renderMarkdown('1. **Declare it —\n   honestly.** Add a preset.\n2. Next'), '<ol><li><strong>Declare it — honestly.</strong> Add a preset.</li><li>Next</li></ol>')
   })
 })
 

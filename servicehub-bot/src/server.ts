@@ -37,6 +37,8 @@ export interface BotServerOptions {
   /** For tests: build the reader for one request's headers instead of calling ServiceHub. */
   readonly readerFor?: (headers: IncomingMessage['headers']) => ServiceHubReader
   readonly log?: (line: string) => void
+  /** `all`: one line per request. `problems` (what `run.sh` uses): only failed requests, so its terminal stays readable. */
+  readonly logRequests?: 'all' | 'problems'
   readonly now?: () => number
 }
 
@@ -61,7 +63,9 @@ export function createBotServer(options: BotServerOptions): Server {
       if (!res.headersSent) send(res, 500, { error: 'The bot hit a problem answering that. Try again.' })
       log(`error ${error instanceof Error ? error.message : String(error)}`)
     } finally {
-      log(`${req.method} ${path} ${res.statusCode} ${Math.round(performance.now() - started)}ms`)
+      if (options.logRequests !== 'problems' || res.statusCode >= 400) {
+        log(`${req.method} ${path} ${res.statusCode} ${Math.round(performance.now() - started)}ms`)
+      }
     }
   })
 
