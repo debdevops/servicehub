@@ -190,7 +190,7 @@ export default function SignaturesPage() {
                           <tr key={keyOf(s)} aria-selected={keyOf(s) === selectedKey} className={`border-t border-[var(--color-border)] ${keyOf(s) === selectedKey ? 'bg-[var(--color-primary-50)]' : ''}`}>
                             {scope === 'all' && <td className={td}>{cloudLabel[s.provider]}</td>}
                             <td className={`${td} ${wrap} font-semibold`}>{s.reason}{s.growing && <span className="ml-2 rounded-md bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-700">Growing</span>}
-                              <span className="block max-w-xs truncate text-xs font-normal text-[var(--color-text-muted)]">{s.exampleError ?? s.entities.join(' · ')}</span></td>
+                              <span title={s.exampleError ?? s.entities.join(' · ')} className="block max-w-[14rem] truncate text-xs font-normal text-[var(--color-text-muted)]">{s.exampleError ?? s.entities.join(' · ')}</span></td>
                             <td className={`${td} ${wrap}`}>{s.namespaces.map((n) => nameOfNs(n.id) ?? n.displayName ?? n.name).join(', ') || '—'}</td>
                             <td className={td}>{s.activeNow.toLocaleString('en-US')}</td>
                             <td className={td}>{replayWords(s)}</td>

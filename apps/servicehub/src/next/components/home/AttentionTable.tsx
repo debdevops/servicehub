@@ -16,8 +16,9 @@ import { Tip } from '../Tip'
 export type AttentionTab = 'all' | 'approvals' | 'handOffs'
 type Tab = AttentionTab
 // Narrow padding and long names that may break anywhere: eleven columns have to fit a 1366 px window without a side-scroll.
-const td = 'px-2 py-2.5 align-top text-sm'
-const th = 'px-2 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
+// Narrow side padding (like the signatures table): eleven columns have to fit a 1280 px window without a side-scroll on any machine's fonts.
+const td = 'px-1.5 py-2.5 align-top text-sm'
+const th = 'px-1.5 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
 const wrap = '[overflow-wrap:anywhere]'
 
 const isMine = (i: PendingWorkItem) => i.kind === 'approval' || i.kind === 'unresolved'
