@@ -270,7 +270,7 @@ function Row({ entry: e, on, disabled, onToggle, check, onCheck, outcome, needsS
   const locked = e.state === 'included' || e.state === 'unavailable'
   const expanded = e.canToggle && e.state === 'off' && on
   const failed = outcome?.ok === false
-  const tone = failed ? 'border-red-300 bg-red-50' : expanded ? 'border-[var(--color-primary-600)] bg-[var(--color-primary-50)]' : locked && e.state !== 'alwaysOn' ? 'border-dashed border-[var(--color-border)] bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]' : 'border-[var(--color-border)] bg-[var(--color-surface)]'
+  const tone = failed ? 'border-red-300 bg-red-50' : expanded ? 'border-[var(--color-primary-600)] bg-[var(--color-primary-50)]' : locked ? 'border-dashed border-[var(--color-border)] bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]' : 'border-[var(--color-border)] bg-[var(--color-surface)]'
   const status = e.status === 'beingValidated' ? 'Not yet validated' : e.statusWords // the menu and the designs say it this way
   const label = `${e.name} (${status})`
   return (
