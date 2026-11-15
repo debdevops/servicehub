@@ -34,7 +34,7 @@ Both downloads are verified before use: the Node archive against the SHA-256 pub
 | Tool | Version | Check with | If missing |
 |---|---|---|---|
 | **.NET SDK** | 10.0.302 or a later 10.0.x (`services/api/global.json` pins 10.0; an 11.x-only machine will not work) | `dotnet --version` | Installed for you (~250 MB). Manual: <https://dotnet.microsoft.com/download/dotnet/10.0> |
-| **Node.js** (with npm) | 22.12+ (22 LTS recommended) or 20.19+ | `node --version` | Installed for you (~40 MB). Manual: <https://nodejs.org> |
+| **Node.js** (with npm) | 22.12+ or 20.19+ for ServiceHub; **24+** for the help button (ServiceHub Bot). 24 LTS recommended | `node --version` | Node 24 LTS installed for you when Node is missing (~40 MB). Manual: <https://nodejs.org> |
 | `bash`, `curl` (or `wget`), `tar` | Any | `curl --version` | Present on macOS and nearly every Linux; Debian/Ubuntu `sudo apt install curl tar` |
 | git | Any (only to clone) | `git --version` | <https://git-scm.com> |
 | `lsof` (or `ss` / `fuser`) | Optional | | Used to find and stop a previous ServiceHub on the port; without any of them the port is only probed |
@@ -91,6 +91,7 @@ port, it never kills it: with the default ports it moves to the next free port a
    database answers.) From a terminal: `curl http://localhost:3000/health/ready`.
 2. **Demo.** Open <http://localhost:3000/demo> (or press **Demo** on Home). All three clouds are connected with made-up data, a tour walks through every page, and nothing is sent anywhere.
 3. **Your own cloud.** See [Connect a cloud](#connect-a-cloud) below.
+4. **Help button.** The round button at the bottom right is **ServiceHub Bot**. Ask it, for example, "how do I replay dlq". It answers from the Help and these docs, and in the real app (not the demo) adds your live numbers. It **guides; it never changes anything**: it reads ServiceHub as you, with read-only requests, and its links only open screens. It comes with `./run.sh` only (not with Docker), needs Node.js 24 or later, and is optional: if it cannot start, `run.sh` says why in one line and ServiceHub runs without it. Turn it off with `SERVICEHUB_BOT=0`. More: [`servicehub-bot/README.md`](../servicehub-bot/README.md).
 
 ## 4. Stop it, and where your data lives
 
@@ -126,6 +127,8 @@ SERVICEHUB_DATA_DIR="$HOME/servicehub-data" ./run.sh
 | `SERVICEHUB_READY_TIMEOUT` | `180` | Seconds to wait for startup (after the build) before giving up |
 | `SERVICEHUB_AUTO_INSTALL` | `1` | `0` = never download tools (same as `--no-install`) |
 | `SERVICEHUB_TOOLS_DIR` | `~/.servicehub/tools` | Where a missing .NET SDK / Node.js is installed |
+| `SERVICEHUB_BOT` | `1` | `0` = do not start ServiceHub Bot, the help button |
+| `SERVICEHUB_BOT_PORT` | `5160` | ServiceHub Bot's port; if it is busy, the next free one is used |
 | `ASPNETCORE_ENVIRONMENT` | `Development` | Leave it. `Production` refuses to start without an encryption key |
 
 To run a **second, separate copy** (say, to try a branch beside your usual one), give it its own ports *and* its own `SERVICEHUB_DATA_DIR`.

@@ -13,6 +13,10 @@ const appVersion = fs.readFileSync(resolve(import.meta.dirname, '../../.version'
 // in production they are the same origin anyway (ADR-0014 D3).
 const apiProxyTarget = process.env.VITE_PROXY_TARGET ?? 'http://localhost:5153'
 
+// ServiceHub Bot (`servicehub-bot/`), started by ./run.sh beside the API. Development only: the app asks `/bot` for nothing
+// unless run.sh also set VITE_SERVICEHUB_BOT=true, so this proxy is idle everywhere else.
+const botProxyTarget = process.env.VITE_BOT_PROXY_TARGET ?? 'http://127.0.0.1:5160'
+
 // The public demo page (`VITE_DEMO_ONLY=true`) is a client-rendered app, so a crawler or link-preview bot that does not run
 // JavaScript sees an empty page. For that build only, give <head> a real title, description, Open Graph / Twitter tags and a
 // canonical URL, and put a short plain-text description inside <noscript>. The real app's index.html is not touched.
@@ -76,6 +80,7 @@ export default defineConfig({
     proxy: {
       '/api': { target: apiProxyTarget, changeOrigin: true },
       '/health': { target: apiProxyTarget, changeOrigin: true },
+      '/bot': { target: botProxyTarget },
     },
   },
 

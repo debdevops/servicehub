@@ -1,0 +1,22 @@
+{
+  "name": "servicehub-bot",
+  "version": "0.1.0",
+  "description": "ServiceHub Bot: answers ServiceHub questions from a searchable knowledge base and, read-only, from your ServiceHub's live numbers. It guides; it never acts for you.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "node scripts/build-kb.ts",
+    "build:kb": "node scripts/build-kb.ts",
+    "ask": "node src/cli.ts",
+    "serve": "node --disable-warning=ExperimentalWarning src/serve.ts",
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.widget.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  }
+}

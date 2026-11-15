@@ -9,6 +9,7 @@ import { DemoBanner } from '../../components/banners/DemoEntry'
 import { isDemo } from '../../lib/demo/state'
 import { NotFoundPage } from '../../pages/NotFoundPage'
 import { HeaderStatus } from '../components/HeaderStatus'
+import { BotLauncher } from '../components/BotLauncher'
 import { OverlayHost } from '../components/OverlayHost'
 import { StopBand } from '../components/StopBand'
 import { PausedBand } from '../components/PausedBand'
@@ -192,6 +193,7 @@ export function NextLayout() {
         </main>
       </div>
       <OverlayHost />
+      <BotLauncher />
     </div>
   )
 }
