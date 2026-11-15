@@ -1,6 +1,6 @@
 import { ExternalLink } from 'lucide-react'
 import { useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { useMe } from '../../../hooks/useIdentity'
 import { permission } from '../../../lib/permissions'
 import { Pager } from '../../../components/ui/Pager'
@@ -36,7 +36,9 @@ export function FailedRunsTab({ namespaceId, componentKey, source, row }: { name
   const words = failedWords(row.detection)
   const redrive = redriveWords(componentKey)
   const componentName = row.name
-  const [place, setPlace] = useState<string>(ALL)
+  const [search] = useSearchParams()
+  // A link from the overview can name one place (?place=); the filter then starts on it.
+  const [place, setPlace] = useState<string>(() => { const wanted = search.get('place'); return wanted && source.places.some((p) => p.id === wanted) ? wanted : ALL })
   const [open, setOpen] = useState<string | null>(null)
   const failed = useFailedItems(namespaceId, componentKey, place === ALL ? null : place, source.available)
   const detail = useFailedItem(namespaceId, componentKey, open)

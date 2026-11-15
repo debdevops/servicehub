@@ -6,6 +6,7 @@ import type { CloudKind } from '../../../lib/api/coverage'
 import { formatWhen } from '../../../lib/format'
 import { nextEntry, nextHref } from '../../nav/navigation'
 import { Pager } from '../../../components/ui/Pager'
+import { useComponentSource } from '../../../hooks/useComponentSource'
 import { usePagedList } from '../../../hooks/usePagedList'
 import { countWords, recordedWords, statusWords } from '../../lib/words'
 import { Th, ThHidden } from '../Tip'
@@ -180,12 +181,55 @@ export function ComponentTable({ components, cloudName, canConnect = true, lookN
   )
 }
 
-/** An added run-history component: read on request, so it has no counts here. Its page lists what failed. */
+/** The places of an expanded on-demand component (for Storage Queues, its poison queues). Read only when the row is opened. */
+function OnDemandPlaces({ c, detail }: { c: OnDemandRow; detail: (place?: string) => string }) {
+  const source = useComponentSource(c.namespaceId, c.componentKey)
+  const { items, pager } = usePagedList(source.data?.places ?? [])
+  const hasDetail = (source.data?.places ?? []).some((p) => p.detail)
+  if (source.isPending) return <p role="status" className="px-3 py-3 text-sm text-[var(--color-text-muted)]">Loading…</p>
+  if (source.isError) return <p role="alert" className="px-3 py-3 text-sm text-red-800">Its places could not be read.</p>
+  if (!source.data.available) return <p className="px-3 py-3 text-sm text-amber-900">{source.data.reason}</p>
+  if (source.data.places.length === 0) return <p className="px-3 py-3 text-sm text-[var(--color-text-muted)]">Nothing is listed for this component.</p>
+  return (
+    <>
+      <table className="w-full" aria-label={`Places in ${c.connectionName} ${c.componentName}`}>
+        <thead>
+          <tr>
+            <Th className={th}>Places ({source.data.places.length})</Th>
+            <Th className={th}>Type</Th>
+            {hasDetail && <Th className={th}>Details</Th>}
+            <ThHidden><span className="sr-only">View</span></ThHidden>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((p) => (
+            <tr key={p.id} className="border-t border-[var(--color-border)]">
+              <td className={`${td} ${wrap}`}>{p.name}</td>
+              <td className={`${td} capitalize`}>{p.kind}</td>
+              {hasDetail && <td className={td}>{p.detail ?? '—'}</td>}
+              <td className={td}><Link to={detail(p.id)} className="text-xs font-semibold text-[var(--color-primary-700)]" aria-label={`View ${p.name}`}>View</Link></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <Pager {...pager} label={`places in ${c.connectionName} ${c.componentName}`} />
+    </>
+  )
+}
+
+/** An added run-history component: read on request, so it has no counts here. Open it to see its places; View goes straight to its page. */
 function OnDemandTbody({ c, showRecorded }: { c: OnDemandRow; showRecorded: boolean }) {
+  const [expanded, setExpanded] = useState(false)
+  const detail = (place?: string) =>
+    `${nextHref(nextEntry('component-detail'), { cloud: c.cloud, component: c.componentKey, namespaceId: c.namespaceId })}${place ? `?place=${encodeURIComponent(place)}` : ''}`
   return (
     <tbody className="border-t border-[var(--color-border)]">
       <tr>
-        <td className={td} />
+        <td className={td}>
+          <button type="button" aria-expanded={expanded} aria-label={`${expanded ? 'Hide' : 'Show'} the places in ${c.connectionName} ${c.componentName}`} onClick={() => setExpanded((v) => !v)} className="rounded p-0.5 hover:bg-[var(--color-surface-muted)]">
+            {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
+          </button>
+        </td>
         <td className={`${td} font-semibold`}>{c.componentName}</td>
         <td className={td}>{c.connectionName}</td>
         <td className={td}><span className="font-semibold text-green-700">Added</span><span className="block text-xs text-[var(--color-text-muted)]">Read only</span></td>
@@ -195,9 +239,15 @@ function OnDemandTbody({ c, showRecorded }: { c: OnDemandRow; showRecorded: bool
         <td className={td}>—</td>
         <td className={td}>—</td>
         <td className={td}>
-          <Link to={nextHref(nextEntry('component-list'), { cloud: c.cloud, component: c.componentKey })} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]" aria-label={`View ${c.connectionName} ${c.componentName}`}>View</Link>
+          <Link to={detail()} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]" aria-label={`View ${c.connectionName} ${c.componentName}`}>View</Link>
         </td>
       </tr>
+      {expanded && (
+        <tr>
+          <td />
+          <td colSpan={showRecorded ? 9 : 8} className="bg-[var(--color-surface-muted)] p-0"><OnDemandPlaces c={c} detail={detail} /></td>
+        </tr>
+      )}
     </tbody>
   )
 }

@@ -17,7 +17,7 @@ describe('the coverage list the demo answers with', () => {
   })
 
   it('lists the message stores the menu always shows, in order, per cloud, and a run history only where it was ticked', () => {
-    expect(sidebarComponents(answer.rows, 'azure').map((r) => r.name)).toEqual(['Service Bus', 'Storage Queues'])
+    expect(sidebarComponents(answer.rows, 'azure').map((r) => r.name)).toEqual(['Service Bus'])
     expect(sidebarComponents(answer.rows, 'aws').map((r) => r.name)).toEqual(['SQS', 'SNS'])
     expect(sidebarComponents(answer.rows, 'gcp').map((r) => r.name)).toEqual(['Pub/Sub'])
     const ticked = [
@@ -32,6 +32,7 @@ describe('the coverage list the demo answers with', () => {
   it('lists a failed-records component (Event Grid, Eventarc, stream failures) only where it was ticked, like a run history', () => {
     const ticked = [
       { namespaceId: 'z', cloud: 'azure' as const, componentKey: 'event-grid' },
+      { namespaceId: 'z', cloud: 'azure' as const, componentKey: 'storage-queues' },
       { namespaceId: 'a', cloud: 'aws' as const, componentKey: 'aws-streams' },
       { namespaceId: 'g', cloud: 'gcp' as const, componentKey: 'eventarc' },
     ]
@@ -52,7 +53,7 @@ describe('the coverage list the demo answers with', () => {
       expect(row.movesOnBy, id).toBe(id === 'logic-apps.failed-runs' ? 'A person asks Azure to resubmit the run' : id === 'eventarc.undelivered' ? 'A person retries it in Pub/Sub' : 'Handed to a person')
       expect(row.offersCloudRedrive, id).toBe(id === 'logic-apps.failed-runs')
     }
-    expect(answer.rows.filter((r) => r.detection === 'records').map((r) => r.componentKey).sort()).toEqual(['aws-streams', 'event-grid', 'eventarc'])
+    expect(answer.rows.filter((r) => r.detection === 'records').map((r) => r.componentKey).sort()).toEqual(['aws-streams', 'event-grid', 'eventarc', 'storage-queues'])
     expect(answer.rows.find((r) => r.id === 'eventarc.undelivered')!.detectionWords).toBe('Reads the failed records the service keeps')
   })
 

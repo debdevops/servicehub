@@ -1,6 +1,7 @@
 import { ChevronRight, Info, RefreshCw } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useSearchParams } from 'react-router-dom'
+import { useEnabledComponents } from '../../hooks/useComponentEnablement'
 import { FailedRunsTab } from '../components/detail/FailedRunsTab'
 import { Pager } from '../../components/ui/Pager'
 import { useComponentSource } from '../../hooks/useComponentSource'
@@ -112,9 +113,14 @@ export function RunsComponentPage({ cloud, row, namespaceId }: { cloud: CloudKin
  */
 export function RunsConnections({ cloud, row }: { cloud: CloudKind; row: CoverageRow }) {
   const namespaces = useNamespaces()
+  const enabled = useEnabledComponents()
   const mine = (namespaces.data ?? []).filter((n) => n.provider === cloud && n.isActive)
   const { items, pager } = usePagedList(mine)
   const cloudName = cloudLabel[cloud]
+
+  // Added on exactly one connection: there is nothing to choose, so go straight to its page.
+  const added = (enabled.data ?? []).filter((e) => e.cloud === cloud && e.componentKey === row.componentKey)
+  if (added.length === 1) return <Navigate replace to={nextHref(nextEntry('component-detail'), { cloud, component: row.componentKey, namespaceId: added[0].namespaceId })} />
 
   return (
     <div className="space-y-4 px-6 py-5">

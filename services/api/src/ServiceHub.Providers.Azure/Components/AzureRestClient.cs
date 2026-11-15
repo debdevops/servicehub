@@ -16,6 +16,9 @@ public enum AzureAudience
 
     /// <summary>Blob storage (<c>*.blob.core.windows.net</c>).</summary>
     Storage,
+
+    /// <summary>Queue storage (<c>*.queue.core.windows.net</c>). Signs in with the same Entra audience as blob storage.</summary>
+    Queue,
 }
 
 /// <summary>Azure answered a read with an error status.</summary>
@@ -96,7 +99,7 @@ internal sealed class AzureRestClient : IAzureRestClient
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
-        if (audience == AzureAudience.Storage)
+        if (audience is AzureAudience.Storage or AzureAudience.Queue)
         {
             request.Headers.Add("x-ms-version", BlobVersion);
         }
@@ -134,9 +137,12 @@ internal sealed class AzureRestClient : IAzureRestClient
     internal static bool IsAllowed(Uri url, AzureAudience audience) =>
         url.Scheme == Uri.UriSchemeHttps
         && string.IsNullOrEmpty(url.UserInfo)
-        && (audience == AzureAudience.Management
-            ? string.Equals(url.Host, "management.azure.com", StringComparison.OrdinalIgnoreCase)
-            : url.Host.EndsWith(".blob.core.windows.net", StringComparison.OrdinalIgnoreCase));
+        && (audience switch
+        {
+            AzureAudience.Management => string.Equals(url.Host, "management.azure.com", StringComparison.OrdinalIgnoreCase),
+            AzureAudience.Queue => url.Host.EndsWith(".queue.core.windows.net", StringComparison.OrdinalIgnoreCase),
+            _ => url.Host.EndsWith(".blob.core.windows.net", StringComparison.OrdinalIgnoreCase),
+        });
 
     internal static TokenCredential EntraCredentialFor(Namespace ns) => ns.AuthType switch
     {

@@ -27,7 +27,8 @@ public sealed record ComponentSourceCapabilities(bool ReasonInList, bool ReadsPa
 /// <param name="Name">The name people know it by.</param>
 /// <param name="Kind">The cloud's own word for it, such as <c>state machine</c>.</param>
 /// <param name="ConsoleUrl">A link to the cloud's own console, or null.</param>
-public sealed record SourcePlace(string Id, string Name, string Kind, string? ConsoleUrl);
+/// <param name="Detail">One short line about what the place holds (for a poison queue: how many messages and how often they were tried), or null.</param>
+public sealed record SourcePlace(string Id, string Name, string Kind, string? ConsoleUrl, string? Detail = null);
 
 /// <summary>
 /// A page of places. <see cref="ReachedLimit"/> says there are more than were returned; <see cref="Incomplete"/> says part of the read

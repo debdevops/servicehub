@@ -40,6 +40,9 @@ const item = (n: number, over: Partial<sourcesApi.FailedItem> = {}): sourcesApi.
 })
 const readable: sourcesApi.ComponentSource = { componentKey: 'step-functions', available: true, reason: null, reasonInList: false, placesReachedLimit: false, placesIncomplete: false, places: [{ id: 'arn:m1', name: 'orders', kind: 'state machine', consoleUrl: null }] }
 
+import { cleanup } from '@testing-library/react'
+const unmountAll = () => cleanup()
+
 function open(url: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={client}><RouterProvider router={createMemoryRouter([nextRoute], { initialEntries: [url] })} /></QueryClientProvider>)
@@ -60,12 +63,16 @@ describe('a component that is not a message store (Step Functions, unit PP1/PP2)
     vi.mocked(sourcesApi.fetchFailedItems).mockResolvedValue({ componentKey: 'step-functions', items: [item(2), item(1, { status: 'TIMED_OUT' })], reachedLimit: false, incomplete: false })
   })
 
-  it('is in the menu and its list offers each AWS connection', async () => {
+  it('is in the menu, and opens straight on its one connection; with none added its list offers each AWS connection', async () => {
     open('/aws/c/step-functions')
-    expect(await screen.findByRole('heading', { name: /Step Functions connections \(1\)/ })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /Acme Payments/ })).toBeInTheDocument()
     const menu = screen.getByRole('navigation', { name: 'ServiceHub' })
     expect(within(menu).getByRole('link', { name: /Step Functions/ })).toHaveAttribute('href', '/aws/c/step-functions')
     expect(within(menu).getByRole('img', { name: 'Not yet validated' })).toBeInTheDocument()
+    vi.mocked(enablementApi.fetchEnabledComponents).mockResolvedValue([])
+    unmountAll()
+    open('/aws/c/step-functions')
+    expect(await screen.findByRole('heading', { name: /Step Functions connections \(1\)/ })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'View Acme Payments' })).toHaveAttribute('href', '/aws/c/step-functions/ns-1')
   })
 
@@ -172,6 +179,7 @@ describe('a component that is not a message store (Step Functions, unit PP1/PP2)
   })
 
   it('Workflows lists only the Google connection, and Step Functions only the AWS one', async () => {
+    vi.mocked(enablementApi.fetchEnabledComponents).mockResolvedValue([])
     const { unmount } = open('/gcp/c/workflows')
     expect(await screen.findByRole('link', { name: 'View Globex Events' })).toHaveAttribute('href', '/gcp/c/workflows/ns-2')
     expect(screen.queryByRole('link', { name: 'View Acme Payments' })).not.toBeInTheDocument()

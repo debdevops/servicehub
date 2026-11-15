@@ -53,6 +53,26 @@ const SETUPS: Readonly<Record<string, Pick<ComponentEntry, 'what' | 'appears' | 
     ],
     permissions: ['Reader', 'Microsoft.EventGrid/eventSubscriptions/read', 'Storage Blob Data Reader'],
   },
+  'storage-queues': {
+    what: 'Messages that Azure Functions or WebJobs moved to a poison queue (a Storage queue named *-poison) after too many failed attempts. Found in every storage account the identity can see.',
+    appears: 'Appears in the menu as Storage Queues. Read only: a poison message is handed to a person. Each is listed with when it arrived and how many times it was tried; its text is never read. Looking at a message is a peek: it is not hidden, removed or counted as another try. Removing Storage Queues from ServiceHub stops watching it and changes nothing in Azure.',
+    needs: 'Reader on the subscription to find storage accounts, and Storage Queue Data Reader on the storage account that holds the poison queues. Signed in with Entra.',
+    steps: [
+      "Use an Azure connection that signs in with Entra (Managed Identity or Default Azure Credential). No key, secret or connection string is used or stored, and the storage account keys in the Azure portal are not needed. A Service Bus connection string cannot read Storage Queues. If you have no Azure sign-in connection yet, press Connect at the top of this card: it makes one in a click, with no popup.",
+      "Find who that connection signs in as. On a laptop it is the account shown by az account show; in Azure it is the managed identity's object id.",
+      'Give that identity the Reader role on the subscription, so it can find storage accounts. Reader changes nothing.',
+      'Give it Storage Queue Data Reader on the one storage account that holds the poison queues, not on the subscription. That lets it peek at messages and nothing else. It can take a few minutes to apply.',
+      'Press Check access.',
+    ],
+    snippets: [
+      { label: '1. Or create the Entra connection by command (what Connect does)', text: `curl -X POST http://localhost:5153/api/v1/namespaces -H 'Content-Type: application/json' -H 'X-ServiceHub-Intent: create-namespace' -d '{"name":"azure-entra","provider":"azure","authType":"defaultAzureCredential","displayName":"Azure sign-in","environment":"dev"}'` },
+      { label: '2. Find the identity (a person or app signed in with az login)', text: 'az ad signed-in-user show --query id -o tsv' },
+      { label: '3. Grant the reader role', text: 'az role assignment create --assignee <the identity> --role Reader --scope /subscriptions/<subscription-id>' },
+      { label: '4. Find the storage account id', text: 'az storage account show --name <storage-account> --query id -o tsv' },
+      { label: '5. Grant queue read on that account only', text: 'az role assignment create --assignee <the identity> --role "Storage Queue Data Reader" --scope <storage account resource id>' },
+    ],
+    permissions: ['Reader', 'Microsoft.Storage/storageAccounts/read', 'Storage Queue Data Reader'],
+  },
   'aws-streams': {
     what: 'Failure records that Lambda writes to an on-failure queue when it cannot process a batch from a Kinesis or DynamoDB stream. Each points at the batch (stream, shard, sequence numbers); the original records are not copied.',
     appears: 'Appears in the menu as Kinesis, DynamoDB streams. Read only: a failure record is handed to a person. The original record expires with the stream and may already be gone.',

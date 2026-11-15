@@ -11,6 +11,8 @@ export interface SourcePlace {
   /** The cloud's own word for it, such as "state machine". */
   readonly kind: string
   readonly consoleUrl: string | null
+  /** One short line about what the place holds, such as how many poison messages wait in it. Absent when the component has none. */
+  readonly detail?: string | null
 }
 
 /** Whether this connection can read the component. `available` false carries the reason; it is a state, not an error. */

@@ -39,6 +39,7 @@ public static class AzureProviderServiceCollectionExtensions
         services.TryAddSingleton<IAzureRestClient>(sp => new AzureRestClient(sp.GetRequiredService<IHttpClientFactory>().CreateClient("servicehub-azure-rest")));
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IComponentSource, LogicAppsSource>());
         services.TryAddEnumerable(ServiceDescriptor.Scoped<IComponentSource, EventGridSource>());
+        services.TryAddEnumerable(ServiceDescriptor.Scoped<IComponentSource, StorageQueuesSource>());
 
         // Moving a failed Logic Apps run on (build-plan unit R2) goes through its own HTTP door, never the read-only one above. It has no
         // retry handler on purpose: Azure gives a resubmit no idempotency key, so a retried POST would start a second run.

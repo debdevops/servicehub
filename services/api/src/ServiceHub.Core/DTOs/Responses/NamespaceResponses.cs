@@ -108,7 +108,7 @@ public sealed record EntitySettingResponse(string Label, string Value);
 public sealed record EntitySettingsResponse(string Name, string Kind, IReadOnlyList<EntitySettingResponse>? Settings);
 
 /// <summary>A place a non-message component keeps its failures (a state machine, a workflow).</summary>
-public sealed record SourcePlaceResponse(string Id, string Name, string Kind, string? ConsoleUrl);
+public sealed record SourcePlaceResponse(string Id, string Name, string Kind, string? ConsoleUrl, string? Detail = null);
 
 /// <summary>
 /// Whether a connection can read a component that is not a message store, and its places. <c>available</c> false carries the reason

@@ -21,8 +21,8 @@ const readOnDemand = catalogue.filter((r) => (r.detection === 'runs' || r.detect
 const byKey = new Map(readOnDemand.map((r) => [r.componentKey, r]))
 
 describe('the demo knows every component that is read on demand', () => {
-  it('has all seven, two per Azure and one or two elsewhere, none on request', () => {
-    expect([...byKey.keys()].sort()).toEqual(['aws-streams', 'cloud-scheduler', 'event-grid', 'eventarc', 'logic-apps', 'step-functions', 'workflows'])
+  it('has all eight, three per Azure and one or two elsewhere, none on request', () => {
+    expect([...byKey.keys()].sort()).toEqual(['aws-streams', 'cloud-scheduler', 'event-grid', 'eventarc', 'logic-apps', 'step-functions', 'storage-queues', 'workflows'])
     expect(catalogue.filter((r) => r.status === 'onRequest')).toEqual([])
     // Step Functions and Logic Apps have a recorded live run (RECOVERY-EVIDENCE §7 and §8); no other row has one yet.
     const recorded = ['step-functions', 'logic-apps']

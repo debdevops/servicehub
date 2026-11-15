@@ -778,7 +778,7 @@ public sealed class NamespacesController : ApiControllerBase
             ? Ok(new ComponentSourceResponse(source.ComponentKey, false, places.Error.Message, source.Capabilities.ReasonInList, []))
             : Ok(new ComponentSourceResponse(
                 source.ComponentKey, true, null, source.Capabilities.ReasonInList,
-                [.. places.Value.Items.Select(p => new SourcePlaceResponse(p.Id, p.Name, p.Kind, p.ConsoleUrl))],
+                [.. places.Value.Items.Select(p => new SourcePlaceResponse(p.Id, p.Name, p.Kind, p.ConsoleUrl, p.Detail))],
                 places.Value.ReachedLimit, places.Value.Incomplete));
     }
 

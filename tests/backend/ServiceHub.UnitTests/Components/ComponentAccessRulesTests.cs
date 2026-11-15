@@ -59,7 +59,7 @@ public sealed class ComponentAccessRulesTests
             .Should().OnlyContain(c => ComponentAccessRules.Of(c) == ComponentAccess.NotBuildable);
     }
 
-    private static readonly string[] BuiltOnDemand = ["step-functions", "workflows", "cloud-scheduler", "logic-apps", "event-grid", "aws-streams", "eventarc"];
+    private static readonly string[] BuiltOnDemand = ["step-functions", "workflows", "cloud-scheduler", "logic-apps", "event-grid", "storage-queues", "aws-streams", "eventarc"];
 
     [Theory]
     [InlineData(DetectionKind.Runs, true)]

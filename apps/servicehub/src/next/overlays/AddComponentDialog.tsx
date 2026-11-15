@@ -41,7 +41,7 @@ const idOf = (namespaceId: string, componentKey: string) => `${namespaceId}|${co
  * The Azure components that are read through Azure Resource Manager and so need a connection that signs in as an identity, not a Service Bus
  * connection string. The Connect button on their row makes (or switches to) that connection. Their setup text says the same in words.
  */
-const ENTRA_COMPONENTS: ReadonlySet<string> = new Set(['event-grid', 'logic-apps'])
+const ENTRA_COMPONENTS: ReadonlySet<string> = new Set(['event-grid', 'logic-apps', 'storage-queues'])
 const ENTRA_AUTH: ReadonlySet<AuthType> = new Set<AuthType>(['defaultAzureCredential', 'managedIdentity'])
 const isEntra = (n: Namespace | undefined) => n !== undefined && ENTRA_AUTH.has(n.authType)
 

@@ -70,12 +70,18 @@ describe('components that keep failed records, not runs (Event Grid, Eventarc, s
     vi.mocked(sourcesApi.fetchFailedItems).mockResolvedValue({ componentKey: 'event-grid', items: [item(2), item(1)], reachedLimit: false, incomplete: false })
   })
 
-  it('is in the menu where it is ticked, with its own page and an Azure connection to open', async () => {
+  it('is in the menu where it is ticked, and its page opens straight on the one connection it was added on', async () => {
     open('/azure/c/event-grid')
-    expect(await screen.findByRole('heading', { name: /Event Grid connections \(1\)/ })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /Failed records \(2\)/ })).toBeInTheDocument()
     const menu = screen.getByRole('navigation', { name: 'ServiceHub' })
     expect(within(menu).getByRole('link', { name: /Event Grid/ })).toHaveAttribute('href', '/azure/c/event-grid')
     expect(within(menu).getByRole('link', { name: /Logic Apps/ })).toHaveAttribute('href', '/azure/c/logic-apps')
+  })
+
+  it('lists the connections to choose from when it was added on none or on more than one', async () => {
+    vi.mocked(enablementApi.fetchEnabledComponents).mockResolvedValue([])
+    open('/azure/c/event-grid')
+    expect(await screen.findByRole('heading', { name: /Event Grid connections \(1\)/ })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'View Globex Azure' })).toHaveAttribute('href', '/azure/c/event-grid/ns-3')
   })
 

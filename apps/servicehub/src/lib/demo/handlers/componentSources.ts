@@ -87,6 +87,18 @@ const components: Readonly<Record<string, DemoComponent>> = {
         { state: 'DEAD_LETTERED', minutesAgo: 1900, reason: 'TTLExpired', cause: '1 delivery attempt; last outcome NotFound; last HTTP status 404' }] },
     ],
   },
+  'storage-queues': {
+    provider: 'azure', kind: 'poison queue',
+    place: (n) => `queue://stgglobex/${n}`, run: (p, i) => `queue://stgglobex/${p}/0b1c2d3e-4f50-4a6b-8c7d-9e0f1a2b3c4${i}`,
+    placeLink: () => 'https://portal.azure.com/#@/resource/subscriptions/9d2f4c1e-5b7a-4e3d-8c6f-0a1b2c3d4e5f/resourceGroups/rg-globex/providers/Microsoft.Storage/storageAccounts/stgglobex/overview',
+    runLink: (p) => qlink(p),
+    summary: () => 'Poison message: moved here after too many failed attempts',
+    places: [
+      { name: 'orders-poison', runs: [
+        { state: 'POISONED', minutesAgo: 22, reason: 'Moved to the poison queue after too many failed attempts to process it', cause: 'dequeued 5 times before it was moved here' },
+        { state: 'POISONED', minutesAgo: 310, reason: 'Moved to the poison queue after too many failed attempts to process it', cause: 'dequeued 5 times before it was moved here' }] },
+    ],
+  },
   'aws-streams': {
     provider: 'aws', kind: 'stream consumer',
     place: (n) => STREAM_IDS[n] ?? n, run: (p, i) => `${STREAM_IDS[p] ?? p}/msg-${i}`,
@@ -162,6 +174,7 @@ const componentFor = (providerOf: (id: string) => CloudProvider | undefined, id:
 
 // Whether the demo's own catalogue row offers a cloud redrive or resubmit for this component, and what that action is called.
 const offered = (key: string): boolean => catalogue.some((r) => r.componentKey === key && r.offersCloudRedrive)
+const qlink = (p: string) => `https://portal.azure.com/#view/Microsoft_Azure_Storage/QueueMenuBlade/~/overview/storageAccountId/%2Fsubscriptions%2F9d2f4c1e-5b7a-4e3d-8c6f-0a1b2c3d4e5f%2FresourceGroups%2Frg-globex%2Fproviders%2FMicrosoft.Storage%2FstorageAccounts%2Fstgglobex/queueName/${p}`
 const verbOf = (key: string): string => (key === 'logic-apps' ? 'resubmit' : 'redrive')
 
 export const componentSources: readonly Route[] = [
@@ -169,7 +182,7 @@ export const componentSources: readonly Route[] = [
     const c = componentFor((id) => w.namespaces.find((n) => n.id === id)?.provider, m[1], m[2])
     return {
       componentKey: m[2], available: true, reason: null, reasonInList: false, placesReachedLimit: false, placesIncomplete: false,
-      places: c.places.map((p) => ({ id: c.place(p.name), name: p.name, kind: c.kind, consoleUrl: c.placeLink(p.name) })),
+      places: c.places.map((p) => ({ id: c.place(p.name), name: p.name, kind: c.kind, consoleUrl: c.placeLink(p.name), detail: c.kind === 'poison queue' ? `${p.runs.length} messages, tried up to 5 times` : null })),
     }
   }],
   ['get', /^\/namespaces\/([^/]+)\/components\/([^/]+)\/failed$/, (m, { w, params, now }): FailedItems => {
