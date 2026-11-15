@@ -99,4 +99,6 @@ export interface World {
   ticks: number
   /** Read-on-demand components someone ticked in Add a component. Absent until first used: the demo then starts with each cloud's own turned on. */
   enabledComponents?: { namespaceId: string; componentKey: string }[]
+  /** Watched stores someone hid from ServiceHub (Deallocate). Only a saved choice: nothing in the demo cloud changes. */
+  hiddenComponents?: { namespaceId: string; componentKey: string }[]
 }

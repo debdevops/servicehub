@@ -24,7 +24,7 @@ vi.mock('@/lib/api/settings', async (o) => ({ ...(await o<typeof settingsApi>())
 vi.mock('@/lib/api/pendingWork', async (o) => ({ ...(await o<typeof pendingApi>()), fetchPendingWork: vi.fn() }))
 vi.mock('@/lib/api/signatures', async (o) => ({ ...(await o<typeof signaturesApi>()), fetchSignatures: vi.fn(), fetchSignatureTrust: vi.fn() }))
 vi.mock('@/lib/api/namespaces', async (o) => ({ ...(await o<typeof namespacesApi>()), lookAtDeadLetters: vi.fn(), fetchNamespaces: vi.fn() }))
-vi.mock('@/lib/api/componentEnablement', async (o) => ({ ...(await o<typeof enablementApi>()), fetchEnabledComponents: vi.fn() }))
+vi.mock('@/lib/api/componentEnablement', async (o) => ({ ...(await o<typeof enablementApi>()), fetchEnabledComponents: vi.fn(), fetchHiddenComponents: vi.fn(), setComponent: vi.fn() }))
 
 const now = '2026-10-18T10:00:00Z'
 const generatedAtUtc = now
@@ -64,6 +64,7 @@ describe('Home for one cloud (unit C1)', () => {
     vi.mocked(identityApi.fetchMe).mockResolvedValue(me())
     vi.mocked(namespacesApi.fetchNamespaces).mockResolvedValue([])
     vi.mocked(enablementApi.fetchEnabledComponents).mockResolvedValue([])
+    vi.mocked(enablementApi.fetchHiddenComponents).mockResolvedValue([])
     vi.mocked(agentsApi.fetchAgents).mockResolvedValue([agent()])
     vi.mocked(settingsApi.fetchEmergencyStop).mockResolvedValue({ active: false, by: null, at: null, reason: null })
     vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue(page([approval()]))
@@ -80,6 +81,25 @@ describe('Home for one cloud (unit C1)', () => {
     expect(grid).toBeInTheDocument()
     const row = (await screen.findByRole('link', { name: /View Azure sign-in/ })).closest('tr')!
     expect(within(row).getByText('Read on request')).toBeInTheDocument()
+  })
+
+  it('Deallocate hides a component from ServiceHub after one confirm, and a component hidden earlier is not listed', async () => {
+    const row = component()
+    vi.mocked(enablementApi.setComponent).mockResolvedValue({} as enablementApi.ComponentEntry)
+    open('/azure')
+    const view = await screen.findByRole('link', { name: new RegExp(`View ${row.name} ${row.componentName}`) })
+    const tr = view.closest('tr')!
+    await userEvent.click(within(tr).getByRole('button', { name: /^Deallocate/ }))
+    expect(enablementApi.setComponent).not.toHaveBeenCalled()
+    await userEvent.click(within(tr).getByRole('button', { name: /^Confirm deallocate/ }))
+    await waitFor(() => expect(enablementApi.setComponent).toHaveBeenCalledWith(row.namespaceId, row.componentKey, false))
+  })
+
+  it('leaves out a watched component that was hidden', async () => {
+    const row = component()
+    vi.mocked(enablementApi.fetchHiddenComponents).mockResolvedValue([{ namespaceId: row.namespaceId, cloud: 'azure', componentKey: row.componentKey }])
+    open('/azure')
+    expect(await screen.findByRole('heading', { name: /Azure PaaS components \(0\)/ })).toBeInTheDocument()
   })
 
   it('asks for exactly its own cloud, from the two reads that feed every number', async () => {

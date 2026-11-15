@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Info, RefreshCw } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 import { useComponents } from '../../hooks/useComponents'
-import { useEnabledComponents } from '../../hooks/useComponentEnablement'
+import { useEnabledComponents, useHiddenComponents } from '../../hooks/useComponentEnablement'
 import { useNamespaces } from '../../hooks/useNamespaces'
 import { sidebarComponents, useCoverage } from '../../hooks/useCoverage'
 import { useMe } from '../../hooks/useIdentity'
@@ -39,11 +39,14 @@ function CloudHome({ cloud }: { cloud: CloudKind }) {
   const coverage = useCoverage()
   const me = useMe()
   const enabled = useEnabledComponents()
+  const hiddenStores = useHiddenComponents()
   const namespaces = useNamespaces()
 
   const cloudName = cloudLabel[cloud]
-  const rows = components.data?.components ?? []
-  const covered = sidebarComponents(coverage.data?.rows ?? [], cloud)
+  // A watched store a person hid is left out here, in the tiles and in the menu. Nothing changed in the cloud, and Add a component brings it back.
+  const isHidden = (namespaceId: string, componentKey: string) => (hiddenStores.data ?? []).some((h) => h.namespaceId === namespaceId && h.componentKey === componentKey)
+  const rows = (components.data?.components ?? []).filter((c) => !isHidden(c.namespaceId, c.componentKey))
+  const covered = sidebarComponents(coverage.data?.rows ?? [], cloud, [], hiddenStores.data ?? [])
   // A run-history component (Event Grid, Logic Apps, Step Functions…) is read on request, not from the queue store, so the overview has no row
   // for it. It still belongs in the table once someone has added it, so it is listed here from the same enabled read the menu uses.
   const onDemand = (enabled.data ?? []).filter((e) => e.cloud === cloud).map((e) => ({

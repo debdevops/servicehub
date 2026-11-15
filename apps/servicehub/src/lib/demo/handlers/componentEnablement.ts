@@ -129,14 +129,17 @@ const enabledOf = (w: World): { namespaceId: string; componentKey: string }[] =>
   .filter((n, i) => w.namespaces.findIndex((m) => m.provider === n.provider) === i)
   .flatMap((n) => listed(n.provider).filter(toggleable).map((r) => ({ namespaceId: n.id, componentKey: r.componentKey }))))
 
+const hiddenOf = (w: World) => (w.hiddenComponents ??= [])
+const isHidden = (w: World, namespaceId: string, key: string) => hiddenOf(w).some((h) => h.namespaceId === namespaceId && h.componentKey === key)
+
 function entry(w: World, namespaceId: string, r: CoverageRow): ComponentEntry {
   const setup = SETUPS[r.componentKey] ?? NONE
   const alwaysOn = r.detection === 'store' && r.status === 'supported'
-  const state: ComponentEntry['state'] = r.status === 'onRequest' ? 'unavailable' : alwaysOn ? 'alwaysOn' : toggleable(r)
+  const state: ComponentEntry['state'] = r.status === 'onRequest' ? 'unavailable' : alwaysOn ? (isHidden(w, namespaceId, r.componentKey) ? 'hidden' : 'alwaysOn') : toggleable(r)
     ? (enabledOf(w).some((e) => e.namespaceId === namespaceId && e.componentKey === r.componentKey) ? 'on' : 'off') : 'unavailable'
   return {
     componentKey: r.componentKey, name: r.name, stuckPlace: r.stuckPlace, status: camelStatus(r), statusWords: r.statusWords,
-    access: state === 'unavailable' ? 'notBuildable' : 'sameConnection', state, canToggle: toggleable(r), note: r.note, includedIn: null, ...setup,
+    access: state === 'unavailable' ? 'notBuildable' : 'sameConnection', state, canToggle: toggleable(r) || alwaysOn, note: r.note, includedIn: null, ...setup,
   }
 }
 
@@ -147,6 +150,11 @@ export const componentEnablement: readonly Route[] = [
     enabledOf(w).flatMap((e) => {
       const ns = w.namespaces.find((n) => n.id === e.namespaceId)
       return ns ? [{ namespaceId: e.namespaceId, cloud: ns.provider, componentKey: e.componentKey }] : []
+    })],
+  ['get', /^\/namespaces\/components\/hidden$/, (_m, { w }): EnabledComponent[] =>
+    hiddenOf(w).flatMap((h) => {
+      const ns = w.namespaces.find((n) => n.id === h.namespaceId)
+      return ns ? [{ namespaceId: h.namespaceId, cloud: ns.provider, componentKey: h.componentKey }] : []
     })],
   ['get', /^\/namespaces\/([^/]+)\/components$/, (m, { w }): ComponentList => {
     const ns = namespaceOf(w, m[1])
@@ -160,6 +168,14 @@ export const componentEnablement: readonly Route[] = [
   ['put', /^\/namespaces\/([^/]+)\/enabled-components\/([^/]+)$/, (m, { w, body }): ComponentEntry => {
     const ns = namespaceOf(w, m[1])
     const row = listed(ns.provider).find((r) => r.componentKey === m[2]) ?? refuse(404, 'not_found', `'${m[2]}' is not a component of this connection's cloud.`)
+    if (row.detection === 'store' && row.status === 'supported') {
+      const hidden = hiddenOf(w)
+      const h = hidden.findIndex((e) => e.namespaceId === ns.id && e.componentKey === m[2])
+      if (body.enabled !== true && h < 0) hidden.push({ namespaceId: ns.id, componentKey: m[2] })
+      if (body.enabled === true && h >= 0) hidden.splice(h, 1)
+      save()
+      return entry(w, ns.id, row)
+    }
     if (!toggleable(row)) refuse(409, 'capability_unavailable', `${row.name} cannot be ticked or unticked here.`)
     const all = enabledOf(w)
     const at = all.findIndex((e) => e.namespaceId === ns.id && e.componentKey === m[2])

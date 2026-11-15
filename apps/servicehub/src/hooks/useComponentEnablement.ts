@@ -1,10 +1,11 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { checkComponent, fetchComponentList, fetchEnabledComponents, setComponent } from '../lib/api/componentEnablement'
+import { checkComponent, fetchComponentList, fetchEnabledComponents, fetchHiddenComponents, setComponent } from '../lib/api/componentEnablement'
 
 export const componentKeys = {
   all: ['components'] as const,
   list: (namespaceId: string) => [...componentKeys.all, 'list', namespaceId] as const,
   enabled: () => [...componentKeys.all, 'enabled'] as const,
+  hidden: () => [...componentKeys.all, 'hidden'] as const,
 }
 
 /** What can be brought in on one connection, and what already is. */
@@ -17,6 +18,11 @@ export function useComponentList(namespaceId: string | undefined) {
 /** Every component ticked on any connection: the menu lists a read-on-demand component only where someone turned it on. */
 export function useEnabledComponents() {
   return useQuery({ queryKey: componentKeys.enabled(), queryFn: fetchEnabledComponents })
+}
+
+/** Watched stores hidden from ServiceHub. The menu, Home and the tiles leave them out until they are added again. */
+export function useHiddenComponents() {
+  return useQuery({ queryKey: componentKeys.hidden(), queryFn: fetchHiddenComponents })
 }
 
 /** Check access. A mutation because it asks the cloud, even though it changes nothing. */

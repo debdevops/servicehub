@@ -7,6 +7,7 @@ import { formatWhen } from '../../../lib/format'
 import { nextEntry, nextHref } from '../../nav/navigation'
 import { Pager } from '../../../components/ui/Pager'
 import { useComponentSource } from '../../../hooks/useComponentSource'
+import { useSetComponent } from '../../../hooks/useComponentEnablement'
 import { usePagedList } from '../../../hooks/usePagedList'
 import { countWords, recordedWords, statusWords } from '../../lib/words'
 import { Th, ThHidden } from '../Tip'
@@ -154,7 +155,10 @@ export function ComponentTable({ components, cloudName, canConnect = true, lookN
                     <td className={`${td} font-semibold ${c.needsYou > 0 ? 'text-red-700' : ''}`}>{c.needsYou}</td>
                     <td className={td}>{c.observedAtUtc ? formatWhen(c.observedAtUtc, now) : '—'}</td>
                     <td className={td}>
-                      <Link to={detail(c)} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]" aria-label={`View ${c.name} ${c.componentName}`}>View</Link>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Link to={detail(c)} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]" aria-label={`View ${c.name} ${c.componentName}`}>View</Link>
+                        <DeallocateButton namespaceId={c.namespaceId} componentKey={c.componentKey} label={`${c.name} ${c.componentName}`} />
+                      </div>
                     </td>
                   </tr>
                   {expanded && (
@@ -217,6 +221,28 @@ function OnDemandPlaces({ c, detail }: { c: OnDemandRow; detail: (place?: string
   )
 }
 
+/**
+ * Deallocate: hide a component from ServiceHub (here, in the tiles and in the menu). It only saves a choice: nothing is read, changed or removed in the
+ * cloud, the connection stays and the history is kept. Add a component brings it back. Two steps, so one stray click does nothing.
+ */
+function DeallocateButton({ namespaceId, componentKey, label }: { namespaceId: string; componentKey: string; label: string }) {
+  const [confirming, setConfirming] = useState(false)
+  const deallocate = useSetComponent(namespaceId)
+  return (
+    <>
+      {confirming ? (
+        <>
+          <button type="button" disabled={deallocate.isPending} onClick={() => deallocate.mutate({ componentKey, enabled: false }, { onSettled: () => setConfirming(false) })} className="rounded-lg bg-red-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-800 disabled:opacity-60" aria-label={`Confirm deallocate ${label}`}>{deallocate.isPending ? 'Removing…' : 'Confirm'}</button>
+          <button type="button" disabled={deallocate.isPending} onClick={() => setConfirming(false)} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold hover:bg-[var(--color-surface-muted)]">Cancel</button>
+        </>
+      ) : (
+        <button type="button" onClick={() => setConfirming(true)} title="Hide from ServiceHub. Nothing changes in your cloud; add it again any time." className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50" aria-label={`Deallocate ${label}`}>Deallocate</button>
+      )}
+      {deallocate.isError && <p role="alert" className="basis-full text-xs text-red-800">Could not deallocate. Try again.</p>}
+    </>
+  )
+}
+
 /** An added run-history component: read on request, so it has no counts here. Open it to see its places; View goes straight to its page. */
 function OnDemandTbody({ c, showRecorded }: { c: OnDemandRow; showRecorded: boolean }) {
   const [expanded, setExpanded] = useState(false)
@@ -239,7 +265,10 @@ function OnDemandTbody({ c, showRecorded }: { c: OnDemandRow; showRecorded: bool
         <td className={td}>—</td>
         <td className={td}>—</td>
         <td className={td}>
-          <Link to={detail()} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]" aria-label={`View ${c.connectionName} ${c.componentName}`}>View</Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link to={detail()} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]" aria-label={`View ${c.connectionName} ${c.componentName}`}>View</Link>
+            <DeallocateButton namespaceId={c.namespaceId} componentKey={c.componentKey} label={`${c.connectionName} ${c.componentName}`} />
+          </div>
         </td>
       </tr>
       {expanded && (

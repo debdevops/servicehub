@@ -876,12 +876,15 @@ public sealed class NamespacesController : ApiControllerBase
 
         // Only a component read on demand can be ticked here. A message store is watched on every connection (removing the connection
         // removes it), and a component nothing reads yet cannot be switched on.
-        if (!ComponentAccessRules.ReadsOnDemand(row) || ComponentAccessRules.Of(row) is not (ComponentAccess.SameConnection or ComponentAccess.OwnCredential))
+        // A watched message store can be hidden from ServiceHub and shown again: that is only a saved choice here. Nothing is read, changed or
+        // removed in the cloud, the connection stays, and its history is kept.
+        var hideable = ComponentAccessRules.IsAlwaysOn(row);
+        if (!hideable && (!ComponentAccessRules.ReadsOnDemand(row) || ComponentAccessRules.Of(row) is not (ComponentAccess.SameConnection or ComponentAccess.OwnCredential)))
         {
             return Problem(StatusCodes.Status409Conflict, ErrorCodes.CapabilityUnavailable, $"{row.Name} cannot be ticked or unticked here.");
         }
 
-        if (request.Enabled)
+        if (request.Enabled && !hideable)
         {
             var source = _sources.Find(componentKey, ns.Provider);
             if (source is null)
@@ -925,9 +928,43 @@ public sealed class NamespacesController : ApiControllerBase
             .Where(c => c.Enabled && byId.ContainsKey(c.NamespaceId))
             .Select(c => (Row: c, Cloud: ComponentCatalog.CloudOf(byId[c.NamespaceId].Provider)))
             .Where(x => x.Cloud is not null)
+            // A watched store that was hidden and shown again keeps a saved "on" row. It is already listed from the queue store, so it is not an added component.
+            .Where(x => !ComponentAccessRules.Listed(x.Cloud!.Value).Any(r => r.ComponentKey == x.Row.ComponentKey && ComponentAccessRules.IsAlwaysOn(r)))
             .Select(x => new EnabledComponentResponse(x.Row.NamespaceId, Camel(x.Cloud!.Value.ToString()), x.Row.ComponentKey))
             .ToList();
         return Ok(enabled);
+    }
+
+    /// <summary>Every watched message store a person has hidden from ServiceHub on a connection. Hiding is only a saved choice: nothing changes in the cloud.</summary>
+    [HttpGet("components/hidden")]
+    [ProducesResponseType(typeof(IReadOnlyList<EnabledComponentResponse>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> HiddenComponents([FromServices] INamespaceComponentService stored, CancellationToken cancellationToken)
+    {
+        var all = await stored.ListAllAsync(OwnerId, cancellationToken);
+        var namespaces = await _namespaces.GetAllAsync(cancellationToken);
+        if (namespaces.IsFailure)
+        {
+            return Problem(namespaces.Error);
+        }
+
+        var byId = namespaces.Value.ToDictionary(n => n.Id);
+        var hidden = new List<EnabledComponentResponse>();
+        foreach (var c in all.Where(c => !c.Enabled && byId.ContainsKey(c.NamespaceId)))
+        {
+            var ns = byId[c.NamespaceId];
+            if (ComponentCatalog.CloudOf(ns.Provider) is not { } cloud)
+            {
+                continue;
+            }
+
+            var row = ComponentAccessRules.Listed(cloud).FirstOrDefault(r => r.ComponentKey == c.ComponentKey);
+            if (row is not null && ComponentAccessRules.IsAlwaysOn(row))
+            {
+                hidden.Add(new EnabledComponentResponse(c.NamespaceId, Camel(cloud.ToString()), c.ComponentKey));
+            }
+        }
+
+        return Ok(hidden);
     }
 
     /// <summary>Whether a person ticks this component on a connection (a run history read on demand), as opposed to a message store that is always watched.</summary>
@@ -969,12 +1006,12 @@ public sealed class NamespacesController : ApiControllerBase
         {
             ComponentAccess.Included => "included",
             ComponentAccess.NotBuildable => "unavailable",
-            _ when alwaysOn => "alwaysOn",
+            _ when alwaysOn => choices.TryGetValue(row.ComponentKey, out var h) && !h.Enabled ? "hidden" : "alwaysOn",
             _ => choices.TryGetValue(row.ComponentKey, out var c) && c.Enabled ? "on" : "off",
         };
         return new ComponentEntryResponse(
             row.ComponentKey, row.Name, row.StuckPlace, Camel(row.Status.ToString()),
-            ComponentCatalog.StatusWords(row.Status), Camel(access.ToString()), state, toggleable,
+            ComponentCatalog.StatusWords(row.Status), Camel(access.ToString()), state, toggleable || alwaysOn,
             row.Note, setup?.What, setup?.Appears, setup?.Needs, setup?.Steps ?? [], [.. (setup?.Snippets ?? []).Select(x => new SetupSnippetResponse(x.Label, x.Text))],
             setup?.Permissions ?? [], setup?.IncludedIn);
     }

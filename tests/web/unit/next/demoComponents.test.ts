@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ComponentEntry, ComponentList } from '@/lib/api/componentEnablement'
+import type { ComponentEntry, ComponentList, EnabledComponent } from '@/lib/api/componentEnablement'
 import type { ComponentSource, FailedItemDetail, FailedItems } from '@/lib/api/componentSources'
 import { componentEnablement } from '@/lib/demo/handlers/componentEnablement'
 import { componentSources } from '@/lib/demo/handlers/componentSources'
@@ -131,11 +131,18 @@ describe.each([...byKey.values()].map((r) => [r.componentKey, r.cloud] as const)
 })
 
 describe('Add a component in the demo, for what is not read on demand', () => {
-  it('keeps a message store on and refuses to tick or untick it', () => {
+  it('hides a message store from ServiceHub and shows it again, with nothing else changed', () => {
     const aws = connection('aws')
+    const put = (enabled: boolean) => ask(componentEnablement, 'put', `/namespaces/${aws.id}/enabled-components/sqs`, {}, { enabled }) as ComponentEntry
     const list = ask(componentEnablement, 'get', `/namespaces/${aws.id}/components`) as ComponentList
-    expect(list.components.find((c) => c.componentKey === 'sqs')).toMatchObject({ state: 'alwaysOn', canToggle: false })
-    expect(() => ask(componentEnablement, 'put', `/namespaces/${aws.id}/enabled-components/sqs`, {}, { enabled: false })).toThrow(DemoProblem)
+    expect(list.components.find((c) => c.componentKey === 'sqs')).toMatchObject({ state: 'alwaysOn', canToggle: true })
+
+    expect(put(false)).toMatchObject({ state: 'hidden' })
+    const hidden = ask(componentEnablement, 'get', '/namespaces/components/hidden') as EnabledComponent[]
+    expect(hidden).toEqual([{ namespaceId: aws.id, cloud: 'aws', componentKey: 'sqs' }])
+
+    expect(put(true)).toMatchObject({ state: 'alwaysOn' })
+    expect(ask(componentEnablement, 'get', '/namespaces/components/hidden')).toEqual([])
   })
 
   it('refuses a component of another cloud', () => {

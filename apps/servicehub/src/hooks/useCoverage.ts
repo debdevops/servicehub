@@ -9,16 +9,22 @@ export function useCoverage() {
   return useQuery({ queryKey: coverageKeys.all, queryFn: fetchCoverage, staleTime: Infinity })
 }
 
+/** A watched store is left out of the menu when it is hidden on a connection of its cloud (Home still filters per connection). */
+function isHiddenEverywhere(r: CoverageRow, hidden: readonly EnabledComponent[]): boolean {
+  return !readsOnDemand(r.detection) && hidden.some((h) => h.cloud === r.cloud && h.componentKey === r.componentKey)
+}
+
 /**
  * The components the menu lists for a cloud: one per component, in catalogue order. A component that is read on demand (a run history or failed records)
  * is listed only where someone ticked it in Add a component; a message store is listed for every connected cloud, as before.
  */
-export function sidebarComponents(rows: readonly CoverageRow[], cloud: CloudKind | null, enabled: readonly EnabledComponent[] = []): readonly CoverageRow[] {
+export function sidebarComponents(rows: readonly CoverageRow[], cloud: CloudKind | null, enabled: readonly EnabledComponent[] = [], hidden: readonly EnabledComponent[] = []): readonly CoverageRow[] {
   const seen = new Set<string>()
   return rows.filter(
     (r) =>
       r.inSidebar &&
       (cloud === null || r.cloud === cloud) &&
+      !isHiddenEverywhere(r, hidden) &&
       (!readsOnDemand(r.detection) || enabled.some((e) => e.cloud === r.cloud && e.componentKey === r.componentKey)) &&
       !seen.has(r.componentKey) &&
       seen.add(r.componentKey),

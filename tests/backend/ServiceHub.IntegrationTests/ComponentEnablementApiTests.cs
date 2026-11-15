@@ -122,7 +122,7 @@ public sealed class ComponentEnablementApiTests
         list.GetProperty("cloud").GetString().Should().Be("AWS");
         var sqs = Entry(list, "sqs");
         sqs.GetProperty("state").GetString().Should().Be("alwaysOn");
-        sqs.GetProperty("canToggle").GetBoolean().Should().BeFalse();
+        sqs.GetProperty("canToggle").GetBoolean().Should().BeTrue("a watched store can be hidden from ServiceHub");
         var sfn = Entry(list, "step-functions");
         sfn.GetProperty("access").GetString().Should().Be("sameConnection");
         sfn.GetProperty("state").GetString().Should().Be("off");
@@ -249,13 +249,32 @@ public sealed class ComponentEnablementApiTests
     }
 
     [Fact]
-    public async Task A_message_store_an_unknown_key_and_an_unbuilt_component_cannot_be_ticked()
+    public async Task A_watched_message_store_can_be_hidden_and_shown_again_without_touching_the_cloud()
     {
         var (host, _) = Host();
         using var _h = host;
         var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
 
-        (await Put(host.Client, aws, "sqs", false)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await Json(await host.Client.GetAsync("/api/v1/namespaces/components/hidden"), HttpStatusCode.OK)).EnumerateArray().Should().BeEmpty();
+
+        var hidden = await Json(await Put(host.Client, aws, "sqs", false), HttpStatusCode.OK);
+        hidden.GetProperty("state").GetString().Should().Be("hidden");
+        var listed = await Json(await host.Client.GetAsync("/api/v1/namespaces/components/hidden"), HttpStatusCode.OK);
+        listed.EnumerateArray().Should().ContainSingle().Which.GetProperty("componentKey").GetString().Should().Be("sqs");
+
+        var shown = await Json(await Put(host.Client, aws, "sqs", true), HttpStatusCode.OK);
+        shown.GetProperty("state").GetString().Should().Be("alwaysOn");
+        (await Json(await host.Client.GetAsync("/api/v1/namespaces/components/enabled"), HttpStatusCode.OK)).EnumerateArray().Should().BeEmpty("a shown store is not an added component, or Home would list it twice");
+        (await Json(await host.Client.GetAsync("/api/v1/namespaces/components/hidden"), HttpStatusCode.OK)).EnumerateArray().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task An_unknown_key_and_an_unbuilt_component_cannot_be_ticked()
+    {
+        var (host, _) = Host();
+        using var _h = host;
+        var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
+
         (await Put(host.Client, aws, "aws-streams", true)).StatusCode.Should().Be(HttpStatusCode.Conflict, "no reader is registered for it in this host");
         (await Put(host.Client, aws, "no-such-component", true)).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }

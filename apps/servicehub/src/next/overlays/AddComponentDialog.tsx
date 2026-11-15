@@ -86,9 +86,9 @@ export default function AddComponentDialog({ close }: NextOverlayBodyProps) {
 
   const entriesOf = (s: CloudData) => (s.connection && s.list.data ? s.list.data.components.map((entry) => ({ s, entry, id: idOf(s.connection!.id, entry.componentKey) })) : [])
   const rows = sections.flatMap(entriesOf)
-  const wantedOn = (r: { entry: ComponentEntry; id: string }) => desired[r.id] ?? r.entry.state === 'on'
-  const adds = rows.filter((r) => r.entry.canToggle && r.entry.state === 'off' && wantedOn(r))
-  const removes = rows.filter((r) => r.entry.canToggle && r.entry.state === 'on' && !wantedOn(r))
+  const wantedOn = (r: { entry: ComponentEntry; id: string }) => desired[r.id] ?? (r.entry.state === 'on' || r.entry.state === 'alwaysOn')
+  const adds = rows.filter((r) => r.entry.canToggle && (r.entry.state === 'off' || r.entry.state === 'hidden') && wantedOn(r))
+  const removes = rows.filter((r) => r.entry.canToggle && (r.entry.state === 'on' || r.entry.state === 'alwaysOn') && !wantedOn(r))
   const changes = adds.length + removes.length
   const finished = Object.keys(outcomes).length > 0 && !saving
 
@@ -129,7 +129,7 @@ export default function AddComponentDialog({ close }: NextOverlayBodyProps) {
       const enable = adds.includes(r)
       try {
         await setComponent(r.s.connection!.id, r.entry.componentKey, enable)
-        next[r.id] = { ok: true, message: enable ? 'Added. It is on the menu now.' : 'Removed. Its history is kept.' }
+        next[r.id] = { ok: true, message: enable ? 'Added. It is on the menu now.' : 'Removed from ServiceHub. Nothing changed in your cloud, and its history is kept.' }
       } catch (error) {
         next[r.id] = { ok: false, message: toProblem(error).message }
       }
@@ -147,7 +147,7 @@ export default function AddComponentDialog({ close }: NextOverlayBodyProps) {
 
       <div role="tablist" aria-label="Cloud" className="flex gap-1 border-b-2 border-slate-300">
         {sections.map((s) => {
-          const pending = rows.filter((r) => r.s === s && ((r.entry.canToggle && r.entry.state === 'off' && wantedOn(r)) || (r.entry.canToggle && r.entry.state === 'on' && !wantedOn(r)))).length
+          const pending = rows.filter((r) => r.s === s && (adds.includes(r) || removes.includes(r))).length
           const selected = s.cloud === active
           return (
             <button key={s.cloud} type="button" role="tab" id={`add-component-tab-${s.cloud}`} aria-selected={selected} aria-controls={`add-component-${s.cloud}`}
@@ -206,7 +206,7 @@ function CloudSection({ s, pathname, active, coverageNames: names, disabled, wan
 }) {
   const { connection, connections, list } = s
   const entries = list.data?.components ?? []
-  const onCount = entries.filter((e) => e.state === 'on' || e.state === 'alwaysOn').length
+  const onCount = entries.filter((e) => e.state === 'on' || e.state === 'alwaysOn').length // 'hidden' is off
   const request = entries.filter((e) => e.state === 'unavailable').length
   const summary = !connection ? 'no connection yet' : list.data ? `${onCount} on${request > 0 ? ` · ${request} on request` : ''}` : 'reading…'
   return (
@@ -259,7 +259,7 @@ function Row({ entry: e, on, disabled, onToggle, check, onCheck, outcome, needsS
   check: ComponentCheck | 'checking' | undefined; onCheck: () => void; outcome: Outcome | undefined
   needsSignIn: boolean; signedIn: boolean; signIn: SignInState; onConnect: () => Promise<void>
 }) {
-  const locked = e.state === 'alwaysOn' || e.state === 'included' || e.state === 'unavailable'
+  const locked = e.state === 'included' || e.state === 'unavailable'
   const expanded = e.canToggle && e.state === 'off' && on
   const failed = outcome?.ok === false
   const tone = failed ? 'border-red-300 bg-red-50' : expanded ? 'border-[var(--color-primary-600)] bg-[var(--color-primary-50)]' : locked && e.state !== 'alwaysOn' ? 'border-dashed border-[var(--color-border)] bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]' : 'border-[var(--color-border)] bg-[var(--color-surface)]'
@@ -268,11 +268,12 @@ function Row({ entry: e, on, disabled, onToggle, check, onCheck, outcome, needsS
   return (
     <li className={`rounded-xl border p-3 ${tone}`}>
       <div className="flex gap-3">
-        <input type="checkbox" aria-label={label} checked={e.state === 'alwaysOn' ? true : on} disabled={disabled || locked || !e.canToggle}
+        <input type="checkbox" aria-label={label} checked={on} disabled={disabled || locked || !e.canToggle}
           onChange={(ev) => onToggle(ev.target.checked)} className="mt-1 h-4 w-4" />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-semibold">{e.name}</span><Tip label={`addc:${e.componentKey}`} />
+            {e.state === 'hidden' && !outcome && <span className="rounded bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-700">Hidden</span>}
             {e.state === 'alwaysOn' && <span className="rounded bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800">On</span>}
             {e.state === 'on' && !outcome && <span className="rounded bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-800">On</span>}
             {expanded && <span className="rounded bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-800">To be added</span>}
@@ -282,7 +283,8 @@ function Row({ entry: e, on, disabled, onToggle, check, onCheck, outcome, needsS
           <p className="mt-1 text-sm">{e.what ?? e.note ?? e.stuckPlace}</p>
           {e.appears && <p className="mt-1 text-xs"><span className="text-[var(--color-text-muted)]">Where it appears: </span>{e.appears}</p>}
           {e.needs && !locked && <p className="mt-1 text-xs"><span className="text-[var(--color-text-muted)]">It needs<Tip label="addc:needs" /> </span>{e.needs}</p>}
-          {e.state === 'alwaysOn' && <p className="mt-1 text-xs text-[var(--color-text-muted)]">Watched on every connection of this cloud. Removing the connection removes it.</p>}
+          {e.state === 'alwaysOn' && <p className="mt-1 text-xs text-[var(--color-text-muted)]">Watched on every connection of this cloud. Untick it to hide it from ServiceHub; nothing changes in your cloud.</p>}
+          {e.state === 'hidden' && <p className="mt-1 text-xs text-[var(--color-text-muted)]">Hidden from ServiceHub. Tick it to show it again; nothing changes in your cloud.</p>}
 
           {expanded && <Setup entry={e} check={check} onCheck={onCheck} needsSignIn={needsSignIn} signedIn={signedIn} signIn={signIn} onConnect={onConnect} disabled={disabled} />}
 

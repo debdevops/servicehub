@@ -137,8 +137,7 @@ public sealed record SetupSnippetResponse(string Label, string Text);
 
 /// <summary>
 /// One entry of the Add a component dialog for a connection. <c>access</c> is <c>sameConnection</c>, <c>ownCredential</c>,
-/// <c>notBuildable</c> or <c>included</c>; <c>state</c> is <c>on</c>, <c>off</c>, <c>alwaysOn</c> (watched on every connection, cannot be
-/// unticked), <c>included</c> or <c>unavailable</c>. <c>canToggle</c> says whether the person may tick or untick it.
+/// <c>notBuildable</c> or <c>included</c>; <c>state</c> is <c>on</c>, <c>off</c>, <c>alwaysOn</c> (watched on every connection; can be hidden), <c>hidden</c>, <c>included</c> or <c>unavailable</c>. <c>canToggle</c> says whether the person may tick or untick it.
 /// </summary>
 public sealed record ComponentEntryResponse(
     string ComponentKey, string Name, string StuckPlace, string Status, string StatusWords, string Access, string State, bool CanToggle,

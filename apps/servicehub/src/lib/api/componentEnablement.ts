@@ -8,8 +8,8 @@ import type { CloudKind } from './coverage'
  */
 export type ComponentAccess = 'sameConnection' | 'ownCredential' | 'notBuildable' | 'included'
 
-/** `alwaysOn`: watched on every connection and cannot be unticked (removing the connection removes it). */
-export type ComponentState = 'on' | 'off' | 'alwaysOn' | 'included' | 'unavailable'
+/** `alwaysOn`: a watched store. It can be hidden from ServiceHub (`hidden`) and shown again; nothing changes in the cloud. */
+export type ComponentState = 'on' | 'off' | 'alwaysOn' | 'hidden' | 'included' | 'unavailable'
 
 export interface SetupSnippet {
   readonly label: string
@@ -73,4 +73,9 @@ export async function setComponent(namespaceId: string, componentKey: string, en
 
 export async function fetchEnabledComponents(): Promise<readonly EnabledComponent[]> {
   return (await api.get<readonly EnabledComponent[]>('/namespaces/components/enabled')).data
+}
+
+/** Watched stores a person has hidden from ServiceHub on a connection. Hiding is a saved choice only: nothing changes in the cloud. */
+export async function fetchHiddenComponents(): Promise<readonly EnabledComponent[]> {
+  return (await api.get<readonly EnabledComponent[]>('/namespaces/components/hidden')).data
 }

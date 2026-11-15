@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, NavLink, Outlet, useParams } from 'react-router-dom'
 import { sidebarComponents, useCoverage } from '../../hooks/useCoverage'
-import { useEnabledComponents } from '../../hooks/useComponentEnablement'
+import { useEnabledComponents, useHiddenComponents } from '../../hooks/useComponentEnablement'
 import { useComponents } from '../../hooks/useComponents'
 import { useNamespaces } from '../../hooks/useNamespaces'
 import { DemoBanner } from '../../components/banners/DemoEntry'
@@ -92,6 +92,7 @@ export function NextLayout() {
   const { data } = useCoverage()
   const rows = data?.rows ?? []
   const enabled = useEnabledComponents().data ?? []
+  const hidden = useHiddenComponents().data ?? []
   // Until a connection exists, the menu is only what a first-time person can use: Home, Connections and the reference pages. The components and
   // the tools appear with the first connection (any record, even a failing one, so a broken key never hides the tools that fix it). A read that
   // has not finished, or has failed, keeps the full menu: nothing is hidden on a guess.
@@ -148,7 +149,7 @@ export function NextLayout() {
           {!nothingConnected && <>
           <h2 className={groupTitle}>PaaS Components<Tip label="menu:PaaS Components" /></h2>
           <ul>
-            {sidebarComponents(rows, cloud, enabled).map((row) => (
+            {sidebarComponents(rows, cloud, enabled, hidden).map((row) => (
               <li key={row.componentKey}>
                 <MenuLink to={nextHref(nextEntry('component-list'), { cloud: row.cloud, component: row.componentKey })} help={{ title: row.name, text: `Failed messages end up in: ${row.stuckPlace}. ${row.statusWords}.${row.note ? ` ${row.note}.` : ''} Open it to see your connections to ${row.name}.` }}>
                   {row.name}
