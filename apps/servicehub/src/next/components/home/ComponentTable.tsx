@@ -155,7 +155,7 @@ export function ComponentTable({ components, cloudName, canConnect = true, lookN
                     <td className={`${td} font-semibold ${c.needsYou > 0 ? 'text-red-700' : ''}`}>{c.needsYou}</td>
                     <td className={td}>{c.observedAtUtc ? formatWhen(c.observedAtUtc, now) : '—'}</td>
                     <td className={td}>
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex flex-col items-start gap-1.5">
                         <Link to={detail(c)} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]" aria-label={`View ${c.name} ${c.componentName}`}>View</Link>
                         <DeallocateButton namespaceId={c.namespaceId} componentKey={c.componentKey} label={`${c.name} ${c.componentName}`} />
                       </div>
@@ -265,7 +265,7 @@ function OnDemandTbody({ c, showRecorded }: { c: OnDemandRow; showRecorded: bool
         <td className={td}>—</td>
         <td className={td}>—</td>
         <td className={td}>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-col items-start gap-1.5">
             <Link to={detail()} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]" aria-label={`View ${c.connectionName} ${c.componentName}`}>View</Link>
             <DeallocateButton namespaceId={c.namespaceId} componentKey={c.componentKey} label={`${c.connectionName} ${c.componentName}`} />
           </div>

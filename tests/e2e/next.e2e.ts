@@ -244,6 +244,15 @@ test.describe('5.0.0 shell: the left menu', () => {
   }
 })
 
+/**
+ * A component added on exactly one connection opens that connection's page straight away (there is nothing to choose), so the list of connections is
+ * never shown. With more than one it is, and View opens the first. Either way the connection's own page is what the test goes on to check.
+ */
+async function openTheConnection(page: Page) {
+  const view = page.getByRole('link', { name: /^View / }).first()
+  if (await view.isVisible()) await view.click()
+}
+
 test.describe('5.0.0 shell: a component that is not a message store (Step Functions)', () => {
   test('its list, its failed runs, one run opened, and its Access tab work in the demo, with axe clean', async ({ page }) => {
     const failed: string[] = []
@@ -253,7 +262,7 @@ test.describe('5.0.0 shell: a component that is not a message store (Step Functi
     await open(page, '/aws/c/step-functions')
     await sound(page, 'step-functions list')
     expect(await violations(page), 'list').toEqual([])
-    await page.getByRole('link', { name: /^View / }).first().click()
+    await openTheConnection(page)
 
     await expect(page.getByRole('table', { name: /Failed Step Functions runs/ })).toBeVisible()
     await sound(page, 'step-functions page')
@@ -279,7 +288,7 @@ test.describe('5.0.0 shell: a component that is not a message store (Step Functi
 
     await open(page, '/gcp/c/workflows')
     await sound(page, 'workflows list')
-    await page.getByRole('link', { name: /^View / }).first().click()
+    await openTheConnection(page)
 
     await expect(page.getByRole('table', { name: /Failed Workflows runs/ })).toBeVisible()
     await expect(page.getByText('Cancelled', { exact: true }).first()).toBeVisible()
@@ -298,7 +307,7 @@ test.describe('5.0.0 shell: a component that is not a message store (Step Functi
 
     await open(page, '/gcp/c/cloud-scheduler')
     await sound(page, 'cloud scheduler list')
-    await page.getByRole('link', { name: /^View / }).first().click()
+    await openTheConnection(page)
 
     await expect(page.getByRole('table', { name: /Failed Cloud Scheduler runs/ })).toBeVisible()
     await expect(page.getByText(/Last attempt failed: Unavailable/).first()).toBeVisible()
@@ -317,7 +326,7 @@ test.describe('5.0.0 shell: a component that is not a message store (Step Functi
 
     await open(page, '/azure/c/logic-apps')
     await sound(page, 'logic-apps list')
-    await page.getByRole('link', { name: /^View / }).first().click()
+    await openTheConnection(page)
 
     await expect(page.getByRole('table', { name: /Failed Logic Apps runs/ })).toBeVisible()
     await expect(page.getByText('Timed out', { exact: true }).first()).toBeVisible()
@@ -338,7 +347,7 @@ test.describe('5.0.0 shell: a component that is not a message store (Step Functi
 
     await open(page, '/azure/c/event-grid')
     await sound(page, 'event-grid list')
-    await page.getByRole('link', { name: /^View / }).first().click()
+    await openTheConnection(page)
 
     await expect(page.getByRole('table', { name: /Failed Event Grid records/ })).toBeVisible()
     await expect(page.getByRole('heading', { name: /Failed records/ })).toBeVisible()
@@ -361,7 +370,7 @@ test.describe('5.0.0 shell: a component that is not a message store (Step Functi
 
     await open(page, '/aws/c/aws-streams')
     await sound(page, 'aws-streams list')
-    await page.getByRole('link', { name: /^View / }).first().click()
+    await openTheConnection(page)
 
     await expect(page.getByRole('table', { name: /Failed Kinesis, DynamoDB streams records/ })).toBeVisible()
     await expect(page.getByText('Points at the original, which may have expired.').first()).toBeVisible()
@@ -380,7 +389,7 @@ test.describe('5.0.0 shell: a component that is not a message store (Step Functi
 
     await open(page, '/gcp/c/eventarc')
     await sound(page, 'eventarc list')
-    await page.getByRole('link', { name: /^View / }).first().click()
+    await openTheConnection(page)
 
     await expect(page.getByRole('table', { name: /Failed Eventarc records/ })).toBeVisible()
     await expect(page.getByText('Undelivered', { exact: true }).first()).toBeVisible()
@@ -424,8 +433,8 @@ test.describe('5.0.0 shell: Add a component', () => {
     await page.goto('/aws?dialog=add-component')
     const dialog = page.getByRole('dialog', { name: 'Add a component' })
     await expect(dialog.getByText(/never asks for a key/)).toBeVisible()
-    // A message store is on and cannot be unticked here; a run history can.
-    await expect(dialog.getByRole('checkbox', { name: 'SQS (Supported)' })).toBeDisabled()
+    // A watched message store is on and can be hidden from ServiceHub (nothing changes in the cloud); a run history is ticked and unticked the same way.
+    await expect(dialog.getByRole('checkbox', { name: 'SQS (Supported)' })).toBeChecked()
     const stepFunctions = dialog.getByRole('checkbox', { name: 'Step Functions (Supported)' })
     await expect(stepFunctions).toBeChecked()
     expect(await violations(page), 'add a component').toEqual([])
@@ -436,7 +445,7 @@ test.describe('5.0.0 shell: Add a component', () => {
 
     await stepFunctions.uncheck()
     await dialog.getByRole('button', { name: 'Save changes' }).click()
-    await expect(dialog.getByText(/Removed\. Its history is kept/)).toBeVisible()
+    await expect(dialog.getByText(/Removed from ServiceHub\. Nothing changed in your cloud/)).toBeVisible()
     await dialog.getByRole('button', { name: 'Done' }).click()
     await expect(menu.getByRole('link', { name: /Step Functions/ })).toHaveCount(0)
 
