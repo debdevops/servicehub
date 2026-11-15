@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Copy, Loader2, ShieldCheck, TriangleAlert, XCircle } from 'lucide-react'
 import { useMe } from '../../hooks/useIdentity'
 import { useConnectNamespace, useNamespaces } from '../../hooks/useNamespaces'
-import { componentKeys, useComponentList } from '../../hooks/useComponentEnablement'
+import { componentKeys, useComponentList, useEnabledComponents } from '../../hooks/useComponentEnablement'
 import { useCoverage } from '../../hooks/useCoverage'
 import { toProblem } from '../../lib/api/client'
 import { checkComponent, setComponent, type ComponentCheck, type ComponentEntry } from '../../lib/api/componentEnablement'
@@ -64,6 +64,7 @@ export default function AddComponentDialog({ close }: NextOverlayBodyProps) {
   const may = permission(useMe().data, 'Admin', 'add or remove a component')
   const queryClient = useQueryClient()
   const coverage = useCoverage()
+  const enabledElsewhere = useEnabledComponents().data ?? []
   const connectMutation = useConnectNamespace()
   const [connecting, setConnecting] = useState<string | null>(null) // the component whose Connect is working
   const [connectError, setConnectError] = useState<string | null>(null)
@@ -84,7 +85,15 @@ export default function AddComponentDialog({ close }: NextOverlayBodyProps) {
 
   if (namespaces.isPending) return <p role="status" className="text-sm text-[var(--color-text-muted)]">Loading…</p>
 
-  const entriesOf = (s: CloudData) => (s.connection && s.list.data ? s.list.data.components.map((entry) => ({ s, entry, id: idOf(s.connection!.id, entry.componentKey) })) : [])
+  // A component added on another connection of the same cloud (Storage Queues on "Azure sign-in" while Azure-Dev is picked) is still on: the
+  // Home table lists it, so it is ticked here too, and unticking it acts on the connection that has it.
+  const entriesOf = (s: CloudData) => (s.connection && s.list.data
+    ? s.list.data.components.map((listed) => {
+        const elsewhere = listed.state === 'off' ? enabledElsewhere.find((e) => e.cloud === s.cloud && e.componentKey === listed.componentKey && e.namespaceId !== s.connection!.id) : undefined
+        const entry: ComponentEntry = elsewhere ? { ...listed, state: 'on' } : listed
+        return { s, entry, id: idOf(s.connection!.id, entry.componentKey), at: elsewhere?.namespaceId ?? s.connection!.id }
+      })
+    : [])
   const rows = sections.flatMap(entriesOf)
   const wantedOn = (r: { entry: ComponentEntry; id: string }) => desired[r.id] ?? (r.entry.state === 'on' || r.entry.state === 'alwaysOn')
   const adds = rows.filter((r) => r.entry.canToggle && (r.entry.state === 'off' || r.entry.state === 'hidden') && wantedOn(r))
@@ -128,7 +137,7 @@ export default function AddComponentDialog({ close }: NextOverlayBodyProps) {
     for (const r of [...adds, ...removes]) {
       const enable = adds.includes(r)
       try {
-        await setComponent(r.s.connection!.id, r.entry.componentKey, enable)
+        await setComponent(r.at, r.entry.componentKey, enable)
         next[r.id] = { ok: true, message: enable ? 'Added. It is on the menu now.' : 'Removed from ServiceHub. Nothing changed in your cloud, and its history is kept.' }
       } catch (error) {
         next[r.id] = { ok: false, message: toProblem(error).message }
@@ -162,7 +171,7 @@ export default function AddComponentDialog({ close }: NextOverlayBodyProps) {
       </div>
 
       {sections.map((s) => (
-        <CloudSection key={s.cloud} s={s} pathname={pathname} active={s.cloud === active} coverageNames={coverageNames(coverage.data?.rows ?? [], s.cloud)}
+        <CloudSection key={s.cloud} s={s} rows={entriesOf(s)} pathname={pathname} active={s.cloud === active} coverageNames={coverageNames(coverage.data?.rows ?? [], s.cloud)}
           disabled={!may.allowed || saving || finished} wantedOn={wantedOn} checks={checks} outcomes={outcomes}
           onToggle={(id, v) => setDesired((d) => ({ ...d, [id]: v }))} onCheck={runCheck} onConnectEntra={connectEntra} signIn={{ connecting, error: connectError }} />
       ))}
@@ -197,15 +206,15 @@ function coverageNames(rows: readonly { cloud: CloudKind; componentKey: string; 
     .map((r) => (r.status === 'onRequest' ? `${r.name} (on request)` : r.name))
 }
 
-function CloudSection({ s, pathname, active, coverageNames: names, disabled, wantedOn, checks, outcomes, onToggle, onCheck, onConnectEntra, signIn }: {
-  s: CloudData; pathname: string; active: boolean; coverageNames: readonly string[]; disabled: boolean
+function CloudSection({ s, rows, pathname, active, coverageNames: names, disabled, wantedOn, checks, outcomes, onToggle, onCheck, onConnectEntra, signIn }: {
+  s: CloudData; rows: readonly { entry: ComponentEntry; id: string }[]; pathname: string; active: boolean; coverageNames: readonly string[]; disabled: boolean
   wantedOn: (r: { entry: ComponentEntry; id: string }) => boolean
   checks: Readonly<Record<string, CheckState>>; outcomes: Readonly<Record<string, Outcome>>
   onToggle: (id: string, value: boolean) => void; onCheck: (namespaceId: string, key: string) => void
   onConnectEntra: (componentKey: string) => Promise<void>; signIn: SignInState
 }) {
   const { connection, connections, list } = s
-  const entries = list.data?.components ?? []
+  const entries = rows.map((r) => r.entry) // as the dialog sees them: a component added on another connection of this cloud is on
   const onCount = entries.filter((e) => e.state === 'on' || e.state === 'alwaysOn').length // 'hidden' is off
   const request = entries.filter((e) => e.state === 'unavailable').length
   const summary = !connection ? 'no connection yet' : list.data ? `${onCount} on${request > 0 ? ` · ${request} on request` : ''}` : 'reading…'
@@ -240,8 +249,7 @@ function CloudSection({ s, pathname, active, coverageNames: names, disabled, wan
       {connection && list.isError && <p role="alert" className="text-sm text-red-700">{toProblem(list.error).message}</p>}
       {connection && list.data && (
         <ul className="space-y-2">
-          {list.data.components.map((entry) => {
-            const id = idOf(connection.id, entry.componentKey)
+          {rows.map(({ entry, id }) => {
             return (
               <Row key={entry.componentKey} entry={entry} on={wantedOn({ entry, id })} disabled={disabled}
                 onToggle={(v) => onToggle(id, v)} check={checks[id]} onCheck={() => onCheck(connection.id, entry.componentKey)} outcome={outcomes[id]}

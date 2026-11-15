@@ -83,6 +83,20 @@ describe('Add a component (one dialog: choose, connect, bring in)', () => {
     expect(d.getByRole('button', { name: 'Add 0 components' })).toBeDisabled()
   })
 
+  it('shows a component ticked when it was added on another connection of the same cloud, and unticking acts on that connection', async () => {
+    vi.mocked(enablementApi.fetchEnabledComponents).mockResolvedValue([{ namespaceId: 'ns-other', cloud: 'aws', componentKey: 'step-functions' }])
+    vi.mocked(enablementApi.setComponent).mockResolvedValue(entry({ componentKey: 'step-functions' }))
+    open('/aws?dialog=add-component')
+    const d = await dialog()
+    expect(await d.findByText('Acme Payments')).toBeInTheDocument()
+    await userEvent.click(d.getByRole('tab', { name: 'AWS' }))
+    const box = await d.findByRole('checkbox', { name: 'Step Functions (Not yet validated)' })
+    await waitFor(() => expect(box).toBeChecked())
+    await userEvent.click(box)
+    await userEvent.click(d.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(enablementApi.setComponent).toHaveBeenCalledWith('ns-other', 'step-functions', false))
+  })
+
   it('has one tab per cloud: the cloud you are on is selected, switching shows that cloud only, and each says what it holds', async () => {
     open('/aws?dialog=add-component')
     const d = await dialog()
