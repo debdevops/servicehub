@@ -84,6 +84,11 @@ export default function ApprovalsPage() {
         <p role="status" className="text-sm text-[var(--color-text-muted)]">Loading…</p>
       ) : (
         <>
+          {pending.data.total > pending.data.items.length && (
+            <p role="status" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+              Showing the first {pending.data.items.length} of {pending.data.total} waiting. Answer some and the rest appear.
+            </p>
+          )}
           <section aria-labelledby="waiting-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
             <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4">
               <h2 id="waiting-title" className="text-base font-semibold">Waiting for approval ({items.length})<Tip label="section:Waiting for approval" /></h2>

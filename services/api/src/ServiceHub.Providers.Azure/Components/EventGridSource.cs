@@ -131,7 +131,7 @@ public sealed partial class EventGridSource : IComponentSource
             var reached = false;
             var incomplete = false;
             List<(string Account, string Container)> containers;
-            var links = new Dictionary<string, string?>(StringComparer.Ordinal);
+            var accountIds = new Dictionary<string, string?>(StringComparer.Ordinal); // storage account resource ids, for the portal link to each blob
             if (place is null)
             {
                 var found = await FindContainersAsync(ns, MaxContainersPerListing + 1, budget.Token, ct).ConfigureAwait(false);
@@ -143,7 +143,7 @@ public sealed partial class EventGridSource : IComponentSource
                 containers = [.. found.Items.Take(MaxContainersPerListing).Select(c => (c.Account, c.Container))];
                 foreach (var c in found.Items.Take(MaxContainersPerListing))
                 {
-                    links[$"{c.Account}/{c.Container}"] = AccountLink(c);
+                    accountIds[$"{c.Account}/{c.Container}"] = c.AccountResourceId;
                 }
                 reached = found.More || found.Items.Count > MaxContainersPerListing;
                 incomplete = found.Incomplete;
@@ -156,6 +156,7 @@ public sealed partial class EventGridSource : IComponentSource
                 }
 
                 containers = [(place.Groups["a"].Value, place.Groups["c"].Value)];
+                accountIds[$"{place.Groups["a"].Value}/{place.Groups["c"].Value}"] = AccountIdOf(ns, place.Groups["a"].Value, place.Groups["c"].Value);
             }
 
             var results = await SourceReads.RunAsync(
@@ -171,7 +172,7 @@ public sealed partial class EventGridSource : IComponentSource
             reached |= results.Any(r => r.Value.More);
             var ordered = results.SelectMany(r => r.Value.Items).OrderByDescending(b => b.ModifiedUtc ?? DateTimeOffset.MinValue).ToList();
             reached |= ordered.Count > ComponentSourceLimits.MaxFailedItems;
-            return Result.Success(new FailedItemsPage([.. ordered.Take(ComponentSourceLimits.MaxFailedItems).Select(b => ToItem(b, links.GetValueOrDefault($"{b.Account}/{b.Container}")))], reached, incomplete));
+            return Result.Success(new FailedItemsPage([.. ordered.Take(ComponentSourceLimits.MaxFailedItems).Select(b => ToItem(b, accountIds.GetValueOrDefault($"{b.Account}/{b.Container}")))], reached, incomplete));
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -214,7 +215,8 @@ public sealed partial class EventGridSource : IComponentSource
             var cause = Cause(read);
             var item = new FailedItem(
                 itemId, PlaceId(read.Blob.Account, read.Blob.Container), read.LastAttemptUtc ?? read.Blob.ModifiedUtc, Status, ReasonCode: null,
-                $"Dead-lettered: {Clean(read.Reason) ?? "reason not recorded"}", CopyKind.None, ConsoleUrl: null);
+                $"Dead-lettered: {Clean(read.Reason) ?? "reason not recorded"}", CopyKind.None,
+                BlobLink(AccountIdOf(ns, read.Blob.Account, read.Blob.Container), read.Blob.Container, read.Blob.Name));
             return Result.Success<FailedItemDetail?>(new FailedItemDetail(item, Clean(read.Reason), Clean(cause), null, read.LastAttemptUtc));
         }
         catch (OperationCanceledException)
@@ -236,7 +238,7 @@ public sealed partial class EventGridSource : IComponentSource
 
     private static readonly TimeSpan ConfirmedFor = TimeSpan.FromMinutes(2);
 
-    private readonly ConcurrentDictionary<Guid, (DateTimeOffset At, HashSet<string> Containers)> _confirmed = new();
+    private readonly ConcurrentDictionary<Guid, (DateTimeOffset At, Dictionary<string, string?> Containers)> _confirmed = new();
 
     /// <summary>
     /// Null when the container is one an Event Grid subscription on this connection dead-letters to; otherwise why it is refused.
@@ -247,7 +249,7 @@ public sealed partial class EventGridSource : IComponentSource
     private async Task<Error?> NotADeadLetterContainerAsync(Namespace ns, string account, string container, CancellationToken budget, CancellationToken caller)
     {
         var key = $"{account}/{container}";
-        if (_confirmed.TryGetValue(ns.Id, out var known) && DateTimeOffset.UtcNow - known.At < ConfirmedFor && known.Containers.Contains(key))
+        if (_confirmed.TryGetValue(ns.Id, out var known) && DateTimeOffset.UtcNow - known.At < ConfirmedFor && known.Containers.ContainsKey(key))
         {
             return null;
         }
@@ -270,9 +272,9 @@ public sealed partial class EventGridSource : IComponentSource
             return found.Error;
         }
 
-        var containers = found.Items.Select(c => $"{c.Account}/{c.Container}").ToHashSet(StringComparer.Ordinal);
+        var containers = found.Items.ToDictionary(c => $"{c.Account}/{c.Container}", c => c.AccountResourceId, StringComparer.Ordinal);
         _confirmed[ns.Id] = (DateTimeOffset.UtcNow, containers);
-        if (containers.Contains(key))
+        if (containers.ContainsKey(key))
         {
             return null;
         }
@@ -302,11 +304,21 @@ public sealed partial class EventGridSource : IComponentSource
         return new Found(all, subscriptions.More || results.Any(r => r.Value.More), results.Any(r => r.Failed || r.Value.Incomplete), null);
     }
 
-    // The link opens the blob's storage account in the portal (the container is in the Place column). It is null when the listing was asked
-    // for one container by name, because only a full listing learns the account's resource id.
-    private static FailedItem ToItem(DeadLetterBlob blob, string? accountLink) =>
+    // The link opens this blob's container in the Azure portal. It is null only when the storage account's resource id is not known.
+    private static FailedItem ToItem(DeadLetterBlob blob, string? accountResourceId) =>
         new($"blob://{blob.Account}/{blob.Container}/{blob.Name}", PlaceId(blob.Account, blob.Container), blob.ModifiedUtc, Status, ReasonCode: null,
-            $"Dead-lettered event: {Clean(blob.Name[(blob.Name.LastIndexOf('/') + 1)..])}", CopyKind.None, accountLink);
+            $"Dead-lettered event: {Clean(blob.Name[(blob.Name.LastIndexOf('/') + 1)..])}", CopyKind.None, BlobLink(accountResourceId, blob.Container, blob.Name));
+
+    /// <summary>The account's resource id as the last confirmation of this connection's dead-letter containers learned it, or null.</summary>
+    private string? AccountIdOf(Namespace ns, string account, string container) =>
+        _confirmed.TryGetValue(ns.Id, out var known) && known.Containers.TryGetValue($"{account}/{container}", out var id) ? id : null;
+
+    // The portal opens the dead-letter container the blob is in. A deep link to one blob needs a blade name and parameters that are not
+    // published, and a wrong one shows "Error displaying your content", so the link goes only as deep as the container.
+    private static string? BlobLink(string? accountResourceId, string container, string blobName) =>
+        accountResourceId is null
+            ? null
+            : $"https://portal.azure.com/#view/Microsoft_Azure_Storage/ContainerMenuBlade/~/overview/storageAccountId/{Uri.EscapeDataString(accountResourceId)}/path/{Uri.EscapeDataString(container)}";
 
     private static string? Cause(DeadLetterBlobRead read)
     {

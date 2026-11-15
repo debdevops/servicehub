@@ -143,7 +143,7 @@ export function FailedRunsTab({ namespaceId, componentKey, source, row }: { name
                   {httpsUrl(detail.data.item.consoleUrl) && (
                     <Fact label="Open in the cloud">
                       <a href={httpsUrl(detail.data.item.consoleUrl) ?? undefined} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 text-[var(--color-primary-700)] underline">
-                        Console <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                        Cloud console <ExternalLink className="h-3 w-3" aria-hidden="true" />
                       </a>
                     </Fact>
                   )}
@@ -178,7 +178,7 @@ function Row({ item: i, place, open, onToggle, now, redriveHref, redrive, heldIn
           {heldIn && <Link to={heldIn.href} aria-label={`Retry ${i.summary} in ${heldIn.name}`} title={`Opens the ${heldIn.name} dead letters for this event’s subscription, where the usual replay (the gate, the ledger, the checks) puts it back.`} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">Retry in {heldIn.name}…</Link>}
           {httpsUrl(i.consoleUrl) && (
             <a href={httpsUrl(i.consoleUrl) ?? undefined} target="_blank" rel="noreferrer noopener" aria-label={`Open ${i.summary} in the cloud console`} className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold hover:bg-[var(--color-surface-muted)]">
-              Console <ExternalLink className="h-3 w-3" aria-hidden="true" />
+              Cloud console <ExternalLink className="h-3 w-3" aria-hidden="true" />
             </a>
           )}
         </div>

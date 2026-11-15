@@ -203,7 +203,12 @@ public sealed partial class StorageQueuesSource : IComponentSource
                 return Result.Success<FailedItemDetail?>(null);
             }
 
-            var item = ToItem(message, null);
+            // The detail opens the same portal link the list shows; a failed discovery just leaves it off.
+            var links = new Dictionary<string, string?>(StringComparer.Ordinal);
+            using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            budget.CancelAfter(ComponentSourceLimits.ListingBudget);
+            await AddLinksAsync(ns, links, budget.Token, ct).ConfigureAwait(false);
+            var item = ToItem(message, links.GetValueOrDefault($"{m.Groups["a"].Value}/{m.Groups["q"].Value}"));
             return Result.Success<FailedItemDetail?>(new FailedItemDetail(item, "Moved to the poison queue after too many failed attempts to process it", Cause(message), message.InsertedUtc, null));
         }
         catch (OperationCanceledException)

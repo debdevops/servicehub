@@ -47,7 +47,7 @@ const providerParam = (p: CloudProvider) => ({ azure: 'Azure', aws: 'Aws', gcp: 
 
 export async function fetchPendingWork(scope: PendingWorkScope = {}): Promise<PendingWorkPage> {
   const { provider, ...rest } = scope
-  return (await api.get<PendingWorkPage>('/pending-work', { params: { ...rest, provider: provider ? providerParam(provider) : undefined } })).data
+  return (await api.get<PendingWorkPage>('/pending-work', { params: { limit: 500, ...rest, provider: provider ? providerParam(provider) : undefined } })).data
 }
 
 /** Yes: replays through the one gated route, as you. */
