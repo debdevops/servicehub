@@ -142,7 +142,7 @@ public sealed class ComponentOverviewService : IComponentOverviewService
             foreach (var group in holders.GroupBy(e => ComponentCatalog.ForEntity(ns.Provider, CloudEntityKinds.Of(e))?.ComponentKey ?? UnknownComponentKey))
             {
                 var descriptor = group.Key == UnknownComponentKey ? null : ComponentCatalog.ForEntity(ns.Provider, CloudEntityKinds.Of(group.First()));
-                var rows = group.Select(e => Entity(e, caps, mine.Where(m => m.EntityName == e.Name).ToList(), itemsHere, now)).ToList();
+                var rows = group.Select(e => Entity(e, caps, mine.Where(m => SameEntity(m.EntityName, e.Name)).ToList(), itemsHere, now)).ToList();
                 var withinGroup = itemsHere.Where(i => rows.Any(r => Matches(i, r))).ToList();
                 result.Add(Row(ns, kind, descriptor, caps, rows, withinGroup, null, now, unreadable: false));
             }
@@ -173,8 +173,17 @@ public sealed class ComponentOverviewService : IComponentOverviewService
         .DistinctBy(c => c.ComponentKey).ToList();
 
     private static bool Matches(PendingWorkItem item, ComponentEntity entity) =>
-        string.Equals(item.Entity, entity.Parent is null ? entity.Name : $"{entity.Parent}{SubscriptionSegment}{entity.Name}", StringComparison.Ordinal)
+        SameEntity(item.Entity, entity.Parent is null ? entity.Name : $"{entity.Parent}{SubscriptionSegment}{entity.Name}")
         || string.Equals(item.Entity, entity.Name, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Two spellings of one subscription are the same place: "topic/sub" (Google's adapter names it so) and "topic/subscriptions/sub" (what a look
+    /// stores, and how Azure names it). A name cannot contain a slash, so dropping the segment is safe. Found live 2026-11-19: with an exact match
+    /// every Google subscription read "not looked yet" right after a look.
+    /// </summary>
+    private static bool SameEntity(string? a, string? b) =>
+        a is not null && b is not null
+        && string.Equals(a.Replace(SubscriptionSegment, "/", StringComparison.Ordinal), b.Replace(SubscriptionSegment, "/", StringComparison.Ordinal), StringComparison.Ordinal);
 
     private async Task<(Namespace Ns, IReadOnlyList<CloudEntity>? Entities, string? Error, bool NoStore)> ReadAsync(Namespace ns, CancellationToken cancellationToken)
     {
@@ -219,7 +228,7 @@ public sealed class ComponentOverviewService : IComponentOverviewService
 
         var watched = caps.SupportsRepeatablePeek;
         var active = recordedHere.Count(m => m.Status == DlqMessageStatus.Active);
-        var mine = items.Count(i => string.Equals(i.Entity, e.Name, StringComparison.Ordinal));
+        var mine = items.Count(i => SameEntity(i.Entity, e.Name));
         return new ComponentEntity(
             name, parent, CloudEntityKinds.Of(e), e.DeadLetterTargetName, NoStoreReason: null,
             DeadLetterCount(e, caps),

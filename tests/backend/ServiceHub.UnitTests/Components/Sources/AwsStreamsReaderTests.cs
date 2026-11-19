@@ -186,7 +186,7 @@ public sealed class AwsStreamsReaderTests
         seen!.QueueUrl.Should().Be(QueueUrl);
         seen.VisibilityTimeout.Should().Be(0, "the message goes straight back to the queue");
         seen.MaxNumberOfMessages.Should().Be(AwsStreamsReader.ReceiveBatch);
-        seen.WaitTimeSeconds.Should().Be(0);
+        seen.WaitTimeSeconds.Should().Be(1, "a long poll asks every SQS server; a short poll can return nothing for a queue that holds messages, and the list flickered live");
         seen.MessageSystemAttributeNames.Should().Contain("SentTimestamp");
         list.Items.Single().Should().Be(new QueueRecord("a", DateTimeOffset.FromUnixTimeMilliseconds(1_790_000_000_000), "{\"x\":1}"));
     }
@@ -214,8 +214,22 @@ public sealed class AwsStreamsReaderTests
         var list = await _reader.ListRecordsAsync(_ns, Queue, 50, default);
 
         list.Items.Select(i => i.MessageId).Should().Equal("a", "b");
-        calls.Should().Be(2, "the second receive brought nothing new, so the look stopped");
+        calls.Should().Be(1 + AwsStreamsReader.MissesBeforeStop, "the look stopped after that many receives in a row that brought nothing new");
         list.More.Should().BeFalse();
+    }
+
+    /// <summary>Found live 2026-11-19: SQS may hand out only some of a queue's messages per receive, so one repeat is not proof there is nothing more.</summary>
+    [Fact]
+    public async Task A_receive_that_returns_only_some_of_the_queue_does_not_end_the_look_early()
+    {
+        var round = 0;
+        string[][] answers = [["a"], ["a"], ["b"], ["a", "b"], ["b"], ["a"]];
+        _sqs.Setup(s => s.ReceiveMessageAsync(It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => new ReceiveMessageResponse { Messages = [.. answers[Math.Min(round++, answers.Length - 1)].Select(id => Msg(id))] });
+
+        var list = await _reader.ListRecordsAsync(_ns, Queue, 50, default);
+
+        list.Items.Select(i => i.MessageId).Should().BeEquivalentTo(["a", "b"], "the second message only turned up on the third receive");
     }
 
     [Fact]

@@ -160,9 +160,9 @@ export function DeadLettersTab({ component: c, me }: { component: ConnectedCompo
                           ? <input type="checkbox" className="h-4 w-4" checked={current.all || current.ids.has(m.id)} disabled={current.all} onChange={() => toggle(m.id)} aria-label={`Select message ${m.messageId}`} />
                           : null}
                       </td>
-                      <td className={`${td} font-mono text-xs`}>{m.messageId}</td>
-                      <td className={td}>{entityLabel(m.entityName, m.topicName)}</td>
-                      {!noReasons && <td className={td}>{m.deadLetterReason ?? '—'}</td>}
+                      <td className={`${td} font-mono text-xs [overflow-wrap:anywhere]`}>{m.messageId}</td>
+                      <td className={`${td} [overflow-wrap:anywhere]`}>{entityLabel(m.entityName, m.topicName)}</td>
+                      {!noReasons && <td className={`${td} [overflow-wrap:anywhere]`}>{m.deadLetterReason ?? '—'}</td>}
                       {!noReasons && <td className={td}>{m.deadLetterErrorDescription ?? '—'}</td>}
                       <td className={td}>{m.deliveryCount}</td>
                       <td className={td}>{formatWhen(m.enqueuedTimeUtc, now)}</td>

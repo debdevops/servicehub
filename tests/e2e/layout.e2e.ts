@@ -19,6 +19,8 @@ const screens: readonly (readonly [name: string, path: string])[] = [
   ['Evidence ledger', '/all/ledger'],
   ['Agents', '/all/agents'],
   ['Connections', '/connections'],
+  // A connection's own Dead-letter messages table, on a 32-character message id that cannot wrap by itself (found live, 2026-11-19: the Actions column sat off-screen).
+  ['Azure connection dead letters', '/azure/c/service-bus/demo-azure-0000-0000-000000000011?tab=dead-letters'],
   ['Configuration', '/configuration'],
   ['What ServiceHub covers', '/coverage'],
 ]

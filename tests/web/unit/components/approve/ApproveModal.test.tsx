@@ -232,6 +232,22 @@ describe('Approve and Decline', () => {
     expect(screen.getByRole('status')).toHaveTextContent('still in the dead-letter queue')
   })
 
+  it('opened on one row, still says how many OTHER replays wait after it is declined (found live: "Nothing else is waiting" with 9 held)', async () => {
+    let declined = false
+    vi.mocked(api.fetchPendingWork).mockImplementation(async () => (declined
+      ? { items: [item('e2', 'payments-sqs')], total: 1, byProvider: [], agents: 0 }
+      : { items: [item('e1', 'orders-sqs'), item('e2', 'payments-sqs')], total: 2, byProvider: [], agents: 0 }))
+    vi.mocked(api.declinePending).mockImplementation(async () => { declined = true; return {} as never })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/?modal=approve&entry=e1']}><ApproveModal entry={{} as never} close={close} /></MemoryRouter></QueryClientProvider>)
+    await userEvent.click(await screen.findByRole('button', { name: 'Decline…' }))
+    await userEvent.type(screen.getByLabelText(/Why not/), 'Downstream still down')
+    await userEvent.click(screen.getByRole('button', { name: 'Decline 1 replay' }))
+    await screen.findByText(/Declined 1 replay\./)
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('1 replay is still waiting for you'))
+    expect(screen.getByRole('status')).not.toHaveTextContent('Nothing else is waiting')
+  })
+
   it('Go back from Decline returns to Approve without changing anything', async () => {
     open()
     await userEvent.click(await screen.findByRole('button', { name: 'Decline…' }))

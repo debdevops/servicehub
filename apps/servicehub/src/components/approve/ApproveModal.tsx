@@ -75,10 +75,13 @@ export default function ApproveModal({ close, replayedHref = '/?tab=replayed' }:
   // removes the item from the list, and without this the person would never see that it was recorded (found in a live run).
   if (entry && (unresolvedNow || wasUnresolved)) return <ResolveUnknownBody close={close} />
   if (approve.isPending) return <Sending done={progress} total={approve.variables?.entryIds.length ?? 0} />
-  if (approve.data) return <Approved results={approve.data} close={close} replayedHref={replayedHref} stillWaiting={pending.isFetching ? null : (entry ? waiting.length : (pending.data?.total ?? null))} />
+  // "Still waiting" is everything in the queue this screen read, never just the rows this screen was opened on: opened on one row (entry=…),
+  // `waiting` is that one row, so after answering it the count was always 0 and the screen said "Nothing else is waiting" with 9 others held (found live, 2026-11-19).
+  const stillWaitingNow = pending.isFetching ? null : (pending.data?.total ?? null)
+  if (approve.data) return <Approved results={approve.data} close={close} replayedHref={replayedHref} stillWaiting={stillWaitingNow} />
   if (decline.isSuccess) {
     const n = decline.variables?.entryIds.length ?? 0
-    const left = pending.isFetching ? null : (entry ? waiting.length : (pending.data?.total ?? null))
+    const left = stillWaitingNow
     return (
       <div className="space-y-4 text-sm" role="status">
         <p className="flex items-center gap-2 text-base font-semibold"><Check className="h-5 w-5 text-[var(--color-success)]" aria-hidden="true" /> Declined {n.toLocaleString()} {n === 1 ? 'replay' : 'replays'}.</p>

@@ -14,11 +14,11 @@ import { Tip } from '../components/Tip'
 type Tone = 'stops' | 'maybe' | 'stays'
 const what: readonly { tone: Tone; title: string; note: string }[] = [
   { tone: 'stops', title: 'The Agent stops replaying', note: 'Auto Replay rules and earned fixes do nothing until you turn this off' },
-  { tone: 'maybe', title: 'A bulk replay a person already started may carry on', note: 'The stop halts automatic actions only. Check live which bulk jobs it halts (design check C15)' },
+  { tone: 'maybe', title: 'A bulk replay a person already started carries on to the end', note: 'The stop halts automatic actions only. A bulk job a person started keeps going until it finishes (seen live: all 25 messages were sent). Press Stop now on that job to end it' },
   { tone: 'stays', title: 'Nothing is deleted or moved', note: 'Messages stay where they are' },
   { tone: 'stays', title: 'ServiceHub keeps watching and recording', note: 'Lists, counts and the ledger stay up to date' },
   { tone: 'stays', title: 'A person can still replay one message', note: 'After the usual preview, and it is recorded. This is by design: the stop pushes work to a person, so it must not block the person' },
-  { tone: 'maybe', title: 'A cloud-side move already started keeps going', note: 'For example an SQS redrive, if unit 3a.4 is built. Cancel it from its own screen' },
+  { tone: 'maybe', title: 'A cloud-side move already started keeps going', note: 'For example a Step Functions redrive. The stop does not call it back; cancel it in the cloud' },
 ]
 const mark = { stops: <X className="h-4 w-4 text-red-600" aria-label="Stops" />, maybe: <CircleAlert className="h-4 w-4 text-amber-600" aria-label="May continue" />, stays: <Check className="h-4 w-4 text-green-700" aria-label="Stays" /> } as const
 

@@ -48,7 +48,7 @@ describe('Emergency stop dialog (unit F5)', () => {
     expect(router.state.location.search).toBe('?dialog=emergency-stop')
     expect(await within(dialog).findByText(/stops every replay ServiceHub would do on its own/)).toBeInTheDocument()
     expect(within(dialog).getByText('A person can still replay one message')).toBeInTheDocument()
-    expect(within(dialog).getByText(/A bulk replay a person already started may carry on/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/A bulk replay a person already started carries on to the end/)).toBeInTheDocument()
     expect(settingsApi.setEmergencyStop).not.toHaveBeenCalled()
   })
 

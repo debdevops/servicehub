@@ -178,8 +178,13 @@ export function buildWorld(now: number = Date.now()): World {
     })
   }
 
-  const messageId = (provider: CloudProvider) =>
-    provider === 'gcp' ? String(11_000_000_000_000 + r.int(0, 899_999_999_999)) : `${r.hex(8)}-${r.hex(4)}-4${r.hex(3)}-${r.pick(['8', '9', 'a', 'b'])}${r.hex(3)}-${r.hex(12)}`
+  // Azure ids are 32 hex characters with no hyphens (what Service Bus clients commonly send), so a table cell holding one cannot wrap on its own:
+  // a 1280 px window hid the Actions column on real data and the hyphenated demo id never showed it (found live, 2026-11-19).
+  const messageId = (provider: CloudProvider) => {
+    if (provider === 'gcp') return String(11_000_000_000_000 + r.int(0, 899_999_999_999))
+    const guid = [r.hex(8), r.hex(4), `4${r.hex(3)}`, `${r.pick(['8', '9', 'a', 'b'])}${r.hex(3)}`, r.hex(12)]
+    return guid.join(provider === 'azure' ? '' : '-')
+  }
 
   /** `count` dead letters of one story, enqueued over `spanMs` starting `startAgoMs` ago. */
   const burst = (cloud: CloudDef, ns: Namespace, story: Story, count: number, startAgoMs: number, spanMs: number): DemoDeadLetter[] => {

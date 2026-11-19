@@ -22,6 +22,9 @@ internal sealed class AwsStreamsReader : IAwsStreamsReader
     /// <summary>The most receives made in one look at a queue. A visible message can be handed out again, so a look stops when a receive brings nothing new.</summary>
     internal const int MaxReceives = 15;
 
+    /// <summary>Receives in a row that bring nothing new before a look concludes it has seen everything.</summary>
+    internal const int MissesBeforeStop = 3;
+
     private readonly IAwsClientFactory _clients;
 
     public AwsStreamsReader(IAwsClientFactory clients) => _clients = clients ?? throw new ArgumentNullException(nameof(clients));
@@ -88,6 +91,7 @@ internal sealed class AwsStreamsReader : IAwsStreamsReader
         }
 
         var seen = new Dictionary<string, QueueRecord>(StringComparer.Ordinal);
+        var misses = 0;
         for (var receive = 0; receive < MaxReceives && seen.Count < max; receive++)
         {
             var added = 0;
@@ -99,7 +103,9 @@ internal sealed class AwsStreamsReader : IAwsStreamsReader
                 }
             }
 
-            if (added == 0)
+            // SQS may hand out only some of a queue's messages on one receive, so one receive that adds nothing is not proof there is nothing more.
+            misses = added == 0 ? misses + 1 : 0;
+            if (misses >= MissesBeforeStop)
             {
                 break;
             }
@@ -137,10 +143,12 @@ internal sealed class AwsStreamsReader : IAwsStreamsReader
     private static async Task<List<QueueRecord>> ReceiveAsync(IAmazonSQS sqs, string url, CancellationToken ct)
     {
         // VisibilityTimeout 0: the message is back in the queue the moment it is handed out, and nothing is deleted.
+        // WaitTimeSeconds 1: a long poll asks every server, not a sample of them. A short poll (0) can come back empty for a queue that
+        // holds messages, so the same read-only list showed 0, 1 or 2 failures on consecutive looks (found live, 2026-11-19).
         var response = await sqs.ReceiveMessageAsync(
             new ReceiveMessageRequest
             {
-                QueueUrl = url, MaxNumberOfMessages = ReceiveBatch, VisibilityTimeout = 0, WaitTimeSeconds = 0, MessageSystemAttributeNames = ["SentTimestamp"],
+                QueueUrl = url, MaxNumberOfMessages = ReceiveBatch, VisibilityTimeout = 0, WaitTimeSeconds = 1, MessageSystemAttributeNames = ["SentTimestamp"],
             }, ct).ConfigureAwait(false);
         return [.. response.Messages.Select(m => new QueueRecord(
             m.MessageId, m.Attributes.TryGetValue("SentTimestamp", out var sent) && long.TryParse(sent, CultureInfo.InvariantCulture, out var ms) ? DateTimeOffset.FromUnixTimeMilliseconds(ms) : null, m.Body ?? string.Empty))];

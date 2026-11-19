@@ -285,6 +285,36 @@ public sealed class ComponentOverviewServiceTests : IAsyncLifetime
         sqs.Entities.Single(e => e.Name == "quiet").Recorded!.Messages.Should().BeNull("nothing was ever recorded for it");
     }
 
+    /// <summary>
+    /// Found live 2026-11-19: Google's adapter names a subscription "topic/sub", but a look stores its messages as "topic/subscriptions/sub"
+    /// (Azure uses the longer form in both places, which is why only Google read "Not looked yet" right after a look).
+    /// </summary>
+    [Fact]
+    public async Task A_Google_subscription_shows_what_a_look_recorded_though_the_two_spell_its_name_differently()
+    {
+        var gcp = Gcp();
+        await using (var db = NewDb())
+        {
+            db.Namespaces.Add(gcp);
+            await db.SaveChangesAsync();
+            db.DlqMessages.AddRange(
+                Message(gcp, "orders-topic/subscriptions/orders-subscription", DlqMessageStatus.Active),
+                Message(gcp, "orders-topic/subscriptions/orders-subscription", DlqMessageStatus.Active));
+            await db.SaveChangesAsync();
+        }
+
+        var service = new ComponentOverviewService(NewDb(), Repo(gcp), Router(new()
+        {
+            [CloudProviderType.Gcp] = Lists(ProviderCapabilities.Gcp, Entity("orders-topic/orders-subscription", "Subscription", CloudProviderType.Gcp), Entity("quiet-topic/quiet-sub", "Subscription", CloudProviderType.Gcp)),
+        }), Pending());
+
+        var pubsub = (await service.GetAsync(Owner, null, null, default)).Components.Single(c => c.Cloud == CloudKind.Gcp);
+
+        pubsub.Entities.Single(e => e.Name == "orders-topic/orders-subscription").Recorded!.Messages.Should().Be(2);
+        pubsub.Entities.Single(e => e.Name == "quiet-topic/quiet-sub").Recorded!.Messages.Should().BeNull("nothing was recorded for it");
+        pubsub.Recorded!.Messages.Should().Be(2);
+    }
+
     [Fact]
     public async Task The_cloud_filter_and_the_allow_list_narrow_the_result_and_a_hidden_component_is_null()
     {
