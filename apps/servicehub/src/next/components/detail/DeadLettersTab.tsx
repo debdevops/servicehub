@@ -165,7 +165,7 @@ export function DeadLettersTab({ component: c, me }: { component: ConnectedCompo
                       </td>
                       <td className={`${td} font-mono text-xs [overflow-wrap:anywhere]`}>{m.messageId}</td>
                       <td className={`${td} [overflow-wrap:anywhere]`}>{entityLabel(m.entityName, m.topicName)}</td>
-                      {!noReasons && <td className={`${td} min-w-[7.5rem] [overflow-wrap:anywhere]`}>{m.deadLetterReason ? camelBreaks(m.deadLetterReason) : '—'}</td>}
+                      {!noReasons && <td className={`${td} min-w-[5.5rem] [overflow-wrap:anywhere]`}>{m.deadLetterReason ? camelBreaks(m.deadLetterReason) : '—'}</td>}
                       {!noReasons && <td className={td}>{m.deadLetterErrorDescription ?? '—'}</td>}
                       <td className={td}>{m.deliveryCount}</td>
                       <td className={td}>{formatWhen(m.enqueuedTimeUtc, now)}</td>

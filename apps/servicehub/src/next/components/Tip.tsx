@@ -26,7 +26,7 @@ export function Labelled({ label, context, children }: { label: string; context?
  * A table column header with its (i). Every column of every table in the shell goes through this, so no column can be left unexplained
  * (`tests/web/unit/next/info.test.ts` fails on a raw `<th` in the shell). The label is the text, or `label` when the text is built.
  */
-export function Th({ children, label, context, className = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]' }: {
+export function Th({ children, label, context, className = 'px-2.5 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]' }: {
   children?: ReactNode; label?: string; context?: string; className?: string
 }) {
   const text = label ?? (typeof children === 'string' ? children : '')
@@ -37,6 +37,6 @@ export function Th({ children, label, context, className = 'px-3 py-2 text-left 
  * A column header that carries no label of its own: a tick box, an expand arrow, or a column of buttons. Its text is for screen readers, and
  * the buttons it holds say what they do themselves, so it takes no (i). Anything with a visible label uses `Th`.
  */
-export function ThHidden({ children, className = 'px-3 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]' }: { children: ReactNode; className?: string }) {
+export function ThHidden({ children, className = 'px-2.5 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]' }: { children: ReactNode; className?: string }) {
   return <th scope="col" className={className}>{children}</th>
 }
