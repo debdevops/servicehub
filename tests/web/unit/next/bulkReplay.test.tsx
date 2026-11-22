@@ -93,6 +93,33 @@ describe('Bulk replay (unit F3)', () => {
     expect(router.state.location.search).toContain('dialog=bulk-replay')
   })
 
+  it('Replay all hands the whole list (every match, not just the ticked ones) to the same preview, and sends nothing itself', async () => {
+    // Asked for on 2026-11-22: 4.2.0's "Replay All Messages" was gone, and Replay selected needed a reason chip before it could select every match.
+    const user = userEvent.setup()
+    open(ok)
+    await screen.findByRole('table', { name: /Dead-letter messages/ })
+    const all = (await screen.findAllByRole('link', { name: /^Replay all \d+…/ }))[0]
+    expect(all).toHaveAttribute('href', expect.stringContaining('dialog=bulk-replay'))
+    await user.click(all)
+    expect(bulkSelection.get()).toEqual(expect.objectContaining({ query: expect.objectContaining({ status: 'active', page: 1, pageSize: 100 }) }))
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(bulkApi.startBulk).not.toHaveBeenCalled()
+  })
+
+  it('says "first 500" when more match than one replay can carry', async () => {
+    vi.mocked(deadLettersApi.fetchDeadLetters).mockResolvedValue(list([letter(1), letter(2)], 590))
+    open(ok)
+    expect((await screen.findAllByRole('link', { name: 'Replay first 500…' }))[0]).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /^Replay all/ })).not.toBeInTheDocument()
+  })
+
+  it('a Viewer is not offered Replay all', async () => {
+    vi.mocked(identityApi.fetchMe).mockResolvedValue(me({ governanceActive: true, effectiveRole: 'Viewer', recoverRole: 'Viewer', grantors: ['maya'] }))
+    open(ok)
+    await screen.findByRole('table', { name: /Dead-letter messages/ })
+    expect(screen.queryByRole('link', { name: /^Replay all/ })).not.toBeInTheDocument()
+  })
+
   it('starts a run only from the stored preview, on the one click, and carries its id in the address', async () => {
     const user = userEvent.setup()
     vi.mocked(bulkApi.startBulk).mockResolvedValue({ id: 'job-1' } as never)

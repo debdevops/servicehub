@@ -30,8 +30,10 @@ const typeOf = (i: PendingWorkItem) => i.type ?? (i.kind === 'unresolved' ? 'han
  * hand-off panel (both are carried in the URL; F-units build them). The owner column says "All channels": a notification channel has
  * no component field in 5.0.0 (decision F2, option A), so it is not drawn as if each item had its own.
  */
-export function AttentionTable({ items, coverage, me, showCloud = false, tab: controlledTab, onTab }: {
+export function AttentionTable({ items, coverage, me, showCloud = false, tab: controlledTab, onTab, compact = false, limit, allHref }: {
   items: readonly PendingWorkItem[]; coverage: readonly CoverageRow[]; me: Me | undefined; showCloud?: boolean
+  /** Home's short form: the columns of the design (Decision, Next action), the newest few rows, and a link to the whole list. */
+  compact?: boolean; limit?: number; allHref?: string
   /** A page that keeps the tab in its address passes both; Home keeps it here. */
   tab?: AttentionTab; onTab?: (tab: AttentionTab) => void
 }) {
@@ -43,7 +45,9 @@ export function AttentionTable({ items, coverage, me, showCloud = false, tab: co
   const mine = items.filter(isMine)
   const approvals = mine.filter((i) => typeOf(i) === 'approval')
   const handOffs = mine.filter((i) => typeOf(i) === 'handOff')
-  const { items: shown, pager } = usePagedList(tab === 'approvals' ? approvals : tab === 'handOffs' ? handOffs : mine, tab)
+  const { items: paged, pager } = usePagedList(tab === 'approvals' ? approvals : tab === 'handOffs' ? handOffs : mine, tab)
+  const source = tab === 'approvals' ? approvals : tab === 'handOffs' ? handOffs : mine
+  const shown = limit ? source.slice(0, limit) : paged
   const now = new Date()
   const nameOf = (key: string | null | undefined) => coverage.find((r) => r.componentKey === key)?.name ?? '—'
   const tabs: { id: Tab; text: string }[] = [
@@ -73,8 +77,9 @@ export function AttentionTable({ items, coverage, me, showCloud = false, tab: co
               <tr>
                 {showCloud && <Th className={th} context="attention">Cloud</Th>}
                 <Th className={th} context="attention">Message</Th><Th className={th} context="attention">Component</Th><Th className={th} context="attention">Entity</Th><Th className={th} context="attention">Reason</Th>
-                <Th className={th} context="attention">Family (if hand-off)</Th><Th className={th} context="attention">Age</Th><Th className={th} context="attention">Type</Th><Th className={th} context="attention">What’s needed</Th>
-                <Th className={th} context="attention">Owner (notification channel)</Th><Th className={th} context="attention">Actions</Th>
+                {!compact && <Th className={th} context="attention">Family (if hand-off)</Th>}<Th className={th} context="attention">Age</Th>
+                {compact ? <><Th className={th} context="attention" label="Type">Decision</Th><Th className={th} context="attention" label="What’s needed">Next action</Th></> : <><Th className={th} context="attention">Type</Th><Th className={th} context="attention">What’s needed</Th></>}
+                {!compact && <Th className={th} context="attention">Owner (notification channel)</Th>}<Th className={th} context="attention">Actions</Th>
               </tr>
             </thead>
             <tbody>
@@ -89,11 +94,13 @@ export function AttentionTable({ items, coverage, me, showCloud = false, tab: co
                     <td data-label="Component" className={`${td} ${wrap}`}>{nameOf(i.componentKey)}{i.namespaceName && <span className="block text-xs text-[var(--color-text-muted)]">{i.namespaceName}</span>}</td>
                     <td data-label="Entity" className={`${td} ${wrap}`}>{i.entity ?? '—'}</td>
                     <td data-label="Reason" className={`${td} ${wrap}`}>{i.deadLetterReason ? camelBreaks(i.deadLetterReason) : <span className="text-[var(--color-text-muted)]">No reason recorded</span>}</td>
-                    <td data-label="Family" className={td}>{hand && familyWords(i.family) ? <span className="rounded-md bg-purple-50 px-2 py-0.5 text-xs font-semibold text-purple-800">{familyWords(i.family)}</span> : '—'}</td>
+                    {!compact && <td data-label="Family" className={td}>{hand && familyWords(i.family) ? <span className="rounded-md bg-purple-50 px-2 py-0.5 text-xs font-semibold text-purple-800">{familyWords(i.family)}</span> : '—'}</td>}
                     <td data-label="Age" className={td}>{formatAge(i.since, now)}</td>
-                    <td data-label="Type" className={`${td} font-semibold ${hand ? 'text-amber-700' : 'text-red-700'}`}>{hand ? 'Hand-off' : 'Approval'}</td>
-                    <td data-label="What’s needed" className={td}>{hand ? 'Investigate and decide' : 'Approve or reject'}<span className="block text-xs text-[var(--color-text-muted)]">{i.reason}</span></td>
-                    <td data-label="Owner" className={`${td} ${wrap}`}>{ownerOf(i.namespaceId)}</td>
+                    {compact
+                      ? <td data-label={hand ? 'Hand-off' : 'Approval'} className={td}><span className={`inline-block rounded-md px-2 py-0.5 text-xs font-bold ${hand ? 'bg-amber-50 text-amber-800' : 'bg-red-50 text-red-700'}`}>{hand ? 'Hand-off' : 'Approval'}</span></td>
+                      : <td data-label="Type" className={`${td} font-semibold ${hand ? 'text-amber-700' : 'text-red-700'}`}>{hand ? 'Hand-off' : 'Approval'}</td>}
+                    <td data-label="What’s needed" className={td}>{hand ? 'Investigate and decide' : 'Approve or reject'}{!compact && <span className="block text-xs text-[var(--color-text-muted)]">{i.reason}</span>}</td>
+                    {!compact && <td data-label="Owner" className={`${td} ${wrap}`}>{ownerOf(i.namespaceId)}</td>}
                     <td className={td}>
                       {hand || may.allowed
                         ? <Link to={open} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">{hand ? 'View' : 'Review'}</Link>
@@ -106,7 +113,9 @@ export function AttentionTable({ items, coverage, me, showCloud = false, tab: co
           </table>
         </div>
       )}
-      <Pager {...pager} label="items that need your attention" />
+      {limit
+        ? source.length > limit && allHref && <p className="border-t border-[var(--color-border)] px-4 py-2.5 text-right text-sm"><Link to={allHref} className="font-semibold text-[var(--color-primary-700)] hover:underline">View all {source.length.toLocaleString('en-US')} →</Link></p>
+        : <Pager {...pager} label="items that need your attention" />}
     </section>
   )
 }

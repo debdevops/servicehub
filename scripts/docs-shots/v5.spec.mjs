@@ -81,6 +81,8 @@ await step('04-home-cloud', async () => {
     { n: 1, loc: page.getByText('Operational Tools', { exact: true }).first(), t: 'Operational Tools: the pages you use every day, the same for every cloud. Start with Needs your attention.' },
     { n: 2, loc: page.getByText('PaaS Components', { exact: true }).first(), t: `The ${LABEL} services ServiceHub can read. An amber dot means a component has not been proven against a real cloud yet.` },
     { n: 3, loc: page.getByText('Agent running').first(), t: 'The Agent is on. It watches and only replays what it has earned the right to. Hover the (i) beside it to see exactly what it may do.' },
+    { n: 4, loc: page.getByRole('region', { name: 'Cloud health' }), t: 'Cloud health: how many of this cloud\u2019s components ServiceHub can reach right now.' },
+    { n: 5, loc: page.getByRole('region', { name: new RegExp(`${LABEL} PaaS components|PaaS components`) }).first(), t: 'Every component you connected, whether it is reachable, what ServiceHub may do on it (Read only, or Read + Send), what is dead-lettered and what needs you. View opens it; the three dots hold Deallocate.' },
   ])
 })
 
@@ -107,7 +109,8 @@ await step('06-dead-letters', async () => {
     { n: 1, loc: page.getByRole('combobox').first(), t: 'Filter by queue, topic or state (Stuck now, No longer stuck, all).' },
     { n: 2, loc: page.getByPlaceholder(/Message ID or reason/).first(), t: 'Search by message id or by the reason it failed. It never searches inside message bodies.' },
     { n: 3, loc: page.getByRole('button', { name: /Replay selected/ }).first(), t: 'Tick one or more messages, then Replay selected. A preview opens first; nothing is sent until you confirm.' },
-    { n: 4, loc: page.getByRole('link', { name: /^Open message/ }).first(), t: 'Open one message to read why it failed, its body and its history.' },
+    { n: 4, loc: page.getByRole('link', { name: /^Replay (all|first)/ }).first(), t: 'Replay all N… opens the preview of every message that matches the filters (at most 500 in one replay, so it says "first 500" when more match). Nothing is sent until you confirm in the preview.' },
+    { n: 5, loc: page.getByRole('link', { name: /^Open message/ }).first(), t: 'Open one message to read why it failed, its body and its history.' },
   ])
 })
 let firstId = null

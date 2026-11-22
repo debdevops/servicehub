@@ -80,7 +80,8 @@ describe('Home for one cloud (unit C1)', () => {
     const grid = await screen.findByRole('heading', { name: /Azure PaaS components \(2\)/ })
     expect(grid).toBeInTheDocument()
     const row = (await screen.findByRole('link', { name: /View Azure sign-in/ })).closest('tr')!
-    expect(within(row).getByText('Read on request')).toBeInTheDocument()
+    expect(within(row).getByText('Added')).toBeInTheDocument()
+    expect(within(row).getByText('Read only')).toBeInTheDocument()
   })
 
   it('Deallocate hides a component from ServiceHub after one confirm, and a component hidden earlier is not listed', async () => {
@@ -89,6 +90,8 @@ describe('Home for one cloud (unit C1)', () => {
     open('/azure')
     const view = await screen.findByRole('link', { name: new RegExp(`View ${row.name} ${row.componentName}`) })
     const tr = view.closest('tr')!
+    // Deallocate lives behind the row's three dots, out of the way of View.
+    await userEvent.click(within(tr).getByRole('button', { name: /^More actions for/ }))
     await userEvent.click(within(tr).getByRole('button', { name: /^Deallocate/ }))
     expect(enablementApi.setComponent).not.toHaveBeenCalled()
     await userEvent.click(within(tr).getByRole('button', { name: /^Confirm deallocate/ }))
@@ -123,8 +126,8 @@ describe('Home for one cloud (unit C1)', () => {
     expect(screen.queryByRole('button', { name: 'Look now' })).not.toBeInTheDocument()
     const row = within(screen.getByRole('region', { name: /Azure PaaS components/ })).getAllByRole('row')[1]
     expect(within(row).getByText('Connected')).toBeInTheDocument()
-    expect(within(row).getByText('Needs you')).toBeInTheDocument()
     expect(within(row).getByText('Read + Send')).toBeInTheDocument()
+    expect(within(row).getByText('1')).toHaveClass('text-red-700') // Needs you: the count, in red, with no second word for it
   })
 
   it('an approximate count is labelled approximate, and a cloud that is not watched says so, with Look now and a Recorded column', async () => {
@@ -182,7 +185,7 @@ describe('Home for one cloud (unit C1)', () => {
     vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue(page([]))
     open('/azure')
     const row = within(await screen.findByRole('region', { name: /Azure PaaS components/ })).getAllByRole('row')[1]
-    expect(within(row).getAllByText('Can’t reach')).toHaveLength(2) // the connection and the status
+    expect(within(row).getAllByText('Can’t reach')).toHaveLength(1) // the Status column; Needs you has no second word for it
     expect(within(row).getByText('The cloud denied access')).toBeInTheDocument()
     expect(within(row).getByText('Not read')).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'In dead-letter now' })).toHaveTextContent('Can’t read')
@@ -199,9 +202,10 @@ describe('Home for one cloud (unit C1)', () => {
     vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue(page([approval(), handOff()]))
     open('/azure')
     const table = await screen.findByRole('region', { name: /Items that need your attention/ })
-    expect(await within(table).findByText('Outcome unknown')).toBeInTheDocument()
-    expect(within(table).queryByText('Policy blocked')).not.toBeInTheDocument()
-    expect(within(table).getAllByText('All channels')).toHaveLength(2)
+    // Home keeps the short form of the design: Decision and Next action. Family and owner are on the Needs your attention page.
+    expect(await within(table).findByText('Hand-off', { selector: 'span' })).toBeInTheDocument()
+    expect(within(table).getByText('Approval', { selector: 'span' })).toBeInTheDocument()
+    expect(within(table).queryByRole('columnheader', { name: /Family|Owner/ })).not.toBeInTheDocument()
     expect(within(table).getByRole('link', { name: 'Review' })).toHaveAttribute('href', '/azure?dialog=review&entry=e1')
     expect(within(table).getByRole('link', { name: 'View' })).toHaveAttribute('href', '/azure?panel=hand-off&entry=e2')
 
@@ -218,20 +222,14 @@ describe('Home for one cloud (unit C1)', () => {
     expect(within(table).queryByRole('columnheader', { name: 'Cloud' })).not.toBeInTheDocument()
   })
 
-  it('pages the attention table 25 at a time, and a tab starts again at page 1', async () => {
+  it('shows the five oldest items and a link to all of them, instead of a long table on Home', async () => {
     const many = Array.from({ length: 30 }, (_, i) => approval({ id: `a${i}`, entryId: `a${i}`, dlqMessageId: 100 + i }))
     vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue(page([...many, handOff()]))
     open('/azure')
-    const table = await screen.findByRole('region', { name: /Items that need your attention/ })
-    expect(await within(table).findByText('1–25 of 31')).toBeInTheDocument()
-    expect(within(table).getAllByRole('row')).toHaveLength(26) // the header and 25 items
-
-    await userEvent.click(within(table).getByRole('button', { name: 'Next page' }))
-    expect(within(table).getByText('26–31 of 31')).toBeInTheDocument()
-    expect(within(table).getAllByRole('row')).toHaveLength(7)
-
-    await userEvent.click(within(table).getByRole('tab', { name: 'Hand-offs (1)' }))
-    expect(within(table).getByText('1–1 of 1')).toBeInTheDocument()
+    const table = await screen.findByRole('region', { name: /Items that need your attention \(31\)/ })
+    await within(table).findByText('#100')
+    expect(within(table).getAllByRole('row')).toHaveLength(6) // the header and 5 items
+    expect(within(table).getByRole('link', { name: /View all 31/ })).toHaveAttribute('href', '/azure/attention')
   })
 
   it('pages the component table, and each component’s places on their own', async () => {

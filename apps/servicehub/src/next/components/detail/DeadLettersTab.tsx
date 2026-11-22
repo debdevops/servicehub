@@ -86,7 +86,9 @@ export function DeadLettersTab({ component: c, me }: { component: ConnectedCompo
   useEffect(() => bulkSelection.onFinished(() => setSelection({ sig: signature, ids: new Set(), all: false })), [signature])
   const selectedCount = current.all ? Math.min(total, BULK_LIMIT) : current.ids.size
   const bulkBar = (edge: 'top' | 'bottom') => (
-    <BulkBar edge={edge} hideDetails replayHref={`${pathname}?tab=dead-letters&dialog=bulk-replay`}
+    <BulkBar edge={edge} hideDetails
+      replayAll={showing === 'active' && total > 0 ? { count: Math.min(total, BULK_LIMIT), capped: total > BULK_LIMIT, onOpen: () => bulkSelection.set({ query: { ...filter, page: 1, pageSize: 100 }, total }) } : undefined}
+      replayHref={`${pathname}?tab=dead-letters&dialog=bulk-replay`}
       allOnPage={tickable.length > 0 && tickable.every((m) => current.ids.has(m.id))} onTogglePage={togglePage}
       count={selectedCount} allMatching={current.all} matchingTotal={Math.min(total, BULK_LIMIT)}
       matchingLabel={reason === NO_REASON ? 'with no reason recorded' : reason ?? 'dead letters'}
@@ -163,7 +165,7 @@ export function DeadLettersTab({ component: c, me }: { component: ConnectedCompo
                       </td>
                       <td className={`${td} font-mono text-xs [overflow-wrap:anywhere]`}>{m.messageId}</td>
                       <td className={`${td} [overflow-wrap:anywhere]`}>{entityLabel(m.entityName, m.topicName)}</td>
-                      {!noReasons && <td className={`${td} [overflow-wrap:anywhere]`}>{m.deadLetterReason ? camelBreaks(m.deadLetterReason) : '—'}</td>}
+                      {!noReasons && <td className={`${td} min-w-[7.5rem] [overflow-wrap:anywhere]`}>{m.deadLetterReason ? camelBreaks(m.deadLetterReason) : '—'}</td>}
                       {!noReasons && <td className={td}>{m.deadLetterErrorDescription ?? '—'}</td>}
                       <td className={td}>{m.deliveryCount}</td>
                       <td className={td}>{formatWhen(m.enqueuedTimeUtc, now)}</td>

@@ -172,8 +172,11 @@ describe('Add a component (one dialog: choose, connect, bring in)', () => {
   it('Connect makes the Azure sign-in connection in one click, ticks Event Grid on it and checks access', async () => {
     const serviceBus = { ...aws, id: 'ns-4', name: 'sb', displayName: 'Azure-Dev', provider: 'azure', authType: 'connectionString', awsRegion: null } as unknown as namespacesApi.Namespace
     const entra = { ...serviceBus, id: 'ns-5', name: 'azure-entra', displayName: 'Azure sign-in', authType: 'defaultAzureCredential' } as namespacesApi.Namespace
-    vi.mocked(namespacesApi.fetchNamespaces).mockResolvedValueOnce([serviceBus]).mockResolvedValue([serviceBus, entra])
-    vi.mocked(namespacesApi.connectNamespace).mockResolvedValue(entra)
+    // The list changes when the connection is made, not on the second read: another part of the page may read it too, and an extra read must not
+    // look like "the connection already exists".
+    let connected = false
+    vi.mocked(namespacesApi.fetchNamespaces).mockImplementation(async () => (connected ? [serviceBus, entra] : [serviceBus]))
+    vi.mocked(namespacesApi.connectNamespace).mockImplementation(async () => { connected = true; return entra })
     const eventGrid = entry({
       componentKey: 'event-grid', name: 'Event Grid', status: 'beingValidated', statusWords: 'Not yet validated', state: 'off', canToggle: true, stuckPlace: 'Dead-letter blobs',
       what: 'Events Event Grid could not deliver.', needs: 'Reader.', steps: ['Press Check access.'], snippets: [], permissions: ['Reader'],
@@ -186,8 +189,38 @@ describe('Add a component (one dialog: choose, connect, bring in)', () => {
     await userEvent.click(await d.findByRole('checkbox', { name: 'Event Grid (Not yet validated)' }))
     await userEvent.click(d.getByRole('button', { name: 'Connect with Azure sign-in' }))
 
-    expect(namespacesApi.connectNamespace).toHaveBeenCalledWith(expect.objectContaining({ provider: 'azure', authType: 'defaultAzureCredential' }))
-    expect(enablementApi.checkComponent).toHaveBeenCalledWith('ns-5', 'event-grid')
+    // The connection is made after the click returns (the dialog reads first), so wait for it rather than assume the same tick.
+    await waitFor(() => expect(namespacesApi.connectNamespace).toHaveBeenCalledWith(expect.objectContaining({ provider: 'azure', authType: 'defaultAzureCredential' })))
+    await waitFor(() => expect(enablementApi.checkComponent).toHaveBeenCalledWith('ns-5', 'event-grid'))
+    expect(await d.findByText('present')).toBeInTheDocument() // the check's result, drawn on the row
+    // The panel stays where it was, disabled, and says it is connected.
+    expect(d.getByRole('button', { name: 'Connected with Azure sign-in' })).toBeDisabled()
+  })
+
+  it('The environment is chosen before Azure sign-in is connected: UAT makes its own connection, named for it, and leaves Development alone', async () => {
+    const serviceBus = { ...aws, id: 'ns-4', name: 'sb', displayName: 'Azure-Dev', provider: 'azure', authType: 'connectionString', awsRegion: null } as unknown as namespacesApi.Namespace
+    const entra = { ...serviceBus, id: 'ns-5', name: 'azure-entra-uat', displayName: 'Azure sign-in (UAT)', authType: 'defaultAzureCredential', environment: 'uat' } as namespacesApi.Namespace
+    // The list changes when the connection is made, not on the second read: another part of the page may read it too, and an extra read must not
+    // look like "the connection already exists".
+    let connected = false
+    vi.mocked(namespacesApi.fetchNamespaces).mockImplementation(async () => (connected ? [serviceBus, entra] : [serviceBus]))
+    vi.mocked(namespacesApi.connectNamespace).mockImplementation(async () => { connected = true; return entra })
+    const eventGrid = entry({
+      componentKey: 'event-grid', name: 'Event Grid', status: 'beingValidated', statusWords: 'Not yet validated', state: 'off', canToggle: true, stuckPlace: 'Dead-letter blobs',
+      what: 'Events Event Grid could not deliver.', needs: 'Reader.', steps: ['Press Check access.'], snippets: [], permissions: ['Reader'],
+    })
+    vi.mocked(enablementApi.fetchComponentList).mockImplementation(async (id: string) => ({ namespaceId: id, connectionName: 'Azure', cloud: 'Azure', components: [eventGrid] }))
+    vi.mocked(enablementApi.checkComponent).mockResolvedValue({ componentKey: 'event-grid', ok: true, reason: null, permissions: ['Reader'] })
+    open('/azure?dialog=add-component')
+    const d = await dialog()
+
+    await userEvent.click(await d.findByRole('checkbox', { name: 'Event Grid (Not yet validated)' }))
+    await userEvent.selectOptions(d.getByRole('combobox', { name: 'Environment of this Azure sign-in connection' }), 'uat')
+    await userEvent.click(d.getByRole('button', { name: 'Connect with Azure sign-in' }))
+
+    // The connection is made after the click returns (the dialog reads first), so wait for it rather than assume the same tick.
+    await waitFor(() => expect(namespacesApi.connectNamespace).toHaveBeenCalledWith(expect.objectContaining({ provider: 'azure', authType: 'defaultAzureCredential', environment: 'uat', name: 'azure-entra-uat', displayName: 'Azure sign-in (UAT)' })))
+    await waitFor(() => expect(enablementApi.checkComponent).toHaveBeenCalledWith('ns-5', 'event-grid'))
     expect(await d.findByText('present')).toBeInTheDocument() // the check's result, drawn on the row
     // The panel stays where it was, disabled, and says it is connected.
     expect(d.getByRole('button', { name: 'Connected with Azure sign-in' })).toBeDisabled()

@@ -53,25 +53,7 @@
   "button: Show value"
  ],
  "04-home-cloud.png": [
-  "button: Refresh",
-  "a: Add a component",
-  "button: About Component",
-  "button: About Connection name",
-  "button: About Connection",
-  "button: About Status",
-  "button: About In dead-letter now",
-  "button: About Needs you",
-  "button: About Last observed",
-  "button: About Actions",
-  "button: Show the places in sb-servicehub-dev Service Bus",
-  "a: View sb-servicehub-dev Service Bus",
-  "button: Deallocate sb-servicehub-dev Service Bus",
-  "button: Show the places in Azure sign-in (livetest) Event Grid",
-  "a: View Azure sign-in (livetest) Event Grid",
-  "button: Deallocate Azure sign-in (livetest) Event Grid",
-  "button: Show the places in Azure sign-in (livetest) Logic Apps",
-  "a: View Azure sign-in (livetest) Logic Apps",
-  "button: Deallocate Azure sign-in (livetest) Logic Apps"
+  "button: Refresh"
  ],
  "05-detail-overview.png": [
   "a: Azure",
@@ -117,9 +99,9 @@
   "button: About Detected",
   "button: About State",
   "button: About Actions",
-  "input: Select message 4fedca09-c553-4ca0-b5a8-95744220cbec",
-  "input: Select message 6bb98b7ec1a241d7a3246a9e4f2ac210",
-  "a: Open message 6bb98b7ec1a241d7a3246a9e4f2ac210"
+  "a: Review",
+  "input: Select message 907c9b26-63ec-4b0a-bbef-f7d42c2730e5",
+  "a: Open message 907c9b26-63ec-4b0a-bbef-f7d42c2730e5"
  ],
  "07-message.png": [
   "button: Expand to a full window",

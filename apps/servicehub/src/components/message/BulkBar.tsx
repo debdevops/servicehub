@@ -24,6 +24,7 @@ export function BulkBar({
   single = null,
   replayHref,
   hideDetails = false,
+  replayAll,
 }: {
   count: number
   allMatching: boolean
@@ -45,6 +46,8 @@ export function BulkBar({
   replayHref?: string
   /** The 5.0.0 shell opens a message from its own list; "View details" here is the 4.2.0 drawer. */
   hideDetails?: boolean
+  /** "Replay all N…": hands the whole list (every message that matches the filters, up to the limit) to the same preview. Never sends anything itself. */
+  replayAll?: { readonly count: number; readonly capped?: boolean; readonly onOpen: () => void }
 }) {
   const may = permission(useMe().data, 'Operator', 'replay these messages', { recover: true })
   const { search } = useLocation()
@@ -93,6 +96,12 @@ export function BulkBar({
           </button>
         ))}
         <span className="text-xs text-[var(--color-text-muted)]">{!may.allowed ? <NotAllowed reason={may.reason} /> : none ? 'tick one or more below to replay them' : 'you’ll see a preview first'}</span>
+        {edge === 'top' && replayAll && may.allowed && replayAll.count > 0 && (
+          <Link to={replayHref ?? `/?${params.toString()}`} onClick={replayAll.onOpen} title={replayAll.capped ? 'One replay carries at most 500 messages. This opens the preview of the first 500 that match the filters. Nothing is sent until you confirm there.' : 'Opens the preview of every message that matches the filters. Nothing is sent until you confirm there.'}
+            className="rounded-lg border border-[var(--color-primary-600)] bg-[var(--color-surface)] px-4 py-2 font-medium text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">
+            Replay {replayAll.capped ? 'first' : 'all'} {replayAll.count.toLocaleString()}…
+          </Link>
+        )}
         {canReplay ? (
           <Link
             to={replayHref ?? `/?${params.toString()}`}

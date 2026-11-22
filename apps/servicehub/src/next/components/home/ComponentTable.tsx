@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
+import { ChevronDown, ChevronRight, EllipsisVertical, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import type { ConnectedComponent } from '../../../lib/api/components'
@@ -9,7 +9,7 @@ import { Pager } from '../../../components/ui/Pager'
 import { useComponentSource } from '../../../hooks/useComponentSource'
 import { useSetComponent } from '../../../hooks/useComponentEnablement'
 import { usePagedList } from '../../../hooks/usePagedList'
-import { countWords, recordedWords, statusWords } from '../../lib/words'
+import { countWords, recordedWords } from '../../lib/words'
 import { Th, ThHidden } from '../Tip'
 import { Tip } from '../Tip'
 
@@ -17,7 +17,7 @@ import { Tip } from '../Tip'
 const th = 'px-2 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
 const td = 'px-2 py-2.5 align-top text-sm text-[var(--color-text)]'
 const wrap = '[overflow-wrap:anywhere]'
-const tone = { bad: 'bg-red-50 text-red-700', warn: 'bg-amber-50 text-amber-800', ok: 'text-[var(--color-text-muted)]' } as const
+const chip = 'inline-block whitespace-nowrap rounded-md border border-[var(--color-border)] px-2 py-0.5 text-xs font-medium text-[var(--color-text)]'
 
 type Entry = { readonly kind: 'store'; readonly c: ConnectedComponent } | { readonly kind: 'demand'; readonly o: OnDemandRow }
 const key = (c: ConnectedComponent) => `${c.namespaceId}:${c.componentKey}`
@@ -119,8 +119,8 @@ export function ComponentTable({ components, cloudName, canConnect = true, lookN
                 <ThHidden className={`${th} w-8`}><span className="sr-only">Expand</span></ThHidden>
                 <Th className={th}>Component</Th>
                 <Th className={th}>Connection name</Th>
-                <Th className={th}>Connection</Th>
                 <Th className={th}>Status</Th>
+                <Th className={th}>Permissions</Th>
                 <Th className={th}>In dead-letter now</Th>
                 {showRecorded && <Th className={th}>Recorded</Th>}
                 <Th className={th}>Needs you</Th>
@@ -133,7 +133,6 @@ export function ComponentTable({ components, cloudName, canConnect = true, lookN
               const c = entry.c
               const id = key(c)
               const expanded = open.has(id)
-              const status = statusWords(c)
               return (
                 <tbody key={id} className="border-t border-[var(--color-border)]">
                   <tr>
@@ -146,18 +145,18 @@ export function ComponentTable({ components, cloudName, canConnect = true, lookN
                     <td className={`${td} ${wrap}`}>{c.name}</td>
                     <td className={td}>
                       {c.reachable
-                        ? <><span className="font-semibold text-green-700">Connected</span><span className="block text-xs text-[var(--color-text-muted)]">{c.canSend ? 'Read + Send' : 'Read only'}</span></>
+                        ? <span className="inline-flex items-center gap-1.5 font-semibold text-green-700"><span aria-hidden="true" className="h-2 w-2 rounded-full bg-green-600" />Connected</span>
                         : <><span className="font-semibold text-amber-800">Can’t reach</span>{c.lastError && <span className="block max-w-[16rem] text-xs text-[var(--color-text-muted)]">{c.lastError}</span>}</>}
                     </td>
-                    <td className={td}><span className={`inline-block rounded-md px-2 py-0.5 text-xs font-semibold ${tone[status.tone]}`}>{status.text}</span></td>
+                    <td className={td}><span className={chip}>{c.canSend ? 'Read + Send' : 'Read only'}</span></td>
                     <td className={td}>{countWords(c.deadLetters)}</td>
                     {showRecorded && <td className={td}>{recordedWords(c.recorded)}</td>}
                     <td className={`${td} font-semibold ${c.needsYou > 0 ? 'text-red-700' : ''}`}>{c.needsYou}</td>
                     <td className={td}>{c.observedAtUtc ? formatWhen(c.observedAtUtc, now) : '—'}</td>
                     <td className={td}>
-                      <div className="flex flex-col items-start gap-1.5">
+                      <div className="flex items-center gap-1">
                         <Link to={detail(c)} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]" aria-label={`View ${c.name} ${c.componentName}`}>View</Link>
-                        <DeallocateButton namespaceId={c.namespaceId} componentKey={c.componentKey} label={`${c.name} ${c.componentName}`} />
+                        <RowMenu label={`${c.name} ${c.componentName}`}><DeallocateButton namespaceId={c.namespaceId} componentKey={c.componentKey} label={`${c.name} ${c.componentName}`} /></RowMenu>
                       </div>
                     </td>
                   </tr>
@@ -182,6 +181,18 @@ export function ComponentTable({ components, cloudName, canConnect = true, lookN
       {showRecorded && <p className="border-t border-[var(--color-border)] px-4 py-2 text-xs text-[var(--color-text-muted)]">“Recorded” is what ServiceHub kept at the last look</p>}
       <Pager {...pager} label="components" />
     </section>
+  )
+}
+
+/** The ⋮ beside View: the rarely used actions of one row, out of the way (the design's three dots). */
+function RowMenu({ label, children }: { label: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <span className="relative">
+      <button type="button" aria-haspopup="menu" aria-expanded={open} aria-label={`More actions for ${label}`} onClick={() => setOpen((v) => !v)} onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false) }}
+        className="rounded-lg p-1.5 text-[var(--color-text-muted)] hover:bg-[var(--color-surface-muted)]"><EllipsisVertical className="h-4 w-4" aria-hidden="true" /></button>
+      {open && <span role="menu" className="absolute right-0 top-full z-30 mt-1 flex w-48 flex-wrap items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2 shadow-lg">{children}</span>}
+    </span>
   )
 }
 
@@ -258,16 +269,16 @@ function OnDemandTbody({ c, showRecorded }: { c: OnDemandRow; showRecorded: bool
         </td>
         <td className={`${td} font-semibold`}>{c.componentName}</td>
         <td className={td}>{c.connectionName}</td>
-        <td className={td}><span className="font-semibold text-green-700">Added</span><span className="block text-xs text-[var(--color-text-muted)]">Read only</span></td>
-        <td className={td}><span className="inline-block rounded-md px-2 py-0.5 text-xs font-semibold text-[var(--color-text-muted)]">Read on request</span></td>
-        <td className={td}>Open to see</td>
+        <td className={td}><span className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-800"><Plus className="h-3 w-3" aria-hidden="true" />Added</span></td>
+        <td className={td}><span className={chip}>Read only</span></td>
+        <td className={td}>—</td>
         {showRecorded && <td className={td}>—</td>}
         <td className={td}>—</td>
         <td className={td}>—</td>
         <td className={td}>
-          <div className="flex flex-col items-start gap-1.5">
+          <div className="flex items-center gap-1">
             <Link to={detail()} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]" aria-label={`View ${c.connectionName} ${c.componentName}`}>View</Link>
-            <DeallocateButton namespaceId={c.namespaceId} componentKey={c.componentKey} label={`${c.connectionName} ${c.componentName}`} />
+            <RowMenu label={`${c.connectionName} ${c.componentName}`}><DeallocateButton namespaceId={c.namespaceId} componentKey={c.componentKey} label={`${c.connectionName} ${c.componentName}`} /></RowMenu>
           </div>
         </td>
       </tr>

@@ -6,6 +6,7 @@ import type { CloudProvider } from '../../../lib/api/namespaces'
 import { trustWords } from '../../../lib/trustWords'
 import { nextEntry, nextHref } from '../../nav/navigation'
 import { Th } from '../Tip'
+import { camelBreaks } from '../../lib/camelBreaks'
 import { Tip } from '../Tip'
 
 const ROWS = 4
@@ -67,7 +68,7 @@ export function SignaturePanel({ provider, cloudName, notWatched, recorded, inDe
               const answer = t ? trustWords(t, cloudName).answer : null
               return (
                 <tr key={s.signatureHash} className="border-t border-[var(--color-border)]">
-                  <td className="break-words py-2 pr-2 font-medium">{s.reason}</td>
+                  <td className="break-words py-2 pr-2 font-medium">{camelBreaks(s.reason)}</td>
                   <td className="px-2">{s.messages.toLocaleString('en-US')}</td>
                   <td className="break-words px-2 text-[var(--color-text-muted)]">{s.namespaces.map((n) => n.displayName ?? n.name).join(', ')}</td>
                   <td className="pl-2">

@@ -307,6 +307,14 @@ export const azureGuide: Guide = {
         {
          "n": 3,
          "text": "The Agent is on. It watches and only replays what it has earned the right to. Hover the (i) beside it to see exactly what it may do."
+        },
+        {
+         "n": 4,
+         "text": "Cloud health: how many of this cloud’s components ServiceHub can reach right now."
+        },
+        {
+         "n": 5,
+         "text": "Every component you connected, whether it is reachable, what ServiceHub may do on it (Read only, or Read + Send), what is dead-lettered and what needs you. View opens it; the three dots hold Deallocate."
         }
        ]
       }
@@ -363,6 +371,10 @@ export const azureGuide: Guide = {
         },
         {
          "n": 4,
+         "text": "Replay all N… opens the preview of every message that matches the filters (at most 500 in one replay, so it says \"first 500\" when more match). Nothing is sent until you confirm in the preview."
+        },
+        {
+         "n": 5,
          "text": "Open one message to read why it failed, its body and its history."
         }
        ]

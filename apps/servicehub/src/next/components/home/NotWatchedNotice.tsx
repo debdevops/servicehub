@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Eye, Loader2, TriangleAlert } from 'lucide-react'
 import { lookNowReason } from '../../../content/capabilities'
 import { useLookAtDeadLetters } from '../../../hooks/useDeadLetters'
@@ -16,11 +17,20 @@ export function NotWatchedNotice({ cloudName, provider, namespaceIds, me, onLook
   provider: CloudProvider
   namespaceIds: readonly string[]
   me: Me | undefined
-  onLook?: () => void
+  onLook?: () => unknown
 }) {
   const look = useLookAtDeadLetters()
+  const [refreshing, setRefreshing] = useState(false)
+  const busy = look.isPending || refreshing
+  const press = async () => {
+    try {
+      await look.mutateAsync(namespaceIds)
+    } catch { return }  // the error is shown from look.error
+    setRefreshing(true)
+    try { await onLook?.() } finally { setRefreshing(false) }
+  }
   const allowed = permission(me, 'Operator', 'look at these dead letters', { recover: true })
-  const disabled = look.isPending || namespaceIds.length === 0 || !allowed.allowed
+  const disabled = busy || namespaceIds.length === 0 || !allowed.allowed
   return (
     <div role="note" className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
       <TriangleAlert className="h-5 w-5 shrink-0 text-amber-700" aria-hidden="true" />
@@ -38,11 +48,11 @@ export function NotWatchedNotice({ cloudName, provider, namespaceIds, me, onLook
         type="button"
         disabled={disabled}
         title={allowed.reason ?? undefined}
-        onClick={() => look.mutate(namespaceIds, { onSuccess: () => onLook?.() })}
+        onClick={() => void press()}
         className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-amber-400 bg-white px-3.5 py-2 text-xs font-bold text-amber-950 hover:bg-amber-100 disabled:opacity-60"
       >
-        {look.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
-        {look.isPending ? 'Looking…' : 'Look now'}
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+        {busy ? 'Looking…' : 'Look now'}
       </button>
       <Tip label="Look now" />
     </div>

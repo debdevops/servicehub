@@ -203,6 +203,8 @@ Pick **AWS** in the cloud switcher (top left). The cloud is part of the address,
 1. Operational Tools: the pages you use every day, the same for every cloud. Start with Needs your attention.
 2. The AWS services ServiceHub can read. An amber dot means a component has not been proven against a real cloud yet.
 3. The Agent is on. It watches and only replays what it has earned the right to. Hover the (i) beside it to see exactly what it may do.
+4. Cloud health: how many of this cloud’s components ServiceHub can reach right now.
+5. Every component you connected, whether it is reachable, what ServiceHub may do on it (Read only, or Read + Send), what is dead-lettered and what needs you. View opens it; the three dots hold Deallocate.
 
 
 ## Part 4 — Find and replay a dead-lettered message on AWS
@@ -245,7 +247,8 @@ Every dead-lettered message on this connection. Group chips above the table coun
 1. Filter by queue, topic or state (Stuck now, No longer stuck, all).
 2. Search by message id or by the reason it failed. It never searches inside message bodies.
 3. Tick one or more messages, then Replay selected. A preview opens first; nothing is sent until you confirm.
-4. Open one message to read why it failed, its body and its history.
+4. Replay all N… opens the preview of every message that matches the filters (at most 500 in one replay, so it says "first 500" when more match). Nothing is sent until you confirm in the preview.
+5. Open one message to read why it failed, its body and its history.
 
 
 ### 4.4 Open a message

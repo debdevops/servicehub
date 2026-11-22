@@ -108,11 +108,11 @@ function Detail({ cloudKey: cloud, componentKey, namespaceId }: { cloudKey: NonN
   const here = nextHref(nextEntry('component-detail'), { cloud, component: componentKey, namespaceId })
   const hasStuck = coverage.data.rows.some((r) => r.id === `${componentKey}.stuck`)
   const deadLetterCount = c.watched ? (c.deadLetters.value === null ? '—' : n(c.deadLetters.value)) : `${first.label === 'Dead letters recorded' ? n(first.value ?? 0) : n(first.recorded ?? 0)} recorded`
-  const refresh = () => {
-    void client.invalidateQueries({ queryKey: ['components'] })
-    void client.invalidateQueries({ queryKey: ['namespaces'] })
-    void client.invalidateQueries({ queryKey: ['dead-letters'] })
-  }
+  const refresh = () => Promise.all([
+    client.invalidateQueries({ queryKey: ['components'] }),
+    client.invalidateQueries({ queryKey: ['namespaces'] }),
+    client.invalidateQueries({ queryKey: ['dead-letters'] }),
+  ])
   const detail = (entity: string) => `${here}?tab=dead-letters&entity=${encodeURIComponent(entity)}`
 
   return (

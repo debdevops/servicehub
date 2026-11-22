@@ -498,24 +498,26 @@ public sealed class EventGridSourceTests : ComponentSourceConformance
     }
 
     [Fact]
-    public async Task A_listed_dead_letter_blob_links_to_its_container_in_the_portal_and_names_no_second_place_to_retry()
+    public async Task A_listed_dead_letter_blob_links_to_the_blob_itself_in_the_portal_and_names_no_second_place_to_retry()
     {
         ArrangeFailures(1);
 
         var item = (await _source.ListFailedAsync(_ns, null, default)).Value.Items.Single();
 
-        item.ConsoleUrl.Should().StartWith("https://portal.azure.com/#view/Microsoft_Azure_Storage/ContainerMenuBlade/~/overview/storageAccountId/")
-            .And.Contain(Uri.EscapeDataString(AccountId)).And.Contain("/path/");
+        // The blob's own page (checked live in the portal 2026-11-22): the path is the container and the blob name, every slash escaped.
+        item.ConsoleUrl.Should().StartWith("https://portal.azure.com/#view/Microsoft_Azure_Storage/BlobPropertiesBladeV2/storageAccountId/")
+            .And.Contain(Uri.EscapeDataString(AccountId))
+            .And.Contain("/path/" + Uri.EscapeDataString("deadletter/orders/2026/10/01/e0.json"));
         item.HeldIn.Should().BeNull("Event Grid has no safe place to retry an event: republishing it would reach every subscription");
     }
 
     [Fact]
-    public async Task A_blob_listed_by_container_name_still_links_to_its_container()
+    public async Task A_blob_listed_by_container_name_links_to_the_blob_too()
     {
         ArrangeFailures(1);
 
         var item = (await _source.ListFailedAsync(_ns, Place, default)).Value.Items.Single();
 
-        item.ConsoleUrl.Should().StartWith("https://portal.azure.com/#view/Microsoft_Azure_Storage/ContainerMenuBlade/").And.Contain("/path/");
+        item.ConsoleUrl.Should().StartWith("https://portal.azure.com/#view/Microsoft_Azure_Storage/BlobPropertiesBladeV2/").And.Contain("/path/");
     }
 }

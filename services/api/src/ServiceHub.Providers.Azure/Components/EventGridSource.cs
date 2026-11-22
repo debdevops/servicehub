@@ -304,7 +304,7 @@ public sealed partial class EventGridSource : IComponentSource
         return new Found(all, subscriptions.More || results.Any(r => r.Value.More), results.Any(r => r.Failed || r.Value.Incomplete), null);
     }
 
-    // The link opens this blob's container in the Azure portal. It is null only when the storage account's resource id is not known.
+    // The link opens this blob in the Azure portal. It is null only when the storage account's resource id is not known.
     private static FailedItem ToItem(DeadLetterBlob blob, string? accountResourceId) =>
         new($"blob://{blob.Account}/{blob.Container}/{blob.Name}", PlaceId(blob.Account, blob.Container), blob.ModifiedUtc, Status, ReasonCode: null,
             $"Dead-lettered event: {Clean(blob.Name[(blob.Name.LastIndexOf('/') + 1)..])}", CopyKind.None, BlobLink(accountResourceId, blob.Container, blob.Name));
@@ -313,12 +313,21 @@ public sealed partial class EventGridSource : IComponentSource
     private string? AccountIdOf(Namespace ns, string account, string container) =>
         _confirmed.TryGetValue(ns.Id, out var known) && known.Containers.TryGetValue($"{account}/{container}", out var id) ? id : null;
 
-    // The portal opens the dead-letter container the blob is in. A deep link to one blob needs a blade name and parameters that are not
-    // published, and a wrong one shows "Error displaying your content", so the link goes only as deep as the container.
-    private static string? BlobLink(string? accountResourceId, string container, string blobName) =>
-        accountResourceId is null
-            ? null
-            : $"https://portal.azure.com/#view/Microsoft_Azure_Storage/ContainerMenuBlade/~/overview/storageAccountId/{Uri.EscapeDataString(accountResourceId)}/path/{Uri.EscapeDataString(container)}";
+    // The portal opens the blob itself: its properties, with the Edit tab that shows the event's JSON. Checked live in the portal on 2026-11-22
+    // (a blob three folders deep opened on its own page); the container-only link this replaced was shown because a blob blade had not been checked.
+    // The path is "{container}/{blob name}" with every slash escaped, exactly as the portal writes it. Without a blob name it is the container.
+    private static string? BlobLink(string? accountResourceId, string container, string blobName)
+    {
+        if (accountResourceId is null)
+        {
+            return null;
+        }
+
+        var account = Uri.EscapeDataString(accountResourceId);
+        return string.IsNullOrEmpty(blobName)
+            ? $"https://portal.azure.com/#view/Microsoft_Azure_Storage/ContainerMenuBlade/~/overview/storageAccountId/{account}/path/{Uri.EscapeDataString(container)}"
+            : $"https://portal.azure.com/#view/Microsoft_Azure_Storage/BlobPropertiesBladeV2/storageAccountId/{account}/path/{Uri.EscapeDataString($"{container}/{blobName}")}/isDeleted~/false/tabToload~/0";
+    }
 
     private static string? Cause(DeadLetterBlobRead read)
     {

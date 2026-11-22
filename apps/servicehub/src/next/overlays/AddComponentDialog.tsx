@@ -9,7 +9,7 @@ import { useCoverage } from '../../hooks/useCoverage'
 import { toProblem } from '../../lib/api/client'
 import { checkComponent, setComponent, type ComponentCheck, type ComponentEntry } from '../../lib/api/componentEnablement'
 import { readsOnDemand, type CloudKind, type DetectionKind } from '../../lib/api/coverage'
-import type { AuthType, Namespace } from '../../lib/api/namespaces'
+import type { AuthType, EnvironmentKind, Namespace } from '../../lib/api/namespaces'
 import { permission } from '../../lib/permissions'
 import { NotAllowed } from '../../components/ui/NotAllowed'
 import { Select } from '../../components/ui/Select'
@@ -32,7 +32,9 @@ import type { NextOverlayBodyProps } from './registry'
 type Outcome = { readonly ok: boolean; readonly message: string }
 type CheckState = ComponentCheck | 'checking'
 /** Where Connect is: which component's click is working, and what went wrong the last time. */
-type SignInState = { readonly connecting: string | null; readonly error: string | null }
+/** Event Grid, Logic Apps and Storage Queues have no environment of their own: the connection they are read through has one. So the person picks it first. */
+const ENVIRONMENTS: readonly { readonly id: EnvironmentKind; readonly label: string }[] = [{ id: 'dev', label: 'Development' }, { id: 'uat', label: 'UAT' }, { id: 'prod', label: 'Production' }]
+type SignInState = { readonly connecting: string | null; readonly error: string | null; readonly environment: EnvironmentKind; readonly onEnvironment: (e: EnvironmentKind) => void }
 
 const CLOUDS: readonly CloudKind[] = ['azure', 'aws', 'gcp']
 const idOf = (namespaceId: string, componentKey: string) => `${namespaceId}|${componentKey}`
@@ -68,6 +70,7 @@ export default function AddComponentDialog({ close }: NextOverlayBodyProps) {
   const connectMutation = useConnectNamespace()
   const [connecting, setConnecting] = useState<string | null>(null) // the component whose Connect is working
   const [connectError, setConnectError] = useState<string | null>(null)
+  const [signInEnv, setSignInEnv] = useState<EnvironmentKind>('dev') // the environment chosen before Azure sign-in is connected
 
   const azure = useCloud('azure', all, wanted)
   const aws = useCloud('aws', all, wanted)
@@ -118,8 +121,14 @@ export default function AddComponentDialog({ close }: NextOverlayBodyProps) {
     setConnecting(componentKey)
     setConnectError(null)
     try {
-      const existing = azure.connections.find(isEntra)
-      const connection = existing ?? await connectMutation.mutateAsync({ name: 'azure-entra', provider: 'azure', authType: 'defaultAzureCredential', displayName: 'Azure sign-in', environment: 'dev' })
+      // One sign-in connection per environment: Development keeps the name it always had, so an existing connection is reused, not duplicated.
+      const env = signInEnv
+      const label = ENVIRONMENTS.find((e) => e.id === env)?.label ?? env
+      const existing = azure.connections.find((c) => isEntra(c) && c.environment === env)
+      const connection = existing ?? await connectMutation.mutateAsync({
+        name: env === 'dev' ? 'azure-entra' : `azure-entra-${env}`, provider: 'azure', authType: 'defaultAzureCredential',
+        displayName: env === 'dev' ? 'Azure sign-in' : `Azure sign-in (${label})`, environment: env,
+      })
       azure.setChosen(connection.id)
       setDesired((d) => ({ ...d, [idOf(connection.id, componentKey)]: true }))
       await runCheck(connection.id, componentKey) // Connect stays 'working' until the check has answered
@@ -173,7 +182,7 @@ export default function AddComponentDialog({ close }: NextOverlayBodyProps) {
       {sections.map((s) => (
         <CloudSection key={s.cloud} s={s} rows={entriesOf(s)} pathname={pathname} active={s.cloud === active} coverageNames={coverageNames(coverage.data?.rows ?? [], s.cloud)}
           disabled={!may.allowed || saving || finished} wantedOn={wantedOn} checks={checks} outcomes={outcomes}
-          onToggle={(id, v) => setDesired((d) => ({ ...d, [id]: v }))} onCheck={runCheck} onConnectEntra={connectEntra} signIn={{ connecting, error: connectError }} />
+          onToggle={(id, v) => setDesired((d) => ({ ...d, [id]: v }))} onCheck={runCheck} onConnectEntra={connectEntra} signIn={{ connecting, error: connectError, environment: signInEnv, onEnvironment: setSignInEnv }} />
       ))}
 
       <div className="sticky bottom-0 flex items-center gap-3 border-t border-[var(--color-border)] bg-[var(--color-surface)] pt-3">
@@ -253,7 +262,7 @@ function CloudSection({ s, rows, pathname, active, coverageNames: names, disable
             return (
               <Row key={entry.componentKey} entry={entry} on={wantedOn({ entry, id })} disabled={disabled}
                 onToggle={(v) => onToggle(id, v)} check={checks[id]} onCheck={() => onCheck(connection.id, entry.componentKey)} outcome={outcomes[id]}
-                needsSignIn={s.cloud === 'azure' && ENTRA_COMPONENTS.has(entry.componentKey)} signedIn={isEntra(connection)} signIn={signIn} onConnect={() => onConnectEntra(entry.componentKey)} />
+                needsSignIn={s.cloud === 'azure' && ENTRA_COMPONENTS.has(entry.componentKey)} signedIn={isEntra(connection) && connection?.environment === signIn.environment} signIn={signIn} onConnect={() => onConnectEntra(entry.componentKey)} />
             )
           })}
         </ul>
@@ -322,6 +331,13 @@ function ConnectSignIn({ componentKey, onConnect, disabled, signedIn, signIn }: 
     <section className="rounded-lg border border-[var(--color-primary-600)] bg-[var(--color-surface)] p-3">
       <h4 className="font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">Connect in one click</h4>
       <p className="mt-1">This component is read with <strong>Azure sign-in</strong>, not a connection string. Connect uses the Azure account ServiceHub runs under (the one from <code>az login</code>). <strong>No key, no password and no pop-up; nothing secret is stored.</strong> It then checks access, and if a role is missing it says which.</p>
+      <label className="mt-2 flex flex-wrap items-center gap-2 font-semibold">Environment
+        <select aria-label="Environment of this Azure sign-in connection" value={signIn.environment} disabled={working || disabled} onChange={(e) => signIn.onEnvironment(e.target.value as EnvironmentKind)}
+          className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs font-normal">
+          {ENVIRONMENTS.map((e) => <option key={e.id} value={e.id}>{e.label}</option>)}
+        </select>
+      </label>
+      <p className="mt-1 text-[var(--color-text-muted)]">Pick the environment first. Each environment gets its own sign-in connection, so Development, UAT and Production stay apart in the menu, on Home and in Replay history. Production connections are read-only for replay. A sign-in connection reads every Azure subscription the signed-in account can see; limiting each environment to its own subscription is not available yet.</p>
       <button type="button" onClick={() => void onConnect()} disabled={working || signedIn || disabled} aria-busy={working}
         className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-primary-600)] px-3.5 py-1.5 text-xs font-semibold text-white disabled:opacity-60">
         {working ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : signedIn ? <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> : null} {label}

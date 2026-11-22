@@ -18,6 +18,7 @@ import { NotWatchedNotice } from '../components/home/NotWatchedNotice'
 import { SignaturePanel } from '../components/home/SignaturePanel'
 import { Tiles } from '../components/home/Tiles'
 import { cloudLabel, cloudOf, parseScope } from '../lib/clouds'
+import { nextEntry, nextHref } from '../nav/navigation'
 import { homeTotals, lookingAt } from '../lib/words'
 import { Tip } from '../components/Tip'
 
@@ -59,11 +60,11 @@ function CloudHome({ cloud }: { cloud: CloudKind }) {
   const totals = homeTotals(rows)
   const unwatched = rows.filter((c) => !c.watched)
   const lookIds = [...new Set(unwatched.map((c) => c.namespaceId))]
-  const refresh = () => {
-    void client.invalidateQueries({ queryKey: ['components'] })
-    void client.invalidateQueries({ queryKey: ['pending-work'] })
-    void client.invalidateQueries({ queryKey: ['next', 'signatures'] })
-  }
+  const refresh = () => Promise.all([
+    client.invalidateQueries({ queryKey: ['components'] }),
+    client.invalidateQueries({ queryKey: ['pending-work'] }),
+    client.invalidateQueries({ queryKey: ['next', 'signatures'] }),
+  ])
 
   return (
     <div className="space-y-4 px-6 py-5">
@@ -92,23 +93,24 @@ function CloudHome({ cloud }: { cloud: CloudKind }) {
       ) : components.isPending ? (
         <p role="status" className="text-sm text-[var(--color-text-muted)]">Loading…</p>
       ) : (
-        <div className="grid gap-4 min-[1700px]:grid-cols-[minmax(0,1fr)_26rem]">
-          <div className="min-w-0 space-y-4">
-            <Tiles totals={totals} observedAtUtc={components.data.generatedAtUtc} cloudName={cloudName} reachable={rows.filter((c) => c.reachable).length} />
-            {unwatched.length > 0 && <NotWatchedNotice cloudName={cloudName} provider={cloud} namespaceIds={lookIds} me={me.data} onLook={refresh} />}
-            <ComponentTable components={rows} cloudName={cloudName} onDemand={onDemand} />
+        <>
+          <Tiles totals={totals} observedAtUtc={components.data.generatedAtUtc} cloudName={cloudName} reachable={rows.filter((c) => c.reachable).length} />
+          <div className="grid gap-4 min-[1650px]:grid-cols-[minmax(0,1fr)_25rem]">
+            <div className="min-w-0 space-y-4">
+              {unwatched.length > 0 && <NotWatchedNotice cloudName={cloudName} provider={cloud} namespaceIds={lookIds} me={me.data} onLook={refresh} />}
+              <ComponentTable components={rows} cloudName={cloudName} onDemand={onDemand} />
+              {pending.isError
+                ? <p role="alert" className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">What needs your attention could not be read.</p>
+                : <AttentionTable items={pending.data?.items ?? []} coverage={coverage.data?.rows ?? []} me={me.data} compact limit={5} allHref={nextHref(nextEntry('attention'), { cloud })} />}
+            </div>
+            <div className="space-y-4">
+              <HowItWorks cloudName={cloudName} components={rows} covered={covered} />
+              <SignaturePanel provider={cloud} cloudName={cloudName} notWatched={unwatched.length > 0} recorded={totals.first.recorded ?? (totals.first.label === 'Dead letters recorded' ? totals.first.value : null)} inDeadLetter={totals.first.label === 'In dead-letter now' ? totals.first.value : null} />
+              <EvidencePanel cloudName={cloudName} rows={covered} />
+            </div>
           </div>
-          <div className="space-y-4">
-            <HowItWorks cloudName={cloudName} components={rows} covered={covered} />
-            <SignaturePanel provider={cloud} cloudName={cloudName} notWatched={unwatched.length > 0} recorded={totals.first.recorded ?? (totals.first.label === 'Dead letters recorded' ? totals.first.value : null)} inDeadLetter={totals.first.label === 'In dead-letter now' ? totals.first.value : null} />
-            <EvidencePanel cloudName={cloudName} rows={covered} />
-          </div>
-        </div>
+        </>
       )}
-
-      {pending.isError
-        ? <p role="alert" className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">What needs your attention could not be read.</p>
-        : <AttentionTable items={pending.data?.items ?? []} coverage={coverage.data?.rows ?? []} me={me.data} />}
     </div>
   )
 }

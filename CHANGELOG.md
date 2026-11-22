@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Home, from the new design.** The four tiles are tinted (pink for "Needs your attention", green for the new **Cloud health** tile, "1 / 1 Component connected"). The PaaS components table now has Status (Connected, or "+ Added") and Permissions (Read only, Read + Send) as separate columns, and **View** with a three-dot menu that holds Deallocate. "Items that need your attention" shows the five oldest as Decision and Next action, with a "View all N" link to Needs your attention (the full table with family and owner stays there). From 1650 px wide, How ServiceHub works, Failure signatures and Evidence sit in a column on the right.
+
+### Fixed
+
+- **Event Grid's "Cloud console" link now opens the dead-lettered event itself** (the blob's page in the Azure portal, whose Edit tab shows the event's JSON) instead of only the container. Checked live in the portal; the earlier container-only link was used because a blob link had not been checked.
+
+### Added
+
+- **An environment for Event Grid, Logic Apps and Storage Queues.** Before connecting Azure sign-in, the Add a component window asks which environment (Development, UAT or Production). Each environment gets its own sign-in connection (Development keeps its old name), so they stay apart in the menu, on Home and in Replay history. A sign-in connection still reads every Azure subscription the signed-in account can see; limiting an environment to its own subscription is not built (it needs a database migration).
+- **Replay all.** The Dead-letter messages tab has **Replay all N…** beside Replay selected: it opens the same preview for every message that matches the filters (at most 500 in one replay, so it says "Replay first 500…" when more match). Nothing is sent until you confirm in the preview. It had gone since 4.2.0, and Replay selected could only select every match after a reason chip was chosen. Operators and above only.
+
 ### Fixed
 
 - **Replay… was out of sight.** In a message's side window the Replay and Close buttons sat below the whole body (about 1,700 px down on a real message). They now stay at the bottom of the window.
