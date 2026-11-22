@@ -11,8 +11,15 @@
 - **Pictures and videos re-shot for the new Home.** The README stills, all three cloud guides (`docs/clouds/*.md` and the in-app Help) and the six walkthrough videos in `docs/media/` now show the current screens.
 - **Home, from the new design.** The four tiles are tinted (pink for "Needs your attention", green for the new **Cloud health** tile, "1 / 1 Component connected"). The PaaS components table now has Status (Connected, or "+ Added") and Permissions (Read only, Read + Send) as separate columns, and **View** with a three-dot menu that holds Deallocate. "Items that need your attention" shows the five oldest as Decision and Next action, with a "View all N" link to Needs your attention (the full table with family and owner stays there). From 1650 px wide, How ServiceHub works, Failure signatures and Evidence sit in a column on the right.
 
+### Removed
+
+- The unused 4.2.0 Help panel and its question list (it still said "open the bell"), the 4.2.0 pictures in `docs/screenshots/{azure,aws,gcp}/`, the three 4.2.0 videos and GIFs in `docs/media/`, and the scripts that recorded them. The 5.0.0 pictures, videos and scripts replace them.
+
 ### Fixed
 
+- `docs/RECOVERY-EVIDENCE.md`, `BACKUP-RESTORE.md` and `ENCRYPTION-KEY-ROTATION.md` named "Advanced → Recovery Ledger", which 5.0.0 does not have; they now say Evidence ledger.
+- **Supply chain:** every GitHub Action in every workflow is pinned to a commit (Dependabot keeps them current); `npm audit` is clean (minimatch patched in dev tooling).
+- **CI:** the workflow file is now `ci.yml` (job names unchanged, so required checks still match), and a Windows job runs `run.ps1` (not yet required).
 - **Event Grid's "Cloud console" link now opens the dead-lettered event itself** (the blob's page in the Azure portal, whose Edit tab shows the event's JSON) instead of only the container. Checked live in the portal; the earlier container-only link was used because a blob link had not been checked.
 
 ### Added

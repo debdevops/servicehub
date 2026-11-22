@@ -229,7 +229,7 @@ Working in Azure, AWS or Google Cloud and never seen ServiceHub? Start with the 
 | **Components in the full clip** | Service Bus, Storage Queues, Event Grid, Logic Apps | SQS, SNS, Step Functions, Kinesis and DynamoDB streams | Pub/Sub, Eventarc, Workflows |
 | **What the short clip stresses** | Exact counts, watched automatically, and a replay it can prove held | It never looks on its own, and says why | No counts, often no reason, and it says so plainly |
 | **Short clip** | [![Azure short clip](docs/media/azure-short.gif)](docs/media/azure-short.mp4) | [![AWS short clip](docs/media/aws-short.gif)](docs/media/aws-short.mp4) | [![Google Cloud short clip](docs/media/gcp-short.gif)](docs/media/gcp-short.mp4) |
-| **Play** | [▶ Short, 1:39](docs/media/azure-short.mp4) · [▶ Full, 6:22](docs/media/azure-full.mp4) | [▶ Short, 1:56](docs/media/aws-short.mp4) · [▶ Full, 6:22](docs/media/aws-full.mp4) | [▶ Short, 1:56](docs/media/gcp-short.mp4) · [▶ Full, 6:10](docs/media/gcp-full.mp4) |
+| **Play** | [▶ Short, 1:39](docs/media/azure-short.mp4) · [▶ Full, 6:35](docs/media/azure-full.mp4) | [▶ Short, 1:56](docs/media/aws-short.mp4) · [▶ Full, 6:22](docs/media/aws-full.mp4) | [▶ Short, 1:53](docs/media/gcp-short.mp4) · [▶ Full, 6:26](docs/media/gcp-full.mp4) |
 
 ## What it covers
 

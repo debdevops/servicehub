@@ -1,4 +1,4 @@
-# CI workflow for ServiceHub 4.1.0 — the product being built at the repository root.
+# CI workflow for ServiceHub — the product built at the repository root.
 #
 # Every test lives under tests/ (see tests/README.md): tests/backend (unit + architecture + integration),
 # tests/web (unit) and tests/e2e (Playwright). This workflow runs all of them; ./runtest.sh --all runs the same.
@@ -6,12 +6,12 @@
 # Deliberately a SEPARATE workflow from servicehub.yml, which builds the frozen 4.0.0 archive with a
 # workflow-level `defaults.run.working-directory: archive/servicehub-4.0.0`. Two products with two
 # working directories in one workflow is how a `with:` path quietly points at the wrong tree.
-# It also means no existing job is renamed — branch protection matches required checks by NAME.
+# It also means no existing job is renamed — branch protection matches required checks by JOB name (the job names below still say 4.1.0 on purpose; renaming them would orphan the required checks).
 #
 # ⚠️  After this workflow's first run, add its checks to the protected branches' required list:
 #     Build & Test API (4.1.0) · Build & Test Web (4.1.0) · Accessibility (4.1.0) · Architecture Tests (4.1.0) ·
 #     Plan & Provenance Guards · Container Smoke Test (4.1.0) · CI Status (4.1.0)
-name: CI – ServiceHub 4.1.0
+name: CI – ServiceHub
 
 on:
   workflow_dispatch:
@@ -33,9 +33,9 @@ jobs:
     name: Build & Test API (4.1.0)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -74,7 +74,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: api-test-results-4-1-0
           path: tests/backend/TestResults/**
@@ -84,9 +84,9 @@ jobs:
     name: Architecture Tests (4.1.0)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -103,9 +103,9 @@ jobs:
     name: Build & Test Web (4.1.0)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -142,7 +142,7 @@ jobs:
 
       - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: web-coverage-4-1-0
           path: apps/servicehub/coverage/**
@@ -152,9 +152,9 @@ jobs:
     name: Accessibility (4.1.0)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -176,7 +176,7 @@ jobs:
 
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: playwright-report-4-1-0
           path: |
@@ -188,7 +188,7 @@ jobs:
     name: Plan & Provenance Guards
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # Every link, image and repo path a tracked Markdown file cites must exist. The docs once described a 4.0.0 that
       # was no longer in the tree, and nothing said so.
@@ -210,7 +210,7 @@ jobs:
     name: Container Smoke Test (4.1.0)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Build the image
         run: docker build -t servicehub:ci -f Dockerfile .
@@ -242,6 +242,39 @@ jobs:
           docker logs servicehub-ci
           docker rm -f servicehub-ci
           exit 1
+
+  # The Windows start script (run.ps1 / run.cmd). Not part of ci-status and allowed to fail while it is new: it gives a signal without blocking a merge.
+  # Uses the runner's own Windows PowerShell 5.1 (what a Windows user has), with .NET and Node installed by the actions below.
+  windows-start-script:
+    name: Windows start script (run.ps1)
+    runs-on: windows-latest
+    continue-on-error: true
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Check only (installs and starts nothing)
+        shell: powershell
+        run: .\run.ps1 -Check
+      - name: Start, wait for health, stop
+        shell: powershell
+        run: |
+          $p = Start-Process powershell.exe -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','run.ps1','-NoInstall' -PassThru -RedirectStandardOutput run.out -RedirectStandardError run.err
+          $ok = $false
+          for ($i = 0; $i -lt 300; $i++) {
+            Start-Sleep -Seconds 2
+            try { if ((Invoke-WebRequest -Uri http://localhost:3000/health/ready -UseBasicParsing -TimeoutSec 3).StatusCode -eq 200) { $ok = $true; break } } catch {}
+            if ($p.HasExited) { break }
+          }
+          Get-Content run.out, run.err -ErrorAction SilentlyContinue | Select-Object -Last 60
+          & taskkill /T /F /PID $p.Id 2>&1 | Out-Null
+          if (-not $ok) { Write-Error 'run.ps1 never became healthy on http://localhost:3000'; exit 1 }
+          Write-Host 'run.ps1 started ServiceHub and /health/ready answered'
 
   ci-status:
     name: CI Status (4.1.0)

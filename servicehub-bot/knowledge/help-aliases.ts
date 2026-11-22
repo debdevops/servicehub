@@ -13,5 +13,5 @@ export const helpAliases: Readonly<Record<string, readonly string[]>> = {
   'stop-all': ['Emergency stop', 'Stop the agent', 'Pause everything'],
   'handed-off': ['Handed to a person', 'Needs your attention'],
   'no-replay': ['Replay button missing', "Why can't I replay?", 'Replay greyed out', 'Needs an Operator to replay'],
-  'auto-rules': ['Auto replay', 'Automatic replay rule', 'Replay automatically', 'Create a replay rule'],
+  'auto-rules': ['Auto replay rule', 'Auto replay rules', 'Auto replay', 'Automatic replay rule', 'Replay automatically', 'Create a replay rule'],
 }

@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Select the codebase for this tag (refuses a tag that does not match it)
         # ADR-0013 D6. v4.0.x → archive/servicehub-4.0.0, v4.1.x, v4.2.x → repo root; the tag must equal that .version.

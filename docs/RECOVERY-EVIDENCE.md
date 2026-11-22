@@ -4,8 +4,8 @@
 > including exactly what the record can and cannot prove.
 >
 > **In plain language:** every time ServiceHub replays or deletes a stuck ("dead-lettered") message — or refuses to — it writes down what it did, who or what decided,
-> and what happened afterward, in a way that cannot be quietly edited later. Think of it as a flight recorder for your queues. You read it in the app on **Advanced → Recovery
-> Ledger**; this page is for someone who needs to verify it independently (an auditor, a compliance reviewer, an engineer chasing a discrepancy).
+> and what happened afterward, in a way that cannot be quietly edited later. Think of it as a flight recorder for your queues. You read it in the app on **Evidence ledger** (under Operational
+> Tools in the left menu); this page is for someone who needs to verify it independently (an auditor, a compliance reviewer, an engineer chasing a discrepancy).
 
 The ledger is a durable, append-only, hash-chained record kept in ServiceHub's SQLite database. It is honest about a hard limit up front: the chain is
 **tamper-evident, not tamper-proof.** Anyone with write access to the database file can recompute the whole chain and produce a self-consistent forgery. Verification
@@ -76,7 +76,7 @@ That is the server marking its own homework — hence the offline verifier below
 
 ## 4. Export and independent offline verification
 
-**Export.** Advanced → Recovery Ledger → *Export evidence* (choose a window), or `GET /api/v1/recovery/export[?from=…&to=…]` (not from a key limited to some
+**Export.** Evidence ledger → *Export evidence* (choose a window), or `GET /api/v1/recovery/export[?from=…&to=…]` (not from a key limited to some
 namespaces — the ledger is one chain across all of them). One JSON file, `servicehub-evidence-<from>-to-<to>.json`:
 
 ```json

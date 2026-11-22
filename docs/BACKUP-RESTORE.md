@@ -79,7 +79,7 @@ Restore **stages** a backup and applies it at the **next start**; ServiceHub nev
    A restore waiting for the next start shows in the list (`pending`) and can be withdrawn: *Cancel the restore*, or `DELETE /api/v1/admin/backup/pending` (same intent header).
 2. **Restart ServiceHub.** At start it moves the current database aside as `servicehub.db.before-restore-<timestamp>` (with its `-wal`/`-shm` files) and puts
    the backup in place. **Everything recorded since that backup is replaced** — keep the moved-aside file until you are sure.
-3. Check `/health/ready`, that your namespaces are there, and that the Recovery Ledger's chain still verifies (`GET /api/v1/recovery/chain` → `isValid: true`).
+3. Check `/health/ready`, that your namespaces are there, and that the evidence ledger's chain still verifies (`GET /api/v1/recovery/chain` → `isValid: true`).
 
 **Restoring onto a new server, or when ServiceHub cannot start:** stop it, copy the downloaded `servicehub-dlq.db` over `<data directory>/servicehub.db`, delete any
 `servicehub.db-wal` and `servicehub.db-shm` beside it, and start. Do the encryption-key comparison by hand first (manifest fingerprint vs. the server's; the

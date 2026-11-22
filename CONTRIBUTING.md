@@ -180,7 +180,7 @@ page the entire entity, so "no recurrence found" really means absent.
 
 ## Safety Requirements
 
-ServiceHub is a safe tool around destructive operations. A change to replay, purge, send, bulk operations, the Recovery Ledger or the
+ServiceHub is a safe tool around destructive operations. A change to replay, purge, send, bulk operations, the evidence ledger or the
 eligibility gate (`RecoveryEligibilityGate`) must preserve these invariants:
 
 - **No fabricated recovery evidence.** A provider that cannot prove a message stayed off the DLQ (`CanProveDlqAbsence == false`) closes the

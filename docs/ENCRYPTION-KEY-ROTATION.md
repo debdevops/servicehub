@@ -92,7 +92,7 @@ There is no automated bulk re-encryption job; steps 2–3 are yours to do, cloud
 
 ## 6. What this does not change
 
-- The eligibility gate, the Recovery Ledger and every other safety invariant are untouched: this is how one stored field is encrypted.
+- The eligibility gate, the evidence ledger and every other safety invariant are untouched: this is how one stored field is encrypted.
 - No table or column exists for this. The registry lives in configuration (an environment variable or your secret provider), never in the database or a committed file.
 - AWS and GCP credentials use exactly the same envelope as Azure connection strings.
 
