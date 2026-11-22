@@ -18,8 +18,7 @@
 
 Putting it on a server for a team? That is the [Azure hosting guide](HOSTING-AZURE.md).
 
-**Operating systems.** macOS and Linux work directly. On **Windows use WSL 2** (Ubuntu) and run everything inside it — `run.sh` is a bash script.
-For track A install the tools *inside* WSL, not on the Windows side. For track B, Docker Desktop with its WSL 2 integration enabled works.
+**Operating systems.** macOS and Linux run `./run.sh`. **Windows runs `.\run.ps1` in PowerShell, or `run.cmd` in Command Prompt**: no WSL, no administrator rights; it downloads .NET 10 and Node.js into `%USERPROFILE%\.servicehub\tools` just as `run.sh` does (`-Check` and `-NoInstall` work the same way). The Windows script has had less testing than `run.sh`, and it does not start the help button (ServiceHub Bot). For track B, Docker Desktop works on all three. The test scripts (`runtest.sh`) are bash: contributors on Windows run them in WSL 2.
 
 ---
 
@@ -154,7 +153,7 @@ See [tests/README.md](../tests/README.md) and [CONTRIBUTING.md](../CONTRIBUTING.
 | `The API did not build` | A compile error (only if you changed code) or a package problem | Read the error above it; otherwise open an issue with that output |
 | `Cannot verify downloads: none of sha256sum, shasum or openssl…` | Downloads are never used unverified | Install one of them, or install .NET and Node yourself |
 | `Neither curl nor wget is installed` | Minimal Linux image | `sudo apt install curl` (or `dnf` / `apk add curl`) |
-| `This is a Windows shell` | Git Bash / PowerShell | Use a WSL 2 Ubuntu terminal and run it there |
+| `This is a Windows shell` | You ran `run.sh` in Git Bash / PowerShell | Use `.\run.ps1` (PowerShell) or `run.cmd` (Command Prompt) instead |
 | `✖ Port 5153 is held by something else (pid …)` | You pinned the port with `SERVICEHUB_API_PORT`, and another program, not a previous ServiceHub, uses it | Stop it, or pick another port (or unset the variable to let `run.sh` choose) |
 | `Another ServiceHub instance already holds the data directory` | A ServiceHub (maybe a forgotten one, or the Docker container) is using the same data folder | Stop it, or give this one its own `SERVICEHUB_DATA_DIR` |
 | `The database at '…' is not a ServiceHub 4.1.0 database` | The folder holds a 4.0.0 (or other) database. **There is no upgrade path from 4.0.0** | Point `SERVICEHUB_DATA_DIR` at an empty folder |

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`run.ps1` and `run.cmd`: start ServiceHub from a clone on Windows with no WSL.** Same job as `run.sh` (checks the machine, downloads .NET 10 and Node.js into your user folder if missing, verifies them, builds, starts, waits). `-Check` and `-NoInstall` work too. It does not start the help button. Not yet run on a real Windows machine.
+
 ### Changed
 
 - **Pictures and videos re-shot for the new Home.** The README stills, all three cloud guides (`docs/clouds/*.md` and the in-app Help) and the six walkthrough videos in `docs/media/` now show the current screens.

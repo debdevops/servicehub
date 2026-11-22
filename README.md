@@ -27,20 +27,28 @@ New to queues? Read the **[user guide](docs/USER-GUIDE.md)**: it starts from "wh
 
 ## Start it
 
-Pick your machine. Every route opens the built-in demo, so you can look around before connecting a real cloud, or **[try it in your browser](https://debdevops.github.io/servicehub/)** with nothing installed.
+Three ways, from least to most effort. Every one opens the built-in demo first (made-up data), so you can look around before connecting a real cloud.
 
-| Your machine | Easiest way | Opens at |
+| | What you do | Needs |
 |---|---|---|
-| **macOS** | [Option 1](#option-1-from-source-runsh-does-everything) in Terminal | <http://localhost:3000> |
-| **Linux** | [Option 1](#option-1-from-source-runsh-does-everything) in any shell | <http://localhost:3000> |
-| **Windows** | [Option 2, Docker](#option-2-docker-no-clone-no-build) in PowerShell, or Option 1 inside **WSL 2** (Ubuntu) | <http://localhost:8080> (Docker) |
-| **Any server or VM** | [Option 2, Docker](#option-2-docker-no-clone-no-build), or the [Azure VM guides](docs/HOSTING-AZURE.md) | <http://localhost:8080> |
+| **0. Demo in your browser** | Open **<https://debdevops.github.io/servicehub/>** | Nothing. No install, no cloud account |
+| **1. Clone and run** | [`git clone` + `./run.sh`](#option-1-from-source-runsh-does-everything) | git. Everything else is downloaded for you |
+| **2. Docker** | [Run the published image](#option-2-docker-no-clone-no-build), or build it from a clone with `docker compose up --build` | Docker |
+
+Which one on which machine:
+
+| Your machine | 1. Clone and run | 2. Docker |
+|---|---|---|
+| **macOS** | Terminal: `./run.sh` → <http://localhost:3000> | Docker Desktop: bash commands below → <http://localhost:8080> |
+| **Linux** | Any shell: `./run.sh` → <http://localhost:3000> | Docker Engine: bash commands below → <http://localhost:8080> |
+| **Windows** | PowerShell: `.\run.ps1`. Command Prompt (or double-click): `run.cmd`. No WSL needed → <http://localhost:3000> | Docker Desktop, in PowerShell: [PowerShell commands below](#option-2-docker-no-clone-no-build) → <http://localhost:8080> |
+| **Any server or VM** | Same as Linux | Same as Linux, or the [Azure VM guides](docs/HOSTING-AZURE.md) |
 
 Not sure it worked? See [Check it works, and run the tests](#check-it-works-and-run-the-tests) below.
 
-### Option 1. From source: `./run.sh` does everything
+### Option 1. From source: one command does everything
 
-For macOS, Linux, or a WSL 2 terminal on Windows (install WSL with `wsl --install` in an administrator PowerShell, open *Ubuntu*, then run the commands below inside it).
+**macOS and Linux** (Terminal):
 
 ```bash
 git clone https://github.com/debdevops/servicehub.git
@@ -48,7 +56,33 @@ cd servicehub
 ./run.sh
 ```
 
-That is the whole install. `./run.sh` checks your machine, **downloads the .NET 10 SDK and Node.js if you do not have them** (into `~/.servicehub/tools`, no `sudo`,
+**Windows** (PowerShell or Command Prompt). You do not need WSL, administrator rights, or anything installed except **git**:
+
+1. **Get git** if `git --version` says it is not found: `winget install --id Git.Git -e`, or the installer from <https://git-scm.com/download/win>. Open a new window afterwards.
+2. **Open PowerShell** (Start menu → type *PowerShell*) or Command Prompt, and go to a short folder such as `C:\src` (very long folder names can break the web packages on Windows).
+3. **Run:**
+
+```powershell
+cd C:\src
+git clone https://github.com/debdevops/servicehub.git
+cd servicehub
+.\run.ps1          # in PowerShell
+run.cmd            # in Command Prompt (also works by double-clicking run.cmd)
+```
+
+The first start takes a few minutes: it downloads .NET 10 and Node.js into `%USERPROFILE%\.servicehub\tools` (nothing system-wide; delete that folder to undo it), then builds. When you see **ServiceHub is ready**, open **<http://localhost:3000>**. If Windows Firewall asks about `dotnet` or `node`, **Private networks** is enough. **Ctrl-C** stops everything.
+
+| If | Do |
+|---|---|
+| PowerShell says *running scripts is disabled* | Use `run.cmd` instead: it runs the same script without changing any setting |
+| You want to see what it would install first | `.\run.ps1 -Check` (changes nothing). `-NoInstall` never downloads |
+| Port 3000 or 5153 is busy | It picks the next free port and tells you. To choose: `$env:SERVICEHUB_WEB_PORT=3200; .\run.ps1` |
+| A download is blocked (company network) | Install [.NET 10](https://dotnet.microsoft.com/download/dotnet/10.0) and [Node.js 22 or 24](https://nodejs.org) yourself, then `.\run.ps1 -NoInstall` |
+| It fails | Copy the message; [docs/LOCAL-SETUP.md](docs/LOCAL-SETUP.md) has the manual steps. Or use Docker (Option 2), which needs no .NET or Node |
+
+The Windows script is new in this release and has had less testing than `run.sh`. It does not start the help button (ServiceHub Bot); everything else is the same.
+
+**On macOS and Linux**, `./run.sh` is the whole install. It checks your machine, **downloads the .NET 10 SDK and Node.js if you do not have them** (into `~/.servicehub/tools`, no `sudo`,
 nothing system-wide), installs the packages, builds the API and the web app, starts both, and waits until they answer.
 It needs only `bash`, `curl` (or `wget`), `tar` and an internet connection.
 
@@ -113,6 +147,16 @@ export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"
 docker compose up --build        # → http://localhost:8080 (this machine only)
 ```
 
+On **Windows PowerShell**, the same build from a clone:
+
+```powershell
+git clone https://github.com/debdevops/servicehub.git; cd servicehub
+$bytes = New-Object byte[] 32
+[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+$env:SERVICEHUB_ENCRYPTION_KEY = -join ($bytes | ForEach-Object { $_.ToString('x2') })
+docker compose up --build
+```
+
 The first build takes a few minutes (it builds the web app and the API inside the image). `docker compose down` stops it; the data stays in the `servicehub-data` volume.
 
 ServiceHub **refuses to start in Production without an encryption key**, and losing the key makes saved cloud connections unreadable, so keep it in a password manager.
@@ -120,13 +164,13 @@ Updating, backing up, removing and fixing problems: **[Run ServiceHub with Docke
 
 ### Check it works, and run the tests
 
-| | macOS / Linux / WSL 2 | Windows PowerShell (Docker) |
+| | macOS / Linux | Windows PowerShell |
 |---|---|---|
-| Is it up? | `curl -s http://localhost:3000/health/ready` (says `Healthy`) | `curl.exe -s http://localhost:8080/health/ready` |
-| What would `run.sh` do? | `./run.sh --check` (changes nothing) | not applicable |
-| Fast test run (about 1 minute) | `./runtest.sh --quick` | run it inside WSL 2 |
-| Everything CI runs (about 12 minutes) | `./runtest.sh --all` | run it inside WSL 2 |
-| Stop | Ctrl-C | `docker stop servicehub` |
+| Is it up? | `curl -s http://localhost:3000/health/ready` (says `Healthy`) | `curl.exe -s http://localhost:3000/health/ready` (`run.ps1`), or `:8080` (Docker) |
+| What would it install? | `./run.sh --check` (changes nothing) | `.\run.ps1 -Check` |
+| Fast test run (about 1 minute) | `./runtest.sh --quick` | contributors: run it inside WSL 2 (`runtest.sh` is a bash script) |
+| Everything CI runs (about 12 minutes) | `./runtest.sh --all` | contributors: run it inside WSL 2 (`runtest.sh` is a bash script) |
+| Stop | Ctrl-C | Ctrl-C (`run.ps1`), or `docker stop servicehub` |
 
 What the test run needs and what each flag covers: **[Local setup guide](docs/LOCAL-SETUP.md)** and [tests/README.md](tests/README.md).
 
