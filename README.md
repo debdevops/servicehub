@@ -113,6 +113,8 @@ export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"
 docker compose up --build        # → http://localhost:8080 (this machine only)
 ```
 
+The first build takes a few minutes (it builds the web app and the API inside the image). `docker compose down` stops it; the data stays in the `servicehub-data` volume.
+
 ServiceHub **refuses to start in Production without an encryption key**, and losing the key makes saved cloud connections unreadable, so keep it in a password manager.
 Updating, backing up, removing and fixing problems: **[Run ServiceHub with Docker](docs/DOCKER.md)**.
 
