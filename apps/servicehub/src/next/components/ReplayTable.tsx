@@ -4,7 +4,7 @@ import { entityLabel } from '../lib/entityRows'
 import { outcomeTone, outcomeWords } from '../lib/words'
 import { Th } from './Tip'
 
-const td = 'px-3 py-2.5 align-top text-sm'
+const td = 'px-2.5 py-2.5 align-top text-sm [overflow-wrap:anywhere]'
 
 /**
  * The replays, one row each, in the product's outcome words — shared by a connection's Recovery tab (D4) and the Replay history page

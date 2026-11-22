@@ -22,7 +22,7 @@ type Showing = 'active' | 'resolved' | 'all'
 const showings: readonly { id: Showing; label: string }[] = [{ id: 'active', label: 'Stuck now' }, { id: 'resolved', label: 'No longer stuck' }, { id: 'all', label: 'All' }]
 const asShowing = (v: string | null): Showing => (v === 'resolved' || v === 'all' ? v : 'active')
 
-const td = 'px-3 py-2.5 align-top text-sm'
+const td = 'px-2.5 py-2.5 align-top text-sm [overflow-wrap:anywhere]'
 const field = 'rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm'
 
 /**
