@@ -4,6 +4,7 @@
 
 ### Changed
 
+- **Pictures and videos re-shot for the new Home.** The README stills, all three cloud guides (`docs/clouds/*.md` and the in-app Help) and the six walkthrough videos in `docs/media/` now show the current screens.
 - **Home, from the new design.** The four tiles are tinted (pink for "Needs your attention", green for the new **Cloud health** tile, "1 / 1 Component connected"). The PaaS components table now has Status (Connected, or "+ Added") and Permissions (Read only, Read + Send) as separate columns, and **View** with a three-dot menu that holds Deallocate. "Items that need your attention" shows the five oldest as Decision and Next action, with a "View all N" link to Needs your attention (the full table with family and owner stays there). From 1650 px wide, How ServiceHub works, Failure signatures and Evidence sit in a column on the right.
 
 ### Fixed

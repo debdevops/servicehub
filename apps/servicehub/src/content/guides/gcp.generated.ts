@@ -471,7 +471,26 @@ export const gcpGuide: Guide = {
     {
      "title": "5.3 Review: approve or decline",
      "text": "Review explains why the Agent stopped, lists the messages that would be replayed, and offers **Approve** or **Decline…**. Declining needs a reason. Both answers are written to the evidence ledger.",
-     "shots": []
+     "shots": [
+      {
+       "image": "/help/gcp/17-review.png",
+       "alt": "5.3 Review: approve or decline (17-review)",
+       "keys": [
+        {
+         "n": 1,
+         "text": "Why the Agent stopped: this kind of failure has not yet earned automatic replay, so a person decides."
+        },
+        {
+         "n": 2,
+         "text": "Decline needs a reason. Nothing is sent, and the reason goes in the ledger."
+        },
+        {
+         "n": 3,
+         "text": "Approve replays the messages listed here, once, through the same safety gate as a manual replay."
+        }
+       ]
+      }
+     ]
     }
    ]
   },

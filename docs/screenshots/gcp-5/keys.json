@@ -222,5 +222,19 @@
    "n": 1,
    "t": "The result, in plain words: the message is back on its queue and the dead letter has left the list. Sent back is not the same as fixed. ServiceHub now watches it, and marks it Verified or Came back."
   }
+ ],
+ "17-review.png": [
+  {
+   "n": 1,
+   "t": "Why the Agent stopped: this kind of failure has not yet earned automatic replay, so a person decides."
+  },
+  {
+   "n": 2,
+   "t": "Decline needs a reason. Nothing is sent, and the reason goes in the ledger."
+  },
+  {
+   "n": 3,
+   "t": "Approve replays the messages listed here, once, through the same safety gate as a manual replay."
+  }
  ]
 }

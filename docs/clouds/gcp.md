@@ -314,6 +314,14 @@ The held replays on their own. Each row says which failure it was and why the Ag
 Review explains why the Agent stopped, lists the messages that would be replayed, and offers **Approve** or **Decline…**. Declining needs a reason. Both answers are written to the evidence ledger.
 
 
+![5.3 Review: approve or decline — 17-review](../screenshots/gcp-5/17-review.png)
+
+
+1. Why the Agent stopped: this kind of failure has not yet earned automatic replay, so a person decides.
+2. Decline needs a reason. Nothing is sent, and the reason goes in the ledger.
+3. Approve replays the messages listed here, once, through the same safety gate as a manual replay.
+
+
 ## Part 6 — Afterwards
 
 *A replay is not finished when it is sent. ServiceHub watches what happens next.*
