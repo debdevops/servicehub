@@ -170,3 +170,7 @@ button:not(:disabled):hover,
   .stack-table td[data-label]::before { content: attr(data-label); position: absolute; left: 0; top: 0.35rem; width: 8rem; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); }
   .stack-table td:not([data-label]) { padding-left: 0; }
 }
+
+/* The Help bot's floating button sits bottom-right, exactly where a side window keeps its Replay and Close buttons. While any dialog or
+   side window is open the button steps aside; it comes back when the window closes. */
+body:has([role='dialog']) servicehub-bot { display: none; }

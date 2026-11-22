@@ -16,6 +16,7 @@ import { cloudLabel } from '../../lib/clouds'
 import { entityLabel } from '../../lib/entityRows'
 import { Th, ThHidden } from '../Tip'
 import { Tip } from '../Tip'
+import { camelBreaks } from '../../lib/camelBreaks'
 
 type Showing = 'active' | 'resolved' | 'all'
 const showings: readonly { id: Showing; label: string }[] = [{ id: 'active', label: 'Stuck now' }, { id: 'resolved', label: 'No longer stuck' }, { id: 'all', label: 'All' }]
@@ -162,7 +163,7 @@ export function DeadLettersTab({ component: c, me }: { component: ConnectedCompo
                       </td>
                       <td className={`${td} font-mono text-xs [overflow-wrap:anywhere]`}>{m.messageId}</td>
                       <td className={`${td} [overflow-wrap:anywhere]`}>{entityLabel(m.entityName, m.topicName)}</td>
-                      {!noReasons && <td className={`${td} [overflow-wrap:anywhere]`}>{m.deadLetterReason ?? '—'}</td>}
+                      {!noReasons && <td className={`${td} [overflow-wrap:anywhere]`}>{m.deadLetterReason ? camelBreaks(m.deadLetterReason) : '—'}</td>}
                       {!noReasons && <td className={td}>{m.deadLetterErrorDescription ?? '—'}</td>}
                       <td className={td}>{m.deliveryCount}</td>
                       <td className={td}>{formatWhen(m.enqueuedTimeUtc, now)}</td>

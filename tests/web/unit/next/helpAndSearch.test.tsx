@@ -45,9 +45,11 @@ describe('Help (unit F6)', () => {
   it('carries the per-cloud step-by-step guides, opened by ?topic=guide-<cloud>', async () => {
     open('/azure?panel=help&topic=guide-aws')
     const panel = await screen.findByRole('dialog')
-    const summary = await within(panel).findByText(/AWS/, { selector: 'summary' })
+    const summary = await within(panel).findByText('AWS SQS', { selector: 'summary' })
     expect(summary.closest('details')).toHaveAttribute('open')
-    expect(within(panel).getByText(/re-shot|4\.2\.0 layout/)).toBeInTheDocument()
+    // The guide is the 5.0.0 one: its Part 2 is the one-layout "Connections" page, and no note says the pictures are older.
+    expect(await within(panel).findByText(/Part 2 — Connect AWS in ServiceHub/)).toBeInTheDocument()
+    expect(within(panel).queryByText(/re-shot|from version 4\.2\.0/)).not.toBeInTheDocument()
   })
 
   it('opens from the header, filters its answers as you type, and links to pages in the cloud you are on', async () => {

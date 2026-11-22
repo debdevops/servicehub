@@ -109,6 +109,13 @@ describe('the Message dialog (unit D3)', () => {
     expect(props).toHaveTextContent('Content typeapplication/json')
   })
 
+  it('keeps Replay… on screen: its bar sticks to the bottom of the window instead of sitting below a long body', async () => {
+    // Found live 2026-11-22: with a real body the Replay button was 1,700 px down and a person had to scroll the window to find it.
+    open(url)
+    const link = await (await dialog()).findByRole('link', { name: 'Replay…' })
+    expect(link.parentElement!.className).toMatch(/\bsticky\b.*\bbottom-0\b/)
+  })
+
   it('has Body, Properties and History tabs, and the body is the stored text', async () => {
     open(url)
     const d = await dialog()

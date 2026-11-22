@@ -17,6 +17,7 @@ import { useOwnerWords } from '../lib/ownerWords'
 import { roleWords } from '../lib/words'
 import { Th, ThHidden } from '../components/Tip'
 import { Tip } from '../components/Tip'
+import { camelBreaks } from '../lib/camelBreaks'
 
 // Narrow padding and long names that may break anywhere: the columns have to fit a 1280 px window without a side-scroll.
 const td = 'px-2 py-2.5 align-top text-sm'
@@ -127,7 +128,7 @@ export default function ApprovalsPage() {
                           <td data-label="Message" className={`${td} font-mono text-xs`}>{i.dlqMessageId !== null ? `#${i.dlqMessageId}` : '—'}</td>
                           <td data-label="Component" className={`${td} ${wrap}`}>{nameOf(i.componentKey)}{i.namespaceName && <span className="block text-xs text-[var(--color-text-muted)]">{i.namespaceName}</span>}</td>
                           <td data-label="Entity" className={`${td} ${wrap}`}>{i.entity ?? '—'}</td>
-                          <td data-label="Reason" className={`${td} ${wrap}`}>{i.deadLetterReason ?? '—'}</td>
+                          <td data-label="Reason" className={`${td} ${wrap}`}>{i.deadLetterReason ? camelBreaks(i.deadLetterReason) : '—'}</td>
                           <td data-label="Why the Agent asked" className={`${td} max-w-md`}>{i.reason}</td>
                           <td data-label="Waiting" className={td}>{formatAge(i.since, now)}</td>
                           <td data-label="Owner" className={`${td} ${wrap}`}>{ownerOf(i.namespaceId)}</td>

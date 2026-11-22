@@ -100,6 +100,17 @@ describe('Needs your attention (unit E1)', () => {
     expect(await screen.findByRole('columnheader', { name: 'Cloud' })).toBeInTheDocument()
   })
 
+  it('lets a CamelCase reason wrap between its words, so DeserializationError is never cut mid-word', async () => {
+    // Found live 2026-11-22: the cells may wrap anywhere, which cut it mid-syllable and showed "Deserializatio / nError".
+    vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue(page([approval({ id: 'g2', entryId: 'g2', dlqMessageId: 78, deadLetterReason: 'DeserializationError' })]))
+    open('/azure/attention')
+    const cells = within((await screen.findByText('#78')).closest('tr')!).getAllByRole('cell')
+    const heads = screen.getAllByRole('columnheader').map((h) => h.textContent)
+    const reason = cells[heads.indexOf('Reason')]
+    expect(reason.querySelectorAll('wbr')).toHaveLength(1)
+    expect(reason).toHaveTextContent('DeserializationError')
+  })
+
   it('keeps the Reason column for the recorded failure and puts why it was held under what is needed', async () => {
     // Found live on Pub/Sub 2026-11-10: with no recorded reason the column showed the gate's sentence as if it were the failure.
     vi.mocked(pendingApi.fetchPendingWork).mockResolvedValue(page([approval({ id: 'g1', entryId: 'g1', dlqMessageId: 77, deadLetterReason: null, reason: 'Stopped and asked' })]))

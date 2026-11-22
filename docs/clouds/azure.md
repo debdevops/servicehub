@@ -1,6 +1,6 @@
 # ServiceHub on Azure Service Bus — step by step, with real screenshots
 
-> **Prefer to watch?** A captioned walkthrough of all of Simple mode, about five minutes — including Replay selected, Replay All and the switch to Advanced: [Azure Service Bus video](../media/azure.mp4).
+> **Prefer to watch?** A captioned walkthrough of every screen, about six minutes: [Azure Service Bus full video](../media/azure-full.mp4). Short on time? The pain and what ServiceHub gives you, in about two minutes: [short video](../media/azure-short.mp4).
 
 This guide takes you from nothing to a working ServiceHub on **Azure Service Bus**, one screen at a time. Every picture is the real
 application (or the real Azure portal) — not a mock-up — with numbered markers; the numbered list under each picture says what that control
@@ -11,7 +11,7 @@ does **and what it will not do**.
 1. In the Azure portal, make a policy just for ServiceHub, and copy its connection string.
 2. Connect Azure in ServiceHub and check it can see your queues.
 3. Find a dead-lettered message, understand why it failed, and replay it safely.
-4. See that the replay held, and learn what Auto Replay, Settings and the Advanced pages show.
+4. See that the replay held, and learn what Auto Replay, the Evidence ledger and Configuration show.
 
 **What you need**
 
@@ -127,603 +127,315 @@ Under **Entities → Queues** you can see each queue's *Active* and *Dead-letter
 
 ## Part 2 — Connect Azure in ServiceHub
 
-*About two minutes.*
+*About two minutes. You only do this once.*
 
 
-### 2.1 The welcome page
+### 2.1 The Connections page
 
-With no cloud connected, ServiceHub opens on a welcome page. Choose **Connect Azure**.
-
-
-![2.1 The welcome page — 01-welcome](../screenshots/azure/01-welcome.png)
+Open **Connections** in the left menu. This is the list of every cloud ServiceHub can read, grouped by cloud. Each row says whether the last test passed, which components are switched on, and has **Test**, **Add a component** and a remove (bin) button. Press **Connect a cloud** to add one.
 
 
-1. Connect Azure — opens the Add a cloud window on the Azure tab. It only asks for a connection string; nothing is read until you press Connect there.
-2. Add a cloud — the same window, from anywhere in the app. Use it later to connect AWS or Google Cloud as well.
-3. Simple | Advanced — Simple is where you act. Advanced is read-only pages (ledger, signatures, agents); it never changes anything.
-4. Help — opens the Help panel with task-shaped answers and the keyboard shortcuts.
-5. Connect AWS / Connect Google — the same Add a cloud window, on the AWS or Google Cloud tab. You do not need them for Azure.
-6. Try it with sample data — opens a demo with made-up data and no cloud connected, so you can look around first. Nothing in it is real and nothing is sent anywhere.
+![2.1 The Connections page — 02-connections](../screenshots/azure-5/02-connections.png)
 
 
-### 2.2 Add a cloud
-
-The window opens on the Azure tab. Open **Where do I get the Service Bus connection string?** for the same portal steps you just did.
-
-
-![2.2 Add a cloud — 02-add-cloud](../screenshots/azure/02-add-cloud.png)
+1. Every cloud ServiceHub is connected to. Connecting is how ServiceHub gets read access to your queues and topics.
+2. Connect a cloud opens the connect window. Your credentials are encrypted before they are stored and never shown again.
 
 
-1. Cloud tabs — Azure Service Bus is selected. The AWS and Google tabs ask for different credentials.
-2. Where do I get the connection string? — expands the portal steps, with the permissions to give.
-3. Name — what you will see in ServiceHub. It is a label only; it does not change anything in Azure.
-4. Environment — Development, UAT or Production. Start with Development; Auto Replay never acts in Production.
-5. Connection string — paste the Primary connection string of a Shared access policy (Manage, Send, Listen). It is encrypted on this server and never shown again.
-6. Show value — reveals what you typed so you can check it. It cannot reveal a stored string.
-7. Cancel — closes the window; nothing is saved.
-8. Connect — tests the string, then saves it. It only reads queues; it never sends or deletes anything by itself.
-9. (?) — opens Help on this very screen. Every window has one.
-10. ✕ — closes the window without saving (Esc does the same).
+### 2.2 Fill in the connect window
+
+Choose the **Azure Service Bus** tab. Give it a name, keep the environment as **Development** for a first connection, choose **Read and send** (replay needs send; **Read only** looks but never replays), and paste the connection string from step 1.4. Nothing is saved until you press **Connect**; ServiceHub then tests the credential, and stores it encrypted (AES-256-GCM). It is never shown again.
 
 
-![2.2 Add a cloud — 02-add-cloud-help](../screenshots/azure/02-add-cloud-help.png)
+![2.2 Fill in the connect window — 03-connect-dialog](../screenshots/azure-5/03-connect-dialog.png)
 
 
-1. Settings → Shared access policies — in the Azure portal, on your Service Bus namespace.
-2. Tick Manage, Send and Listen. Azure only lets Manage list your queues and count messages; Send is used only when you replay.
-3. Copy the Primary connection string — it starts with Endpoint=sb://.
-4. The form underneath — the cloud tabs, Name, Environment, Connection string and Show value, exactly as in the previous screenshot.
+1. Pick the cloud. This guide uses Azure.
+2. Say what this connection is: Development, UAT or Production. Start with Development. Production gets the strictest rules.
+3. Read only, or Read and send. Read only means ServiceHub can look and can never replay on this connection. Nothing is saved until you press Connect, at the bottom of this window.
 
 
-### 2.3 Fill it in and connect
+### 2.3 Tick the components you want
 
-Give it a name, keep the environment as **Development** for your first connection, paste the connection string, and press **Connect**. ServiceHub tests the string, then saves it encrypted (AES-256-GCM).
-
-
-![2.3 Fill it in and connect — 03-add-cloud-filled](../screenshots/azure/03-add-cloud-filled.png)
+After connecting, **Add a component** lets you tick other Azure services on the same connection (for example Logic Apps and Event Grid; these sign in with Microsoft Entra rather than a connection string, so they need an Entra connection). Each one's access is checked first, read-only, before it is added. Unticking removes it from the menu and keeps every record it produced. A small amber dot beside a component in the menu means it has been built but not yet proven against a real cloud.
 
 
-1. A name you will recognise.
-2. The connection string, hidden as you paste it.
-3. Connect — tests the connection, then saves it.
-4. The rest of the form — cloud tabs, Environment, Show value and Cancel, as described on the previous screenshot.
+![2.3 Tick the components you want — 23-add-component](../screenshots/azure-5/23-add-component.png)
 
 
-### 2.4 The result
-
-You see exactly what ServiceHub can see: how many queues, topics and subscriptions, how many messages are dead-lettered right now, and whether this cloud can prove a replayed message stayed fixed (Azure can).
-
-
-![2.4 The result — 04-connected](../screenshots/azure/04-connected.png)
-
-
-1. The result: how many queues, topics and subscriptions ServiceHub found, how many messages are dead-lettered, and whether this cloud can prove a replay held.
-2. Open Home — closes the window and shows Home.
+1. Add a component: pick the cloud, then tick each service to list its failed runs or dead-lettered events. Access is checked first, read-only. Unticking keeps every record it produced.
 
 
 ## Part 3 — Learn the screens
 
-*Home, and the controls that are on every page.*
+*Two minutes of orientation so nothing is a surprise.*
 
 
-### 3.1 Home
+### 3.1 All clouds: Home
 
-Home answers three questions: *what needs me*, *how is each cloud doing*, and *what is the Agent up to*. The Agent only acts on what it has earned (see Auto Replay below); until then it watches.
-
-
-![3.1 Home — 05-home](../screenshots/azure/05-home.png)
+The first page. The four tiles say what **needs your attention**, how many replays are **pending approval**, what is dead-lettered, and how many clouds are connected. Below them each cloud has its own card. ServiceHub deliberately shows **no total across clouds**: one cloud counts exactly, one approximately, one not at all, so adding them would give a number that means nothing.
 
 
-1. Window — the period Home counts over (24 hours, 7 or 30 days). It changes what you see, never what happens.
-2. The Agent bar — what the Agent is doing, how many replays it verified, and how many it is still watching.
-3. Pause — stops the Agent acting until someone resumes it. It keeps watching and recording. Your own replays still work.
-4. What this cloud can do — ticks show what Azure lets ServiceHub do safely (count, watch, browse, prove a fix held, scheduled messages).
-5. Dead letters — opens the list of messages that failed and were set aside.
-6. Active messages — browse what is waiting. On Azure, looking is not a delivery.
-7. Replayed — everything put back, by whom, and how it went.
-8. Auto Replay rules — opens the rules panel. A rule only acts once a failure has earned it.
-9. Got it — hides this explanation. It does not affect your data.
-10. See all dead letters in Azure — opens the Dead letters list for this cloud.
-11. Help for this page (the book beside the title) — opens Help on this very page, over it. Every page has one.
-12. Demo — a guided walk through the whole product with made-up data. No connection string is needed and nothing real is touched.
+![3.1 All clouds: Home — 01-home-all](../screenshots/azure-5/01-home-all.png)
 
 
-![3.1 Home — 05c-home-middle](../screenshots/azure/05c-home-middle.png)
+1. The cloud switcher. All clouds shows every connection side by side; Azure, AWS and Google Cloud narrow every page to one cloud. The cloud is also in the address, so a link shows someone exactly what you see.
+2. What is waiting for a person across the clouds you connected. It is the number to watch.
+3. ServiceHub does not add the clouds together: one counts exactly, one approximately, one not at all, so a sum would mean nothing. Each cloud keeps its own number.
+4. Emergency stop. Switches off everything ServiceHub does on its own. It does not touch a replay a person starts.
 
 
-1. Why messages failed — the reasons among the dead letters, biggest first, with how many each has. The window buttons (24 hours, 7 days, 30 days) set the period; Show as table swaps the chart for a table.
-2. How replays ended — what happened to the replays in this window.
-3. 7, 14, 30 days and Show as table — change the period Home counts over, or show the numbers as a table. They never change what happens.
-4. Latest dead letters and Recent activity — shown in full on the next screenshot.
-5. Window buttons (7, 14, 30 days) and Open → — change the period, or open that item’s page. They never change what happens.
+### 3.2 Azure: Home and the menu
+
+Pick **Azure** in the cloud switcher (top left). The cloud is part of the address, so a link shows someone exactly what you see. The menu has three groups: **PaaS Components** (the Azure services ServiceHub reads), **Operational Tools** (the pages you use every day, the same on every cloud) and **Configuration** with **What ServiceHub covers** at the bottom. The bar on top shows whether the Agent is running, and holds **Emergency stop**, **Search** and **Help**.
 
 
-![3.1 Home — 05d-home-end](../screenshots/azure/05d-home-end.png)
+![3.2 Azure: Home and the menu — 04-home-cloud](../screenshots/azure-5/04-home-cloud.png)
 
 
-1. The latest dead letters, each with Details → — the same message view as on the Dead letters tab. “See all →” opens the full list.
-2. Recent activity — what ServiceHub and people did, newest first. Each line opens to show its detail; nothing here changes anything.
-3. Open → — opens that item’s page. It only navigates.
-4. Connected — a note that a namespace was connected, with when and by whom. Opens to show the detail.
-5. Window buttons, Show as table, and the reasons — each reason opens the dead letters with that reason. They only change what is shown.
+1. Operational Tools: the pages you use every day, the same for every cloud. Start with Needs your attention.
+2. The Azure services ServiceHub can read. An amber dot means a component has not been proven against a real cloud yet.
+3. The Agent is on. It watches and only replays what it has earned the right to. Hover the (i) beside it to see exactly what it may do.
 
 
-### 3.2 The bar and the sidebar
+## Part 4 — Find and replay a dead-lettered message on Azure
 
-These are the same on every page.
-
-
-![3.2 The bar and the sidebar — 05b-navigation](../screenshots/azure/05b-navigation.png)
+*The core loop: find it, understand it, replay it with a preview, check it held.*
 
 
-1. Back — returns to the previous place in the app.
-2. Forward — goes to the place you came back from.
-3. Search (⌘K) — jump to a cloud, queue or page. Searching never changes anything.
-4. The bell — the only place the Agent asks you something. A number appears when it needs you.
-5. Simple — the two pages where you do the work.
-6. Advanced — four read-only pages.
-7. You — who ServiceHub records actions as, with your role.
-8. Dead letters — messages that failed, with the reason and a Replay button.
-9. Active messages — what is waiting now.
-10. Replayed — what was put back and whether it stayed fixed.
-11. Auto Replay — rules for retries ServiceHub may do on its own.
-12. Your cloud — pick it to see only that cloud. The dot shows the connection is healthy.
-13. Connections — your connected clouds, to test or remove.
-14. Add a cloud — connect another cloud.
-15. Settings — connections, notifications, preferences, access and backup.
-16. Help — answers and shortcuts.
-17. Home — the overview: what needs attention, what the Agent is doing, and how replays ended.
+### 4.1 Open the connection
+
+In the menu choose **Service Bus**, then your connection. The **Overview** says how many messages are dead-lettered now (exact, because Azure reports exact counts and ServiceHub watches the namespace automatically), and lists every queue, topic and subscription. The tabs are: **Dead-letter messages**, **Recovery** (what was replayed and whether it held), **Access** (what ServiceHub may do here), **Configuration** and **Audit**.
 
 
-## Part 4 — Work with dead letters
-
-*The core loop: see, understand, replay, confirm.*
+![4.1 Open the connection — 05-detail-overview](../screenshots/azure-5/05-detail-overview.png)
 
 
-### 4.1 The Dead letters tab
-
-A **dead letter** is a message your consumer failed to process several times, so Azure set it aside in the queue's dead-letter queue. ServiceHub groups them by the reason your sender recorded.
-
-
-![4.1 The Dead letters tab — 06-dead-letters](../screenshots/azure/06-dead-letters.png)
+1. The tabs of this connection. Dead-letter messages is where you read and replay; Recovery shows what was replayed and whether it held; Access shows what ServiceHub may do here; Audit is every action.
+2. How many messages are dead-lettered right now, and whether the number is exact or approximate on this cloud.
+3. Sends one harmless test message to a queue you choose, so you can watch it travel. Optional.
 
 
-1. Namespace picker — all of Azure, or one namespace.
-2. Why they failed — the biggest reasons, counted. The reason comes from what your sender wrote when it dead-lettered the message.
-3. Dead letters tab — messages set aside. The number is how many are stuck now.
-4. Active tab — what is waiting in the queue.
-5. Replayed tab — what has been put back.
-6. Reason chips — click one to show only that reason.
-7. Help for this page — opens Help on this page’s step of the guide. The (?) beside it only re-shows the short explanation.
+### 4.2 The Dead-letter messages tab
+
+Every dead-lettered message on this connection. Group chips above the table count them by reason. Filter by queue or state, or search by message id or reason (never inside bodies). Tick one or more messages and press **Replay selected…**; a preview opens first. Press **Open** on a row to read one.
 
 
-### 4.2 Filters, selection and the table
-
-Narrow the list, tick the messages you want, and use **Details** or **Replay** on a row.
+![4.2 The Dead-letter messages tab — 06-dead-letters](../screenshots/azure-5/06-dead-letters.png)
 
 
-![4.2 Filters, selection and the table — 07-filters-and-table](../screenshots/azure/07-filters-and-table.png)
-
-
-1. Showing — Stuck now, or messages that have since left the queue.
-2. Time window — only messages set aside in this period.
-3. Search — by message ID, queue, reason or error text.
-4. Replay All Messages — opens a preview of every message still stuck in the cloud and namespace you are viewing. It ignores the filters, time window and search here. Nothing is sent until you confirm the preview.
-5. Refresh — reads the queue again. On Azure this is free. The ⓘ beside it says when it was last read.
-6. Selection — tick rows to act on several; this line shows how many.
-7. Replay selected — opens the same preview for just the ticked messages.
-8. Details — opens the message: why it failed, its body, properties and delivery history.
-9. Replay — opens the proposal for this one message. It does not send anything yet.
-10. The table — a tick on every row (the one in the heading ticks the whole page), Details and Replay on every row, and an ⓘ About button on each column heading that explains that column in a sentence. “View details” in the heading chooses which columns show.
-11. Reason chips — each shows a reason and how many messages have it. Click one to show only those; click it again to show all.
-12. All queues & topics — limit the list to one queue or topic.
-13. The selection bar — the tick selects every row on this page; View details chooses which columns show; Replay selected stays dimmed until something is ticked.
-
-
-![4.2 Filters, selection and the table — 07c-table-end](../screenshots/azure/07c-table-end.png)
-
-
-1. The foot of the table — the same ticks, Details and Replay on every row.
-2. Paging — rows per page, previous, the page numbers and next.
-
-
-![4.2 Filters, selection and the table — 07b-selection](../screenshots/azure/07b-selection.png)
-
-
-1. Row tick — choose which messages to act on. The header tick chooses every row on the page.
-2. Selection count — how many messages are ticked.
-3. Clear — unticks everything. Nothing else changes.
-4. Replay selected — opens the bulk preview for just these messages. Nothing is sent yet.
-5. The filter row — reason chips, Showing, Time window, queue, search, Replay All Messages and Refresh, each explained on the previous screenshot.
-6. The table — the ticks, Details and Replay on every row, and the whole-page tick in the heading.
-7. The selection bar — the whole-page tick and View details (which columns show).
+1. Filter by queue, topic or state (Stuck now, No longer stuck, all).
+2. Search by message id or by the reason it failed. It never searches inside message bodies.
+3. Tick one or more messages, then Replay selected. A preview opens first; nothing is sent until you confirm.
+4. Open one message to read why it failed, its body and its history.
 
 
 ### 4.3 Open a message
 
-**Details** opens the message: the reason, a plain-words reading of why it failed (marked *Suggestion* because it is a reading, not something Azure reported), and the body with the bad field marked. The tabs show the body, properties, headers and delivery history.
+A side window opens beside the list. **Why it failed** gives the reason, the description, how many times it was tried, and how many others failed the same way. **Body**, **Properties** and **History** are the message exactly as stored. ServiceHub never changes a body. **Replay…** is at the bottom of the window.
 
 
-![4.3 Open a message — 08-message-details](../screenshots/azure/08-message-details.png)
+![4.3 Open a message — 07-message](../screenshots/azure-5/07-message.png)
 
 
-1. Expand — widens the panel for long messages.
-2. Overview — reason, why it failed, the body with the bad field marked.
-3. Delivery — the delivery history Azure recorded.
-4. Why it failed — a plain-words reading of the recorded reason. Marked Suggestion: it is a reading, not something Azure reported.
-5. Formatted / Raw — switch the body view.
-6. Replay this message — opens the proposal. Nothing is sent from here.
-7. Body, Properties and Headers — the other tabs; each is shown below.
-8. Formatted and Copy body — pretty-print the body, or copy it to your clipboard. The copy stays in your browser.
-9. Copy message ID — copies the ID so you can search for it elsewhere.
+1. The reason and description the cloud recorded, and how many others failed the same way.
+2. The message exactly as it was sent. ServiceHub never changes a message body.
+3. Replay… opens the preview. It is always a preview first.
 
 
-![4.3 Open a message — 08-message-details-body](../screenshots/azure/08-message-details-body.png)
+### 4.4 The replay preview
 
+Nothing is sent yet. The preview shows the message, where it would go back to, and the safety checks that ran. **Replay 1 message** is the only button that changes anything. Cancel closes it.
 
-1. The message body exactly as it was sent.
-2. Expand widens the panel; the other tabs (Overview, Body, Properties, Headers, Delivery) switch what is shown.
-3. Formatted / Raw switch the view; Copy body copies it to your clipboard.
 
+![4.4 The replay preview — 08-replay-preview](../screenshots/azure-5/08-replay-preview.png)
 
-![4.3 Open a message — 08-message-details-properties](../screenshots/azure/08-message-details-properties.png)
 
+1. The message that would be replayed, exactly as it is stored, and where it would go back to.
+2. Replay 1 message sends it back. This is the only button that changes anything, and ServiceHub then watches whether the fix held.
+3. Cancel closes the preview. Nothing has been sent.
 
-1. Application properties and system properties (message ID, content type, subject).
-2. Expand widens the panel; the other tabs (Overview, Body, Properties, Headers, Delivery) switch what is shown.
 
+### 4.5 The result, and whether it held
 
-![4.3 Open a message — 08-message-details-headers](../screenshots/azure/08-message-details-headers.png)
+After **Replay 1 message** the window says **Sent back**: the message is on its queue again and the dead letter has left the list. Where a consumer is running it is picked up at once, so it may already be gone from **Active messages**. On Azure ServiceHub can prove the outcome: it watches the dead-letter queue for the observation window and then marks the replay **Verified** (it did not come back) or **Came back** (it failed again, so it is not fixed). Find it in **Replay history**.
 
 
-1. Broker headers: enqueued time, lock and sequence information.
-2. Expand widens the panel; the other tabs (Overview, Body, Properties, Headers, Delivery) switch what is shown.
+![4.5 The result, and whether it held — 24-replay-result](../screenshots/azure-5/24-replay-result.png)
 
 
-![4.3 Open a message — 08-message-details-delivery](../screenshots/azure/08-message-details-delivery.png)
+1. The result, in plain words: the message is back on its queue and the dead letter has left the list. Sent back is not the same as fixed. ServiceHub now watches it, and marks it Verified or Came back.
 
 
-1. How many times Azure tried, and when it set the message aside.
-2. Expand widens the panel; the other tabs (Overview, Body, Properties, Headers, Delivery) switch what is shown.
+## Part 5 — When ServiceHub asks you
 
+*The Agent never replays what it has not earned. When it is unsure it stops and asks.*
 
-### 4.4 Replay one message — you see the proposal first
 
-**Replay** never sends straight away. It shows what will happen, every safety check, and what happens afterwards. Only the blue button sends.
+### 5.1 Needs your attention
 
+Everything on this cloud waiting for a person: replays the Agent is holding, and items ServiceHub handed off. The four tiles count them and show the oldest. Filter by component, family or age; **Review** opens the decision.
 
-![4.4 Replay one message — you see the proposal first — 09-replay-proposal](../screenshots/azure/09-replay-proposal.png)
 
+![5.1 Needs your attention — 09-attention](../screenshots/azure-5/09-attention.png)
 
-1. The message — what is about to be replayed: ID, where it is stuck, when and why it was set aside, and its body.
-2. Replay 1 message — sends it back. It is only sent when you press this.
-3. What will happen, Safety checks, After it runs — fold open or closed; the next screenshot shows them open.
-4. Cancel — closes without sending.
 
+1. Everything on this cloud that waits for a person: replays the Agent is holding, and items ServiceHub handed off. Review opens the decision.
 
-![4.4 Replay one message — you see the proposal first — 09-replay-proposal-checks](../screenshots/azure/09-replay-proposal-checks.png)
 
+### 5.2 Pending approvals
 
-1. What will happen — where it goes and what happens to the dead-letter copy (it is removed once Azure accepts the new one).
-2. Safety checks — every check that must pass; a failing one blocks the replay and says why.
-3. After it runs — ServiceHub records it and watches for 24 hours; if it comes back, nothing retries it.
-4. Cancel — closes without sending.
-5. The folding headings and the Replay button repeated at the end of the window.
+The held replays on their own. Each row says which failure it was and why the Agent stopped (usually: this kind of failure has not yet earned automatic replay, so a person decides). Approving needs the **Approver** role.
 
 
-### 4.5 Replay several at once
+![5.2 Pending approvals — 10-approvals](../screenshots/azure-5/10-approvals.png)
 
-Tick messages (or use **Replay All Messages**) to get a preview: how many will be replayed, which are held back by a safety check, grouped by how they failed and where each goes. They are sent one at a time and each is re-checked.
 
+1. Replays the Agent stopped on because this kind of failure has not yet earned automatic replay. You approve or decline each, and the answer is recorded.
 
-![4.5 Replay several at once — 13-bulk-replay](../screenshots/azure/13-bulk-replay.png)
 
+### 5.3 Review: approve or decline
 
-1. Preview — nothing has run yet. Step 1 of Preview → Run → Watch.
-2. Held back — messages that fail a safety check stay in dead letters; they are never forced.
-3. Grouped by how they failed — so you can see whether you are fixing one problem or several.
-4. Where each one goes — the queue each message will be sent back to.
-5. Replay N messages — sends them one at a time, re-checking each. You can stop partway.
-6. Cancel — nothing is sent.
-7. Page controls — move through the list when more messages are chosen than fit on one page.
-8. How it will run — folds open to show the pace and the automatic stop (five failures in a row).
-9. After they are sent back — what ServiceHub does next: it records each replay and watches for 24 hours.
+Review explains why the Agent stopped, lists the messages that would be replayed, and offers **Approve** or **Decline…**. Declining needs a reason. Both answers are written to the evidence ledger.
 
 
-![4.5 Replay several at once — 13b-bulk-replay-end](../screenshots/azure/13b-bulk-replay-end.png)
+![5.3 Review: approve or decline — 17-review](../screenshots/azure-5/17-review.png)
 
 
-1. How it will run — the pace (a few messages a second, gentle on your consumer) and the automatic stop: five failures in a row.
-2. After they are sent back — what ServiceHub does next: it records each replay and watches for 24 hours.
-3. No purge on Azure — this cloud cannot delete one message on its own, so ServiceHub does not offer “Purge instead…” here (AWS and Google Cloud do).
-4. Replay N messages — sends them one at a time, re-checking each. You can stop partway.
-5. Cancel — nothing is sent.
-6. Page controls — move through the list when more messages are chosen than fit on one page.
-7. Where each one goes — folds open to list the queue each message will be sent back to, grouped by why it failed.
+1. Why the Agent stopped: this kind of failure has not yet earned automatic replay, so a person decides.
+2. Decline needs a reason. Nothing is sent, and the reason goes in the ledger.
+3. Approve replays the messages listed here, once, through the same safety gate as a manual replay.
 
 
-### 4.6 The result
+## Part 6 — Afterwards
 
-ServiceHub says plainly what happened, records it under Replayed, and starts a 24-hour watch for it coming back.
+*A replay is not finished when it is sent. ServiceHub watches what happens next.*
 
 
-![4.6 The result — 10-replay-result](../screenshots/azure/10-replay-result.png)
+### 6.1 Replay history
 
+Every replay, who or what started it, how many messages, and what ServiceHub saw afterwards: **Verified** (did not come back), **Watching** (still inside the window), **Came back** (failed again, so it is not fixed) or **Unverified** (sent, but this cloud cannot prove it held).
 
-1. The result, in plain words: it was sent back, and ServiceHub will watch for it coming back.
-2. It is recorded, with who did it, and shows under Replayed (and in Advanced → Recovery Ledger).
-3. Done — closes the window.
-4. Active messages / Replayed — jump to where you can watch this message.
 
+![6.1 Replay history — 12-replays](../screenshots/azure-5/12-replays.png)
 
-## Part 5 — Afterwards
 
-*Did it hold?*
+1. Every replay: who or what started it, how many messages, and the outcome ServiceHub saw afterwards (Watching, Verified, Came back, Unverified).
 
 
-### 5.1 Replayed
+### 6.2 Active messages
 
-Every replay, who did it, and how it ended. On Azure ServiceHub can **prove** whether a replayed message stayed out of the dead-letter queue, so the result moves from *Watching* to *Stayed fixed* or *Came back*.
+The live queues, not the dead-letter ones. Read-only: it exists so you can see whether things are moving. Browse opens a queue's messages without changing them.
 
 
-![5.1 Replayed — 11-replayed](../screenshots/azure/11-replayed.png)
+![6.2 Active messages — 11-active](../screenshots/azure-5/11-active.png)
 
 
-1. Messages replayed — how many were put back in the window.
-2. Being watched — replays still inside their watch window. Azure can prove whether each stayed fixed.
-3. Came back — messages that failed the same way again. Nothing retries them on its own.
-4. Result filter — stayed fixed, being watched, came back.
-5. Download — saves this list as a file. It does not change anything.
-6. Details — the full record of this replay.
-7. Filters — namespace, queue or topic, result, time window and search; Refresh reads the list again. They change what is listed, never what happened.
-8. The table — a tick per replay (the heading tick ticks the page) and Details on each row.
-9. What am I looking at? — a short reading guide. Auto Replay rules — opens the rules page. All and Last 24 hours — the result and time filters.
-10. The three tabs — Dead letters, Active and Replayed. They switch the list below without leaving the page.
-11. Paging — rows per page, previous, the page numbers and next.
+1. Messages in the live queues now, not the dead-letter queues. Read-only.
 
 
-![5.1 Replayed — 11b-replayed-end](../screenshots/azure/11b-replayed-end.png)
+### 6.3 Failure signatures
 
+Failures grouped by how they fail, so a thousand messages become a handful of causes. For each: how many are stuck, whether replaying has helped before, and how much the Agent may do about it (its level of trust).
 
-1. The replays, newest first — each with a tick and Details.
-2. Paging — rows per page, previous, the page numbers and next.
-3. The three tabs, the Auto Replay rules button, and the table headings with their ⓘ About buttons — as on the previous screenshot.
-4. Filters — result, queue or topic, time window and search; Refresh re-reads the list and Download as CSV saves it as a file. They change what is listed, never what happened.
 
+![6.3 Failure signatures — 14-signatures](../screenshots/azure-5/14-signatures.png)
 
-### 5.2 Active messages
 
-What is waiting right now. Looking does not touch anything on Azure — a peek is not a delivery. **Send a message** is the one control here that changes a queue.
+1. Failures grouped by how they fail, so a thousand messages become a handful of causes.
 
 
-![5.2 Active messages — 12-active](../screenshots/azure/12-active.png)
+## Part 7 — Letting the Agent help
 
+*Optional, and earned. Nothing is automatic until you create a rule and the failure has a record of verified fixes.*
 
-1. Send a message — puts a test message on the queue. This does change the queue, so use a dev queue.
-2. Counts — waiting, oldest, delivered before, dead-lettered.
-3. Filters — queue or topic, message state, time window and search.
-4. Follow live — shows new messages as they arrive. On Azure, looking does not count as a delivery.
-5. Auto-refresh — re-reads the queue every 15 seconds.
-6. Scheduled — messages set to arrive later.
-7. Peek message — opens one message to read it. Peeking does not remove or lock it.
-8. Filters and tools — namespace, queue, time window, search, how often the list refreshes, Refresh now, and Download body (saves the shown messages’ bodies as a file; changes nothing).
-9. Dead-lettered — jumps to the dead letters in this queue.
-10. The table — a tick per message (the heading tick ticks the page) and Details on each row.
-11. What am I looking at? — a short reading guide. The queue and time-window pickers narrow what is listed.
-12. The three tabs — Dead letters, Active and Replayed. They switch the list below without leaving the page.
 
+### 7.1 Auto Replay rules
 
-![5.2 Active messages — 12b-active-end](../screenshots/azure/12b-active-end.png)
+A rule says: for this failure pattern, replay on your behalf, at this pace. A rule that has not earned trust only produces approvals. If results turn bad it switches itself off and asks a person.
 
 
-1. A message row — a tick to choose it, and Details to open it (body, properties, delivery). Looking at an Azure message is not a delivery.
-2. Paging — rows per page, previous, the page numbers and next.
-3. The controls above the table — the same filters, search, auto-refresh, Refresh, Scheduled, and the ⓘ About buttons on the column headings, as on the previous screenshot.
+![7.1 Auto Replay rules — 13-rules](../screenshots/azure-5/13-rules.png)
 
 
-## Part 6 — Auto Replay
+1. What the Agent may replay by itself. A rule is on only for a failure pattern that has earned it; it stops and asks a person when results turn bad.
 
-*Let ServiceHub retry a kind of failure on its own — only once it has earned it.*
 
+### 7.2 Agents
 
-### 6.1 Rules
+The background workers: what each one does, whether it is healthy, when it last ran, and whether it may act or only observe. Pause any of them from here.
 
-A rule names a failure ServiceHub has already seen and how carefully to retry it. It never runs in Production namespaces, goes through the same safety checks as you, and **stops itself** if fewer than half of its replays stay fixed. A rule only acts once that failure has 10 verified fixes at 95% or better.
 
+![7.2 Agents — 16-agents](../screenshots/azure-5/16-agents.png)
 
-![6.1 Rules — 14-auto-replay](../screenshots/azure/14-auto-replay.png)
 
+1. The background workers: what each does, when it last ran and whether it is healthy.
 
-1. Auto Generate Rules — proposes rules from failures already seen. It only proposes; you decide what to turn on.
-2. Create rule — start a rule from a failure you have already seen.
-3. How it works — you name a failure, safety checks decide, it replays gently, it proves it worked and stops itself if it does not.
-4. Totals — rules on, replayed by rules, waiting for a person, stopped themselves.
-5. Namespace — Auto Replay rules apply to every Azure namespace; this picks which one the page shows.
-6. Refresh rules — reads the rules again.
-7. Create your first rule — the same as Create rule, shown while there are none.
 
+### 7.3 Evidence ledger
 
-![6.1 Rules — 14-auto-replay-create](../screenshots/azure/14-auto-replay-create.png)
+A tamper-evident record of every decision ServiceHub took, with who or what took it. Each entry is chained to the one before; export it and check it offline with `scripts/verify-recovery-chain.py`.
 
 
-1. Based on — pick a failure ServiceHub has already seen. A rule can only be made from a seen failure.
-2. The guarantees: never in Production, same safety checks as you, and it stops itself if fewer than half stay fixed.
-3. Create and turn on — enabled once you choose a failure.
-4. Cancel — nothing is created.
-5. The page header — namespace, Refresh rules, Auto Generate Rules (proposes only) and the “How Auto Replay works” fold, as on the previous screenshot.
+![7.3 Evidence ledger — 15-ledger](../screenshots/azure-5/15-ledger.png)
 
 
-## Part 7 — Settings, Help and Advanced
+1. The tamper-evident record of every decision. Export it and check it offline with verify-recovery-chain.py.
 
-*Everything else.*
 
+## Part 8 — Configuration, Help and safety
 
-### 7.1 Settings
+*Where the rest lives.*
 
-Connections, Notifications (Slack, Teams, any webhook — sent only when the Agent stops and needs a person), Preferences, Access & security (roles and the emergency stop) and Backup.
 
+### 8.1 Configuration
 
-![7.1 Settings — 15-settings-connections](../screenshots/azure/15-settings-connections.png)
+How ServiceHub looks (**Preferences**), who may do what (**Access**), **Notifications**, **Backup** and restore, and the list of **Connections** again, with each cloud's own settings.
 
 
-1. Sections — Connections, Notifications, Preferences, Access & security and Backup. Each jumps to that part of this window.
-2. Add a cloud — connect another cloud.
-3. Test — checks the connection now and shows the result. Reads only.
-4. Remove — forgets this connection and its stored credential. It does not delete anything in Azure.
+![8.1 Configuration — 21-configuration](../screenshots/azure-5/21-configuration.png)
 
 
-![7.1 Settings — 15-settings-notifications](../screenshots/azure/15-settings-notifications.png)
+1. Configuration: how ServiceHub looks, who may do what, backup and restore, and notifications.
 
 
-1. In-app bell and pop-up — always on. It cannot be switched off, so it can never be switched off by mistake.
-2. Add webhook (Slack) — paste a Slack incoming-webhook URL to also get the message there.
-3. Add webhook (Microsoft Teams) — the same for a Teams channel.
-4. Add webhook (any other system) — JSON to a URL you choose. Private and internal addresses are refused.
+### 8.2 Help and Search
 
+**Help** (or press `?`) has answers by task, the step-by-step guides, and the keyboard shortcuts. **Search** (Cmd-K or Ctrl-K) finds a connection, a queue, a page or an action; it never searches inside messages.
 
-![7.1 Settings — 15-settings-preferences](../screenshots/azure/15-settings-preferences.png)
 
+![8.2 Help and Search — 18-help](../screenshots/azure-5/18-help.png)
 
-1. Theme — Light today; Dark is marked soon.
-2. Times shown in — your browser’s time zone, or UTC. It changes how times are displayed, never the data.
-3. Open on — start in Simple every time (Simple), or where you last were (Last used). Kept in this browser only.
-4. Your tracing tool — optional. Paste a link with {traceId} in it, and ServiceHub shows a link from each message to that trace in your own tool. It is kept in this browser only.
 
+1. Search the Help. Below it: short answers by task, then the step-by-step guide for each cloud. Press ? from any page to open Help.
 
-![7.1 Settings — 15-settings-access](../screenshots/azure/15-settings-access.png)
 
+![8.2 Help and Search — 19-search](../screenshots/azure-5/19-search.png)
 
-1. Who you are — shown from this browser session until roles are switched on. The credential key fingerprint shows what encrypts stored credentials.
-2. Roles — Viewer sees, Operator replays, Approver answers the Agent, Admin connects clouds. Giving the first role switches roles on.
-3. Who — the API key name or signed-in user the role is for.
-4. Kind, Role, Where and Grant — choose whether it is a key or a person, the role, whether it applies everywhere or to one namespace, then Grant. Granting the first role switches roles on for everyone.
-5. Emergency stop — type STOP, say why, and switch it on to halt every automatic action at once. Nothing already done is undone; switch it off to resume.
 
+1. Search finds a connection, a queue, a page or an action from anywhere (Cmd-K or Ctrl-K). It never searches inside messages.
 
-![7.1 Settings — 15-settings-backup](../screenshots/azure/15-settings-backup.png)
 
+### 8.3 Emergency stop
 
-1. Take a backup now — saves a consistent copy of ServiceHub’s own database (not of your clouds).
+Switches off everything ServiceHub does on its own. It asks for a reason and for you to type STOP. A replay a person starts still works, and anything already sent stays sent.
 
 
-### 7.2 Help, search and the bell
+![8.3 Emergency stop — 20-emergency-stop](../screenshots/azure-5/20-emergency-stop.png)
 
-Help is a panel over whatever you are doing. Search (⌘K) jumps anywhere. The bell is the only place the Agent asks you something.
 
+1. Exactly what stops (the Agent, automatic replays) and what does not (a replay a person starts, what is already recorded). Below: a reason, and you type STOP to confirm.
 
-![7.2 Help, search and the bell — 16-help](../screenshots/azure/16-help.png)
 
+### 8.4 What ServiceHub covers
 
-1. Search — type what you are trying to do.
-2. An answer — click to open it in place; each links to the screen it is about.
-3. Setting up answers — connecting, alerts and who may replay.
-4. Keyboard shortcuts — only ones that work are listed.
-5. Step by step — one guide per cloud, each with every screen as a real screenshot and a numbered key for every button and link. Yours (Azure) is listed first. The same guides are the articles in docs/clouds.
+Every component on every cloud, and how far each has been proven: **Supported** (seen working against a real cloud) or **Being validated** (built, not yet proven).
 
 
-![7.2 Help, search and the bell — 16b-help-end](../screenshots/azure/16b-help-end.png)
+![8.4 What ServiceHub covers — 22-coverage](../screenshots/azure-5/22-coverage.png)
 
 
-1. Step by step — one guide per cloud, each with every screen as a real screenshot and a numbered key for every button and link.
-2. Answers — click one to open it in place; each links to the screen it is about.
-
-
-![7.2 Help, search and the bell — 18-search](../screenshots/azure/18-search.png)
-
-
-1. Search box — type part of a cloud, queue or page name. Enter opens the first result. Esc closes. Searching never changes anything.
-
-
-![7.2 Help, search and the bell — 18-bell](../screenshots/azure/18-bell.png)
-
-
-1. The bell — the only place the Agent asks you something. It lists what is waiting for you and clears when it is resolved, not when you look.
-2. See all waiting — opens the full list of what needs a person.
-
-
-### 7.3 The Advanced pages (read-only)
-
-Advanced never changes anything. **Overview** summarises recovery, authority and agents; the **Recovery Ledger** is the tamper-evident record of every action; **Failure Signatures** groups failures — by cloud, queue, reason and, where the cloud records one, the shape of the error message — and shows what each has earned (if some of a group’s latest replays did not hold, ServiceHub stops replaying it on its own until newer ones do); **Agents** lists what is acting and what is only watching.
-
-
-![7.3 The Advanced pages (read-only) — 17-advanced-overview](../screenshots/azure/17-advanced-overview.png)
-
-
-1. Scope — all clouds, or one.
-2. Window — the period the page counts over.
-3. Insights — patterns ServiceHub noticed across your failures.
-4. Recovery — how replays ended. “Recovered” means it did not come back, not that the business transaction completed.
-5. Authority — what each failure may do on its own, and what holds it there.
-6. Capability — what each cloud can prove.
-7. Being watched, All agents → and Recovery Ledger → — jump to the Agents page and the Recovery Ledger. They only open pages; nothing changes.
-8. Overview — the page you are on; the other three Advanced pages are in the bar at the top.
-
-
-![7.3 The Advanced pages (read-only) — 17-advanced-ledger](../screenshots/azure/17-advanced-ledger.png)
-
-
-1. Export evidence — downloads the ledger so it can be verified offline. It changes nothing.
-2. Outcome chips — Waiting, Watching, Recovered, Unverified, Returned, Failed, Unknown, Declined. Recovered and Unverified are never counted together.
-3. Filters — cloud, namespace, queue or topic, who did it, and search.
-4. Details — who took the action, what happened and its evidence. Each entry carries a fingerprint of the one before it.
-5. Filters and entries — namespace, queue or topic, who, and search narrow the list; each entry opens to show its evidence.
-6. What am I looking at? — a short reading guide for this page. Window — the period it counts over.
-7. Outcome chips with counts — click one to list only those entries; All shows everything again.
-8. Paging — how many rows per page, previous, the page number and next.
-9. About buttons (ⓘ) on the column headings — each explains that column in a sentence. They change nothing.
-
-
-![7.3 The Advanced pages (read-only) — 17-advanced-signatures](../screenshots/azure/17-advanced-signatures.png)
-
-
-1. Trace a message — follow one message across clouds by its ID.
-2. Growing — signatures whose recent days hold at least twice what earlier days did.
-3. Sort — most messages, or others.
-4. A signature — one way of failing: the same queue and the same kind of error, so many messages become one thing to reason about.
-5. Replays — how many of these were replayed and how many were verified to have held.
-6. Filters — cloud, namespace, queue or topic, who, and search.
-7. Each signature row — opens to show the failures grouped under it and what each replay did.
-8. What am I looking at? — a short reading guide. Window — the period counted.
-9. Chips — Signatures, All, Replay helps, Replay doesn’t help. Click one to list only those.
-10. Paging — rows per page, previous, the page number and next.
-11. About buttons (ⓘ) on the column headings — each explains that column in a sentence. They change nothing.
-
-
-![7.3 The Advanced pages (read-only) — 17d-advanced-signatures-end](../screenshots/azure/17d-advanced-signatures-end.png)
-
-
-1. Paging — rows per page, previous, the page numbers and next.
-
-
-![7.3 The Advanced pages (read-only) — 17-advanced-agents](../screenshots/azure/17-advanced-agents.png)
-
-
-1. Acting agents — the only ones that can change anything, and only after the same safety checks you get.
-2. Watching agents — they only look and record.
-3. Pause — stops that agent acting. It is the one thing Advanced can do, because it only removes authority. Nothing it already did is undone.
-4. Learn more — a short explanation of how agents work.
-5. Health summary, agent rows and Open — the summary says whether every agent is running normally; a row opens that agent’s details; Open goes to the screen the agent works through.
-6. What am I looking at? — a short reading guide for this page.
-
-
-![7.3 The Advanced pages (read-only) — 17a-advanced-agents-middle](../screenshots/azure/17a-advanced-agents-middle.png)
-
-
-1. Agent rows — click a row to see what that agent may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting.
-2. More agent rows — the acting agents (Bulk Replay, Auto Replay) and the rest; each opens to show what it may do.
-
-
-![7.3 The Advanced pages (read-only) — 17c-advanced-agents-rows](../screenshots/azure/17c-advanced-agents-rows.png)
-
-
-1. Agent rows — click a row to see what that agent may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting.
-
-
-![7.3 The Advanced pages (read-only) — 17b-advanced-agents-more](../screenshots/azure/17b-advanced-agents-more.png)
-
-
-1. Watching agents — they only look and record; they cannot change anything.
-2. Each agent row opens to show what it may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting.
+1. What ServiceHub covers: every component, per cloud, and how far each has been proven (Supported, or Being validated).
 
 
 ---
@@ -734,11 +446,11 @@ Advanced never changes anything. **Overview** summarises recovery, authority and
 - **Connect fails with 401 or says it could not list queues.** The policy is missing **Manage**. Azure only lets Manage list queues and count messages. Create a policy with Manage (which includes Send and Listen) and connect again.
 - **Connect works but Replay is unavailable.** Your policy lacks **Send**. Replay needs it. A policy with **Manage** includes Send and Listen, so create one as in step 1.3 and connect again.
 - **The counts differ from the portal.** Portal metrics can lag by a minute. Press **Refresh** in ServiceHub and **Refresh** in the portal; they should agree.
-- **A message I replayed is not under Replayed.** Check the time window on the Replayed tab (the default is the last 24 hours) and that the *Result* filter is *Any result*.
+- **A message I replayed is not in Replay history.** Check the time window on the Replay history page (the default is the last 24 hours) and that the *Outcome* filter is *any*.
 
 
 ## Stopping and cleaning up
 
-To stop ServiceHub watching Azure: **Settings → Connections → Remove**. That forgets the connection and its stored credential on the ServiceHub server;
+To stop ServiceHub watching Azure: **Connections**, the bin button on the connection, then typing its name to confirm. That forgets the connection and its stored credential on the ServiceHub server;
 it deletes nothing in Azure. To revoke access in Azure, delete the policy under **Shared access policies**. If you created the namespace only to try
 ServiceHub, delete its resource group in the portal (or run your Terraform destroy) so nothing keeps costing money.

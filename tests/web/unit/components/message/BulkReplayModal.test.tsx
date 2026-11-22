@@ -49,6 +49,14 @@ describe('Bulk Replay modal', () => {
     expect(bulk.startBulk).not.toHaveBeenCalled()
   })
 
+  it('says "No reason recorded" for a group the API calls Unknown', async () => {
+    // Found live 2026-11-22 on Google Cloud: the list said "No reason recorded" and the preview said "Unknown" for the same messages.
+    vi.mocked(bulk.previewBulk).mockResolvedValue(preview({ groups: [{ reason: 'Unknown', selected: 7, willReplay: 7, heldBack: 0 }] }))
+    renderModal()
+    expect(await screen.findByText('No reason recorded')).toBeInTheDocument()
+    expect(screen.queryByText('Unknown')).not.toBeInTheDocument()
+  })
+
   it('pages the list of messages 25 at a time', async () => {
     const ids = Array.from({ length: 53 }, (_, i) => i + 1)
     bulkSelection.set({ ids })

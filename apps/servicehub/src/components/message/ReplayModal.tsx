@@ -219,7 +219,7 @@ function Result({ outcome, proposal, close, links }: { outcome: ReplayOutcome; p
         )}
         {outcome.result === 'accepted' && (
           <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-            Recorded — you can find it under Replayed. {proposal.canConfirm ? 'ServiceHub will say whether it stayed fixed when the watch window ends.' : 'The result will read “Verification required” — this cloud cannot prove the queue stayed empty.'}
+            Recorded — you can find it under Replay history. {proposal.canConfirm ? 'ServiceHub will say whether it stayed fixed when the watch window ends.' : 'The result will read “Verification required” — this cloud cannot prove the queue stayed empty.'}
           </p>
         )}
         {outcome.result === 'unknown' && (
@@ -230,7 +230,7 @@ function Result({ outcome, proposal, close, links }: { outcome: ReplayOutcome; p
         <p className="text-sm text-[var(--color-text-muted)]">
           It is now on <span className="font-mono text-[13px]">{proposal.targetEntity}</span>, and the dead letter has left the list. Where the consumer is running it is picked up straight away, so it may already be gone from{' '}
           <Link to={links ? links.active : follow('active')} onClick={close} className="font-medium text-[var(--color-primary-700)] hover:underline">Active messages</Link>; its result is recorded in{' '}
-          <Link to={links ? links.replayed : follow('replayed')} onClick={close} className="font-medium text-[var(--color-primary-700)] hover:underline">Replayed</Link>.
+          <Link to={links ? links.replayed : follow('replayed')} onClick={close} className="font-medium text-[var(--color-primary-700)] hover:underline">Replay history</Link>.
         </p>
       )}
       <div className="flex justify-end">

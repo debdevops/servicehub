@@ -10,13 +10,37 @@ One process, one SQLite file, running on your machine.
 
 *Every screenshot on this page is the built-in demo: made-up data, nothing is sent anywhere. You can open the same demo yourself, with no cloud account: **[try it in your browser](https://debdevops.github.io/servicehub/)** (nothing to install) or run it locally in about two minutes, below.*
 
-## Run it in two minutes
+## The pain, and how ServiceHub resolves it
 
-Pick one. Both open the built-in demo, so you can look around before connecting a real cloud. Want to look first without installing anything? Open the **[demo in your browser](https://debdevops.github.io/servicehub/)**.
+When a consumer cannot process a message, the cloud retries a few times and then sets it aside in a **dead-letter queue**. That is where the trouble starts.
+
+| The pain | How ServiceHub resolves it |
+|---|---|
+| **A count, not a story.** The console says "4,218 dead-lettered". Not which, not why. | Groups messages by **why they failed**, and shows each one's body, properties and delivery history. |
+| **Replaying is scary.** One wrong script and thousands of messages fail again, or go twice. | **Replay with a preview.** What would be sent, where, and which safety checks ran, shown *before* anything moves. One, a few, or a whole group; always stoppable. |
+| **Nobody knows if it worked.** The count dropped, so you assume it did. | **Watches afterwards.** Every replay is marked *Verified*, *Came back* or *Unverified*, in plain words. |
+| **Three clouds, three consoles.** | One layout for Azure, AWS and Google Cloud, each in its own terms, each saying honestly what it cannot do. |
+| **The same failure, again and again.** | The **Agent** replays a repeat on its own only after that failure has earned trust; until then it stops and asks a person. |
+| **"Who replayed that, and why?"** | A tamper-evident **evidence ledger** you can export and verify offline. |
+
+New to queues? Read the **[user guide](docs/USER-GUIDE.md)**: it starts from "what is a dead letter" and walks the whole app in fifteen minutes, with no cloud account.
+
+## Start it
+
+Pick your machine. Every route opens the built-in demo, so you can look around before connecting a real cloud, or **[try it in your browser](https://debdevops.github.io/servicehub/)** with nothing installed.
+
+| Your machine | Easiest way | Opens at |
+|---|---|---|
+| **macOS** | [Option 1](#option-1-from-source-runsh-does-everything) in Terminal | <http://localhost:3000> |
+| **Linux** | [Option 1](#option-1-from-source-runsh-does-everything) in any shell | <http://localhost:3000> |
+| **Windows** | [Option 2, Docker](#option-2-docker-no-clone-no-build) in PowerShell, or Option 1 inside **WSL 2** (Ubuntu) | <http://localhost:8080> (Docker) |
+| **Any server or VM** | [Option 2, Docker](#option-2-docker-no-clone-no-build), or the [Azure VM guides](docs/HOSTING-AZURE.md) | <http://localhost:8080> |
+
+Not sure it worked? See [Check it works, and run the tests](#check-it-works-and-run-the-tests) below.
 
 ### Option 1. From source: `./run.sh` does everything
 
-For macOS, Linux, or a WSL 2 terminal on Windows.
+For macOS, Linux, or a WSL 2 terminal on Windows (install WSL with `wsl --install` in an administrator PowerShell, open *Ubuntu*, then run the commands below inside it).
 
 ```bash
 git clone https://github.com/debdevops/servicehub.git
@@ -92,6 +116,32 @@ docker compose up --build        # → http://localhost:8080 (this machine only)
 ServiceHub **refuses to start in Production without an encryption key**, and losing the key makes saved cloud connections unreadable, so keep it in a password manager.
 Updating, backing up, removing and fixing problems: **[Run ServiceHub with Docker](docs/DOCKER.md)**.
 
+### Check it works, and run the tests
+
+| | macOS / Linux / WSL 2 | Windows PowerShell (Docker) |
+|---|---|---|
+| Is it up? | `curl -s http://localhost:3000/health/ready` (says `Healthy`) | `curl.exe -s http://localhost:8080/health/ready` |
+| What would `run.sh` do? | `./run.sh --check` (changes nothing) | not applicable |
+| Fast test run (about 1 minute) | `./runtest.sh --quick` | run it inside WSL 2 |
+| Everything CI runs (about 12 minutes) | `./runtest.sh --all` | run it inside WSL 2 |
+| Stop | Ctrl-C | `docker stop servicehub` |
+
+What the test run needs and what each flag covers: **[Local setup guide](docs/LOCAL-SETUP.md)** and [tests/README.md](tests/README.md).
+
+## Connect your cloud, step by step
+
+Each guide starts in the cloud's own console (where to click, what to create, what to copy), then walks ServiceHub screen by screen with **annotated screenshots**: every number on a picture is explained underneath it, including what the control will *not* do. The same guides are in the app under **Help**.
+
+| | Azure | AWS | Google Cloud |
+|---|---|---|---|
+| **Service** | Service Bus | SQS and SNS | Pub/Sub |
+| **You give ServiceHub** | A connection string from a ServiceHub-only policy | An access key for a ServiceHub-only IAM user | A service-account key file |
+| **Counts dead letters** | Exactly, in the background | Approximately; you press **Look now** | No counts; you press **Look now** |
+| **Can prove a fix held** | Yes | After you switch on fix-confirming | After you switch on fix-confirming |
+| **Guide** | **[Azure guide](docs/clouds/azure.md)** | **[AWS guide](docs/clouds/aws.md)** | **[Google Cloud guide](docs/clouds/gcp.md)** |
+
+Each guide has: **Part 1** the cloud console, **Part 2** connect, **Part 3** where everything is, **Part 4** find, understand and replay a dead letter, **Part 5** approvals, **Part 6** what happened afterwards, **Part 7** the Agent and rules, **Part 8** configuration, help and the emergency stop, then troubleshooting and cleanup.
+
 ## What it looks like, on each cloud
 
 Same app, three clouds. Each cloud says what it can and cannot do there, honestly: whether ServiceHub can count dead letters, and whether it can confirm a fix held.
@@ -121,15 +171,19 @@ One layout: a menu on the left, the page on the right, and the cloud you are loo
 |---|---|
 | ![Failure signatures](docs/screenshots/readme/advanced-signatures.png) | ![Agents](docs/screenshots/readme/advanced-agents.png) |
 
-<details><summary><b>Walkthrough videos (recorded on 4.2.0)</b></summary>
+## Watch it, on each cloud
 
-These were recorded on ServiceHub 4.2.0, against real development clouds. **5.0.0 moved every screen into the one left menu**, so what you see in the app today looks different; the steps (find a dead letter, read why, replay with a preview, see whether it held, approve or decline) are the same.
+Working in Azure, AWS or Google Cloud and never seen ServiceHub? Start with the short clip for your cloud. Recorded on ServiceHub 5.0.0 against real development clouds, with captions so they work with the sound off.
 
-| Azure Service Bus | AWS SQS / SNS | Google Pub/Sub |
-|:---:|:---:|:---:|
-| [▶ Azure, 5:01](docs/media/azure.mp4) | [▶ AWS, 5:03](docs/media/aws.mp4) | [▶ Google, 5:35](docs/media/gcp.mp4) |
+- **Short clip** (about two minutes): *where the pain is* (a count and no story; replaying blind; nobody knows if it worked; the same failure again and again) and *what ServiceHub gives you*: the message list grouped by why it failed, one message in detail, a replay with a preview, proof afterwards, and the Agent that replays repeats on its own only once it has earned the right.
+- **Full clip** (about six minutes): every PaaS component of that cloud and every function: Connections, Add a component, each component's own page, the message list, a message, a real single replay, the bulk preview, every tab, all eight Operational Tools, rules, signatures, the evidence ledger, agents, how autonomy is earned, security, Configuration, Coverage, Help, Search and the Emergency stop (opened and closed, never confirmed). A slow read of the cloud is sped up and says so.
 
-</details>
+| | Azure | AWS | Google Cloud |
+|:---:|:---:|:---:|:---:|
+| **Components in the full clip** | Service Bus, Storage Queues, Event Grid, Logic Apps | SQS, SNS, Step Functions, Kinesis and DynamoDB streams | Pub/Sub, Eventarc, Workflows |
+| **What the short clip stresses** | Exact counts, watched automatically, and a replay it can prove held | It never looks on its own, and says why | No counts, often no reason, and it says so plainly |
+| **Short clip** | [![Azure short clip](docs/media/azure-short.gif)](docs/media/azure-short.mp4) | [![AWS short clip](docs/media/aws-short.gif)](docs/media/aws-short.mp4) | [![Google Cloud short clip](docs/media/gcp-short.gif)](docs/media/gcp-short.mp4) |
+| **Play** | [▶ Short, 1:39](docs/media/azure-short.mp4) · [▶ Full, 6:22](docs/media/azure-full.mp4) | [▶ Short, 1:56](docs/media/aws-short.mp4) · [▶ Full, 6:22](docs/media/aws-full.mp4) | [▶ Short, 1:56](docs/media/gcp-short.mp4) · [▶ Full, 6:10](docs/media/gcp-full.mp4) |
 
 ## What it covers
 
@@ -196,7 +250,8 @@ This table is generated from the code, and a test fails if it drifts.
 |---|---|
 | [Local setup](docs/LOCAL-SETUP.md) | Install, run, check and troubleshoot on your own machine, with or without Docker |
 | [Run with Docker](docs/DOCKER.md) | Run the public image, update it, back it up, fix problems |
-| [Azure](docs/clouds/azure.md) · [AWS](docs/clouds/aws.md) · [Google Cloud](docs/clouds/gcp.md) | Step-by-step setup and use, with annotated screenshots (also in the app under **Help**). The cloud-portal steps are current; the ServiceHub screenshots in them are from 4.2.0 and are being re-shot for the 5.0.0 layout |
+| [User guide](docs/USER-GUIDE.md) | For a novice: the problem, the map of the app, a fifteen-minute first run, a glossary |
+| [Azure](docs/clouds/azure.md) · [AWS](docs/clouds/aws.md) · [Google Cloud](docs/clouds/gcp.md) | Step-by-step setup and use, from the cloud console to the replay result, with annotated screenshots of ServiceHub 5.0.0 (also in the app under **Help**) |
 | [Hosting on Azure](docs/HOSTING-AZURE.md) | Run it always-on on an Azure VM, safely (the full runbook) |
 | [Azure VM, CLI](docs/HOSTING-AZURE-CLI.md) | The short version, in a terminal |
 | [Azure VM, Portal](docs/HOSTING-AZURE-PORTAL.md) | The short version, by clicking |

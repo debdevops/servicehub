@@ -70,25 +70,23 @@ describe('HelpPanel', () => {
     }
   })
 
-  it.each(Object.keys(guides))('every control on every %s screenshot has a numbered callout (7.6, from scripts/docs-shots)', (cloud) => {
-    const dir = `../../docs/screenshots/${cloud}`
-    const gaps = JSON.parse(readFileSync(`${dir}/uncovered.json`, 'utf8')) as Record<string, string[]>
-    const keys = JSON.parse(readFileSync(`${dir}/keys.json`, 'utf8')) as Record<string, unknown[]>
-    for (const [shot, list] of Object.entries(gaps)) expect(list, `${shot} has controls with no callout`).toEqual([])
-    // Below the fold: a control out of view in one shot must be covered by a callout in another (scripts/docs-shots finishRun).
-    const unreached = `${dir}/unreached.json`
-    if (existsSync(unreached)) expect(JSON.parse(readFileSync(unreached, 'utf8')) as string[], 'controls never in a callout (below the fold)').toEqual([])
+  // 5.0.0: the pictures are `docs/screenshots/<cloud>-5`, shot by scripts/docs-shots/v5.spec.mjs. Each one has numbered callouts, and every number
+  // has its sentence. (The 4.2.0 rule that every control on a screen be numbered is not kept: a 5.0.0 page has hundreds of (i) buttons, and the
+  // text under a picture names the controls that matter.)
+  it.each(Object.keys(guides))('every %s screenshot has numbered callouts, each with its sentence', (cloud) => {
+    const keys = JSON.parse(readFileSync(`../../docs/screenshots/${cloud}-5/keys.json`, 'utf8')) as Record<string, { n: number; t: string }[]>
     for (const shot of guides[cloud].sections.flatMap((sec) => sec.steps.flatMap((st) => st.shots))) {
       const name = shot.image.split('/').pop() as string
-      if (!/^(portal-|18-(search|bell|user))/.test(name) && !name.startsWith('08-message-details-')) expect(keys[name]?.length ?? 0, name).toBeGreaterThan(0)
+      if (/^portal-/.test(name)) continue
+      expect(keys[name]?.length ?? 0, name).toBeGreaterThan(0)
+      for (const k of keys[name]) expect(k.t.trim().length, `${name} callout ${k.n} has no text`).toBeGreaterThan(10)
     }
   })
-  // 7.6: Simple's words. Advanced (step 7.3) is where this vocabulary lives, so that one step is exempt.
+  // The 4.0.0 words stay out of the guides. "Failure signatures" and "Evidence ledger" are page names in the 5.0.0 menu, so they are allowed.
   it.each(Object.keys(guides))('the %s guide uses no 4.0.0 vocabulary outside the Advanced step (7.6)', (cloud) => {
-    const banned = /\b(signatures?|pillars?|dispositions?|autonomy levels?|attestations?|ledger|L[45])\b/i
+    const banned = /\b(pillars?|dispositions?|autonomy levels?|attestations?|L[45])\b/i
     // Part 1 is the cloud's own console, so it keeps the cloud's words. "grant" is left out of the list: as a verb it is ordinary English.
     for (const step of guides[cloud].sections.filter((sec) => !sec.part.startsWith('Part 1')).flatMap((sec) => sec.steps)) {
-      if (step.title.startsWith('7.3')) continue
       const texts = [step.text, ...step.shots.flatMap((shot) => shot.keys.map((k) => k.text))]
       // Proper names the build itself shows are not ours to reword: Advanced's page names,.
       for (const raw of texts) {

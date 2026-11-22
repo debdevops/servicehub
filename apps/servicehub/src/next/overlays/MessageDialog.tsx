@@ -128,7 +128,7 @@ export default function MessageDialog({ close }: NextOverlayBodyProps) {
           goes through the same gate as a replay. A held message is answered by Review, so it is not offered here either. */}
       {!held && <PurgeAction dlqMessageId={m.id} namespaceId={m.namespaceId} active={m.status === 'active'} onPurged={close} />}
 
-      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--color-border)] pt-3">
+      <div className="sticky bottom-0 z-10 -mb-1 flex flex-wrap items-center justify-end gap-2 border-t border-[var(--color-border)] bg-[var(--color-surface)] py-3">
         {link && <a href={link} target="_blank" rel="noreferrer" className="rounded-lg border border-[var(--color-border)] px-3.5 py-2 text-sm font-semibold hover:bg-[var(--color-surface-muted)]">Open the trace</a>}
         {/* A held replay is answered by Review; replaying it here would be a second door to the same decision. */}
         {!held && m.status === 'active' && (mayReplay.allowed

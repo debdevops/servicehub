@@ -148,7 +148,7 @@ describe('the replay proposal', () => {
     expect(await screen.findByText('Sent back')).toBeInTheDocument()
     // It says where the message went, and links to where its story continues.
     expect(screen.getByRole('link', { name: 'Active messages' })).toHaveAttribute('href', expect.stringContaining('tab=active'))
-    expect(screen.getByRole('link', { name: 'Replayed' })).toHaveAttribute('href', expect.stringContaining('tab=replayed'))
+    expect(screen.getByRole('link', { name: 'Replay history' })).toHaveAttribute('href', expect.stringContaining('tab=replayed'))
     expect(screen.getByText(/ServiceHub will say whether it stayed fixed/)).toBeInTheDocument()
     expect(replayMock).toHaveBeenCalledTimes(1)
     expect(replayMock).toHaveBeenCalledWith(7)

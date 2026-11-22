@@ -225,7 +225,7 @@ export const labels: Readonly<Record<string, ColumnHelp>> = {
   'section:What you can do': h('What you can do', 'The three choices a person has: replay it again, mark it settled with a reason, or leave it. None of them happens until you choose it.'),
   'section:What happened so far': h('What happened so far', 'The steps ServiceHub recorded for this item, newest first, with who took each one.'),
   'section:How do I…': h('How do I…', 'Short answers to the things people most often want to do. Each links to the page that does it.'),
-  'section:Step by step': h('Step by step', 'One guide per cloud: how to connect it and read its screens, with pictures. The pictures are from the 4.2.0 layout until they are re-shot.'),
+  'section:Step by step': h('Step by step', 'One guide per cloud: how to connect it and read its screens, with annotated pictures.'),
   'section:Keyboard': h('Keyboard', 'The shortcuts that work in this version. A single key never fires while you are typing in a box.'),
   'section:More': h('More', 'Other places to learn how ServiceHub works.'),
   'section:Why it failed': h('Why it failed', 'The recorded reason and description, how many times it was tried, and when it was seen. These are facts the cloud or your application wrote down.'),

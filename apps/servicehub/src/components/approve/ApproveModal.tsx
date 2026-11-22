@@ -37,7 +37,7 @@ import ResolveUnknownBody from './ResolveUnknownModal'
  *   deletes nothing. **Not now** changes nothing: the items stay in the bell (R7).
  */
 export default function ApproveModal({ close, replayedHref = '/?tab=replayed' }: Pick<OverlayBodyProps, 'close'> & Partial<Pick<OverlayBodyProps, 'entry'>> & {
-  /** Where "See them in Replayed" goes. The 4.2.0 shell's default; the 5.0.0 shell passes its own Replay history page. */
+  /** Where "See them in Replay history" goes. The 4.2.0 shell's default; the 5.0.0 shell passes its own Replay history page. */
   readonly replayedHref?: string
 }) {
   const [params] = useSearchParams()
@@ -478,7 +478,7 @@ function Approved({ results, close, stillWaiting, replayedHref }: { results: rea
         </ul>
       )}
       <div className="flex gap-2">
-        <Link to={replayedHref} onClick={close} className="rounded-lg bg-[var(--color-primary-600)] px-3.5 py-2 font-semibold text-white">See them in Replayed</Link>
+        <Link to={replayedHref} onClick={close} className="rounded-lg bg-[var(--color-primary-600)] px-3.5 py-2 font-semibold text-white">See them in Replay history</Link>
         <button type="button" onClick={close} className="rounded-lg border border-[var(--color-border)] px-3.5 py-2 font-semibold">Close</button>
       </div>
     </div>

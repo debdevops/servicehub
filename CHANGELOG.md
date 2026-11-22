@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Replay… was out of sight.** In a message's side window the Replay and Close buttons sat below the whole body (about 1,700 px down on a real message). They now stay at the bottom of the window.
+- **The help button covered the window's buttons.** The floating help-bot button sat on top of Replay, Close and the last table column. It steps aside while a window is open.
+- **Reasons were cut in the middle of a word** ("Deserializatio / nError", "MaxDeliveryC / ountExceeded") in Needs your attention, Pending approvals and the Dead-letter messages table. The Reason column keeps room for a whole word.
+- **Old words in the replay result.** The result said to look "under Replayed" and in "the bell"; both are gone in 5.0.0. It now says Replay history (replay, bulk replay and approve results).
+
+### Documentation
+
+- **New walkthrough videos for each cloud** (`docs/media/<cloud>-short.mp4`, about two minutes: the pain and what ServiceHub gives a person who works in that cloud, then the message list, detail, a replay preview, proof afterwards and how the Agent earns autonomy; `<cloud>-full.mp4`, about six minutes: every PaaS component of that cloud and every function; plus a GIF preview), recorded on 5.0.0 with `scripts/docs-shots/videos5.mjs` and built with `build-videos5.sh`. The README block that said the videos were from 4.2.0 is replaced.
+- **README rewritten for 5.0.0:** the pain and how ServiceHub resolves it, how to start on macOS, Linux and Windows, how to check it works and run the tests, the Docker steps, and a table of the three cloud guides.
+- **New [user guide](docs/USER-GUIDE.md)** for someone who has never used ServiceHub or a message queue: the problem in plain words, the map of the app, a fifteen-minute first run, "I want to…", a glossary.
+- **The Azure, AWS and Google Cloud guides are re-shot for 5.0.0** (about 22 annotated pictures each, from the real app on real dev clouds, one cloud at a time; a Google project id and any account id are replaced in the page text before each shot). Part 1 (the cloud's own console) is unchanged. The same guides are in the app under Help, and the note that said the pictures were from 4.2.0 is gone. 
+
 ## [5.0.0] — 2026-11-12
 
 **The layout changed.** 4.2.0 had a Simple surface (Home with tabs, panels and modals) and four read-only Advanced pages. 5.0.0 has one layout: a left menu with Home,

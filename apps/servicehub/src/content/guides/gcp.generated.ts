@@ -166,170 +166,60 @@ export const gcpGuide: Guide = {
    "part": "Part 2 — Connect Google Cloud in ServiceHub",
    "steps": [
     {
-     "title": "2.1 The welcome page",
-     "text": "With no cloud connected, ServiceHub opens on a welcome page. Choose **Connect Google**.",
+     "title": "2.1 The Connections page",
+     "text": "Open **Connections** in the left menu. This is the list of every cloud ServiceHub can read, grouped by cloud. Each row says whether the last test passed, which components are switched on, and has **Test**, **Add a component** and a remove (bin) button. Press **Connect a cloud** to add one.",
      "shots": [
       {
-       "image": "/help/gcp/01-welcome.png",
-       "alt": "2.1 The welcome page (01-welcome)",
+       "image": "/help/gcp/02-connections.png",
+       "alt": "2.1 The Connections page (02-connections)",
        "keys": [
         {
          "n": 1,
-         "text": "Connect Google — opens the Add a cloud window on the Google Pub/Sub tab. It asks for a project ID and a service-account key file; nothing is read until you press Connect there."
+         "text": "Every cloud ServiceHub is connected to. Connecting is how ServiceHub gets read access to your queues and topics."
         },
         {
          "n": 2,
-         "text": "Add a cloud — the same window, from anywhere in the app. Use it later to connect Azure or AWS as well."
-        },
-        {
-         "n": 3,
-         "text": "Simple | Advanced — Simple is where you act. Advanced is read-only pages (ledger, signatures, agents); it never changes anything."
-        },
-        {
-         "n": 4,
-         "text": "Help — opens the Help panel with task-shaped answers and the keyboard shortcuts."
-        },
-        {
-         "n": 5,
-         "text": "Connect Azure / Connect AWS — the same Add a cloud window, on the Azure or AWS tab. You do not need them for Google Cloud."
-        },
-        {
-         "n": 6,
-         "text": "Try it with sample data — opens a demo with made-up data and no cloud connected, so you can look around first. Nothing in it is real and nothing is sent anywhere."
+         "text": "Connect a cloud opens the connect window. Your credentials are encrypted before they are stored and never shown again."
         }
        ]
       }
      ]
     },
     {
-     "title": "2.2 Add a cloud",
-     "text": "The window opens on the Google Pub/Sub tab. Open **Where do I get the service-account key?** for the same console steps you just did.",
+     "title": "2.2 Fill in the connect window",
+     "text": "Choose the **Google Pub/Sub** tab. Give it a name, keep the environment as **Development**, choose **Read and send** (replay needs publish), enter the **Project ID** (the ID, not the name or number) and choose the service-account **key file (.json)** you downloaded in Part 1. Nothing is saved until you press **Connect**; ServiceHub then tests the credential, and stores it encrypted (AES-256-GCM). It is never shown again.",
      "shots": [
       {
-       "image": "/help/gcp/02-add-cloud.png",
-       "alt": "2.2 Add a cloud (02-add-cloud)",
+       "image": "/help/gcp/03-connect-dialog.png",
+       "alt": "2.2 Fill in the connect window (03-connect-dialog)",
        "keys": [
         {
          "n": 1,
-         "text": "Cloud tabs — Google Pub/Sub is selected. The Azure and AWS tabs ask for different credentials."
+         "text": "Pick the cloud. This guide uses Google Cloud."
         },
         {
          "n": 2,
-         "text": "Where do I get the service-account key? — expands the console steps, with the roles to give."
+         "text": "Say what this connection is: Development, UAT or Production. Start with Development. Production gets the strictest rules."
         },
         {
          "n": 3,
-         "text": "Name — what you will see in ServiceHub. It is a label only; it does not change anything in Google Cloud."
-        },
-        {
-         "n": 4,
-         "text": "Environment — Development, UAT or Production. Start with Development; Auto Replay never acts in Production."
-        },
-        {
-         "n": 5,
-         "text": "Project ID — the ID (not the name or number) shown in the console’s project picker. ServiceHub reads the topics and subscriptions in this one project."
-        },
-        {
-         "n": 6,
-         "text": "Service-account key file — the JSON file you downloaded for the ServiceHub service account. It is read in your browser, encrypted on this server and never shown again."
-        },
-        {
-         "n": 7,
-         "text": "The roles ServiceHub uses — to watch, and (second sentence) also to replay. Give it nothing more."
-        },
-        {
-         "n": 8,
-         "text": "Cancel — closes the window; nothing is saved."
-        },
-        {
-         "n": 9,
-         "text": "Connect — tests the key, then saves it. It only lists topics and subscriptions; it never pulls, publishes or acknowledges anything by itself."
-        },
-        {
-         "n": 10,
-         "text": "(?) — opens Help on this very screen. Every window has one."
-        },
-        {
-         "n": 11,
-         "text": "✕ — closes the window without saving (Esc does the same)."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/02-add-cloud-help.png",
-       "alt": "2.2 Add a cloud (02-add-cloud-help)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "IAM & Admin → Service accounts — in the Google Cloud console, make an account just for ServiceHub (not your own)."
-        },
-        {
-         "n": 2,
-         "text": "Grant it only the Pub/Sub roles listed below, on the project you want watched."
-        },
-        {
-         "n": 3,
-         "text": "Keys → Add key → Create new key → JSON — a file downloads. Google shows its private key only once."
-        },
-        {
-         "n": 4,
-         "text": "Choose that file here, and type the Project ID shown on the console’s project picker."
-        },
-        {
-         "n": 5,
-         "text": "The form underneath — the cloud tabs, Name, Environment, Project ID and the key file, exactly as in the previous screenshot."
+         "text": "Read only, or Read and send. Read only means ServiceHub can look and can never replay on this connection. Nothing is saved until you press Connect, at the bottom of this window."
         }
        ]
       }
      ]
     },
     {
-     "title": "2.3 Fill it in and connect",
-     "text": "Give it a name, keep the environment as **Development** for your first connection, type the **Project ID**, choose the key file you downloaded, and press **Connect**. ServiceHub reads the file in your browser, tests it, then saves it encrypted (AES-256-GCM).",
+     "title": "2.3 Tick the components you want",
+     "text": "After connecting, **Add a component** lets you tick other Google Cloud services on the same connection (for example Eventarc and Workflows). Each one's access is checked first, read-only, before it is added. Unticking removes it from the menu and keeps every record it produced. A small amber dot beside a component in the menu means it has been built but not yet proven against a real cloud.",
      "shots": [
       {
-       "image": "/help/gcp/03-add-cloud-filled.png",
-       "alt": "2.3 Fill it in and connect (03-add-cloud-filled)",
+       "image": "/help/gcp/23-add-component.png",
+       "alt": "2.3 Tick the components you want (23-add-component)",
        "keys": [
         {
          "n": 1,
-         "text": "A name you will recognise."
-        },
-        {
-         "n": 2,
-         "text": "The Project ID."
-        },
-        {
-         "n": 3,
-         "text": "The key file you chose. “Using …” confirms which file was read; its contents are never shown."
-        },
-        {
-         "n": 4,
-         "text": "Connect — tests the key, then saves it."
-        },
-        {
-         "n": 5,
-         "text": "The rest of the form — cloud tabs, Environment, the roles hint and Cancel, as described on the previous screenshot."
-        }
-       ]
-      }
-     ]
-    },
-    {
-     "title": "2.4 The result",
-     "text": "You see what ServiceHub can see: how many topics and subscriptions it found, and that this cloud **cannot yet prove a replayed message stayed fixed** — ServiceHub will say so honestly rather than pretend.",
-     "shots": [
-      {
-       "image": "/help/gcp/04-connected.png",
-       "alt": "2.4 The result (04-connected)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "The result: how many topics and subscriptions ServiceHub found, and whether this cloud can prove a replayed message stayed fixed (Google Cloud cannot yet — it will say so honestly)."
-        },
-        {
-         "n": 2,
-         "text": "Open Home — closes the window and shows Home."
+         "text": "Add a component: pick the cloud, then tick each service to list its failed runs or dead-lettered events. Access is checked first, read-only. Unticking keeps every record it produced."
         }
        ]
       }
@@ -341,184 +231,52 @@ export const gcpGuide: Guide = {
    "part": "Part 3 — Learn the screens",
    "steps": [
     {
-     "title": "3.1 Home",
-     "text": "Home answers: *what needs me* and *how is each cloud doing*. For Google Cloud it shows what the cloud can do (the chips: no message counts, recorded when you look, no browsing, can't confirm fixes yet), the **Look now** button, and what has been recorded. Scroll down for why messages failed, how replays ended, your subscriptions with a Look now beside each, the latest dead letters and a live activity list.",
+     "title": "3.1 All clouds: Home",
+     "text": "The first page. The four tiles say what **needs your attention**, how many replays are **pending approval**, what is dead-lettered, and how many clouds are connected. Below them each cloud has its own card. ServiceHub deliberately shows **no total across clouds**: one cloud counts exactly, one approximately, one not at all, so adding them would give a number that means nothing.",
      "shots": [
       {
-       "image": "/help/gcp/05-home.png",
-       "alt": "3.1 Home (05-home)",
+       "image": "/help/gcp/01-home-all.png",
+       "alt": "3.1 All clouds: Home (01-home-all)",
        "keys": [
         {
          "n": 1,
-         "text": "Window — the period Home counts over (24 hours, 7 or 30 days). It changes what you see, never what happens."
+         "text": "The cloud switcher. All clouds shows every connection side by side; Azure, AWS and Google Cloud narrow every page to one cloud. The cloud is also in the address, so a link shows someone exactly what you see."
         },
         {
          "n": 2,
-         "text": "Connected, and the project — ServiceHub can reach Google Cloud with your key; the project is the one you chose."
+         "text": "What is waiting for a person across the clouds you connected. It is the number to watch."
         },
         {
          "n": 3,
-         "text": "What this cloud can do — the chips show what Google Cloud lets ServiceHub do safely. Pub/Sub reports no message counts, records dead letters only when you look, cannot browse messages, cannot prove a fix held and has no scheduled messages."
+         "text": "ServiceHub does not add the clouds together: one counts exactly, one approximately, one not at all, so a sum would mean nothing. Each cloud keeps its own number."
         },
         {
          "n": 4,
-         "text": "Look now — asks Google Cloud for its dead letters (up to 100 per queue) and keeps them in ServiceHub. Every pull counts as a delivery attempt, which is why ServiceHub never does it on its own. It can take up to a minute per queue."
-        },
-        {
-         "n": 5,
-         "text": "Dead letters — opens the list of messages that failed and were set aside."
-        },
-        {
-         "n": 6,
-         "text": "Topics — opens your topics and subscriptions. Google Cloud reports no message counts, so there are none to show."
-        },
-        {
-         "n": 7,
-         "text": "Replayed — everything put back, by whom, and how it went."
-        },
-        {
-         "n": 8,
-         "text": "Auto Replay rules — opens the rules panel. On Google Cloud a rule always waits for a person, because Google Cloud cannot prove a fix held."
-        },
-        {
-         "n": 9,
-         "text": "Got it — hides this explanation. It does not affect your data."
-        },
-        {
-         "n": 10,
-         "text": "See all dead letters in Google Cloud — opens the Dead letters list for this cloud."
-        },
-        {
-         "n": 11,
-         "text": "Help for this page (the book beside the title) — opens Help on this very page, over it. Every page has one."
-        },
-        {
-         "n": 12,
-         "text": "Demo — a guided walk through the whole product with made-up data. No connection string is needed and nothing real is touched."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/05c-home-middle.png",
-       "alt": "3.1 Home (05c-home-middle)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "Why messages failed — the reasons among the dead letters ServiceHub has recorded, biggest first, with how many each has. It only counts what you have looked at."
-        },
-        {
-         "n": 2,
-         "text": "How replays ended — what happened to the replays in this window. On Google Cloud they stay “watching”, because Google Cloud cannot prove a fix held."
-        },
-        {
-         "n": 3,
-         "text": "Subscriptions — each subscription ServiceHub found, with a Look now → that records just that subscription’s dead letters. Google Cloud reports no message counts here."
-        },
-        {
-         "n": 4,
-         "text": "Latest recorded dead letters — the five most recent ServiceHub has recorded, each with Details →. “See all →” opens the full list."
-        },
-        {
-         "n": 5,
-         "text": "Recent activity — shown in full on the next screenshot."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/05d-home-end.png",
-       "alt": "3.1 Home (05d-home-end)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "The five latest dead letters, each with Details → — the same message view as on the Dead letters tab."
-        },
-        {
-         "n": 2,
-         "text": "Recent activity — what ServiceHub and people did, newest first (Live means it updates by itself). Each line opens to show its detail; nothing here changes anything."
-        },
-        {
-         "n": 3,
-         "text": "Why messages failed, and the subscriptions with their Look now → links — as on the previous screenshot."
+         "text": "Emergency stop. Switches off everything ServiceHub does on its own. It does not touch a replay a person starts."
         }
        ]
       }
      ]
     },
     {
-     "title": "3.2 The bar and the sidebar",
-     "text": "These are the same on every page.",
+     "title": "3.2 Google Cloud: Home and the menu",
+     "text": "Pick **Google Cloud** in the cloud switcher (top left). The cloud is part of the address, so a link shows someone exactly what you see. The menu has three groups: **PaaS Components** (the Google Cloud services ServiceHub reads), **Operational Tools** (the pages you use every day, the same on every cloud) and **Configuration** with **What ServiceHub covers** at the bottom. The bar on top shows whether the Agent is running, and holds **Emergency stop**, **Search** and **Help**.",
      "shots": [
       {
-       "image": "/help/gcp/05b-navigation.png",
-       "alt": "3.2 The bar and the sidebar (05b-navigation)",
+       "image": "/help/gcp/04-home-cloud.png",
+       "alt": "3.2 Google Cloud: Home and the menu (04-home-cloud)",
        "keys": [
         {
          "n": 1,
-         "text": "Back — returns to the previous place in the app."
+         "text": "Operational Tools: the pages you use every day, the same for every cloud. Start with Needs your attention."
         },
         {
          "n": 2,
-         "text": "Forward — goes to the place you came back from."
+         "text": "The Google Cloud services ServiceHub can read. An amber dot means a component has not been proven against a real cloud yet."
         },
         {
          "n": 3,
-         "text": "Search (⌘K) — jump to a cloud, queue or page. Searching never changes anything."
-        },
-        {
-         "n": 4,
-         "text": "The bell — the only place the Agent asks you something. A number appears when it needs you."
-        },
-        {
-         "n": 5,
-         "text": "Simple — the two pages where you do the work."
-        },
-        {
-         "n": 6,
-         "text": "Advanced — four read-only pages."
-        },
-        {
-         "n": 7,
-         "text": "You — who ServiceHub records actions as, with your role."
-        },
-        {
-         "n": 8,
-         "text": "Dead letters — messages that failed, with the reason and a Replay button."
-        },
-        {
-         "n": 9,
-         "text": "Active messages — your topics and subscriptions (Google Cloud reports no message counts)."
-        },
-        {
-         "n": 10,
-         "text": "Replayed — what was put back and whether it stayed fixed."
-        },
-        {
-         "n": 11,
-         "text": "Auto Replay — rules for retries ServiceHub may do on its own."
-        },
-        {
-         "n": 12,
-         "text": "Your cloud — pick it to see only that cloud. The dot shows the connection is healthy."
-        },
-        {
-         "n": 13,
-         "text": "Connections — your connected clouds, to test or remove."
-        },
-        {
-         "n": 14,
-         "text": "Add a cloud — connect another cloud."
-        },
-        {
-         "n": 15,
-         "text": "Settings — connections, notifications, preferences, access and backup."
-        },
-        {
-         "n": 16,
-         "text": "Help — answers and shortcuts."
-        },
-        {
-         "n": 17,
-         "text": "Home — the overview: what needs attention, what the Agent is doing, and how replays ended."
+         "text": "The Agent is on. It watches and only replays what it has earned the right to. Hover the (i) beside it to see exactly what it may do."
         }
        ]
       }
@@ -527,553 +285,135 @@ export const gcpGuide: Guide = {
    ]
   },
   {
-   "part": "Part 4 — Work with dead letters",
+   "part": "Part 4 — Find and replay a dead-lettered message on Google Cloud",
    "steps": [
     {
-     "title": "4.1 The Dead letters tab",
-     "text": "A **dead letter** is a message your consumer failed to process several times, so Pub/Sub forwarded it to the dead-letter topic. The list starts **empty on Google Cloud** even when messages are waiting, because pulling a message counts as a delivery attempt. Press **Look at Google Cloud's dead letters now**: ServiceHub pulls up to 100 per queue, records them, and hands them straight back. It never deletes or moves anything. It can take up to a minute per queue. Press it again to record more; Google Cloud hands back a sample, so a dead letter not seen on a later look stays in the list.",
+     "title": "4.1 Open the connection",
+     "text": "In the menu choose **Pub/Sub**, then your connection. The **Overview** says how many messages are dead-lettered now (Google Cloud reports no counts to ServiceHub, so it shows what it has recorded), and lists every topic and subscription. The tabs are: **Dead-letter messages**, **Recovery** (what was replayed and whether it held), **Access** (what ServiceHub may do here), **Configuration** and **Audit**.",
+     "shots": [
+      {
+       "image": "/help/gcp/05-detail-overview.png",
+       "alt": "4.1 Open the connection (05-detail-overview)",
+       "keys": [
+        {
+         "n": 1,
+         "text": "The tabs of this connection. Dead-letter messages is where you read and replay; Recovery shows what was replayed and whether it held; Access shows what ServiceHub may do here; Audit is every action."
+        },
+        {
+         "n": 2,
+         "text": "How many messages are dead-lettered right now, and whether the number is exact or approximate on this cloud."
+        },
+        {
+         "n": 3,
+         "text": "Sends one harmless test message to a queue you choose, so you can watch it travel. Optional."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "title": "4.2 Look now (Google Cloud is not watched in the background)",
+     "text": "Pub/Sub reports no counts, and pulling a message counts as a delivery attempt. So ServiceHub **never looks on its own**. On the **Dead-letter messages** tab a yellow strip says so, and **Look now** records what is in each dead-letter subscription right now. Google Cloud often records **no reason** for a dead letter; when it does not, the table says so once instead of showing a column of dashes. Press **Look now** once and wait.",
+     "shots": [
+      {
+       "image": "/help/gcp/05a-look-now.png",
+       "alt": "4.2 Look now (Google Cloud is not watched in the background) (05a-look-now)",
+       "keys": [
+        {
+         "n": 1,
+         "text": "Google Cloud is not watched in the background: there is no safe way to count dead letters without a delivery attempt. Look now records what is in the dead-letter queues right now, once, never faster than the cloud allows."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "title": "4.3 The Dead-letter messages tab",
+     "text": "Every dead-lettered message on this connection. Group chips above the table count them by reason. Filter by queue or state, or search by message id or reason (never inside bodies). Tick one or more messages and press **Replay selected…**; a preview opens first. Press **Open** on a row to read one.",
      "shots": [
       {
        "image": "/help/gcp/06-dead-letters.png",
-       "alt": "4.1 The Dead letters tab (06-dead-letters)",
+       "alt": "4.3 The Dead-letter messages tab (06-dead-letters)",
        "keys": [
         {
          "n": 1,
-         "text": "Namespace picker — all of Google Cloud, or one project."
+         "text": "Filter by queue, topic or state (Stuck now, No longer stuck, all)."
         },
         {
          "n": 2,
-         "text": "Why the list starts empty — on Google Cloud, reading a dead letter counts as one delivery attempt, so ServiceHub only looks when you ask. It reads up to 100 per queue and keeps them here; it can take up to a minute per queue."
+         "text": "Search by message id or by the reason it failed. It never searches inside message bodies."
         },
         {
          "n": 3,
-         "text": "Look at Google Cloud’s dead letters now — receives up to 100 dead letters per queue, records them, and hands them straight back. It never deletes or moves anything; it does add one to each message’s delivery count."
+         "text": "Tick one or more messages, then Replay selected. A preview opens first; nothing is sent until you confirm."
         },
         {
          "n": 4,
-         "text": "The empty list — “nothing recorded” does not mean there are none: the queue holds 324. Press Look now to see them."
-        },
-        {
-         "n": 5,
-         "text": "Help for this page — opens Help on this page’s step of the guide. The (?) beside it only re-shows the short explanation."
-        },
-        {
-         "n": 6,
-         "text": "The three tabs — Dead letters, Active and Replayed — switch the list below. The (?) beside the title brings back the short “What you’re looking at” card."
-        },
-        {
-         "n": 7,
-         "text": "Filters and Refresh — Showing, Time window, queue or topic and search narrow the list; Refresh re-reads what ServiceHub has recorded. On Google Cloud Refresh does not look at Google Cloud: only Look now does."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/06b-after-look.png",
-       "alt": "4.1 The Dead letters tab (06b-after-look)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "What the look found — when it ran, how many queues had dead letters, and how many new ones were recorded."
-        },
-        {
-         "n": 2,
-         "text": "Google Cloud hands back a sample, not the whole queue: a dead letter recorded earlier and not seen this time stays in the list; it is not assumed gone."
-        },
-        {
-         "n": 3,
-         "text": "Why they failed — Pub/Sub records no reason for a dead letter, so every one is counted as “No reason recorded”. The total is how many ServiceHub has recorded."
-        },
-        {
-         "n": 4,
-         "text": "Dead letters tab — the number is how many ServiceHub has recorded (Google Cloud does not report how many it holds)."
-        },
-        {
-         "n": 5,
-         "text": "Look again — records any dead letters not seen before. Each look adds one delivery attempt to the messages it reads."
-        },
-        {
-         "n": 6,
-         "text": "Reason chips — click one to show only that reason."
-        },
-        {
-         "n": 7,
-         "text": "The namespace picker, the (?) that re-shows the short explanation, and the Active and Replayed tabs."
-        },
-        {
-         "n": 8,
-         "text": "Filters, Replay All Messages and Refresh — described on the next screenshot, where the table is in view."
-        },
-        {
-         "n": 9,
-         "text": "The selection bar — the tick selects the whole page; View details chooses columns; Replay selected stays dimmed until something is ticked."
-        },
-        {
-         "n": 10,
-         "text": "The tick in the table heading — ticks every row on this page."
-        },
-        {
-         "n": 11,
-         "text": "The table headings — each has an ⓘ that explains that column in a sentence; the next screenshot shows the table itself."
+         "text": "Open one message to read why it failed, its body and its history."
         }
        ]
       }
      ]
     },
     {
-     "title": "4.2 Filters, selection and the table",
-     "text": "Narrow the list, tick the messages you want, and use **Details** or **Replay** on a row. Pub/Sub records no failure reason, so there is a single reason, *No reason recorded*; choosing it filters the list (with *show all reasons* at the foot to clear it), and the list pages at the bottom. Refresh re-reads what ServiceHub has recorded; only Look now asks Google Cloud.",
+     "title": "4.4 Open a message",
+     "text": "A side window opens beside the list. **Why it failed** gives the reason, the description, how many times it was tried, and how many others failed the same way. **Body**, **Properties** and **History** are the message exactly as stored. ServiceHub never changes a body. **Replay…** is at the bottom of the window.",
      "shots": [
       {
-       "image": "/help/gcp/07-filters-and-table.png",
-       "alt": "4.2 Filters, selection and the table (07-filters-and-table)",
+       "image": "/help/gcp/07-message.png",
+       "alt": "4.4 Open a message (07-message)",
        "keys": [
         {
          "n": 1,
-         "text": "Showing — Stuck now, or messages that have since left the queue."
+         "text": "The reason and description the cloud recorded, and how many others failed the same way."
         },
         {
          "n": 2,
-         "text": "Time window — only messages set aside in this period."
+         "text": "The message exactly as it was sent. ServiceHub never changes a message body."
         },
         {
          "n": 3,
-         "text": "Search — by message ID, queue, reason or error text."
-        },
-        {
-         "n": 4,
-         "text": "Replay All Messages — opens a preview of every message still stuck in the cloud and namespace you are viewing. It ignores the filters, time window and search here. Nothing is sent until you confirm the preview."
-        },
-        {
-         "n": 5,
-         "text": "Refresh — reads the queue again. It re-reads what ServiceHub has already recorded; it does not look at Google Cloud (only Look now does). The ⓘ beside it says when it was last updated."
-        },
-        {
-         "n": 6,
-         "text": "Selection — tick rows to act on several; this line shows how many."
-        },
-        {
-         "n": 7,
-         "text": "Replay selected — opens the same preview for just the ticked messages."
-        },
-        {
-         "n": 8,
-         "text": "Details — opens the message: why it failed, its body, properties and delivery history."
-        },
-        {
-         "n": 9,
-         "text": "Replay — opens the proposal for this one message. It does not send anything yet."
-        },
-        {
-         "n": 10,
-         "text": "The table — a tick on every row (the one in the heading ticks the whole page), Details and Replay on every row, and an ⓘ About button on each column heading that explains that column in a sentence. “View details” in the heading chooses which columns show."
-        },
-        {
-         "n": 11,
-         "text": "Reason chips — each shows a reason and how many messages have it. Click one to show only those; click it again to show all."
-        },
-        {
-         "n": 12,
-         "text": "All queues & topics — limit the list to one queue or topic."
-        },
-        {
-         "n": 13,
-         "text": "The selection bar — the tick selects every row on this page; View details chooses which columns show; Replay selected stays dimmed until something is ticked."
-        },
-        {
-         "n": 14,
-         "text": "Look at Google Cloud’s dead letters now — records any dead letters not seen before. Each look adds one delivery attempt to the messages it reads."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/07a-reason-filter.png",
-       "alt": "4.2 Filters, selection and the table (07a-reason-filter)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "Filtering by a reason — the chosen reason is highlighted and “show all reasons” clears the filter. The list below shows only that reason."
-        },
-        {
-         "n": 2,
-         "text": "The reason chips — click one to show only that reason."
-        },
-        {
-         "n": 3,
-         "text": "The namespace picker, the (?) that re-shows the short explanation, and the three tabs."
-        },
-        {
-         "n": 4,
-         "text": "Filters, Replay All Messages, Refresh and Look now — described on the earlier screenshots."
-        },
-        {
-         "n": 5,
-         "text": "The selection bar (which now offers “Select all” for this reason), the table headings and the rows, as on the earlier screenshots."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/07a-reason-filter-end.png",
-       "alt": "4.2 Filters, selection and the table (07a-reason-filter-end)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "Show all reasons — at the foot of a filtered list too: clears the reason filter and brings every recorded dead letter back."
-        },
-        {
-         "n": 2,
-         "text": "The rows of this reason only, and the selection bar repeated underneath."
-        },
-        {
-         "n": 3,
-         "text": "Paging — rows per page, previous, the page numbers and next."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/07c-table-end.png",
-       "alt": "4.2 Filters, selection and the table (07c-table-end)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "The foot of the table — the same ticks, Details and Replay on every row, and the selection bar repeated underneath."
-        },
-        {
-         "n": 2,
-         "text": "Paging — rows per page, previous, the page numbers and next. The list holds up to 100 dead letters per queue from each look."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/07b-selection.png",
-       "alt": "4.2 Filters, selection and the table (07b-selection)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "Row tick — choose which messages to act on. The header tick chooses every row on the page."
-        },
-        {
-         "n": 2,
-         "text": "Selection count — how many messages are ticked."
-        },
-        {
-         "n": 3,
-         "text": "Clear — unticks everything. Nothing else changes."
-        },
-        {
-         "n": 4,
-         "text": "Replay selected — opens the bulk preview for just these messages. Nothing is sent yet."
-        },
-        {
-         "n": 5,
-         "text": "The tabs and the filter row — reason chips, Showing, Time window, queue, search, Replay All Messages and Refresh, each explained on the previous screenshot."
-        },
-        {
-         "n": 6,
-         "text": "The table — the ticks, Details and Replay on every row, and the whole-page tick in the heading."
-        },
-        {
-         "n": 7,
-         "text": "The selection bar — the whole-page tick and View details (which columns show)."
+         "text": "Replay… opens the preview. It is always a preview first."
         }
        ]
       }
      ]
     },
     {
-     "title": "4.3 Open a message",
-     "text": "**Details** opens the message: *Reason not recorded* (Pub/Sub keeps none), a plain-words reading drawn from the message's own attributes (marked *Suggestion* because it is a reading, not something Google Cloud reported), and the body. The tabs show the body, the attributes your publisher attached, what Pub/Sub recorded, and delivery — which Google Cloud does not report, so it says so. At the bottom are **Replay this message** and **Purge instead…**, which only opens a form.",
+     "title": "4.5 The replay preview",
+     "text": "Nothing is sent yet. The preview shows the message, where it would go back to, and the safety checks that ran. **Replay 1 message** is the only button that changes anything. Cancel closes it.",
      "shots": [
       {
-       "image": "/help/gcp/08-message-details.png",
-       "alt": "4.3 Open a message (08-message-details)",
+       "image": "/help/gcp/08-replay-preview.png",
+       "alt": "4.5 The replay preview (08-replay-preview)",
        "keys": [
         {
          "n": 1,
-         "text": "Expand — widens the panel for long messages."
+         "text": "The message that would be replayed, exactly as it is stored, and where it would go back to."
         },
         {
          "n": 2,
-         "text": "Overview — reason, why it failed, the body with the bad field marked."
+         "text": "Replay 1 message sends it back. This is the only button that changes anything, and ServiceHub then watches whether the fix held."
         },
         {
          "n": 3,
-         "text": "Delivery — what Google Cloud reports about delivery. It does not report how many times a message was tried, so this says so rather than guess."
-        },
-        {
-         "n": 4,
-         "text": "Why it failed — a plain-words reading of the recorded reason. Marked Suggestion: it is a reading, not something Google Cloud reported — Pub/Sub records no reason at all."
-        },
-        {
-         "n": 5,
-         "text": "Formatted / Raw — switch the body view."
-        },
-        {
-         "n": 6,
-         "text": "Replay this message — opens the proposal. Nothing is sent from here."
-        },
-        {
-         "n": 7,
-         "text": "Body, Properties and Headers — the other tabs; each is shown below."
-        },
-        {
-         "n": 8,
-         "text": "Formatted and Copy body — pretty-print the body, or copy it to your clipboard. The copy stays in your browser."
-        },
-        {
-         "n": 9,
-         "text": "Copy message ID — copies the ID so you can search for it elsewhere."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/08b-message-details-end.png",
-       "alt": "4.3 Open a message (08b-message-details-end)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "Replay this message — opens the proposal. Nothing is sent from here."
-        },
-        {
-         "n": 2,
-         "text": "Purge instead… — for a message not worth replaying. It only opens a small form: you give a reason, and nothing is deleted until you press “Purge for good”. Deleting is permanent, goes through the same checks as a replay, and is recorded with your name and reason."
-        },
-        {
-         "n": 3,
-         "text": "Expand, the body view and the copy buttons — as on the previous screenshots."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/08-message-details-body.png",
-       "alt": "4.3 Open a message (08-message-details-body)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "The message body exactly as it was sent."
-        },
-        {
-         "n": 2,
-         "text": "Expand widens the panel; the other tabs (Overview, Body, Properties, Headers, Delivery) switch what is shown."
-        },
-        {
-         "n": 3,
-         "text": "Formatted / Raw switch the view; Copy body copies it to your clipboard."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/08-message-details-properties.png",
-       "alt": "4.3 Open a message (08-message-details-properties)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "The attributes your publisher attached to the message (for example shs-error-type)."
-        },
-        {
-         "n": 2,
-         "text": "Expand widens the panel; the other tabs (Overview, Body, Properties, Headers, Delivery) switch what is shown."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/08-message-details-headers.png",
-       "alt": "4.3 Open a message (08-message-details-headers)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "What Pub/Sub recorded: the message ID, the publish time and the subscription it was dead-lettered from."
-        },
-        {
-         "n": 2,
-         "text": "Expand widens the panel; the other tabs (Overview, Body, Properties, Headers, Delivery) switch what is shown."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/08-message-details-delivery.png",
-       "alt": "4.3 Open a message (08-message-details-delivery)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "What Google Cloud reports about delivery. It does not report how many times a message was tried, so this says so rather than guess."
-        },
-        {
-         "n": 2,
-         "text": "Expand widens the panel; the other tabs (Overview, Body, Properties, Headers, Delivery) switch what is shown."
+         "text": "Cancel closes the preview. Nothing has been sent."
         }
        ]
       }
      ]
     },
     {
-     "title": "4.4 Replay one message — you see the proposal first",
-     "text": "**Replay** never sends straight away. It shows what will happen (the message is published back to the topic it came from and the dead-letter copy is removed once Google Cloud accepts the new one), every safety check, and what happens afterwards. Only the blue button sends. On Google Cloud finding the one message can take up to a minute.",
+     "title": "4.6 The result, and whether it held",
+     "text": "After **Replay 1 message** the window says **Sent back**: the message is published to its topic again (every subscription on that topic receives it again, which the preview says), and, on Google Cloud, that the result will read **Verification required**. Pub/Sub cannot show that the dead-letter subscription stayed empty, so ServiceHub cannot call it fixed. In **Replay history** it appears as **Unverified**. To get Verified and Came back, open the connection's **Configuration** tab and switch on **Confirm fixes on this cloud**.",
      "shots": [
       {
-       "image": "/help/gcp/09-replay-proposal.png",
-       "alt": "4.4 Replay one message — you see the proposal first (09-replay-proposal)",
+       "image": "/help/gcp/24-replay-result.png",
+       "alt": "4.6 The result, and whether it held (24-replay-result)",
        "keys": [
         {
          "n": 1,
-         "text": "The message — what is about to be replayed: ID, where it is stuck, when and why it was set aside, and its body."
-        },
-        {
-         "n": 2,
-         "text": "Replay 1 message — sends it back. It is only sent when you press this."
-        },
-        {
-         "n": 3,
-         "text": "What will happen, Safety checks, After it runs — fold open or closed; the next screenshot shows them open."
-        },
-        {
-         "n": 4,
-         "text": "Cancel — closes without sending."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/09-replay-proposal-middle.png",
-       "alt": "4.4 Replay one message — you see the proposal first (09-replay-proposal-middle)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "The four sections of the proposal — The message, What will happen, Safety checks and After it runs. Each folds open or closed; nothing here sends anything."
-        },
-        {
-         "n": 2,
-         "text": "Replay 1 message sends it; Cancel closes without sending. Both are repeated at the foot of the window so they are always in reach."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/09-replay-proposal-checks.png",
-       "alt": "4.4 Replay one message — you see the proposal first (09-replay-proposal-checks)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "What will happen — where it goes and what happens to the dead-letter copy (it is removed once Google Cloud accepts the new one)."
-        },
-        {
-         "n": 2,
-         "text": "Safety checks — every check that must pass; a failing one blocks the replay and says why."
-        },
-        {
-         "n": 3,
-         "text": "After it runs — ServiceHub records it and watches for 24 hours; if it comes back, nothing retries it."
-        },
-        {
-         "n": 4,
-         "text": "Cancel — closes without sending."
-        },
-        {
-         "n": 5,
-         "text": "The folding headings and the Replay button repeated at the end of the window."
-        }
-       ]
-      }
-     ]
-    },
-    {
-     "title": "4.5 Replay several at once",
-     "text": "Tick messages (or use **Replay All Messages**) to get a preview: how many will be replayed, which are held back by a safety check, grouped by how they failed and where each goes. They are sent one at a time, each re-checked, and the run stops by itself after five sends in a row that are not accepted. Further down is **Purge instead…** — a separate, deliberate step to delete messages that are not worth replaying.",
-     "shots": [
-      {
-       "image": "/help/gcp/13-bulk-replay.png",
-       "alt": "4.5 Replay several at once (13-bulk-replay)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "Preview — nothing has run yet. Step 1 of Preview → Run → Watch."
-        },
-        {
-         "n": 2,
-         "text": "Held back — messages that fail a safety check stay in dead letters; they are never forced."
-        },
-        {
-         "n": 3,
-         "text": "Grouped by how they failed — so you can see whether you are fixing one problem or several."
-        },
-        {
-         "n": 4,
-         "text": "Where each one goes — the queue each message will be sent back to."
-        },
-        {
-         "n": 5,
-         "text": "Replay N messages — sends them one at a time, re-checking each. You can stop partway."
-        },
-        {
-         "n": 6,
-         "text": "Cancel — nothing is sent."
-        },
-        {
-         "n": 7,
-         "text": "How it will run and After they are sent back — fold open to show the pace and the automatic stop (five sends in a row that are not accepted), and what ServiceHub does next."
-        },
-        {
-         "n": 8,
-         "text": "Page controls — move through the list when more messages are chosen than fit on one page."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/13b-bulk-replay-end.png",
-       "alt": "4.5 Replay several at once (13b-bulk-replay-end)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "How it will run — the pace (a few messages a second, gentle on your consumer) and the automatic stop: five sends in a row that are not accepted."
-        },
-        {
-         "n": 2,
-         "text": "After they are sent back — folds open to say what ServiceHub does next: it keeps watching, and on Google Cloud it records each one as “verification required”, never as fixed."
-        },
-        {
-         "n": 3,
-         "text": "Purge instead… — for messages not worth replaying. It does not delete anything yet: it opens a separate step that asks why, shows what would be purged, and needs you to type a confirmation. Deleting is for good, and each purge is recorded with your name and reason."
-        },
-        {
-         "n": 4,
-         "text": "Page controls — move through the list when more messages are chosen than fit on one page."
-        },
-        {
-         "n": 5,
-         "text": "Replay N messages — sends them one at a time, re-checking each. You can stop partway."
-        },
-        {
-         "n": 6,
-         "text": "Cancel — nothing is sent."
-        },
-        {
-         "n": 7,
-         "text": "Where each one goes — folds open to show the queue each message is sent back to."
-        }
-       ]
-      }
-     ]
-    },
-    {
-     "title": "4.6 The result",
-     "text": "ServiceHub says plainly what happened and records it under Replayed. On Google Cloud the result will read **Verification required**: the message was sent back, but Google Cloud cannot prove the dead-letter queue stayed empty, so ServiceHub never says it held. If a consumer is running on the subscription it may pick the message up straight away.",
-     "shots": [
-      {
-       "image": "/help/gcp/10-replay-result.png",
-       "alt": "4.6 The result (10-replay-result)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "The result, in plain words: it was sent back, and ServiceHub will watch for it coming back."
-        },
-        {
-         "n": 2,
-         "text": "It is recorded, with who did it, and shows under Replayed (and in Advanced → Recovery Ledger). On Google Cloud the result will read “Verification required”: this cloud cannot prove the queue stayed empty, so ServiceHub never says it held."
-        },
-        {
-         "n": 3,
-         "text": "Done — closes the window."
-        },
-        {
-         "n": 4,
-         "text": "Active messages / Replayed — jump to where you can watch this message."
+         "text": "The result, in plain words: the message is back on its queue and the dead letter has left the list. Sent back is not the same as fixed. ServiceHub now watches it, and marks it Verified or Came back."
         }
        ]
       }
@@ -1082,109 +422,93 @@ export const gcpGuide: Guide = {
    ]
   },
   {
-   "part": "Part 5 — Afterwards",
+   "part": "Part 5 — When ServiceHub asks you",
    "steps": [
     {
-     "title": "5.1 Replayed",
-     "text": "Every replay, who did it, and how it ended. On Google Cloud a replay stays *Watching* for its window and is then recorded as *verification required* — never as success — until a person judges it.",
+     "title": "5.1 Needs your attention",
+     "text": "Everything on this cloud waiting for a person: replays the Agent is holding, and items ServiceHub handed off. The four tiles count them and show the oldest. Filter by component, family or age; **Review** opens the decision.",
      "shots": [
       {
-       "image": "/help/gcp/11-replayed.png",
-       "alt": "5.1 Replayed (11-replayed)",
+       "image": "/help/gcp/09-attention.png",
+       "alt": "5.1 Needs your attention (09-attention)",
        "keys": [
         {
          "n": 1,
-         "text": "Messages replayed — how many were put back in the window."
-        },
-        {
-         "n": 2,
-         "text": "Being watched — replays still inside their watch window. Google Cloud cannot prove whether each stayed fixed, so they wait for you to judge."
-        },
-        {
-         "n": 3,
-         "text": "Came back — messages that failed the same way again. Nothing retries them on its own."
-        },
-        {
-         "n": 4,
-         "text": "Result filter — stayed fixed, being watched, came back."
-        },
-        {
-         "n": 5,
-         "text": "Download — saves this list as a file. It does not change anything."
-        },
-        {
-         "n": 6,
-         "text": "Details — the full record of this replay."
-        },
-        {
-         "n": 7,
-         "text": "Filters — namespace, queue or topic, result, time window and search; Refresh reads the list again. They change what is listed, never what happened."
-        },
-        {
-         "n": 8,
-         "text": "The table — a tick per replay (the heading tick ticks the page) and Details on each row."
-        },
-        {
-         "n": 9,
-         "text": "What am I looking at? — a short reading guide. Auto Replay rules — opens the rules page. All and Last 24 hours — the result and time filters."
-        },
-        {
-         "n": 10,
-         "text": "The three tabs — Dead letters, Active and Replayed. They switch the list below without leaving the page."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/11b-replayed-end.png",
-       "alt": "5.1 Replayed (11b-replayed-end)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "The replays, newest first — each with a tick and Details."
-        },
-        {
-         "n": 2,
-         "text": "Paging — rows per page, previous, the page numbers and next."
-        },
-        {
-         "n": 3,
-         "text": "Filters — result, queue or topic, who replayed it, time window and search; Refresh re-reads the list and Download as CSV saves it as a file. They change what is listed, never what happened."
-        },
-        {
-         "n": 4,
-         "text": "The three tabs, the Auto Replay rules button and the table headings, as on the previous screenshot."
+         "text": "Everything on this cloud that waits for a person: replays the Agent is holding, and items ServiceHub handed off. Review opens the decision."
         }
        ]
       }
      ]
     },
     {
-     "title": "5.2 Active messages",
-     "text": "Your topics and subscriptions. Pub/Sub reports **no message counts**, so each says *can't count here* rather than guess. ServiceHub does not open active messages on Google Cloud, because there is no way to look at one without it counting as a delivery — watching could push a message into the dead-letter topic by itself. For the same reason **Follow live** is not offered here. **Send a message** is the one control here that changes a topic.",
+     "title": "5.2 Pending approvals",
+     "text": "The held replays on their own. Each row says which failure it was and why the Agent stopped (usually: this kind of failure has not yet earned automatic replay, so a person decides). Approving needs the **Approver** role.",
      "shots": [
       {
-       "image": "/help/gcp/12-active.png",
-       "alt": "5.2 Active messages (12-active)",
+       "image": "/help/gcp/10-approvals.png",
+       "alt": "5.2 Pending approvals (10-approvals)",
        "keys": [
         {
          "n": 1,
-         "text": "Send a message — puts a test message on a queue. This does change the queue, so use a dev queue."
-        },
+         "text": "Replays the Agent stopped on because this kind of failure has not yet earned automatic replay. You approve or decline each, and the answer is recorded."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "title": "5.3 Review: approve or decline",
+     "text": "Review explains why the Agent stopped, lists the messages that would be replayed, and offers **Approve** or **Decline…**. Declining needs a reason. Both answers are written to the evidence ledger.",
+     "shots": []
+    }
+   ]
+  },
+  {
+   "part": "Part 6 — Afterwards",
+   "steps": [
+    {
+     "title": "6.1 Replay history",
+     "text": "Every replay, who or what started it, how many messages, and what ServiceHub saw afterwards: **Verified** (did not come back), **Watching** (still inside the window), **Came back** (failed again, so it is not fixed) or **Unverified** (sent, but this cloud cannot prove it held).",
+     "shots": [
+      {
+       "image": "/help/gcp/12-replays.png",
+       "alt": "6.1 Replay history (12-replays)",
+       "keys": [
         {
-         "n": 2,
-         "text": "Why there is no message list — on Google Cloud there is no way to look at a message without it counting as a delivery, and watching could push it into the dead-letter queue by itself. So ServiceHub shows counts per queue, and “Follow live” is not offered."
-        },
+         "n": 1,
+         "text": "Every replay: who or what started it, how many messages, and the outcome ServiceHub saw afterwards (Watching, Verified, Came back, Unverified)."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "title": "6.2 Active messages",
+     "text": "The live queues, not the dead-letter ones. Read-only: it exists so you can see whether things are moving. Browse opens a queue's messages without changing them.",
+     "shots": [
+      {
+       "image": "/help/gcp/11-active.png",
+       "alt": "6.2 Active messages (11-active)",
+       "keys": [
         {
-         "n": 3,
-         "text": "Namespace — all of AWS, or one account and region."
-        },
+         "n": 1,
+         "text": "Messages in the live queues now, not the dead-letter queues. Read-only."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "title": "6.3 Failure signatures",
+     "text": "Failures grouped by how they fail, so a thousand messages become a handful of causes. For each: how many are stuck, whether replaying has helped before, and how much the Agent may do about it (its level of trust).",
+     "shots": [
+      {
+       "image": "/help/gcp/14-signatures.png",
+       "alt": "6.3 Failure signatures (14-signatures)",
+       "keys": [
         {
-         "n": 4,
-         "text": "The three tabs — Dead letters, Active and Replayed — and the (?) that re-shows the short explanation."
-        },
-        {
-         "n": 5,
-         "text": "The table — one row per topic and subscription: Queue or topic, Waiting now and Dead-lettered. Pub/Sub reports no counts, so the counts say “can’t count here” rather than guess; the ⓘ on each heading says what the column means."
+         "n": 1,
+         "text": "Failures grouped by how they fail, so a thousand messages become a handful of causes."
         }
        ]
       }
@@ -1193,69 +517,51 @@ export const gcpGuide: Guide = {
    ]
   },
   {
-   "part": "Part 6 — Auto Replay",
+   "part": "Part 7 — Letting the Agent help",
    "steps": [
     {
-     "title": "6.1 Rules",
-     "text": "A rule names a failure ServiceHub has already seen and how carefully to retry it. It never runs in Production, goes through the same safety checks as you, and **stops itself** if fewer than half of its replays stay fixed. On Google Cloud a rule always waits for a person, because Google Cloud cannot prove a fix held.",
+     "title": "7.1 Auto Replay rules",
+     "text": "A rule says: for this failure pattern, replay on your behalf, at this pace. A rule that has not earned trust only produces approvals. If results turn bad it switches itself off and asks a person.",
      "shots": [
       {
-       "image": "/help/gcp/14-auto-replay.png",
-       "alt": "6.1 Rules (14-auto-replay)",
+       "image": "/help/gcp/13-rules.png",
+       "alt": "7.1 Auto Replay rules (13-rules)",
        "keys": [
         {
          "n": 1,
-         "text": "Auto Generate Rules — proposes rules from failures already seen. It only proposes; you decide what to turn on."
-        },
-        {
-         "n": 2,
-         "text": "Create rule — start a rule from a failure you have already seen."
-        },
-        {
-         "n": 3,
-         "text": "How it works — you name a failure, safety checks decide, it replays gently, it proves it worked and stops itself if it does not."
-        },
-        {
-         "n": 4,
-         "text": "Totals — rules on, replayed by rules, waiting for a person, stopped themselves."
-        },
-        {
-         "n": 5,
-         "text": "Namespace — Auto Replay rules apply to every Google Cloud project you connected; this picks which one the page shows."
-        },
-        {
-         "n": 6,
-         "text": "Refresh rules — reads the rules again."
-        },
-        {
-         "n": 7,
-         "text": "Create your first rule — the same as Create rule, shown while there are none."
+         "text": "What the Agent may replay by itself. A rule is on only for a failure pattern that has earned it; it stops and asks a person when results turn bad."
         }
        ]
-      },
+      }
+     ]
+    },
+    {
+     "title": "7.2 Agents",
+     "text": "The background workers: what each one does, whether it is healthy, when it last ran, and whether it may act or only observe. Pause any of them from here.",
+     "shots": [
       {
-       "image": "/help/gcp/14-auto-replay-create.png",
-       "alt": "6.1 Rules (14-auto-replay-create)",
+       "image": "/help/gcp/16-agents.png",
+       "alt": "7.2 Agents (16-agents)",
        "keys": [
         {
          "n": 1,
-         "text": "Based on — pick a failure ServiceHub has already seen. A rule can only be made from a seen failure."
-        },
+         "text": "The background workers: what each does, when it last ran and whether it is healthy."
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "title": "7.3 Evidence ledger",
+     "text": "A tamper-evident record of every decision ServiceHub took, with who or what took it. Each entry is chained to the one before; export it and check it offline with `scripts/verify-recovery-chain.py`.",
+     "shots": [
+      {
+       "image": "/help/gcp/15-ledger.png",
+       "alt": "7.3 Evidence ledger (15-ledger)",
+       "keys": [
         {
-         "n": 2,
-         "text": "The guarantees: never in Production, same safety checks as you, and it stops itself if fewer than half stay fixed."
-        },
-        {
-         "n": 3,
-         "text": "Create and turn on — enabled once you choose a failure."
-        },
-        {
-         "n": 4,
-         "text": "Cancel — nothing is created."
-        },
-        {
-         "n": 5,
-         "text": "The page header — namespace, Refresh rules, Auto Generate Rules (proposes only) and the “How Auto Replay works” fold, as on the previous screenshot."
+         "n": 1,
+         "text": "The tamper-evident record of every decision. Export it and check it offline with verify-recovery-chain.py."
         }
        ]
       }
@@ -1264,373 +570,77 @@ export const gcpGuide: Guide = {
    ]
   },
   {
-   "part": "Part 7 — Settings, Help and Advanced",
+   "part": "Part 8 — Configuration, Help and safety",
    "steps": [
     {
-     "title": "7.1 Settings",
-     "text": "Connections, Notifications (Slack, Teams, any webhook — sent only when the Agent stops and needs a person), Preferences, Access & security (roles and the emergency stop) and Backup.",
+     "title": "8.1 Configuration",
+     "text": "How ServiceHub looks (**Preferences**), who may do what (**Access**), **Notifications**, **Backup** and restore, and the list of **Connections** again, with each cloud's own settings.",
      "shots": [
       {
-       "image": "/help/gcp/15-settings-connections.png",
-       "alt": "7.1 Settings (15-settings-connections)",
+       "image": "/help/gcp/21-configuration.png",
+       "alt": "8.1 Configuration (21-configuration)",
        "keys": [
         {
          "n": 1,
-         "text": "Sections — Connections, Notifications, Preferences, Access & security and Backup. Each jumps to that part of this window."
-        },
-        {
-         "n": 2,
-         "text": "Add a cloud — connect another cloud."
-        },
-        {
-         "n": 3,
-         "text": "Test — checks the connection now and shows the result. Reads only."
-        },
-        {
-         "n": 4,
-         "text": "Remove — forgets this connection and its stored credential. It does not delete anything in Google Cloud."
-        },
-        {
-         "n": 5,
-         "text": "Confirm fixes on this cloud — Off until you switch it on. Without it, a replay here is sent back but cannot be confirmed as fixed. Switch on sets up the observer that lets ServiceHub see this cloud’s whole dead-letter queue."
-        },
-        {
-         "n": 6,
-         "text": "Subscription and dead-letter topic — the two names ServiceHub needs before it can switch the observer on: the subscription it reads, and the dead-letter topic that subscription belongs to."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/15-settings-notifications.png",
-       "alt": "7.1 Settings (15-settings-notifications)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "In-app bell and pop-up — always on. It cannot be switched off, so it can never be switched off by mistake."
-        },
-        {
-         "n": 2,
-         "text": "Add webhook (Slack) — paste a Slack incoming-webhook URL to also get the message there."
-        },
-        {
-         "n": 3,
-         "text": "Add webhook (Microsoft Teams) — the same for a Teams channel."
-        },
-        {
-         "n": 4,
-         "text": "Add webhook (any other system) — JSON to a URL you choose. Private and internal addresses are refused."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/15-settings-preferences.png",
-       "alt": "7.1 Settings (15-settings-preferences)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "Theme — Light today; Dark is marked soon."
-        },
-        {
-         "n": 2,
-         "text": "Times shown in — your browser’s time zone, or UTC. It changes how times are displayed, never the data."
-        },
-        {
-         "n": 3,
-         "text": "Open on — start in Simple every time (Simple), or where you last were (Last used). Kept in this browser only."
-        },
-        {
-         "n": 4,
-         "text": "Your tracing tool — optional. Paste a link with {traceId} in it, and ServiceHub shows a link from each message to that trace in your own tool. It is kept in this browser only."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/15-settings-access.png",
-       "alt": "7.1 Settings (15-settings-access)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "Who you are — shown from this browser session until roles are switched on. The credential key fingerprint shows what encrypts stored credentials."
-        },
-        {
-         "n": 2,
-         "text": "Roles — Viewer sees, Operator replays, Approver answers the Agent, Admin connects clouds. Giving the first role switches roles on."
-        },
-        {
-         "n": 3,
-         "text": "Who — the API key name or signed-in user the role is for."
-        },
-        {
-         "n": 4,
-         "text": "Kind, Role, Where and Grant — choose whether it is a key or a person, the role, whether it applies everywhere or to one namespace, then Grant. Granting the first role switches roles on for everyone."
-        },
-        {
-         "n": 5,
-         "text": "Emergency stop — type STOP, say why, and switch it on to halt every automatic action at once. Nothing already done is undone; switch it off to resume."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/15-settings-backup.png",
-       "alt": "7.1 Settings (15-settings-backup)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "Take a backup now — saves a consistent copy of ServiceHub’s own database (not of your clouds)."
+         "text": "Configuration: how ServiceHub looks, who may do what, backup and restore, and notifications."
         }
        ]
       }
      ]
     },
     {
-     "title": "7.2 Help, search and the bell",
-     "text": "Help is a panel over whatever you are doing. Search (⌘K) jumps anywhere. The bell is the only place the Agent asks you something.",
+     "title": "8.2 Help and Search",
+     "text": "**Help** (or press `?`) has answers by task, the step-by-step guides, and the keyboard shortcuts. **Search** (Cmd-K or Ctrl-K) finds a connection, a queue, a page or an action; it never searches inside messages.",
      "shots": [
       {
-       "image": "/help/gcp/16-help.png",
-       "alt": "7.2 Help, search and the bell (16-help)",
+       "image": "/help/gcp/18-help.png",
+       "alt": "8.2 Help and Search (18-help)",
        "keys": [
         {
          "n": 1,
-         "text": "Search — type what you are trying to do."
-        },
-        {
-         "n": 2,
-         "text": "An answer — click to open it in place; each links to the screen it is about."
-        },
-        {
-         "n": 3,
-         "text": "Setting up answers — connecting, alerts and who may replay."
-        },
-        {
-         "n": 4,
-         "text": "Keyboard shortcuts — only ones that work are listed."
-        },
-        {
-         "n": 5,
-         "text": "Step by step — one guide per cloud, each with every screen as a real screenshot and a numbered key for every button and link. Yours (Google Cloud) is listed first. The same guides are the articles in docs/clouds."
+         "text": "Search the Help. Below it: short answers by task, then the step-by-step guide for each cloud. Press ? from any page to open Help."
         }
        ]
       },
       {
-       "image": "/help/gcp/16b-help-end.png",
-       "alt": "7.2 Help, search and the bell (16b-help-end)",
+       "image": "/help/gcp/19-search.png",
+       "alt": "8.2 Help and Search (19-search)",
        "keys": [
         {
          "n": 1,
-         "text": "Answers and guides — click one to open it in place; the “Every screen” entries are one guide per cloud, each a real screenshot with a numbered key for every button and link."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/18-search.png",
-       "alt": "7.2 Help, search and the bell (18-search)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "Search box — type part of a cloud, queue or page name. Enter opens the first result. Esc closes. Searching never changes anything."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/18-bell.png",
-       "alt": "7.2 Help, search and the bell (18-bell)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "The bell — the only place the Agent asks you something. It lists what is waiting for you and clears when it is resolved, not when you look."
-        },
-        {
-         "n": 2,
-         "text": "See all waiting — opens the full list of what needs a person."
+         "text": "Search finds a connection, a queue, a page or an action from anywhere (Cmd-K or Ctrl-K). It never searches inside messages."
         }
        ]
       }
      ]
     },
     {
-     "title": "7.3 The Advanced pages (read-only)",
-     "text": "Advanced never changes anything. **Overview** summarises recovery, authority and agents, and says why Google Cloud cannot verify; the **Recovery Ledger** is the tamper-evident record of every action; **Failure Signatures** groups failures (on Google Cloud, with no reason recorded, they group by subscription); **Agents** lists what is acting and what is only watching.",
+     "title": "8.3 Emergency stop",
+     "text": "Switches off everything ServiceHub does on its own. It asks for a reason and for you to type STOP. A replay a person starts still works, and anything already sent stays sent.",
      "shots": [
       {
-       "image": "/help/gcp/17-advanced-overview.png",
-       "alt": "7.3 The Advanced pages (read-only) (17-advanced-overview)",
+       "image": "/help/gcp/20-emergency-stop.png",
+       "alt": "8.3 Emergency stop (20-emergency-stop)",
        "keys": [
         {
          "n": 1,
-         "text": "Scope — all clouds, or one."
-        },
-        {
-         "n": 2,
-         "text": "Window — the period the page counts over."
-        },
-        {
-         "n": 3,
-         "text": "Insights — patterns ServiceHub noticed across your failures."
-        },
-        {
-         "n": 4,
-         "text": "Recovery — how replays ended. “Recovered” means it did not come back, not that the business transaction completed."
-        },
-        {
-         "n": 5,
-         "text": "Authority — what each failure may do on its own, and what holds it there."
-        },
-        {
-         "n": 6,
-         "text": "Capability — what each cloud can prove."
-        },
-        {
-         "n": 7,
-         "text": "Being watched, All agents → and Recovery Ledger → — jump to the Agents page and the Recovery Ledger. They only open pages; nothing changes."
-        },
-        {
-         "n": 8,
-         "text": "Overview — the page you are on; the other three Advanced pages are in the bar at the top."
-        },
-        {
-         "n": 9,
-         "text": "Why → — explains why this cloud cannot yet prove a replayed message stayed fixed, and what would unlock it. It opens Help; nothing changes."
+         "text": "Exactly what stops (the Agent, automatic replays) and what does not (a replay a person starts, what is already recorded). Below: a reason, and you type STOP to confirm."
         }
        ]
-      },
+      }
+     ]
+    },
+    {
+     "title": "8.4 What ServiceHub covers",
+     "text": "Every component on every cloud, and how far each has been proven: **Supported** (seen working against a real cloud) or **Being validated** (built, not yet proven).",
+     "shots": [
       {
-       "image": "/help/gcp/17-advanced-ledger.png",
-       "alt": "7.3 The Advanced pages (read-only) (17-advanced-ledger)",
+       "image": "/help/gcp/22-coverage.png",
+       "alt": "8.4 What ServiceHub covers (22-coverage)",
        "keys": [
         {
          "n": 1,
-         "text": "Export evidence — downloads the ledger so it can be verified offline. It changes nothing."
-        },
-        {
-         "n": 2,
-         "text": "Outcome chips — Waiting, Watching, Recovered, Unverified, Returned, Failed, Unknown, Declined. Recovered and Unverified are never counted together."
-        },
-        {
-         "n": 3,
-         "text": "Filters — cloud, namespace, queue or topic, who did it, and search."
-        },
-        {
-         "n": 4,
-         "text": "Details — who took the action, what happened and its evidence. Each entry carries a fingerprint of the one before it."
-        },
-        {
-         "n": 5,
-         "text": "Filters and entries — namespace, queue or topic, who, and search narrow the list; each entry opens to show its evidence."
-        },
-        {
-         "n": 6,
-         "text": "What am I looking at? — a short reading guide for this page. Window — the period it counts over."
-        },
-        {
-         "n": 7,
-         "text": "Outcome chips with counts — click one to list only those entries; All shows everything again."
-        },
-        {
-         "n": 8,
-         "text": "Paging — how many rows per page, previous, the page number and next."
-        },
-        {
-         "n": 9,
-         "text": "The table headings — each has an ⓘ that explains that column in a sentence."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/17-advanced-signatures.png",
-       "alt": "7.3 The Advanced pages (read-only) (17-advanced-signatures)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "Trace a message — follow one message across clouds by its ID."
-        },
-        {
-         "n": 2,
-         "text": "Growing — signatures whose recent days hold at least twice what earlier days did."
-        },
-        {
-         "n": 3,
-         "text": "Sort — most messages, or others."
-        },
-        {
-         "n": 4,
-         "text": "A signature — one way of failing: the same queue and the same kind of error, so many messages become one thing to reason about."
-        },
-        {
-         "n": 5,
-         "text": "Replays — how many of these were replayed and how many were verified to have held. On Google Cloud none can be verified, and this says so."
-        },
-        {
-         "n": 6,
-         "text": "Filters — cloud, namespace, queue or topic, who, and search."
-        },
-        {
-         "n": 7,
-         "text": "Each signature row — opens to show the failures grouped under it and what each replay did."
-        },
-        {
-         "n": 8,
-         "text": "What am I looking at? — a short reading guide. Window — the period counted."
-        },
-        {
-         "n": 9,
-         "text": "Chips — Signatures, All, Replay helps, Replay doesn’t help. Click one to list only those."
-        },
-        {
-         "n": 10,
-         "text": "Paging — rows per page, previous, the page number and next."
-        },
-        {
-         "n": 11,
-         "text": "The table headings — Signature, Messages, Days and Replays, each with an ⓘ that explains it."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/17-advanced-agents.png",
-       "alt": "7.3 The Advanced pages (read-only) (17-advanced-agents)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "Acting agents — the only ones that can change anything, and only after the same safety checks you get."
-        },
-        {
-         "n": 2,
-         "text": "Watching agents — they only look and record."
-        },
-        {
-         "n": 3,
-         "text": "Pause — stops that agent acting. It is the one thing Advanced can do, because it only removes authority. Nothing it already did is undone."
-        },
-        {
-         "n": 4,
-         "text": "Learn more — a short explanation of how agents work."
-        },
-        {
-         "n": 5,
-         "text": "Health summary, agent rows and Open — the summary says whether every agent is running normally; a row opens that agent’s details; Open goes to the screen the agent works through."
-        },
-        {
-         "n": 6,
-         "text": "What am I looking at? — a short reading guide for this page."
-        }
-       ]
-      },
-      {
-       "image": "/help/gcp/17b-advanced-agents-more.png",
-       "alt": "7.3 The Advanced pages (read-only) (17b-advanced-agents-more)",
-       "keys": [
-        {
-         "n": 1,
-         "text": "Watching agents — they only look and record; they cannot change anything."
-        },
-        {
-         "n": 2,
-         "text": "Each agent row opens to show what it may and may not do; Open goes to the screen it works through; Pause (acting agents only) stops it acting."
-        },
-        {
-         "n": 3,
-         "text": "Learn more — a short explanation of how agents work."
+         "text": "What ServiceHub covers: every component, per cloud, and how far each has been proven (Supported, or Being validated)."
         }
        ]
       }

@@ -12,6 +12,7 @@ import { familyWords } from '../../lib/words'
 import { useOwnerWords } from '../../lib/ownerWords'
 import { Th } from '../Tip'
 import { Tip } from '../Tip'
+import { camelBreaks } from '../../lib/camelBreaks'
 
 export type AttentionTab = 'all' | 'approvals' | 'handOffs'
 type Tab = AttentionTab
@@ -87,7 +88,7 @@ export function AttentionTable({ items, coverage, me, showCloud = false, tab: co
                     <td data-label="Message" className={`${td} font-mono text-xs`}>{i.dlqMessageId !== null ? `#${i.dlqMessageId}` : '—'}</td>
                     <td data-label="Component" className={`${td} ${wrap}`}>{nameOf(i.componentKey)}{i.namespaceName && <span className="block text-xs text-[var(--color-text-muted)]">{i.namespaceName}</span>}</td>
                     <td data-label="Entity" className={`${td} ${wrap}`}>{i.entity ?? '—'}</td>
-                    <td data-label="Reason" className={`${td} ${wrap}`}>{i.deadLetterReason ?? <span className="text-[var(--color-text-muted)]">No reason recorded</span>}</td>
+                    <td data-label="Reason" className={`${td} ${wrap}`}>{i.deadLetterReason ? camelBreaks(i.deadLetterReason) : <span className="text-[var(--color-text-muted)]">No reason recorded</span>}</td>
                     <td data-label="Family" className={td}>{hand && familyWords(i.family) ? <span className="rounded-md bg-purple-50 px-2 py-0.5 text-xs font-semibold text-purple-800">{familyWords(i.family)}</span> : '—'}</td>
                     <td data-label="Age" className={td}>{formatAge(i.since, now)}</td>
                     <td data-label="Type" className={`${td} font-semibold ${hand ? 'text-amber-700' : 'text-red-700'}`}>{hand ? 'Hand-off' : 'Approval'}</td>

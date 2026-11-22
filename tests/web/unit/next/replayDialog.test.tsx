@@ -76,7 +76,7 @@ describe('Replay dialog (unit F2)', () => {
     expect(replayApi.replayMessage).toHaveBeenCalledTimes(1)
     expect(replayApi.replayMessage).toHaveBeenCalledWith(7)
     const dialog = screen.getByRole('dialog')
-    expect(within(dialog).getByRole('link', { name: 'Replayed' })).toHaveAttribute('href', '/azure/replays')
+    expect(within(dialog).getByRole('link', { name: 'Replay history' })).toHaveAttribute('href', '/azure/replays')
     expect(within(dialog).getByRole('link', { name: 'Active messages' })).toHaveAttribute('href', '/azure/active')
   })
 

@@ -16,7 +16,7 @@ const StepByStep = lazy(() => import('./StepByStep'))
 /**
  * Help (build-plan unit F6; design `d09-help`), at `?panel=help`: "How do I…" with a search box, over whatever you were doing. Each answer is
  * a few sentences and a link to the page that does it; `?topic=<id>` opens on that answer. Content is `next/content/help.ts`.
- * The per-cloud step-by-step guides are the 4.2.0 ones; their screenshots are the 4.2.0 screens and are re-shot at the release (unit I3).
+ * The per-cloud step-by-step guides are generated (scripts/docs-shots/build_guides.py); their screenshots are the 5.0.0 screens (unit I3).
 
  */
 export default function HelpPanel(_props: NextOverlayBodyProps) { // eslint-disable-line @typescript-eslint/no-unused-vars
@@ -59,7 +59,7 @@ export default function HelpPanel(_props: NextOverlayBodyProps) { // eslint-disa
       </section>
       <section aria-label="Step by step">
         <h3 className="mb-1 text-sm font-bold">Step by step<Tip label="section:Step by step" /></h3>
-        <p className="mb-2 text-[var(--color-text-muted)]">Connecting a cloud and reading its screens, one guide per cloud. The pictures show the 4.2.0 layout until they are re-shot for 5.0.0; the steps and the credentials they ask for are the same.</p>
+        <p className="mb-2 text-[var(--color-text-muted)]">Connecting a cloud and reading its screens, one guide per cloud, with annotated pictures of this version.</p>
         <Suspense fallback={<p className="text-[var(--color-text-muted)]">Loading the guides…</p>}>
           <StepByStep topic={topic} clouds={guideClouds} topicOf={guideTopic} />
         </Suspense>

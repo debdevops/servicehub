@@ -37,6 +37,8 @@ export function Steps({ at }: { at: 1 | 2 | 3 }) {
 }
 
 /** Looks a validation-type failure up in words: those usually fail again unless the sender was fixed. */
+/** The API groups a message with no recorded reason as "Unknown"; the list says "No reason recorded", so the preview says the same. */
+const reasonLabel = (reason: string) => (reason === 'Unknown' ? 'No reason recorded' : reason)
 const looksLikeValidation = (reason: string) => /valid|schema|format|malformed|missing/i.test(reason)
 
 /**
@@ -146,7 +148,7 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
         <ul className="divide-y divide-[var(--color-border)] rounded-xl border border-[var(--color-border)]">
           {p.groups.map((g) => (
             <li key={g.reason} className="flex items-center gap-3 px-3.5 py-2.5 text-sm">
-              <span className="rounded-full bg-[var(--color-error-light)] px-2.5 py-0.5 text-[11px] font-bold text-[#b91c1c]">{g.reason}</span>
+              <span className="rounded-full bg-[var(--color-error-light)] px-2.5 py-0.5 text-[11px] font-bold text-[#b91c1c]">{reasonLabel(g.reason)}</span>
               <span className="text-[var(--color-text-muted)]">{g.willReplay} will be replayed{g.heldBack > 0 ? `, ${g.heldBack} held back` : ''}</span>
               <span className="tabular ml-auto font-bold">{g.selected}</span>
             </li>
@@ -243,7 +245,7 @@ function SelectedMessages({ ids, heldBack }: { ids: readonly number[]; heldBack:
               <tbody key={reason}>
                 <tr className="border-t border-[var(--color-border)] bg-[var(--color-error-light)]">
                   <th scope="rowgroup" colSpan={6} className="px-3 py-1.5 text-left text-[12px]">
-                    <span className="font-bold text-[#b91c1c]">{reason}</span>
+                    <span className="font-bold text-[#b91c1c]">{reasonLabel(reason)}</span>
                     <span className="ml-2 font-normal text-[#4b5563]">{rows.length} {rows.length === 1 ? 'message' : 'messages'}</span>
                   </th>
                 </tr>
@@ -450,14 +452,14 @@ export function Progress({ p, close, onStop, onMinimize }: { p: BulkProgress; cl
       {ended && (
         <p className="flex items-start gap-2.5 rounded-xl border border-[#a7f3d0] bg-[#ecfdf5] px-3.5 py-2.5 text-[13px]">
           <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#047857]" aria-hidden="true" />
-          <span><b>{p.sent.toLocaleString()} {p.kind === 'purge' ? 'deleted' : 'replayed'}</b> and sent to cloud — navigate to <b>Replayed</b> tab to see the results. {p.kind === 'purge' ? '' : 'Sent back is not the same as fixed: each one is now watched, and any that fail again show as Came back.'}</span>
+          <span><b>{p.sent.toLocaleString()} {p.kind === 'purge' ? 'deleted' : 'replayed'}</b> and sent to cloud — open <b>Replay history</b> to see the results. {p.kind === 'purge' ? '' : 'Sent back is not the same as fixed: each one is now watched, and any that fail again show as Came back.'}</span>
         </p>
       )}
 
       {!ended && (
         <p className="flex items-start gap-2.5 rounded-xl border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-3.5 py-2.5 text-[13px]">
           <Eye className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-primary-700)]" aria-hidden="true" />
-          <span>Close this whenever you like. Progress and the final verdict appear in <b>Replayed</b>, and in the bell if anything needs you.</span>
+          <span>Close this whenever you like. Progress and the final verdict appear in <b>Replay history</b>.</span>
         </p>
       )}
 
