@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { renderMarkdown as renderProse } from '../widget/servicehub-bot.ts'
 import { cleanMarkdown } from '../scripts/clean-markdown.ts'
 
 describe('cleanMarkdown (doc sections → what the chat bubble can show)', () => {
@@ -24,4 +25,14 @@ describe('cleanMarkdown (doc sections → what the chat bubble can show)', () =>
     const code = '```bash\n> not a quote\n| not | a table |\n[not](a link)\n```'
     assert.equal(cleanMarkdown(code), code)
   })
+})
+
+
+it('nested fragments cannot rebuild a tag after cleaning', () => {
+  assert.doesNotMatch(cleanMarkdown('a <scr<script>ipt>alert(1)</scr</script>ipt> b'), /<script/i)
+})
+
+it('only loopback autolinks render; an external <https://…> in prose stays text', () => {
+  assert.doesNotMatch(renderProse('see <https://evil.example/login>'), /<a /)
+  assert.match(renderProse('open <http://localhost:3000>'), /<a href="http:\/\/localhost:3000"/)
 })

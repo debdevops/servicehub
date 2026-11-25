@@ -156,7 +156,9 @@ function inline(text: string): string {
   return escapeHtml(tokenised)
     // [text](url) keeps its text only: links come from the answer's checked `links` list, never from its prose.
     .replace(/\[([^\]]+)\]\([^)\s]*\)/g, '$1')
-    .replace(/&lt;(https?:\/\/[^\s&]+)&gt;/g, (_m, url: string) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`)
+    // Only the loopback addresses the documentation itself names ("open <http://localhost:3000>") become links: prose can
+    // carry live cloud values, and a value containing <https://…> must never turn into an arbitrary external link.
+    .replace(/&lt;(https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d{1,5})?(?:\/[^\s&]*)?)&gt;/g, (_m, url: string) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`)
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|[^\w*])\*(?!\s)(.+?)\*(?!\w)/g, '$1<em>$2</em>')
     .replace(/(^|[^\w])_(?!\s)(.+?)_(?!\w)/g, '$1<em>$2</em>')

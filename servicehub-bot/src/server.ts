@@ -42,6 +42,11 @@ export interface BotServerOptions {
   readonly now?: () => number
 }
 
+/** Control characters (a newline above all) are removed so a request cannot forge a second log line. */
+function oneLine(value: string): string {
+  return value.replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' ').slice(0, 300)
+}
+
 export function createBotServer(options: BotServerOptions): Server {
   const cache = new ReadCache()
   const limiter = rateLimiter(options.perMinute ?? 30, options.now ?? Date.now)
@@ -61,10 +66,10 @@ export function createBotServer(options: BotServerOptions): Server {
       await route(req, res, path)
     } catch (error) {
       if (!res.headersSent) send(res, 500, { error: 'The bot hit a problem answering that. Try again.' })
-      log(`error ${error instanceof Error ? error.message : String(error)}`)
+      log(`error ${oneLine(error instanceof Error ? error.message : String(error))}`)
     } finally {
       if (options.logRequests !== 'problems' || res.statusCode >= 400) {
-        log(`${req.method} ${path} ${res.statusCode} ${Math.round(performance.now() - started)}ms`)
+        log(`${oneLine(req.method ?? '')} ${oneLine(path)} ${res.statusCode} ${Math.round(performance.now() - started)}ms`)
       }
     }
   })

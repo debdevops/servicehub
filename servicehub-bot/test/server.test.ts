@@ -109,12 +109,7 @@ describe('bot server', () => {
     assert.match(js, /customElements\.define\('servicehub-bot'/)
     assert.doesNotMatch(js, /#panel!: HTMLElement|: BotAnswer\)|export interface/)
     // It parses and runs as a module (in Node it defines nothing: there is no customElements here).
-    const { mkdtempSync, writeFileSync } = await import('node:fs')
-    const { join } = await import('node:path')
-    const { tmpdir } = await import('node:os')
-    const file = join(mkdtempSync(join(tmpdir(), 'servicehub-bot-widget-')), 'widget.mjs')
-    writeFileSync(file, js)
-    const mod = (await import(file)) as { safeHref: (h: string, c: string | null) => unknown }
+    const mod = (await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`)) as { safeHref: (h: string, c: string | null) => unknown }
     assert.deepEqual(mod.safeHref('/all/replays', 'aws'), { href: '/aws/replays', external: false })
   })
 

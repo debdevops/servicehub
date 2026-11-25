@@ -26,12 +26,25 @@ export function cleanMarkdown(body: string): string {
       const cells = text.split('|').map((c) => c.trim()).filter(Boolean)
       text = `- ${cells.join(' — ')}`
     }
+    text = stripUntilStable(text, [
+      [/!\[[^\]]*\]\([^)]*\)/g, ''],
+      [/\[([^\]]+)\]\([^)]*\)/g, '$1'],
+      [/<(?!https?:\/\/)[^>]+>/g, ''],
+    ])
     text = text
-      .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
-      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
-      .replace(/<(?!https?:\/\/)[^>]+>/g, '')
       .replace(/^#{4,6}\s+(.+?)\s*#*\s*$/, '**$1**')
     out.push(text)
   }
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim()
+}
+
+/** Applies the removals again until nothing changes, so a fragment such as `<scr<script>ipt>` cannot rebuild a tag. */
+function stripUntilStable(text: string, rules: ReadonlyArray<readonly [RegExp, string]>): string {
+  let current = text
+  for (;;) {
+    let next = current
+    for (const [pattern, replacement] of rules) next = next.replace(pattern, replacement)
+    if (next === current) return next
+    current = next
+  }
 }
