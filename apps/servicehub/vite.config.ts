@@ -32,6 +32,23 @@ const demoPageMeta = (): Plugin => ({
     handler(html) {
       if (process.env.VITE_DEMO_ONLY !== 'true') return html
       const image = `${DEMO_URL}og-image.png`
+      const jsonLd = JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'SoftwareApplication',
+        name: 'ServiceHub',
+        applicationCategory: 'DeveloperApplication',
+        operatingSystem: 'Windows, macOS, Linux, Docker',
+        description: DEMO_DESCRIPTION,
+        url: DEMO_URL,
+        image,
+        license: 'https://opensource.org/licenses/MIT',
+        isAccessibleForFree: true,
+        offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+        codeRepository: 'https://github.com/debdevops/servicehub',
+        sameAs: ['https://github.com/debdevops/servicehub'],
+        keywords:
+          'dead-letter queue, DLQ replay, Azure Service Bus, AWS SQS, AWS SNS, Google Pub/Sub, message recovery, self-hosted',
+      })
       const head = [
         `<link rel="canonical" href="${DEMO_URL}" />`,
         `<meta property="og:type" content="website" />`,
@@ -44,6 +61,7 @@ const demoPageMeta = (): Plugin => ({
         `<meta name="twitter:title" content="${DEMO_TITLE}" />`,
         `<meta name="twitter:description" content="${DEMO_DESCRIPTION}" />`,
         `<meta name="twitter:image" content="${image}" />`,
+        `<script type="application/ld+json">${jsonLd}</script>`,
       ].join('\n    ')
       const noscript =
         '<noscript><h1>ServiceHub demo</h1><p>' + DEMO_DESCRIPTION + '</p>' +

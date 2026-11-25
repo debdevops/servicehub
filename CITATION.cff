@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use ServiceHub, please cite it as below."
+title: "ServiceHub"
+abstract: >-
+  Self-hosted dead-letter recovery for Azure Service Bus, AWS SQS/SNS and
+  Google Pub/Sub: see why messages failed, replay them after a preview, and
+  check whether the fix held.
+type: software
+version: 5.0.0
+license: MIT
+repository-code: "https://github.com/debdevops/servicehub"
+url: "https://debdevops.github.io/servicehub/"
+authors:
+  - family-names: Ghosh
+    given-names: Debasis
+keywords:
+  - dead-letter queue
+  - DLQ
+  - message replay
+  - Azure Service Bus
+  - AWS SQS
+  - Google Pub/Sub
+  - self-hosted

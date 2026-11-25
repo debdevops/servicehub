@@ -290,6 +290,35 @@ This table is generated from the code, and a test fails if it drifts.
 - **Who is asking.** ServiceHub does not log the browser in. Keep it on `localhost` or put it behind a private network or an authenticating reverse proxy. It can give other people and automation *limited* access with API keys (`X-API-KEY`), OIDC or Azure Easy Auth, plus Viewer, Operator and Admin roles. It answers only to `localhost`, `127.0.0.1` and `[::1]`; reaching it by another name needs `AllowedHosts` set (keep `localhost` in it). See [SECURITY.md](SECURITY.md).
 - **Cloud permissions.** Read/receive on the queues you want watched; send and delete only if you want to replay and purge. Prefer identity-based auth (managed identity, IAM role, workload identity) over long-lived secrets.
 
+## Questions people ask
+
+**How do I see why a message was dead-lettered in Azure Service Bus, AWS SQS or Google Pub/Sub?**
+Connect the cloud and open the dead letters. ServiceHub shows each message's reason (where the cloud recorded one), body, properties and delivery history, and groups messages by why they failed. AWS SNS subscriptions and Google pull subscriptions record no reason, and ServiceHub says so instead of guessing.
+
+**How do I replay dead-letter messages safely?**
+Pick one message, several, or a group. ServiceHub shows a preview first: how many would be sent, where, the risk, and which safety checks ran. Nothing moves until you confirm, and a running replay can be stopped.
+
+**How do I know a replay actually fixed the problem?**
+Each replay is watched afterwards and marked *Verified*, *Came back* or *Unverified*. Azure can confirm this on its own. AWS and Google Cloud read "verification required" unless you switch on fix-confirming for that connection.
+
+**Can it replay dead letters automatically?**
+Yes, but only for a failure pattern that has earned trust through enough verified fixes. Until then the Agent stops and asks a person, and it stops again when results turn bad. There is also an Emergency stop.
+
+**Does it work with AWS SQS dead-letter queues and Google Pub/Sub dead-letter topics?**
+Yes. Azure Service Bus, AWS SQS and SNS, and Google Pub/Sub are supported, plus the failed runs of Logic Apps, Event Grid, Step Functions, Kinesis and DynamoDB streams, Workflows, Eventarc and Cloud Scheduler. The [coverage table](#what-it-covers) says what each one can and cannot do.
+
+**Is it free? Is it a SaaS? Where does my data go?**
+It is free, open source (MIT) and self-hosted: one process and one SQLite file on your machine or server. Connection strings are encrypted at rest. Nothing is sent to anyone. The browser demo uses made-up data.
+
+**Can I try it without a cloud account?**
+Yes: **[open the demo in your browser](https://debdevops.github.io/servicehub/)**, or run it locally and it opens in demo mode first.
+
+**Can I keep an audit trail of who replayed what?**
+Yes. Every recovery goes into a tamper-evident, hash-chained [evidence ledger](docs/RECOVERY-EVIDENCE.md) that you can export and verify offline.
+
+**Can an AI assistant query it?**
+There is a read-only [MCP server](tools/mcp/README.md), and a machine-readable summary in [`llms.txt`](llms.txt).
+
 ## Documentation
 
 | | |
