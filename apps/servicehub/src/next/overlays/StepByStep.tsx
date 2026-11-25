@@ -8,7 +8,7 @@ function Guide({ cloud, id, open }: { cloud: string; id: string; open: boolean }
   return (
     <details id={id} open={open || undefined} onToggle={(e) => { if (e.currentTarget.open) setOpened(true) }} className="rounded-xl border border-[var(--color-border)]">
       <summary className="cursor-pointer px-4 py-2.5 font-semibold">{guides[cloud].title}</summary>
-      {opened && (
+      {(opened || open) && (
         <div className="px-3 pb-3">
           <GuideView guide={guides[cloud]} />
         </div>

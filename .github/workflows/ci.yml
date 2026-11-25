@@ -276,6 +276,31 @@ jobs:
           if (-not $ok) { Write-Error 'run.ps1 never became healthy on http://localhost:3000'; exit 1 }
           Write-Host 'run.ps1 started ServiceHub and /health/ready answered'
 
+  servicehub-bot:
+    name: ServiceHub Bot (tests + type-check)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: servicehub-bot
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          # The package needs Node >=24 (it runs TypeScript directly).
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: servicehub-bot/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
   ci-status:
     name: CI Status (4.1.0)
     runs-on: ubuntu-latest
@@ -286,6 +311,7 @@ jobs:
       - accessibility
       - plan-and-provenance-guards
       - container-smoke-test
+      - servicehub-bot
     if: always()
     steps:
       - name: Check status
@@ -303,5 +329,6 @@ jobs:
           check "Accessibility"          "${{ needs.accessibility.result }}"
           check "Plan & provenance guards" "${{ needs.plan-and-provenance-guards.result }}"
           check "Container smoke test"   "${{ needs.container-smoke-test.result }}"
+          check "ServiceHub Bot"         "${{ needs.servicehub-bot.result }}"
           [ "$fail" -eq 0 ] || exit 1
           echo "✅ ServiceHub 4.1.0: everything passed."
