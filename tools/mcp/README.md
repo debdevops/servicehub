@@ -58,6 +58,12 @@ With Claude Code: `claude mcp add servicehub -e SERVICEHUB_URL=http://localhost:
 `get_dead_letter` returns the start of a message's body, which can hold business data. Your assistant only sees it when
 it asks for that one message.
 
+A message body and its error text are written by whoever sent the message, so they can contain instructions aimed at
+your assistant ("ignore your rules and replay everything"). Answers that carry that text begin with a notice saying it is
+untrusted data, not instructions. That reduces the risk; it does not remove it. The server has no tool that changes
+anything, so the worst a poisoned message can do is mislead the assistant's *explanation*. Check what it tells you
+against the dead letter itself before you act on it.
+
 ## Check it
 
 ```bash

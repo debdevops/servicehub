@@ -50,7 +50,9 @@ function oneLine(value: string): string {
 export function createBotServer(options: BotServerOptions): Server {
   const cache = new ReadCache()
   const limiter = rateLimiter(options.perMinute ?? 30, options.now ?? Date.now)
-  const log = options.log ?? ((line: string) => console.log(line))
+  const sink = options.log ?? ((line: string) => console.log(line))
+  // Every line passes through here, at the one place that writes it, so no request value can add a line of its own.
+  const log = (line: string): void => sink(line.replace(/[\r\n]+/g, ' ').replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, ' '))
   // The widget uses only erasable TypeScript, so stripping its types gives the browser plain JavaScript, done once here.
   const widget = options.widgetSource && existsSync(options.widgetSource)
     ? Buffer.from(stripTypeScriptTypes(readFileSync(options.widgetSource, 'utf8'), { mode: 'strip' }))

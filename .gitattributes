@@ -1,0 +1,6 @@
+# Launchers must keep the line endings their shell needs, whatever core.autocrlf is on the cloning machine:
+# a CRLF run.sh breaks under bash ("\r: command not found"); an LF .cmd can break label/goto parsing.
+*.sh   text eol=lf
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
+*.ps1  text eol=crlf

@@ -71,7 +71,7 @@ Each folder is an ordinary module. Copy `terraform.tfvars.example` to `terraform
 
 ```hcl
 module "servicehub" {
-  source              = "github.com/debdevops/servicehub//infra/aws?ref=v4.2.0"
+  source              = "github.com/debdevops/servicehub//infra/aws?ref=v4.2.1"
   region              = "eu-west-1"
   messaging_resources = ["arn:aws:sqs:eu-west-1:111122223333:orders", "arn:aws:sqs:eu-west-1:111122223333:orders-dlq"]
 }
@@ -86,7 +86,7 @@ Open a shell on the machine (Azure: `ssh servicehub@<address>`; AWS: `aws ssm st
 Google Cloud: `gcloud compute ssh <name> --tunnel-through-iap`) and run:
 
 ```bash
-echo 4.2.0 | sudo tee /etc/servicehub/version      # the release you want
+echo 4.2.1 | sudo tee /etc/servicehub/version      # the release you want
 sudo servicehub-setup
 ```
 

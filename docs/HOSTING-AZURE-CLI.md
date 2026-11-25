@@ -56,7 +56,7 @@ sudo docker run -d --name servicehub --restart unless-stopped \
   -p 127.0.0.1:8080:8080 -v servicehub-data:/data \
   -e SECURITY__ENCRYPTIONKEY="$KEY" \
   -e Backup__ScheduledBackupIntervalHours=24 \
-  ghcr.io/debdevops/servicehub:latest        # pin a release for production, e.g. :4.2.0
+  ghcr.io/debdevops/servicehub:latest        # pin a release for production, e.g. :4.2.1
 
 curl -s http://localhost:8080/health/ready     # → Healthy (allow up to a minute)
 ```

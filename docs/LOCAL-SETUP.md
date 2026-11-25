@@ -18,7 +18,9 @@
 
 Putting it on a server for a team? That is the [Azure hosting guide](HOSTING-AZURE.md).
 
-**Operating systems.** macOS and Linux run `./run.sh`. **Windows runs `.\run.ps1` in PowerShell, or `run.cmd` in Command Prompt**: no WSL, no administrator rights; it downloads .NET 10 and Node.js into `%USERPROFILE%\.servicehub\tools` just as `run.sh` does (`-Check` and `-NoInstall` work the same way). The Windows script has had less testing than `run.sh`, and it does not start the help button (ServiceHub Bot). For track B, Docker Desktop works on all three. The test scripts (`runtest.sh`) are bash: contributors on Windows run them in WSL 2.
+**Operating systems.** macOS and Linux: `./run.sh`. **Windows (native):** `run` in Command Prompt or `.\run.cmd` in PowerShell — it calls `run.ps1`
+with the execution policy bypassed for that one process only, and takes the same options (`-Check`, `-NoInstall`, `-ApiOnly`, `-WebOnly`). Git Bash's `./run.sh` hands over to it too.
+WSL 2 also still works (use `./run.sh` inside it). For track B, Docker Desktop works. `run.ps1` does not start the help button (ServiceHub Bot). The test scripts (`runtest.sh`) are bash: contributors on Windows run them in WSL 2.
 
 ---
 
@@ -54,6 +56,8 @@ cd servicehub
 ./run.sh
 ```
 
+**Local or Docker?** If Docker is installed and running, plain `./run.sh` in a terminal first asks `Choose 1 or 2 [1]` — 1 runs from source (this track), 2 runs in Docker (track B). Enter picks 1. The question is skipped when Docker isn't usable, when there's no terminal, with `--yes`, with any mode flag, or when `SERVICEHUB_RUN=local|docker` is set.
+
 `run.sh` does these steps, in order, and stops with a plain-language message if one fails:
 
 1. **Checks the machine** (OS, .NET SDK, Node.js, a writable data folder) and **installs** a missing or wrong-version .NET SDK or Node.js into `~/.servicehub/tools`.
@@ -73,6 +77,8 @@ The first start downloads packages and compiles the API, which can take several 
 Other modes:
 
 ```bash
+./run.sh --local        # run from source without the local-or-Docker question
+./run.sh --docker       # run in Docker (see track B)
 ./run.sh --check        # verify your machine and report what would be installed; starts and installs nothing
 ./run.sh --no-install   # never download anything; stop with instructions if a tool is missing
 ./run.sh --api-only     # just the API on :5153
@@ -176,6 +182,8 @@ Still stuck? Run `./run.sh --check` and open an issue with its output and the la
 | **Docker** with the Compose plugin (`docker compose`, v2) | `docker --version`, `docker compose version` | <https://docs.docker.com/get-docker/> |
 | **git** | `git --version` | <https://git-scm.com> |
 | `openssl`, `curl` | `openssl version`, `curl --version` | Present on macOS and most Linux |
+
+**Shortcut:** `./run.sh --docker` (Windows: `run -Docker`) performs the checks below, creates the key at `~/.servicehub/docker.key` if you agree, and runs `docker compose up --build -d`. `--check` verifies only.
 
 You do **not** need .NET or Node — the image build does that work inside Docker. Make sure the Docker daemon is running (`docker info` answers).
 

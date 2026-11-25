@@ -1,6 +1,6 @@
 # Adding a messaging provider
 
-For an engineer adding the next cloud or broker (a fourth cloud, Kafka, RabbitMQ, …) to ServiceHub 4.2.0. It is code and configuration, not
+For an engineer adding the next cloud or broker (a fourth cloud, Kafka, RabbitMQ, …) to ServiceHub 4.2.1. It is code and configuration, not
 screenshots; to *use* a provider that already exists, see the [Azure](../clouds/azure.md), [AWS](../clouds/aws.md) or
 [Google Cloud](../clouds/gcp.md) guide.
 

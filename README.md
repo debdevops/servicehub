@@ -2,6 +2,8 @@
 
 **Find out *why* your messages dead-lettered, replay them safely, and see whether the fix held. Azure Service Bus, AWS SQS/SNS and Google Pub/Sub, plus the failed runs of Logic Apps, Step Functions and more, in one place.**
 
+**[Look around first: open the demo in your browser](https://debdevops.github.io/servicehub/)**. Made-up data on all three clouds, nothing to install, nothing sent anywhere.
+
 Your queue says "4,218 dead-lettered messages". A count does not tell you which messages, why each failed, or whether replaying them is safe.
 ServiceHub shows all three, previews every replay *before* anything is sent back, and keeps a tamper-evident record you can export and verify offline.
 One process, one SQLite file, running on your machine.
@@ -9,6 +11,24 @@ One process, one SQLite file, running on your machine.
 ![ServiceHub, all clouds: what is connected, what is dead-lettered and what needs a person](docs/screenshots/readme/home-all.png)
 
 *Every screenshot on this page is the built-in demo: made-up data, nothing is sent anywhere. You can open the same demo yourself, with no cloud account: **[try it in your browser](https://debdevops.github.io/servicehub/)** (nothing to install) or run it locally in about two minutes, below.*
+
+## Is it for you?
+
+**Best for one operator or a small team, on a private network, looking after non-production dead letters.** It is one process and one SQLite file, and it does not log the browser in.
+
+| It suits you if | It does not suit you if |
+|---|---|
+| You want to see *why* messages dead-lettered, and replay them from dev or staging with a preview first | You need to replay **in production**: ServiceHub refuses, and there is no override |
+| You can keep it on `localhost` or behind a private network or an authenticating proxy | You need a shared, highly available service with browser sign-in and named users |
+| You accept that a short preview of each message body is stored unencrypted on the machine it runs on | You cannot store any message content, even briefly |
+
+What each cloud can confirm after a replay:
+
+| | Azure Service Bus | AWS SQS / SNS | Google Pub/Sub |
+|---|---|---|---|
+| **"Did the fix hold?"** | Confirmed out of the box: *verified* or *came back* | *Verification required* until you switch on fix-confirming for that namespace, then *recovered* or *came back* | Same as AWS |
+
+The full list of limits is [further down](#know-the-limits). Read it before you connect a real cloud.
 
 ## The pain, and how ServiceHub resolves it
 
@@ -53,7 +73,7 @@ Not sure it worked? See [Check it works, and run the tests](#check-it-works-and-
 ```bash
 git clone https://github.com/debdevops/servicehub.git
 cd servicehub
-./run.sh
+./run.sh          # macOS, Linux, Git Bash
 ```
 
 **Windows** (PowerShell or Command Prompt). You do not need WSL, administrator rights, or anything installed except **git**:
@@ -103,6 +123,8 @@ lives in `services/api/src/ServiceHub.Api/data/`. Prerequisites, what the script
 
 Needs [Docker](https://docs.docker.com/get-docker/). The first commands are for a bash shell with `openssl` (macOS, Linux, a cloud VM, or WSL 2); Windows PowerShell is just below.
 
+**Shortcut from a clone:** `./run.sh --docker` (Windows: `run -Docker`) checks Docker, its daemon and Compose, creates and keeps the encryption key for you (asking first), builds, starts, and waits until it answers on <http://localhost:8080>. Add `--check` to only verify. Docker itself is never installed for you.
+
 ```bash
 # 1. Make an encryption key once, and keep it. It protects the cloud credentials ServiceHub stores.
 export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"
@@ -111,7 +133,7 @@ export SERVICEHUB_ENCRYPTION_KEY="$(openssl rand -hex 32)"
 docker run -d --name servicehub --restart unless-stopped \
   -p 127.0.0.1:8080:8080 -v servicehub-data:/data \
   -e SECURITY__ENCRYPTIONKEY="$SERVICEHUB_ENCRYPTION_KEY" \
-  ghcr.io/debdevops/servicehub:latest
+  ghcr.io/debdevops/servicehub:4.2.1
 ```
 
 Open **<http://localhost:8080>** and choose **Try it with sample data**. Linux `amd64` and `arm64` (Intel, AMD and Apple silicon) are supported.

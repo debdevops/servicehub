@@ -6,6 +6,7 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
 using ServiceHub.Core.Results;
+using ServiceHub.Infrastructure.DlqObserver;
 using ServiceHub.Infrastructure.Persistence;
 
 namespace ServiceHub.Infrastructure.BulkOperations;
@@ -133,7 +134,10 @@ public sealed class BulkOperationService : IBulkOperationService
 
         bool canProve;
         // Can a fix be proven for everything in this run? Read from capability, never from a provider's name (R4).
-        canProve = nsCache.Values.OfType<Namespace>().All(n => _router.Resolve(n.Provider).Capabilities.CanProveDlqAbsence);
+        // or from a live observer on that namespace (ADR-0018).
+        var seen = nsCache.Values.OfType<Namespace>().ToList();
+        var observed = await ObserverLiveness.LiveAmongAsync(_db, seen, ct).ConfigureAwait(false);
+        canProve = seen.All(n => observed.Contains(n.Id) || _router.Resolve(n.Provider).Capabilities.CanProveDlqAbsence);
 
         _db.BulkOperationJobs.Add(job);
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);

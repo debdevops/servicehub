@@ -22,7 +22,7 @@ variable "name" {
 variable "servicehub_version" {
   description = "The ServiceHub release to run. Never \"latest\"."
   type        = string
-  default     = "4.2.0"
+  default     = "4.2.1"
 }
 
 variable "image" {
