@@ -22,7 +22,6 @@ export const overlayBodies: Readonly<Record<string, LazyExoticComponent<Componen
   'bulk-replay': lazy(() => import('../message/BulkReplayModal')),
   approve: lazy(() => import('../approve/ApproveModal')),
   settings: lazy(() => import('../settings/SettingsModal')),
-  help: lazy(() => import('../help/HelpPanel')),
   send: lazy(() => import('../message/SendMessageModal')),
 }
 

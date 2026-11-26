@@ -1,5 +1,9 @@
 using Google.Cloud.Firestore;
 using Google.Cloud.PubSub.V1;
+using CloudSchedulerClient = Google.Cloud.Scheduler.V1.CloudSchedulerClient;
+using EventarcClient = Google.Cloud.Eventarc.V1.EventarcClient;
+using Google.Cloud.Workflows.Executions.V1;
+using Google.Cloud.Workflows.V1;
 using ServiceHub.Core.Entities;
 
 namespace ServiceHub.Providers.Gcp;
@@ -49,6 +53,34 @@ public interface IGcpClientFactory
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A configured <see cref="FirestoreDb"/> client.</returns>
     Task<FirestoreDb> GetFirestoreDbAsync(Namespace ns, CancellationToken ct);
+
+    /// <summary>
+    /// Returns a <see cref="WorkflowsClient"/> for listing workflows and locations. Read-only use: list and get.
+    /// </summary>
+    /// <param name="ns">The namespace containing project ID and credentials.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task<WorkflowsClient> GetWorkflowsClientAsync(Namespace ns, CancellationToken ct);
+
+    /// <summary>
+    /// Returns an <see cref="ExecutionsClient"/> for listing and reading workflow executions. Read-only use: list and get.
+    /// </summary>
+    /// <param name="ns">The namespace containing project ID and credentials.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task<ExecutionsClient> GetExecutionsClientAsync(Namespace ns, CancellationToken ct);
+
+    /// <summary>
+    /// Returns an <see cref="EventarcClient"/> for listing and reading Eventarc triggers. Read-only use: list and get.
+    /// </summary>
+    /// <param name="ns">The namespace containing project ID and credentials.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task<EventarcClient> GetEventarcClientAsync(Namespace ns, CancellationToken ct);
+
+    /// <summary>
+    /// Returns a <see cref="CloudSchedulerClient"/> for listing and reading Cloud Scheduler jobs. Read-only use: list and get.
+    /// </summary>
+    /// <param name="ns">The namespace containing project ID and credentials.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task<CloudSchedulerClient> GetSchedulerClientAsync(Namespace ns, CancellationToken ct);
 
     /// <summary>
     /// Shuts down and removes any cached publisher/subscriber/topic-admin clients for the

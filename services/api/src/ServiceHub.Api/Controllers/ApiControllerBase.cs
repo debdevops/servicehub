@@ -66,7 +66,7 @@ public abstract class ApiControllerBase : ControllerBase
         return visible
             ? result
             : Result.Failure<Namespace>(Error.NotFound(
-                ErrorCodes.Namespace.NotFound, $"Namespace with ID '{id}' was not found."));
+                ErrorCodes.Namespace.NotFound, $"Connection with ID '{id}' was not found."));
     }
 
     /// <summary>
@@ -114,7 +114,11 @@ public abstract class ApiControllerBase : ControllerBase
     protected ObjectResult Problem(Error error)
     {
         ArgumentNullException.ThrowIfNull(error);
-        return Problem(StatusFor(error.Type), error.Code, error.Message);
+
+        // An error's message can be a cloud SDK's own words (several adapters pass the exception text on), and those words can carry a
+        // key, a connection string or a signed address. It is masked here, at the one door every such failure leaves by, so no adapter
+        // has to remember to.
+        return Problem(StatusFor(error.Type), error.Code, ServiceHub.Core.Security.LogRedactor.Redact(error.Message));
     }
 
     /// <summary>A failure as a ProblemDetails with an explicit status.</summary>

@@ -44,6 +44,18 @@ public interface ICloudMessagingProvider
     Task<Result<IReadOnlyList<CloudEntity>>> ListEntitiesAsync(Guid namespaceId, CancellationToken ct);
 
     /// <summary>
+    /// Reads one entity's limits and settings (lock or visibility timeout, time to live, maximum deliveries, and so on) in the
+    /// cloud's own words. Kept off <see cref="ListEntitiesAsync"/> because some clouds need a call per entity to read them.
+    /// A provider that does not read them returns <c>null</c> in the success value, meaning "not read", never an empty list.
+    /// </summary>
+    /// <param name="namespaceId">The identifier of the namespace the entity belongs to.</param>
+    /// <param name="name">The entity's name as <see cref="ListEntitiesAsync"/> reports it.</param>
+    /// <param name="kind">queue, topic or subscription.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task<Result<IReadOnlyList<EntitySetting>?>> GetEntitySettingsAsync(Guid namespaceId, string name, string kind, CancellationToken ct) =>
+        Task.FromResult(Result<IReadOnlyList<EntitySetting>?>.Success(null));
+
+    /// <summary>
     /// Whether an entity in this provider's listing can have dead letters of its own. False for an entity
     /// that only exists to <i>receive</i> another's dead letters (Google's <c>{subscription}-dlq</c>), so a
     /// scan does not go looking for a dead-letter queue of the dead-letter queue. The knowledge of how a

@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ServiceHub.Core.Components;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Infrastructure.Security;
 
@@ -77,12 +78,15 @@ public static class PersistenceServiceCollectionExtensions
             sp, (IRecoveryEligibilityGate)sp.GetRequiredService<RecoveryLedger.RecoveryEligibilityGate>()));
         services.TryAddScoped<IRecoveryTrustScoringService, RecoveryLedger.RecoveryTrustScoringService>();
         services.TryAddScoped<IDlqObserverAttestationService, DlqObserver.DlqObserverAttestationService>();
+        services.TryAddScoped<INamespaceComponentService, Components.NamespaceComponentService>();
         services.TryAddSingleton<DlqObserver.DeadLetterViewTracker>();
         services.TryAddScoped<IFleetOverviewService, Fleet.FleetOverviewService>();
+        services.TryAddScoped<IComponentOverviewService, Components.ComponentOverviewService>();
         services.TryAddScoped<IBulkOperationService, BulkOperations.BulkOperationService>();
         services.TryAddScoped<IRulesService, Rules.RulesService>();
         services.TryAddScoped<ISignaturesService, Signatures.SignaturesService>();
         services.TryAddScoped<IDlqReplayService, Recovery.DlqReplayService>();
+        services.TryAddScoped<IComponentRedriveService, Recovery.ComponentRedriveService>();
         services.TryAddScoped<IPendingWorkService, Recovery.PendingWorkService>();
         services.TryAddScoped<IGovernanceGrantService, Governance.GovernanceGrantService>();
         services.TryAddScoped<IGovernanceAccessEvaluator, Governance.GovernanceAccessEvaluator>();

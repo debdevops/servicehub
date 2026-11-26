@@ -1,3 +1,4 @@
+using ServiceHub.Core.Components;
 using ServiceHub.Core.Enums;
 
 namespace ServiceHub.Core.Models;
@@ -35,6 +36,11 @@ namespace ServiceHub.Core.Models;
 /// is treated the same as an unresolvable provider — fails closed.</param>
 /// <param name="DlqMessageId">The dead-letter row being recovered, for the unresolved-attempt predicate. <see langword="null"/> skips it.</param>
 /// <param name="SourceMessageId">The cloud's own id of the message, the second way the unresolved-attempt predicate recognises it.</param>
+/// <param name="Recoverability">What the catalogue says can be done for the component this message sits on.
+/// A replay of a hand-off-only class is refused (<c>REPLAY_HAND_OFF_ONLY</c>). <see langword="null"/> — no component found —
+/// changes nothing, so every existing verdict stays as it was.</param>
+/// <param name="ConnectionCanSend">What the person declared for this connection. <see langword="false"/> (read-only) refuses a
+/// replay (<c>CONNECTION_READ_ONLY</c>); <see langword="null"/> and <see langword="true"/> change nothing.</param>
 public sealed record RecoveryEligibilityRequest(
     string OwnerId,
     RecoveryOperationKind ActionKind,
@@ -49,4 +55,6 @@ public sealed record RecoveryEligibilityRequest(
     CloudProviderType? Provider = null,
     bool FleetRateLimitExceeded = false,
     long? DlqMessageId = null,
-    string? SourceMessageId = null);
+    string? SourceMessageId = null,
+    RecoverabilityClass? Recoverability = null,
+    bool? ConnectionCanSend = null);

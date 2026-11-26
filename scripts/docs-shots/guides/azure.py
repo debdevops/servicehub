@@ -121,3 +121,13 @@ TROUBLESHOOTING = [
 CLEANUP = """To stop ServiceHub watching Azure: **Settings → Connections → Remove**. That forgets the connection and its stored credential on the ServiceHub server;
 it deletes nothing in Azure. To revoke access in Azure, delete the policy under **Shared access policies**. If you created the namespace only to try
 ServiceHub, delete its resource group in the portal (or run your Terraform destroy) so nothing keeps costing money."""
+
+
+# ---- 5.0.0: everything from Part 2 on is rewritten for the one-layout app (see _v5.py) ----
+from guides._v5 import parts as _parts
+
+SHOT_DIRS = {"app": "azure-5", "portal": "azure-portal"}
+SECTIONS = SECTIONS[:1] + _parts(dict(dir='azure-5', label='Azure', tab='Azure Service Bus', store='Service Bus', watched=True, count_word='exact, because Azure reports exact counts and ServiceHub watches the namespace automatically', entity_word='queue, topic and subscription', components='Logic Apps and Event Grid; these sign in with Microsoft Entra rather than a connection string, so they need an Entra connection', connect_text='Give it a name, keep the environment as **Development** for a first connection, choose **Read and send** (replay needs send; **Read only** looks but never replays), and paste the connection string from step 1.4.', look_text='', result_text='After **Replay 1 message** the window says **Sent back**: the message is on its queue again and the dead letter has left the list. Where a consumer is running it is picked up at once, so it may already be gone from **Active messages**. On Azure ServiceHub can prove the outcome: it watches the dead-letter queue for the observation window and then marks the replay **Verified** (it did not come back) or **Came back** (it failed again, so it is not fixed). Find it in **Replay history**.'))
+INTRO = INTRO.replace('learn what Auto Replay, Settings and the Advanced pages show.', "learn what Auto Replay, the Evidence ledger and Configuration show.")
+CLEANUP = CLEANUP.replace("**Settings → Connections → Remove**", "**Connections**, the bin button on the connection, then typing its name to confirm")
+TROUBLESHOOTING = [(q.replace("not under Replayed", "not in Replay history"), a.replace("on the Replayed tab", "on the Replay history page").replace("the *Result* filter is *Any result*", "the *Outcome* filter is *any*")) for q, a in TROUBLESHOOTING]

@@ -70,10 +70,15 @@ function parseCloud(value: string | null): CloudProvider {
  * plainly what it found. If the test fails the namespace is not left behind by surprise: the person
  * chooses to remove it and try again, or keep it and fix it later.
  */
-export default function AddCloudModal({ close }: OverlayBodyProps) {
+export default function AddCloudModal({ close, initialCloud, homeHref }: Pick<OverlayBodyProps, 'close'> & Partial<Pick<OverlayBodyProps, 'entry'>> & {
+  /** The cloud to start on, when the shell knows it (the 5.0.0 shell: the cloud in the address). Otherwise `?cloud=` decides. */
+  readonly initialCloud?: CloudProvider
+  /** Where "Open <cloud>" goes. The 4.2.0 Home by default; the 5.0.0 shell passes that cloud's own Home. */
+  readonly homeHref?: (provider: CloudProvider) => string
+}) {
   const mayConnect = permission(useMe().data, 'Admin', 'connect a cloud')
   const [params] = useSearchParams()
-  const [form, setForm] = useState<CloudForm>(() => emptyForm(parseCloud(params.get('cloud'))))
+  const [form, setForm] = useState<CloudForm>(() => emptyForm(initialCloud ?? parseCloud(params.get('cloud'))))
   const [step, setStep] = useState<Step>({ at: 'form' })
   const [reveal, setReveal] = useState(false)
   const [keyFileName, setKeyFileName] = useState<string | null>(null)
@@ -87,7 +92,7 @@ export default function AddCloudModal({ close }: OverlayBodyProps) {
   const set = <K extends keyof CloudForm>(key: K, value: CloudForm[K]) => setForm((f) => ({ ...f, [key]: value }))
 
   function chooseCloud(cloud: CloudProvider) {
-    setForm((f) => ({ ...emptyForm(cloud), displayName: f.displayName, environment: f.environment }))
+    setForm((f) => ({ ...emptyForm(cloud), displayName: f.displayName, environment: f.environment, canSend: f.canSend }))
     setKeyFileName(null)
     setStep({ at: 'form' })
   }
@@ -135,7 +140,7 @@ export default function AddCloudModal({ close }: OverlayBodyProps) {
   function openHome(provider: CloudProvider) {
     select(provider)
     close()
-    navigate('/')
+    navigate(homeHref ? homeHref(provider) : '/')
   }
 
   if (step.at === 'checking') {
@@ -227,6 +232,24 @@ export default function AddCloudModal({ close }: OverlayBodyProps) {
             New to ServiceHub? Connect a Development namespace first.
           </p>
         )}
+      </fieldset>
+
+      <fieldset>
+        <legend className="mb-1 text-sm font-medium text-[var(--color-text)]">What ServiceHub may do here</legend>
+        <div className="flex gap-4 text-sm">
+          <label className="flex items-center gap-1.5">
+            <input type="radio" name="canSend" checked={!form.canSend} onChange={() => set('canSend', false)} />
+            Read only
+          </label>
+          <label className="flex items-center gap-1.5">
+            <input type="radio" name="canSend" checked={form.canSend} onChange={() => set('canSend', true)} />
+            Read and send
+          </label>
+        </div>
+        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+          Read only: ServiceHub looks and reports, and will not replay or send a message through this connection. You are saying what the
+          credential should be used for; ServiceHub cannot always check what the cloud itself would allow. An Admin can change this later.
+        </p>
       </fieldset>
 
       {form.cloud === 'azure' && (

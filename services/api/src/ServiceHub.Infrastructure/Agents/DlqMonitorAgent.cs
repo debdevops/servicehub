@@ -113,12 +113,12 @@ public sealed class DlqMonitorAgent : IAgent
 
         var parts = new List<string>
         {
-            $"looked at {QueuesOrSubscriptions(scanned.Sum(s => s.Result.EntitiesExamined))} in {Count(scanned.Count, "cloud")}",
+            $"looked at {QueuesOrSubscriptions(scanned.Sum(s => s.Result.EntitiesExamined))} in {Count(scanned.Count, "connection")}",
             $"{Count(scanned.Sum(s => s.Result.NewMessages), "new dead letter")}",
             $"{Count(scans.Sum(s => s.Result.Resolved), "gone from the queue")}",
         };
-        if (skipped.Count > 0) parts.Add($"{Count(skipped.Count, "cloud")} not watched automatically");
-        if (failed.Count > 0) parts.Add($"{Count(failed.Count, "cloud")} could not be read");
+        if (skipped.Count > 0) parts.Add($"{Count(skipped.Count, "connection")} not watched automatically or hidden");
+        if (failed.Count > 0) parts.Add($"{Count(failed.Count, "connection")} could not be read");
         if (unconfirmed > 0) parts.Add($"{Count(unconfirmed, "queue")} could not be confirmed and were left as they were");
         if (archived > 0) parts.Add($"{Count(archived, "record")} archived because their cloud was removed");
 
@@ -138,6 +138,13 @@ public sealed class DlqMonitorAgent : IAgent
         try
         {
             using var scope = _scopes.CreateScope();
+            // A person hid every watched store of this connection (Deallocate). ServiceHub then neither reads it nor reports a problem with it;
+            // nothing is changed in the cloud, and ticking it again in Add a component resumes the scan.
+            if (await AllWatchedStoresHiddenAsync(scope.ServiceProvider, ns, ct).ConfigureAwait(false))
+            {
+                return (ns, new NamespaceScanResult(ScanOutcome.Skipped, Reason: "Hidden from ServiceHub."));
+            }
+
             // Built from the scope's own services, so registering this agent stays one line.
             var scanner = ActivatorUtilities.CreateInstance<DlqScanner>(scope.ServiceProvider);
             return (ns, await scanner.ScanAsync(ns, ct).ConfigureAwait(false));
@@ -157,6 +164,24 @@ public sealed class DlqMonitorAgent : IAgent
         {
             gate.Release();
         }
+    }
+
+    private static async Task<bool> AllWatchedStoresHiddenAsync(IServiceProvider services, Core.Entities.Namespace ns, CancellationToken ct)
+    {
+        if (ServiceHub.Core.Components.ComponentCatalog.CloudOf(ns.Provider) is not { } cloud
+            || services.GetService<INamespaceComponentService>() is not { } stored)
+        {
+            return false;
+        }
+
+        var watched = ServiceHub.Core.Components.ComponentAccessRules.Listed(cloud).Where(ServiceHub.Core.Components.ComponentAccessRules.IsAlwaysOn).Select(r => r.ComponentKey).ToList();
+        if (watched.Count == 0)
+        {
+            return false;
+        }
+
+        var hidden = (await stored.ListAsync(ns.OwnerId, ns.Id, ct).ConfigureAwait(false)).Where(c => !c.Enabled).Select(c => c.ComponentKey).ToHashSet(StringComparer.Ordinal);
+        return watched.All(hidden.Contains);
     }
 
     // Active rows whose cloud is no longer registered can never be scanned or replayed again.

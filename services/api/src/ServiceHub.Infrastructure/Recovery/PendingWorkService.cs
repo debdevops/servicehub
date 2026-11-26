@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using ServiceHub.Core.Constants;
+using ServiceHub.Core.Components;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
 using ServiceHub.Core.Interfaces;
@@ -76,7 +77,7 @@ public sealed class PendingWorkService : IPendingWorkService
                 && op.SourceRuleId != null
                 && message.Status == DlqMessageStatus.Active
                 && !_db.RecoveryEvents.Any(e => e.EntryId == entry.Id && e.EventType == RecoveryEventType.OperatorNote)
-            select new { entry, op, message.DeadLetterReason };
+            select new { entry, op, message.DeadLetterReason, message.EntityType };
 
         if (scope.EntryId is { } only) query = query.Where(x => x.entry.Id == only);
         if (scope.NamespaceId is { } ns) query = query.Where(x => x.entry.NamespaceId == ns);
@@ -113,7 +114,8 @@ public sealed class PendingWorkService : IPendingWorkService
                 "approval", r.entry.Id.ToString(), r.entry.Id, null, r.entry.DlqMessageId, r.entry.NamespaceId, r.entry.NamespaceNameSnapshot,
                 r.entry.ProviderSnapshot?.ToString().ToLowerInvariant(), r.entry.EnvironmentSnapshot?.ToString().ToLowerInvariant(),
                 r.entry.EntityNameSnapshot ?? r.entry.TargetEntity, r.DeadLetterReason, ruleId, ruleNames.GetValueOrDefault(ruleId) ?? $"Rule {ruleId}",
-                code, EscalationReasons.Describe(code), r.entry.BegunAt));
+                code, EscalationReasons.Describe(code), r.entry.BegunAt,
+                ComponentOf(r.entry.ProviderSnapshot, r.EntityType), "approval", FamilyOf(code)));
         }
 
         // An attempt with no answer: ServiceHub stopped, or lost contact with the cloud, before it could record whether the message was
@@ -134,11 +136,16 @@ public sealed class PendingWorkService : IPendingWorkService
         var unknownRows = scope.ReasonCode is not null && scope.ReasonCode != EscalationReasons.ReplayOutcomeUnknown
             ? []
             : await unknownQuery.ToListAsync(cancellationToken).ConfigureAwait(false);
+        var unknownMessageIds = unknownRows.Where(e => e.DlqMessageId != null).Select(e => e.DlqMessageId!.Value).Distinct().ToList();
+        var unknownKinds = await _db.DlqMessages.AsNoTracking().Where(m => unknownMessageIds.Contains(m.Id))
+            .ToDictionaryAsync(m => m.Id, m => m.EntityType, cancellationToken).ConfigureAwait(false);
         var unknownItems = unknownRows.Select(e => new PendingWorkItem(
             "unresolved", e.Id.ToString(), e.Id, null, e.DlqMessageId, e.NamespaceId, e.NamespaceNameSnapshot,
             e.ProviderSnapshot?.ToString().ToLowerInvariant(), e.EnvironmentSnapshot?.ToString().ToLowerInvariant(),
             e.EntityNameSnapshot ?? e.TargetEntity, e.DeadLetterReasonSnapshot, null, null,
-            EscalationReasons.ReplayOutcomeUnknown, EscalationReasons.Describe(EscalationReasons.ReplayOutcomeUnknown), e.BegunAt)).ToList();
+            EscalationReasons.ReplayOutcomeUnknown, EscalationReasons.Describe(EscalationReasons.ReplayOutcomeUnknown), e.BegunAt,
+            e.DlqMessageId is { } mid && unknownKinds.TryGetValue(mid, out var kind) ? ComponentOf(e.ProviderSnapshot, kind) : null,
+            "handOff", FamilyOf(EscalationReasons.ReplayOutcomeUnknown))).ToList();
         items.AddRange(unknownItems);
 
         // A rule the breaker switched off waits until a person turns it back on, changes it or deletes it (3.6). Rules are
@@ -175,6 +182,14 @@ public sealed class PendingWorkService : IPendingWorkService
 
         return new PendingWorkPage([.. all.Take(Math.Clamp(limit, 1, 500))], all.Count, byProvider, agentItems.Count);
     }
+
+    // The component comes from the catalogue, never from a provider's name; no entity type or no catalogue row means no component.
+    private static string? ComponentOf(CloudProviderType? provider, ServiceBusEntityType entityType) =>
+        provider is { } p ? ComponentCatalog.ForEntity(p, entityType.ToString().ToLowerInvariant())?.ComponentKey : null;
+
+    // camelCase, as every other enum on the wire. A code this version does not know has no family, shown as no label.
+    private static string? FamilyOf(string code) =>
+        ReasonFamilies.FamilyOf(code) is { } f ? char.ToLowerInvariant(f.ToString()[0]) + f.ToString()[1..] : null;
 
     private static string? ReasonCodeOf(string? json)
     {

@@ -92,7 +92,7 @@ export function ActiveMessagesTab({ provider, namespaces }: { provider: CloudPro
   )
 }
 
-type Row = { namespace: Namespace; entity: Entity }
+export type Row = { namespace: Namespace; entity: Entity }
 
 const optionLabel = (r: Row): string => {
   const e = describeEntity(r.entity.name, r.entity.kind)
@@ -118,7 +118,11 @@ const WINDOWS = [
 ] as const
 const INTERVALS = [15, 30, 60] as const
 
-function Browser({ rows }: { rows: readonly Row[] }) {
+export function Browser({ rows, deadLetterHref = () => '?tab=dlq' }: {
+  rows: readonly Row[]
+  /** Where the "Dead-lettered" tile of the chosen queue leads. The 4.2.0 Home tab by default; the 5.0.0 shell passes its own. */
+  deadLetterHref?: (row: Row) => string
+}) {
   const [params, setParams] = useSearchParams()
   const chosen = rows.find((r) => keyOf(r) === params.get('queue')) ?? rows.find((r) => (r.entity.activeMessages ?? 0) > 0) ?? rows[0]
   const selected = params.get('active')
@@ -199,7 +203,7 @@ function Browser({ rows }: { rows: readonly Row[] }) {
           <Tile Icon={MessageSquare} tone="bg-[#dbeafe] text-[#1d4ed8]" value={chosen.entity.activeMessages === null ? '—' : chosen.entity.activeMessages.toLocaleString()} label="Active messages" note={`waiting in ${optionLabel(chosen)}`} />
           <Tile Icon={Clock} tone="bg-[#ffedd5] text-[#ea580c]" value={oldest ? formatAge(oldest.enqueuedTime, now) : '—'} label="Oldest message" note={oldest ? 'among those peeked' : 'nothing to peek'} />
           <Tile Icon={RotateCcw} tone="bg-[#f3e8ff] text-[#9333ea]" value={view === 'browse' ? String(retried) : '—'} label="Delivered before" note="peeked messages being retried" />
-          <Tile Icon={Inbox} tone="bg-[#fee2e2] text-[#dc2626]" value={chosen.entity.deadLetterMessages === null ? '—' : chosen.entity.deadLetterMessages.toLocaleString()} label="Dead-lettered" note="set aside in this queue" href="?tab=dlq" />
+          <Tile Icon={Inbox} tone="bg-[#fee2e2] text-[#dc2626]" value={chosen.entity.deadLetterMessages === null ? '—' : chosen.entity.deadLetterMessages.toLocaleString()} label="Dead-lettered" note="set aside in this queue" href={deadLetterHref(chosen)} />
         </section>
 
         <div className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">

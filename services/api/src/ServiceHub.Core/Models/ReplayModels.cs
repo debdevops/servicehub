@@ -30,6 +30,7 @@ public sealed record ReplayCheck(string Id, string Label, string State, string? 
 /// <param name="CanExecute">Whether Replay can be pressed now.</param>
 /// <param name="BlockedCode">Why not, as a code (gate reason, or <c>NOT_ACTIVE</c>), when it cannot.</param>
 /// <param name="Checks">The checks, in the order shown.</param>
+/// <param name="FansOut">True when the replay is published to a <b>topic</b>, so every subscription on it that accepts the message receives it again, not only the one it failed on.</param>
 public sealed record ReplayProposal(
     long DlqMessageId,
     string MessageId,
@@ -49,7 +50,8 @@ public sealed record ReplayProposal(
     bool Approvable,
     bool CanExecute,
     string? BlockedCode,
-    IReadOnlyList<ReplayCheck> Checks);
+    IReadOnlyList<ReplayCheck> Checks,
+    bool FansOut = false);
 
 /// <summary>What happened when a replay ran. The attempt is in the ledger whatever the answer.</summary>
 /// <param name="EntryId">The ledger entry.</param>

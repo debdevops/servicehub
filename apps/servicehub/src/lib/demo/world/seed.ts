@@ -33,9 +33,9 @@ export const DEMO_WATCH_MS = 30_000
 export const REAL_WATCH_HOURS = 24
 
 export const capabilities: Readonly<Record<CloudProvider, ProviderCapabilities>> = {
-  azure: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: false, supportsScheduledMessages: true, supportsRepeatablePeek: true, supportsRecoveryMarker: true, canProveDlqAbsence: true, supportsTopics: true, supportsSubscriptions: true, notes: 'Purge is not supported — the SDK has no reliable single-message delete by sequence number.' },
-  aws: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: true, supportsScheduledMessages: false, supportsRepeatablePeek: false, supportsRecoveryMarker: true, canProveDlqAbsence: false, supportsTopics: true, supportsSubscriptions: true, notes: 'SQS has no non-destructive peek, so every look is a receive.' },
-  gcp: { supportsMessageCounts: false, supportsManualDeadLetter: false, supportsPurge: true, supportsScheduledMessages: false, supportsRepeatablePeek: false, supportsRecoveryMarker: true, canProveDlqAbsence: false, supportsTopics: true, supportsSubscriptions: true, notes: 'Pub/Sub has no count API; every pull counts as a delivery attempt.' },
+  azure: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: false, supportsScheduledMessages: true, supportsRepeatablePeek: true, supportsRecoveryMarker: true, canProveDlqAbsence: true, supportsTopics: true, supportsSubscriptions: true, countsAreApproximate: false, notes: 'Purge is not supported — the SDK has no reliable single-message delete by sequence number.' },
+  aws: { supportsMessageCounts: true, supportsManualDeadLetter: true, supportsPurge: true, supportsScheduledMessages: false, supportsRepeatablePeek: false, supportsRecoveryMarker: true, canProveDlqAbsence: false, supportsTopics: true, supportsSubscriptions: true, countsAreApproximate: true, notes: 'SQS has no non-destructive peek, so every look is a receive.' },
+  gcp: { supportsMessageCounts: false, supportsManualDeadLetter: false, supportsPurge: true, supportsScheduledMessages: false, supportsRepeatablePeek: false, supportsRecoveryMarker: true, canProveDlqAbsence: false, supportsTopics: true, supportsSubscriptions: true, countsAreApproximate: false, notes: 'Pub/Sub has no count API; every pull counts as a delivery attempt.' },
 }
 
 /** The few invented people who appear in the demo's history. `you` is whoever is looking at it. */
@@ -151,6 +151,7 @@ function agents(now: number): Agent[] {
     make({ id: 'insights-backlog', name: 'Backlog Forecaster', purpose: 'Says when a growing dead-letter queue will reach a size worth worrying about.', kind: 'watch', authority: 'observes', cadenceSeconds: 600, may: ['Project a growing queue forward from its own history'], mayNot: ['Replay, purge or change anything', 'Open a rule or change what a failure may do on its own', 'Use AI or guesses'] }, 21, 1, '1 queue is growing'),
     make({ id: 'insights-correlation', name: 'Pattern Linker', purpose: 'Notices when the same failure shows up in more than one place at once.', kind: 'watch', authority: 'observes', cadenceSeconds: 600, may: ['Compare failures across queues and clouds'], mayNot: ['Replay, purge or change anything', 'Open a rule or change what a failure may do on its own', 'Use AI or guesses'] }, 15, 1, '1 failure is happening in more than one place'),
     make({ id: 'insights-narration', name: 'Narrator', purpose: 'Writes one plain sentence about what changed since yesterday.', kind: 'watch', authority: 'observes', cadenceSeconds: 3600, may: ['Summarise counted changes in words'], mayNot: ['Replay, purge or change anything', 'Open a rule or change what a failure may do on its own', 'Use AI or guesses'] }, 3, 1, 'Wrote 3 summaries'),
+    make({ id: 'health', name: 'Health Keeper', purpose: 'Watches ServiceHub itself and tells you when something is wrong with it: a paused agent, a stuck recovery attempt, a failing connection, a ledger that no longer verifies.', kind: 'watch', authority: 'observes', cadenceSeconds: 300, may: ['Read the agents, the recovery ledger and the connection test results', 'Send a notification to your channels'], mayNot: ['Change a cloud, a message, a setting or another agent', 'Replay, purge or redrive anything', 'Resume a paused agent or lift emergency stop'] }, 6, 0, 'all clear'),
   ]
 }
 
@@ -177,8 +178,13 @@ export function buildWorld(now: number = Date.now()): World {
     })
   }
 
-  const messageId = (provider: CloudProvider) =>
-    provider === 'gcp' ? String(11_000_000_000_000 + r.int(0, 899_999_999_999)) : `${r.hex(8)}-${r.hex(4)}-4${r.hex(3)}-${r.pick(['8', '9', 'a', 'b'])}${r.hex(3)}-${r.hex(12)}`
+  // Azure ids are 32 hex characters with no hyphens (what Service Bus clients commonly send), so a table cell holding one cannot wrap on its own:
+  // a 1280 px window hid the Actions column on real data and the hyphenated demo id never showed it (found live, 2026-11-19).
+  const messageId = (provider: CloudProvider) => {
+    if (provider === 'gcp') return String(11_000_000_000_000 + r.int(0, 899_999_999_999))
+    const guid = [r.hex(8), r.hex(4), `4${r.hex(3)}`, `${r.pick(['8', '9', 'a', 'b'])}${r.hex(3)}`, r.hex(12)]
+    return guid.join(provider === 'azure' ? '' : '-')
+  }
 
   /** `count` dead letters of one story, enqueued over `spanMs` starting `startAgoMs` ago. */
   const burst = (cloud: CloudDef, ns: Namespace, story: Story, count: number, startAgoMs: number, spanMs: number): DemoDeadLetter[] => {

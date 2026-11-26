@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using ServiceHub.Core.Components;
 using ServiceHub.Core.Constants;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
@@ -101,13 +102,45 @@ public sealed class DlqReplayService : IDlqReplayService
                 canConfirm ? null : "The result will read “verification required”, never “verified”."),
         };
 
+        // A subscription's dead letter goes back to its TOPIC (seen live on Pub/Sub, 2026-10-31; Service Bus does the same), so every
+        // subscription on the topic that accepts the message receives it again. Said before the button, as a warning, never a block.
+        var fansOut = message.TopicName is not null && capabilities.ReplayFansOutToTopic;
+        if (fansOut)
+        {
+            checks.Add(new("fan-out", "Goes back onto the topic, not to this subscription alone", "warning",
+                $"Every subscription on {TargetOf(message)} that accepts the message receives it again, including ones that already handled it."));
+        }
+
         return Result<ReplayProposal>.Success(new ReplayProposal(
             message.Id, message.MessageId, message.EntityName, TargetOf(message),
             ns.DisplayName ?? ns.Name, ns.Provider.ToString().ToLowerInvariant(), ns.Environment.ToString(),
-            capabilities.SupportsRecoveryMarker, prior, RecoveryEligibilityGate.RecurrenceLineageCap, others,
+            capabilities.SupportsRecoveryMarker && HasRoomForMarker(message, capabilities), prior, RecoveryEligibilityGate.RecurrenceLineageCap, others,
             RecoveryLedgerService.ResolveObservationWindowHours(_configuration), canConfirm,
             decision.Verdict.ToString(), decision.ReasonCode, decision.Verdict == EligibilityVerdict.Escalate,
-            canExecute, canExecute ? null : (!active ? NotActive : decision.ReasonCode), checks));
+            canExecute, canExecute ? null : (!active ? NotActive : decision.ReasonCode), checks, fansOut));
+    }
+
+    /// <summary>
+    /// False when the message is already known to carry as many attributes as its cloud allows (SQS: 10), so the recovery marker cannot be
+    /// added and the proposal must not promise one (seen live 2026-11-10: the proposal said it would, the replay honestly said it had not).
+    /// Counted from the properties recorded when the message was found; when those cannot be read, the cloud's general answer stands.
+    /// </summary>
+    internal static bool HasRoomForMarker(DlqMessage message, ProviderCapabilities capabilities)
+    {
+        if (capabilities.MaxMessageAttributes is not { } cap || string.IsNullOrWhiteSpace(message.ApplicationPropertiesJson))
+        {
+            return true;
+        }
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(message.ApplicationPropertiesJson);
+            return doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object || doc.RootElement.EnumerateObject().Count() < cap;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return true;
+        }
     }
 
     /// <inheritdoc />
@@ -585,7 +618,10 @@ public sealed class DlqReplayService : IDlqReplayService
                 ns.OwnerId, kind, actor.Kind, actor.Kind == RecoveryActorKind.Automation ? RecoveryTrigger.AutoRule : RecoveryTrigger.Manual,
                 ns.Id, message.EntityName, message.BodyHash, SignatureHash: message.SignatureHash, ns.Environment,
                 // The namespace's own cloud: whether absence can be proven is that cloud's capability.
-                Provider: ns.Provider, DlqMessageId: message.Id, SourceMessageId: message.MessageId),
+                Provider: ns.Provider, DlqMessageId: message.Id, SourceMessageId: message.MessageId,
+                // What the catalogue allows on this component; no catalogue row means no class and no change.
+                ConnectionCanSend: ns.CanSend,
+                Recoverability: ComponentCatalog.ForEntity(ns.Provider, message.EntityType.ToString().ToLowerInvariant())?.Class),
             cancellationToken);
 
     /// <summary>

@@ -195,6 +195,26 @@ public sealed class NamespacesApiTests
     }
 
     [Fact]
+    public async Task Testing_a_components_only_connection_says_there_is_nothing_to_test_and_records_no_failure()
+    {
+        // Live 2026-11-10: the Azure sign-in connection (made to read Logic Apps and Event Grid) answered "Connection string is
+        // required for ConnectionString authentication" and was recorded as a failed test, although it works.
+        using var host = Host();
+        var created = await host.Client.SendAsync(Post("/api/v1/namespaces",
+            new { name = "azure-entra", provider = "azure", authType = "defaultAzureCredential", displayName = "Azure sign-in", environment = "dev" }));
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        var id = (await Json(created)).GetProperty("id").GetGuid();
+
+        var body = await Json(await host.Client.PostAsync($"/api/v1/namespaces/{id}/test-connection", null));
+
+        body.GetProperty("isConnected").GetBoolean().Should().BeFalse();
+        body.GetProperty("message").GetString().Should().Contain("Nothing to test here").And.NotContain("Connection string is required");
+        var after = await Json(await host.Client.GetAsync($"/api/v1/namespaces/{id}"));
+        (after.TryGetProperty("lastConnectionTestSucceeded", out var recorded) && recorded.ValueKind == System.Text.Json.JsonValueKind.False)
+            .Should().BeFalse("no test was run, so no failed test is recorded");
+    }
+
+    [Fact]
     public async Task A_namespace_whose_key_was_dropped_from_the_registry_is_an_answer_not_a_server_error()
     {
         // Key rotation gone wrong: the namespace was stored under key A, then ServiceHub restarted with a registry that does not
@@ -295,6 +315,82 @@ public sealed class NamespacesApiTests
         }
 
         return request;
+    }
+
+    private static HttpRequestMessage PutCanSend(Guid id, object body, string? intent = "declare-can-send")
+    {
+        var request = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/namespaces/{id}/can-send") { Content = JsonContent.Create(body) };
+        if (intent is not null)
+        {
+            request.Headers.Add("X-ServiceHub-Intent", intent);
+        }
+
+        return request;
+    }
+
+    [Fact]
+    public async Task A_connection_is_may_send_until_a_person_declares_it_read_only_and_the_declaration_survives_a_read()
+    {
+        using var host = Host();
+        var id = await Connect(host, "acme-bus");
+
+        (await Json(await host.Client.GetAsync($"/api/v1/namespaces/{id}"))).GetProperty("canSend").ValueKind.Should().Be(JsonValueKind.Null);
+        (await host.Client.SendAsync(PutCanSend(id, new { canSend = false }, intent: null))).StatusCode.Should().Be(HttpStatusCode.PreconditionRequired);
+
+        var saved = await host.Client.SendAsync(PutCanSend(id, new { canSend = false }));
+        saved.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await Json(saved)).GetProperty("canSend").GetBoolean().Should().BeFalse();
+        (await Json(await host.Client.GetAsync($"/api/v1/namespaces/{id}"))).GetProperty("canSend").GetBoolean().Should().BeFalse();
+
+        var cleared = await host.Client.SendAsync(PutCanSend(id, new { canSend = (bool?)null }));
+        (await Json(cleared)).GetProperty("canSend").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    private static HttpRequestMessage PutOwnerChannel(Guid id, object body, string? intent = "set-owner-channel")
+    {
+        var request = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/namespaces/{id}/owner-channel") { Content = JsonContent.Create(body) };
+        if (intent is not null)
+        {
+            request.Headers.Add("X-ServiceHub-Intent", intent);
+        }
+
+        return request;
+    }
+
+    [Fact]
+    public async Task A_connection_names_the_channel_that_is_told_about_it_and_only_a_real_channel_of_this_owner()
+    {
+        using var host = Host();
+        var id = await Connect(host, "acme-bus");
+        var added = await host.Client.SendAsync(Post("/api/v1/settings/channels", new { format = "slack", label = "#ops", url = "https://hooks.slack.com/services/T0/B0/secretpart" }, "add-channel"));
+        var channelId = (await Json(added)).GetProperty("id").GetGuid();
+
+        (await host.Client.SendAsync(PutOwnerChannel(id, new { channelId }, intent: null))).StatusCode.Should().Be(HttpStatusCode.PreconditionRequired);
+        (await host.Client.SendAsync(PutOwnerChannel(id, new { channelId = Guid.NewGuid() }))).StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var saved = await host.Client.SendAsync(PutOwnerChannel(id, new { channelId }));
+        saved.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await Json(saved)).GetProperty("ownerChannelId").GetGuid().Should().Be(channelId);
+        (await Json(await host.Client.GetAsync($"/api/v1/namespaces/{id}"))).GetProperty("ownerChannelId").GetGuid().Should().Be(channelId);
+
+        var cleared = await host.Client.SendAsync(PutOwnerChannel(id, new { channelId = (Guid?)null }));
+        (await Json(cleared)).GetProperty("ownerChannelId").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task A_connection_can_be_declared_read_only_when_it_is_connected()
+    {
+        using var host = Host();
+        var response = await host.Client.SendAsync(Post("/api/v1/namespaces", new
+        {
+            name = "read-only-bus",
+            connectionString = AzureCredential("read-only-bus"),
+            authType = "connectionString",
+            canSend = false,
+        }));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        (await Json(response)).GetProperty("canSend").GetBoolean().Should().BeFalse();
     }
 
     [Fact]
@@ -460,7 +556,10 @@ internal sealed class FakeProvider(CloudProviderType type, ProviderCapabilities 
     public ProviderCapabilities Capabilities => capabilities;
 
     public Task<Result> ValidateConnectionAsync(Namespace ns, CancellationToken ct) =>
-        Task.FromResult(failProbes
+        Task.FromResult(string.IsNullOrWhiteSpace(ns.ConnectionString)
+            // As the real Azure adapter answers for a sign-in connection: it holds no Service Bus credential.
+            ? Result.Failure(Error.Validation(ServiceHub.Core.Constants.ErrorCodes.Namespace.ConnectionStringRequired, "Connection string is required for ConnectionString authentication."))
+            : failProbes
             ? Result.Failure(Error.ExternalService("fake.probe", "probe refused"))
             : Result.Success());
 

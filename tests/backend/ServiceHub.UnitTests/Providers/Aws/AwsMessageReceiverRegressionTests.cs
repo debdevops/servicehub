@@ -335,6 +335,42 @@ public sealed class AwsMessageReceiverRegressionTests
     }
 
     [Fact]
+    public async Task PeekDeadLetterMessagesAsync_ReadsTheReasonAwsWroteOnLambdaAndEventBridgeDeadLetters()
+    {
+        // G3. Shapes captured live 2026-11-11. ServiceHub's own marker and the producer's attribute still win.
+        var eventBridge = new Dictionary<string, MessageAttributeValue>
+        {
+            ["ERROR_CODE"] = new() { DataType = "String", StringValue = "NO_PERMISSIONS" },
+            ["ERROR_MESSAGE"] = new() { DataType = "String", StringValue = "not authorized to perform: sqs:sendmessage" },
+            ["RULE_ARN"] = new() { DataType = "String", StringValue = "arn:aws:events:us-east-1:123456:rule/r" },
+        };
+        var lambdaButProducerNamedIt = new Dictionary<string, MessageAttributeValue>
+        {
+            ["RequestID"] = new() { DataType = "String", StringValue = "r-1" },
+            ["ErrorMessage"] = new() { DataType = "String", StringValue = "boom" },
+            ["shs-error-type"] = new() { DataType = "String", StringValue = "DownstreamUnavailable" },
+        };
+        var (sut, _, _) = BuildSut(new ReceiveMessageResponse
+        {
+            Messages =
+            [
+                BuildSqsMessage("m-eb", "rh-eb", "{}", eventBridge),
+                BuildSqsMessage("m-pr", "rh-pr", "{}", lambdaButProducerNamedIt),
+            ],
+        });
+
+        var result = await sut.PeekDeadLetterMessagesAsync(new GetMessagesRequest(TestNamespaceId, QueueName, null, true, 10));
+
+        var fromEventBridge = result.Value.Single(m => m.MessageId == "m-eb");
+        fromEventBridge.DeadLetterReason.Should().Be("NO_PERMISSIONS");
+        fromEventBridge.DeadLetterErrorDescription.Should().Be("not authorized to perform: sqs:sendmessage");
+        fromEventBridge.ApplicationProperties.Should().ContainKey("RULE_ARN");
+        var producerNamed = result.Value.Single(m => m.MessageId == "m-pr");
+        producerNamed.DeadLetterReason.Should().Be("DownstreamUnavailable");
+        producerNamed.DeadLetterErrorDescription.Should().BeNull();
+    }
+
+    [Fact]
     public async Task PeekDeadLetterMessagesAsync_MapsDeadLetterQueueSourceArnToDeadLetterSource()
     {
         // Mirrors Azure's DeadLetterSource mapping (ServiceBusClientWrapper), which SQS

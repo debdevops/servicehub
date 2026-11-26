@@ -29,6 +29,8 @@ export interface ProviderCapabilities {
   readonly canProveDlqAbsence: boolean
   readonly supportsTopics: boolean
   readonly supportsSubscriptions: boolean
+  /** True when the cloud's own counts are estimates (SQS): show them as approximate, never exact. The API always sends it; older fixtures may not. */
+  readonly countsAreApproximate?: boolean
   readonly notes: string
 }
 
@@ -52,6 +54,10 @@ export interface Namespace {
   readonly lastConnectionTestSucceeded: boolean | null
   /** Null only when this build has no adapter for the provider. */
   readonly capabilities: ProviderCapabilities | null
+  /** What the person declared: false is read-only, true is read and send, null/absent is not said (treated as may send). */
+  readonly canSend?: boolean | null
+  /** The one notification channel told about this connection; null/absent means every enabled channel. */
+  readonly ownerChannelId?: string | null
 }
 
 export interface ConnectNamespaceInput {
@@ -65,6 +71,8 @@ export interface ConnectNamespaceInput {
   readonly environment?: EnvironmentKind
   readonly awsRegion?: string
   readonly gcpProjectId?: string
+  /** False declares the connection read-only. */
+  readonly canSend?: boolean
 }
 
 export interface ConnectionTest {
@@ -97,6 +105,8 @@ export interface Entity {
   readonly activeMessages: number | null
   readonly deadLetterMessages: number | null
   readonly deadLetterTargetName: string | null
+  /** Messages in the transfer dead-letter queue (Service Bus only); null where the cloud has none. */
+  readonly transferDeadLetterMessages?: number | null
 }
 
 export interface EntityList {
@@ -131,6 +141,24 @@ export async function fetchNamespaceStats(id: string): Promise<NamespaceStats> {
 /** One endpoint for every kind: which kinds exist is a capability, not a route. */
 export async function fetchEntities(id: string, kind?: EntityKind): Promise<EntityList> {
   return (await api.get<EntityList>(`/namespaces/${id}/entities`, { params: kind ? { kind } : undefined })).data
+}
+
+/** One limit of an entity, in the cloud's own words ("Lock duration", "30 seconds"). */
+export interface EntitySetting {
+  readonly label: string
+  readonly value: string
+}
+
+/** `settings` is null when the cloud does not read limits for this kind of entity: "not read", never an empty list. */
+export interface EntitySettings {
+  readonly name: string
+  readonly kind: EntityKind
+  readonly settings: readonly EntitySetting[] | null
+}
+
+/** Read from the cloud on demand, one entity at a time (some clouds need a call per entity), not with the list. */
+export async function fetchEntitySettings(id: string, name: string, kind: EntityKind): Promise<EntitySettings> {
+  return (await api.get<EntitySettings>(`/namespaces/${id}/entities/settings`, { params: { name, kind } })).data
 }
 
 /** What one "look now" found. `countsAsDeliveryAttempt` is true where looking was a receive (no repeatable peek). */
@@ -190,6 +218,16 @@ export interface DlqObserverCheck {
 
 export async function fetchDlqObserver(id: string): Promise<DlqObserver> {
   return (await api.get<DlqObserver>(`/namespaces/${id}/dlq-observer`)).data
+}
+
+/** Says whether ServiceHub may send through this connection (Admin). `null` clears the declaration. */
+export async function declareCanSend(id: string, canSend: boolean | null): Promise<Namespace> {
+  return (await api.put<Namespace>(`/namespaces/${id}/can-send`, { canSend }, { headers: withIntent(Intent.DeclareCanSend) })).data
+}
+
+/** Chooses which notification channel is told about this connection (Admin). `null` means every enabled channel. */
+export async function setOwnerChannel(id: string, channelId: string | null): Promise<Namespace> {
+  return (await api.put<Namespace>(`/namespaces/${id}/owner-channel`, { channelId }, { headers: withIntent(Intent.SetOwnerChannel) })).data
 }
 
 export async function configureDlqObserver(id: string, input: ConfigureDlqObserverInput): Promise<DlqObserver> {

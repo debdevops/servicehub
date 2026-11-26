@@ -143,3 +143,13 @@ TROUBLESHOOTING = [
 CLEANUP = """To stop ServiceHub watching AWS: **Settings → Connections → Remove**. That forgets the connection and its stored credential on the ServiceHub server;
 it deletes nothing in AWS. To revoke access in AWS, make the access key **Inactive** or delete it (IAM → the user → Security credentials), and delete the user
 if you no longer need it. If you created the queues only to try ServiceHub, delete them in SQS so nothing keeps costing money."""
+
+
+# ---- 5.0.0: everything from Part 2 on is rewritten for the one-layout app (see _v5.py) ----
+from guides._v5 import parts as _parts
+
+SHOT_DIRS = {"app": "aws-5", "portal": "aws-portal"}
+SECTIONS = SECTIONS[:1] + _parts(dict(dir='aws-5', label='AWS', tab='AWS SQS / SNS', store='SQS', watched=False, count_word='approximate: SQS counts are what AWS reports, a minute behind', entity_word='queue', components='SNS, Step Functions, Kinesis and DynamoDB streams', connect_text='Give it a name, keep the environment as **Development**, choose **Read and send** (replay needs send), then enter the **Access key ID**, the **Secret access key** and the **Region** of your queues (from Part 1).', look_text='SQS has no way to look at a message without *receiving* it, and every receive counts as a delivery attempt. So ServiceHub **never looks on its own**. On the **Dead-letter messages** tab a yellow strip says so, and **Look now** records what is in each dead-letter queue right now (up to 100 per queue, handed straight back). Press it once, and wait a few seconds.', result_text="After **Replay 1 message** the window says **Sent back**, and, on AWS, that the result will read **Verification required**. That is honest: SQS cannot show that the dead-letter queue stayed empty, so ServiceHub cannot call it fixed. In **Replay history** the replay appears as **Unverified**. To get Verified and Came back on AWS, open the connection's **Configuration** tab and switch on **Confirm fixes on this cloud**."))
+INTRO = INTRO.replace('learn what Auto Replay, Settings and the Advanced pages show.', "learn what Auto Replay, the Evidence ledger and Configuration show.")
+CLEANUP = CLEANUP.replace("**Settings → Connections → Remove**", "**Connections**, the bin button on the connection, then typing its name to confirm")
+TROUBLESHOOTING = [(q.replace("not under Replayed", "not in Replay history"), a.replace("on the Replayed tab", "on the Replay history page").replace("the *Result* filter is *Any result*", "the *Outcome* filter is *any*")) for q, a in TROUBLESHOOTING]

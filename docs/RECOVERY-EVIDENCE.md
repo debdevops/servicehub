@@ -4,8 +4,8 @@
 > including exactly what the record can and cannot prove.
 >
 > **In plain language:** every time ServiceHub replays or deletes a stuck ("dead-lettered") message — or refuses to — it writes down what it did, who or what decided,
-> and what happened afterward, in a way that cannot be quietly edited later. Think of it as a flight recorder for your queues. You read it in the app on **Advanced → Recovery
-> Ledger**; this page is for someone who needs to verify it independently (an auditor, a compliance reviewer, an engineer chasing a discrepancy).
+> and what happened afterward, in a way that cannot be quietly edited later. Think of it as a flight recorder for your queues. You read it in the app on **Evidence ledger** (under Operational
+> Tools in the left menu); this page is for someone who needs to verify it independently (an auditor, a compliance reviewer, an engineer chasing a discrepancy).
 
 The ledger is a durable, append-only, hash-chained record kept in ServiceHub's SQLite database. It is honest about a hard limit up front: the chain is
 **tamper-evident, not tamper-proof.** Anyone with write access to the database file can recompute the whole chain and produce a self-consistent forgery. Verification
@@ -76,7 +76,7 @@ That is the server marking its own homework — hence the offline verifier below
 
 ## 4. Export and independent offline verification
 
-**Export.** Advanced → Recovery Ledger → *Export evidence* (choose a window), or `GET /api/v1/recovery/export[?from=…&to=…]` (not from a key limited to some
+**Export.** Evidence ledger → *Export evidence* (choose a window), or `GET /api/v1/recovery/export[?from=…&to=…]` (not from a key limited to some
 namespaces — the ledger is one chain across all of them). One JSON file, `servicehub-evidence-<from>-to-<to>.json`:
 
 ```json
@@ -132,3 +132,60 @@ DLQ is attributed to that exact recovery (confidence **Exact**). Where it cannot
 ambiguous rather than guessed.
 
 *Verified live 2026-09-29 against a real 15,424-event ledger: chain valid, offline verifier PASS, tamper negative control FAIL at the edited `Seq`.*
+
+## 7. Cloud redrive of a failed run (AWS Step Functions)
+
+A failed, timed-out or aborted **Standard** Step Functions run can be restarted by AWS itself from the step that failed (`RedriveExecution`), with the input it already has. ServiceHub never reads the run's input or output, and only a person with the Approver role on the Recover pillar may ask. The gate denies an Agent or a rule, a read-only connection, and a Production connection without an approved elevation. The ledger entry is written *before* AWS is called and records what AWS answered. Class **R3**: approval only, and the entry always closes **`Unverified`** — acceptance says nothing about whether the run then finished fixed. It never opens an observation window and never earns autonomy.
+
+*Verified live 2026-10-31 against AWS Step Functions (region `ap-south-1`), through the API and the screens, with a read-and-redrive identity and a read-only one:*
+
+| Check | Observed |
+|---|---|
+| Redrive of a failed Standard run | AWS accepted; the run's `redriveCount` went 0 → 1; the run restarted and ended `FAILED` again at once (its state was a deliberate `Fail`); the entry closed `Unverified` |
+| Redrive of the same run again | Accepted (count 2): a run that failed again can be redriven again |
+| Identity without `states:RedriveExecution` | Refused (`AWS.StepFunctions.RedriveNotAllowed`); the entry closed `ExecutionFailed`; nothing was changed |
+| Express workflow run | AWS refuses (`InvalidArn … express`); ServiceHub refuses before calling AWS |
+| Listing | `FAILED`, `TIMED_OUT` and `ABORTED` runs listed with the right status. Express workflows are not listed (AWS does not list their executions) |
+
+**Not observed, so not claimed:** whether `states:RedriveExecution` can be scoped to the execution ARN or needs the state machine ARN (the test identity used `*`); the 14-day redrive window; a redrive after the state machine was edited; a redrive of a run that was still running. AWS documents these refusals, and ServiceHub shows what AWS answers.
+
+## 8. Cloud resubmit of a failed run (Azure Logic Apps)
+
+A failed, timed-out or cancelled Logic Apps run can be **resubmitted** through Azure's own trigger-history `resubmit` (`POST .../triggers/{trigger}/histories/{run}/resubmit`). **This is not a redrive.** Azure starts a **new run** from the trigger, with the trigger's original input, and **every step runs again, including steps that already succeeded**; steps that send, write or charge outside Azure will do it again. The original run stays `Failed`. ServiceHub never reads the trigger's input or any step's input or output (it reads only the run's status and the trigger's name), and only a person with the Approver role on the Recover pillar may ask; the gate denies an Agent or a rule, a read-only connection, and a Production connection without an approved elevation. Azure gives a resubmit no idempotency key, so ServiceHub never retries one, and a second request on the same run is allowed with a warning. The ledger entry is written *before* Azure is called, and closes **`Unverified`**: acceptance says nothing about whether the new run finished fixed. Class **R3**; it never earns autonomy.
+
+*Verified live 2026-10-31 against Azure Logic Apps (a Consumption Logic App with an HTTP request trigger whose action always fails), through the API and the screens, signed in as the Azure CLI identity (`DefaultAzureCredential`, Owner on the subscription):*
+
+| Check | Observed |
+|---|---|
+| Access check | Passes with Reader; resubmit is a separate permission, which Check access does not test |
+| Listing | The 3 `Failed` runs listed, not incomplete |
+| History name | The trigger history's name equals the run name (read back from Azure for the HTTP request trigger) |
+| Resubmit of a failed run | Azure answered 202; a **new run** appeared about 3 seconds later and also ended `Failed` (the workflow fails by design); the original run was unchanged; the entry closed `Unverified` |
+| Resubmit of the same run again | Warned in the dialog ("the cloud already accepted a resubmit of this run"), still allowed; accepted; a second new run appeared |
+| Identity without the resubmit permission | A throwaway service principal with the Reader role only (deleted afterwards) could list the runs and was offered the action, but Azure refused the resubmit; ServiceHub recorded `ExecutionFailed` with a message naming `Microsoft.Logic/workflows/triggers/histories/resubmit/action`; no new run was created |
+| **A disabled Logic App** | **Azure accepted the resubmit and ran it anyway** (202, a new run appeared). A person who disables a Logic App means "do not run this", so ServiceHub now reads the Logic App's state first and **refuses unless it is `Enabled`** (fail closed: an unknown state is a refusal too). Seen live: refused while Disabled with no new run, accepted again once re-enabled |
+| Words | The dialog says "starts a new run", "every step runs again, including steps that already succeeded" and "it stays failed"; the ledger says "the cloud accepted the request, but ServiceHub cannot confirm the run then finished fixed" |
+
+**Not observed, so not claimed:** a trigger history that has aged out; a Recurrence or other trigger type (only the HTTP request trigger was tried); a run that was still running (ServiceHub refuses it before calling Azure, tested offline only); Logic Apps Standard (single-tenant), which this component does not read.
+
+
+## 9. Retry of a failed Eventarc event (through Pub/Sub replay)
+
+ServiceHub has **no Eventarc-specific retry**. A failed Eventarc event is held in the dead-letter topic of the trigger's transport subscription, which the Pub/Sub component already lists. The Eventarc tab draws **Retry in Pub/Sub…**, which opens that subscription's dead letters, and the ordinary Pub/Sub replay does the rest (same gate, same ledger entry, same approval rules as any Pub/Sub replay). **Replay publishes a fresh copy to the subscription's topic, so every subscription on that topic receives the event again.** For a Pub/Sub-sourced trigger that topic is the customer's own source topic. The replay dialog says so ("Goes to the whole topic"), as a warning that never blocks. Class **R3**, no autonomy beyond what the Pub/Sub rules already earn.
+
+*Verified live 2026-10-31 against GCP (project `servicehub-502914`: a Pub/Sub-sourced Eventarc trigger to a workflow, its transport subscription with a dead-letter policy of 5 attempts and a push endpoint that always refuses, a dead-letter topic with a pull subscription), through the API and the screens, with Application Default Credentials (`GcpWorkloadIdentity`, no key created):*
+
+| Check | Observed |
+|---|---|
+| Access check | Passes with Eventarc Viewer, Pub/Sub Viewer and Subscriber on the dead-letter subscription |
+| Trigger discovery | `ListLocations` / `ListTriggers` found the project's one trigger |
+| Reason shown | `CloudPubSubDeadLetterSourceDeliveryCount` present ("tried 5 times"). The delivery-error attribute is **absent** on a held copy of a push failure, so no reason is shown and the summary is the generic "Undelivered event" (no `ce-type` on a raw Pub/Sub message) |
+| Link to Pub/Sub | The item's `heldIn` named `eventarc-…-sub-617`, exactly the id the Pub/Sub component lists; the dead-letters `q` filter found that subscription's dead letters (1, then 2) and an unrelated term found none |
+| Seeing the dead letters | Only after **Look now** (GCP has no repeatable peek); a look is a pull, so two looks brought in both events; ServiceHub reported `unconfirmed` honestly |
+| Replay | Proposal showed the target `servicehub-livetest-events` with every check passing; accepted; recovery marker applied; the dead-letter copy left the dead-letter topic |
+| After the replay | About 75 seconds later the event dead-lettered again as a **new** message; the ledger entry read **`Returned`, confidence `Exact`** (matched by recovery id). The replay really re-entered the trigger's delivery path; failing again is expected here because the endpoint refuses by design |
+| Fan-out | The earlier wording "puts it back on this trigger's transport topic only" was **wrong** and was corrected. Only this trigger subscribed in the livetest, so nothing else received the copy |
+
+**Not observed, so not claimed:** delivery to a destination that works; an Eventarc trigger from a Google source (Eventarc makes its own transport topic there, the one case where the target is unique); a trigger with no dead-letter policy; the "Not enabled" answer for an identity without the viewer roles; the fan-out itself (a second subscription on the topic receiving the copy). The row stays **BeingValidated** until those are run.
+
+Event Grid is deliberately different: ServiceHub **cannot retry** its events (no redelivery API, a blob holds an array, a republish to the topic reaches every subscription), so it lists the blobs and links to them. Its read side was run live on Azure on 2026-10-31 and is recorded in the wave doc, not here, because nothing was recovered.

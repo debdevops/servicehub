@@ -146,6 +146,26 @@ public sealed class AutonomyEvaluationAgent : IAgent
                 continue;
             }
 
+            // Plan G2: trust was earned under the connection's settings as they were. If they changed, the fix goes back to approval.
+            var earnedGrant = await recoveryLedger.GetAutonomyGrantAsync(ownerId, signatureHash, RecoveryOperationKind.Replay, cancellationToken).ConfigureAwait(false);
+            if (earnedGrant is { CurrentLevel: > AutonomyLevel.Approve, PreconditionsHash: { } earnedUnder }
+                && await CurrentPreconditionsAsync(services, recoveryLedger, ownerId, signatureHash, cancellationToken).ConfigureAwait(false) is { } now
+                && !string.Equals(now, earnedUnder, StringComparison.Ordinal))
+            {
+                var changed = await recoveryLedger.RecordAutonomyGrantTransitionAsync(
+                    ownerId, signatureHash, RecoveryOperationKind.Replay, earnedGrant.CurrentLevel, AutonomyLevel.Approve,
+                    $"Demoted {earnedGrant.CurrentLevel}→{AutonomyLevel.Approve}: the connection's settings changed since this was earned (cloud, environment or whether it may send), so it goes back to approval.",
+                    evidenceJson: null, cancellationToken).ConfigureAwait(false);
+                if (changed.IsSuccess)
+                {
+                    await recoveryLedger.SetAutonomyGrantPreconditionsAsync(ownerId, signatureHash, RecoveryOperationKind.Replay, null, cancellationToken).ConfigureAwait(false);
+                    totals.Demoted++;
+                    metrics?.RecordAutonomyTransition("demotion", earnedGrant.CurrentLevel.ToString(), AutonomyLevel.Approve.ToString());
+                }
+
+                continue;
+            }
+
             var result = await trustScoring.EvaluateAsync(ownerId, signatureHash, RecoveryOperationKind.Replay, cancellationToken).ConfigureAwait(false);
             if (result.IsFailure)
             {
@@ -178,6 +198,15 @@ public sealed class AutonomyEvaluationAgent : IAgent
                 }
 
                 var isPromotion = transition.Value.NewLevel > currentLevel;
+                if (isPromotion)
+                {
+                    // Remember what held when it was earned. Not saved (null) means it is never demoted by a settings change.
+                    await recoveryLedger.SetAutonomyGrantPreconditionsAsync(
+                        ownerId, signatureHash, RecoveryOperationKind.Replay,
+                        await CurrentPreconditionsAsync(services, recoveryLedger, ownerId, signatureHash, cancellationToken).ConfigureAwait(false),
+                        cancellationToken).ConfigureAwait(false);
+                }
+
                 if (isPromotion) totals.Promoted++;
                 else totals.Demoted++;
                 metrics?.RecordAutonomyTransition(isPromotion ? "promotion" : "demotion", currentLevel.ToString(), transition.Value.NewLevel.ToString());
@@ -248,6 +277,28 @@ public sealed class AutonomyEvaluationAgent : IAgent
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// The fingerprint of the settings this signature's connection has now, or null when they cannot be read (then nothing is
+    /// compared and nothing is demoted on a guess).
+    /// </summary>
+    private static async Task<string?> CurrentPreconditionsAsync(
+        IServiceProvider services, IRecoveryLedger recoveryLedger, string ownerId, string signatureHash, CancellationToken cancellationToken)
+    {
+        var namespaceId = await recoveryLedger.GetSignatureNamespaceIdAsync(ownerId, signatureHash, cancellationToken).ConfigureAwait(false);
+        if (namespaceId is not { } id)
+        {
+            return null;
+        }
+
+        if (services.GetService<INamespaceRepository>() is not { } repository)
+        {
+            return null;
+        }
+
+        var found = await repository.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
+        return found.IsSuccess ? TrustPreconditions.Fingerprint(found.Value) : null;
     }
 
     /// <summary>

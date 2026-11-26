@@ -15,6 +15,9 @@ public static class AuditActions
     /// <summary>A dead letter was replayed (or a replay was refused).</summary>
     public const string ReplayMessage = "Replay.Message";
 
+    /// <summary>A person asked a cloud to redrive one failed run (plan PP5). <c>ResourceName</c> is the run's id.</summary>
+    public const string RedriveExecution = "Redrive.Execution";
+
     /// <summary>A person asked ServiceHub to look at a namespace's dead letters now.</summary>
     public const string DeadLettersLook = "DeadLetters.Look";
 
@@ -36,11 +39,29 @@ public static class AuditActions
     /// <summary>A person set up, changed or turned off a cloud's DLQ observer (unit 4.2).</summary>
     public const string DlqObserverConfigure = "DlqObserver.Configure";
 
+    /// <summary>A person declared whether ServiceHub may send through a connection.</summary>
+    public const string NamespaceDeclareCanSend = "Namespace.DeclareCanSend";
+
+    /// <summary>A person chose which notification channel is told about a connection.</summary>
+    public const string NamespaceSetOwnerChannel = "Namespace.SetOwnerChannel";
+
+    /// <summary>A person ticked a component on a connection (Add a component).</summary>
+    public const string ComponentEnable = "Component.Enable";
+
+    /// <summary>A person unticked a component on a connection. Its history stays.</summary>
+    public const string ComponentDisable = "Component.Disable";
+
     /// <summary>A backup was taken.</summary>
     public const string BackupCreate = "Backup.Create";
 
     /// <summary>A backup was staged to be restored at the next start, or unstaged.</summary>
     public const string BackupRestore = "Backup.Restore";
+
+    /// <summary>A fresh start was staged (after a backup of the current state), or unstaged.</summary>
+    public const string BackupStartFresh = "Backup.StartFresh";
+
+    /// <summary>A backup file from elsewhere was imported.</summary>
+    public const string BackupImport = "Backup.Import";
 
     /// <summary>An Auto Replay rule was made. <c>ResourceName</c> is the rule's id and name.</summary>
     public const string RuleCreate = "Rule.Create";

@@ -76,9 +76,16 @@ public sealed class AutonomyEvaluationAgentTests : IDisposable
             NullLogger<AutonomyEvaluationAgent>.Instance);
     }
 
+    private INamespaceRepository? _namespaces;
+
     private IServiceProvider BuildScope()
     {
         var services = new ServiceCollection();
+        if (_namespaces is not null)
+        {
+            services.AddSingleton(_namespaces);
+        }
+
         services.AddSingleton<IRecoveryLedger>(_recoveryLedger);
         services.AddSingleton<IRecoveryTrustScoringService>(_trustScoring);
         // SweepOwnerAsync's circuit-breaker step (SweepAutoReplayCircuitBreakersAsync) resolves
@@ -317,6 +324,70 @@ public sealed class AutonomyEvaluationAgentTests : IDisposable
 
         var grantAfterSecondSweep = await _dbContext.AutonomyGrants.SingleAsync(g => g.SignatureHash == "sig-jumper");
         grantAfterSecondSweep.CurrentLevel.Should().Be(AutonomyLevel.Unattended);
+    }
+
+    // ── Settings changed since trust was earned (plan G2) ──────────────────
+
+    /// <summary>Puts a connection in the repository and says the signature was last seen on it.</summary>
+    private async Task<Namespace> GivenSignatureOnConnectionAsync(string ownerId, string signatureHash)
+    {
+        var created = Namespace.Create("orders-bus", "Endpoint=sb://orders-bus.servicebus.windows.net/;SharedAccessKeyName=k;SharedAccessKey=abc=", ownerId: ownerId);
+        created.IsSuccess.Should().BeTrue();
+        var ns = created.Value;
+        var repository = new Mock<INamespaceRepository>();
+        repository.Setup(r => r.GetByIdAsync(ns.Id, It.IsAny<CancellationToken>())).ReturnsAsync(Result<Namespace>.Success(ns));
+        _namespaces = repository.Object;
+        _dbContext.NamespaceSignatures.Add(new NamespaceSignature
+        {
+            NamespaceId = ns.Id, OwnerId = ownerId, SignatureHash = signatureHash, FirstSeenAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow,
+            OccurrenceCount = 1, DominantDeadletterReason = "r", EntityName = "orders-dlq", TopTermsJson = "[]",
+        });
+        await _dbContext.SaveChangesAsync();
+        return ns;
+    }
+
+    [Fact]
+    public async Task SweepOwnerAsync_Promotion_RemembersTheSettingsItWasEarnedUnder()
+    {
+        await SeedRecoveredEntriesAsync(OwnerA, "sig-earned", count: 10, "body");
+        var ns = await GivenSignatureOnConnectionAsync(OwnerA, "sig-earned");
+
+        await CreateWorker().SweepOwnerAsync(BuildScope(), OwnerA, CancellationToken.None);
+
+        var grant = await _dbContext.AutonomyGrants.SingleAsync(g => g.SignatureHash == "sig-earned");
+        grant.CurrentLevel.Should().Be(AutonomyLevel.Standing);
+        grant.PreconditionsHash.Should().Be(TrustPreconditions.Fingerprint(ns));
+    }
+
+    [Fact]
+    public async Task SweepOwnerAsync_SettingsChangedSinceItWasEarned_GoesBackToApprovalWithAReasonInTheLedger()
+    {
+        await SeedRecoveredEntriesAsync(OwnerA, "sig-changed", count: 10, "body");
+        await GivenSignatureOnConnectionAsync(OwnerA, "sig-changed");
+        (await _recoveryLedger.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-changed", RecoveryOperationKind.Replay, AutonomyLevel.Approve, AutonomyLevel.Standing, "seeded at L4", null)).IsSuccess.Should().BeTrue();
+        await _recoveryLedger.SetAutonomyGrantPreconditionsAsync(OwnerA, "sig-changed", RecoveryOperationKind.Replay, "earned-under-other-settings");
+
+        await CreateWorker().SweepOwnerAsync(BuildScope(), OwnerA, CancellationToken.None);
+
+        var grant = await _dbContext.AutonomyGrants.AsNoTracking().SingleAsync(g => g.SignatureHash == "sig-changed");
+        grant.CurrentLevel.Should().Be(AutonomyLevel.Approve, "the evidence alone would have kept L4; the changed settings take it back");
+        grant.PreconditionsHash.Should().BeNull();
+        (await _dbContext.RecoveryEvents.Where(e => e.EventType == RecoveryEventType.AutonomyGrantDemoted).Select(e => e.DetailJson).ToListAsync())
+            .Should().ContainSingle().Which.Should().Contain("settings changed");
+    }
+
+    [Fact]
+    public async Task SweepOwnerAsync_TrustEarnedBeforeThePreconditionColumnExisted_IsNeverDemotedByIt()
+    {
+        await SeedRecoveredEntriesAsync(OwnerA, "sig-old", count: 10, "body");
+        await GivenSignatureOnConnectionAsync(OwnerA, "sig-old");
+        (await _recoveryLedger.RecordAutonomyGrantTransitionAsync(
+            OwnerA, "sig-old", RecoveryOperationKind.Replay, AutonomyLevel.Approve, AutonomyLevel.Standing, "seeded at L4", null)).IsSuccess.Should().BeTrue();
+
+        await CreateWorker().SweepOwnerAsync(BuildScope(), OwnerA, CancellationToken.None);
+
+        (await _dbContext.AutonomyGrants.AsNoTracking().SingleAsync(g => g.SignatureHash == "sig-old")).CurrentLevel.Should().Be(AutonomyLevel.Standing);
     }
 
     // ── Demotion ────────────────────────────────────────────────────────────

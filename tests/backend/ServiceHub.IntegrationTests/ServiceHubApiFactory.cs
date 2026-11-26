@@ -1,6 +1,8 @@
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
 using ServiceHub.Infrastructure.Persistence;
 
 namespace ServiceHub.IntegrationTests;
@@ -36,6 +38,16 @@ public sealed class ServiceHubApiFactory : WebApplicationFactory<Program>
     {
         ArgumentNullException.ThrowIfNull(builder);
         builder.UseSetting("ServiceHub:DataDirectory", DataDirectory);
+        builder.ConfigureServices(services => services.AddTransient<IStartupFilter, EndpointCoverageStartupFilter>());
+    }
+
+    private sealed class EndpointCoverageStartupFilter : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            EndpointCoverageRecorder.Use(app);
+            next(app);
+        };
     }
 
     /// <summary>

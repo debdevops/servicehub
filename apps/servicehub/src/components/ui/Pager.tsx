@@ -14,6 +14,7 @@ export function Pager({
   filtered = false,
   onPage,
   onPageSize,
+  label,
 }: {
   page: number
   pageSize: number
@@ -22,6 +23,8 @@ export function Pager({
   onPage: (page: number) => void
   /** When given, the reader can choose rows per page. */
   onPageSize?: (size: number) => void
+  /** What is being paged. Several grids can share a screen, and each paging landmark needs its own name: "Pages of components". */
+  label?: string
 }) {
   if (total === 0) return null
   const first = (page - 1) * pageSize + 1
@@ -29,7 +32,7 @@ export function Pager({
   const pages = Math.ceil(total / pageSize)
 
   return (
-    <nav aria-label="Pages" className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm text-[var(--color-text-muted)]">
+    <nav aria-label={label ? `Pages of ${label}` : 'Pages'} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm text-[var(--color-text-muted)]">
       <span aria-live="polite">
         {first.toLocaleString()}–{last.toLocaleString()} of {total.toLocaleString()}
         {filtered && ' matching'}

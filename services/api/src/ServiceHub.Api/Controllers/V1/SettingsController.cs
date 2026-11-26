@@ -8,6 +8,7 @@ using ServiceHub.Core.Enums;
 using ServiceHub.Core.Events;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Models;
+using ServiceHub.Infrastructure;
 using ServiceHub.Infrastructure.Persistence;
 
 namespace ServiceHub.Api.Controllers.V1;
@@ -94,6 +95,14 @@ public sealed class SettingsController : ApiControllerBase
             return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "Paste the webhook's full https:// address.");
         }
 
+        // Found live 2026-11-10: https://127.0.0.1, https://169.254.169.254 and https://0.0.0.0 were saved, then refused on every send.
+        // Nothing reached them, but a channel that can never deliver should not be accepted in the first place.
+        if (WebhookNotifier.IsObviouslyInternal(uri))
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed,
+                "That address is this machine or a private network. ServiceHub only sends to a webhook on the public internet.");
+        }
+
         var label = string.IsNullOrWhiteSpace(request.Label) ? DefaultLabel(request.Format) : request.Label.Trim();
         if (label.Length > 120)
         {
@@ -116,14 +125,20 @@ public sealed class SettingsController : ApiControllerBase
         return StatusCode(StatusCodes.Status201Created, ToView(channel));
     }
 
-    /// <summary>Turns a channel on or off. Admin.</summary>
+    /// <summary>Turns a channel on or off. Admin. Intent <c>switch-channel</c>.</summary>
     [HttpPost("channels/{id:guid}/enabled")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
     public async Task<IActionResult> SetEnabled(Guid id, [FromBody] EnabledRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (!IntentHeaders.Declares(Request, IntentHeaders.SwitchChannel))
+        {
+            return Problem(StatusCodes.Status428PreconditionRequired, ErrorCodes.IntentRequired, IntentHeaders.MissingDetail("switch this channel on or off", IntentHeaders.SwitchChannel));
+        }
+
         if (await DeniedUnlessAsync(GovernanceRole.Admin, null, null, "change notifications", cancellationToken) is { } denied) return denied;
         var channel = await _db.NotificationChannels.FirstOrDefaultAsync(c => c.Id == id && c.OwnerId == OwnerId, cancellationToken);
         if (channel is null) return Problem(StatusCodes.Status404NotFound, ErrorCodes.NotFound, "That channel was not found.");
@@ -153,12 +168,18 @@ public sealed class SettingsController : ApiControllerBase
         return NoContent();
     }
 
-    /// <summary>Sends one clearly-marked test message to a channel and says how it went. Operator.</summary>
+    /// <summary>Sends one clearly-marked test message to a channel and says how it went. Operator. Intent <c>test-channel</c>.</summary>
     [HttpPost("channels/{id:guid}/test")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
     public async Task<IActionResult> Test(Guid id, CancellationToken cancellationToken)
     {
+        if (!IntentHeaders.Declares(Request, IntentHeaders.TestChannel))
+        {
+            return Problem(StatusCodes.Status428PreconditionRequired, ErrorCodes.IntentRequired, IntentHeaders.MissingDetail("send a test message to this channel", IntentHeaders.TestChannel));
+        }
+
         if (await DeniedUnlessAsync(GovernanceRole.Operator, null, null, "send a test message", cancellationToken) is { } denied) return denied;
         var (delivered, error) = await _delivery.SendTestAsync(id, OwnerId, cancellationToken);
         return Ok(new { delivered, error });

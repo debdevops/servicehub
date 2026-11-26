@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Core.Constants;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
+using ServiceHub.Core.Enums;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Interfaces;
 using ServiceHub.Core.Security;
@@ -82,15 +83,25 @@ public sealed partial class MessagesController : ApiControllerBase
         PeekAsync(namespaceId, entity, subscription, max, from, deadLetter: false, cancellationToken);
 
     /// <summary>A page of the dead-lettered messages of a queue or subscription.</summary>
-    /// <inheritdoc cref="PeekActive"/>
+    /// <param name="namespaceId">The namespace.</param>
+    /// <param name="entity">The queue, or the topic when <paramref name="subscription"/> is given.</param>
+    /// <param name="subscription">The subscription, for a topic.</param>
+    /// <param name="max">Page size, 1–100 (default 25).</param>
+    /// <param name="from">Sequence number to start from — the previous page's <c>nextFromSequenceNumber</c>.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    /// <param name="transfer">
+    /// True to read the <b>transfer</b> dead-letter queue instead (Service Bus only: where a failed send-via transaction leaves its message). Read only; refused with
+    /// 409 on a cloud without one.
+    /// </param>
     [HttpGet("dead-letter/peek")]
     [ProducesResponseType(typeof(PeekResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public Task<IActionResult> PeekDeadLetter(
         Guid namespaceId, [FromQuery] string? entity, [FromQuery] string? subscription,
-        [FromQuery] int? max, [FromQuery] long? from, CancellationToken cancellationToken) =>
-        PeekAsync(namespaceId, entity, subscription, max, from, deadLetter: true, cancellationToken);
+        [FromQuery] int? max, [FromQuery] long? from, [FromQuery] bool transfer, CancellationToken cancellationToken) =>
+        PeekAsync(namespaceId, entity, subscription, max, from, deadLetter: true, cancellationToken, transfer);
 
     /// <summary>
     /// One message, by sequence number. Only where peeking is repeatable: a lookup must never be the
@@ -243,6 +254,12 @@ public sealed partial class MessagesController : ApiControllerBase
                 "This namespace is marked Production. ServiceHub 4.1.0 does not send messages into production — send test messages to a Dev or UAT namespace.");
         }
 
+        if (ns.CanSend == false)
+        {
+            return Problem(StatusCodes.Status409Conflict, ErrorCodes.CapabilityUnavailable,
+                "This connection was declared read-only, so ServiceHub will not send through it. An Admin can change that on the connection's Access tab.");
+        }
+
         if (await DeniedUnlessAsync(Core.Enums.GovernanceRole.Operator, ns.Id, null, "send a message here", cancellationToken) is { } denied) return denied;
 
         var sent = await provider.GetMessageSender().SendAsync(new SendMessageRequest(
@@ -270,7 +287,7 @@ public sealed partial class MessagesController : ApiControllerBase
 
     private async Task<IActionResult> PeekAsync(
         Guid namespaceId, string? entity, string? subscription, int? max, long? from, bool deadLetter,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool transfer = false)
     {
         if (max is < 1 or > MaxPage)
         {
@@ -292,6 +309,12 @@ public sealed partial class MessagesController : ApiControllerBase
         var (_, provider, name, sub) = target.Value;
         var repeatable = provider.Capabilities.SupportsRepeatablePeek;
 
+        if (transfer && !provider.Capabilities.SupportsTransferDeadLetter)
+        {
+            return Problem(StatusCodes.Status409Conflict, ErrorCodes.CapabilityUnavailable,
+                "This cloud has no transfer dead-letter queue, so there is nothing to read there.");
+        }
+
         // Without a repeatable peek there is no cursor: every call is a fresh receive. Saying so beats
         // silently returning the same page for every "next".
         if (from is not null && !repeatable)
@@ -301,7 +324,7 @@ public sealed partial class MessagesController : ApiControllerBase
         }
 
         var size = Math.Clamp(max ?? DefaultPage, 1, MaxPage);
-        var request = new GetMessagesRequest(namespaceId, name, sub, deadLetter, size, from);
+        var request = new GetMessagesRequest(namespaceId, name, sub, deadLetter, size, from, FromTransferDeadLetter: transfer);
 
         _logger.LogInformation(
             "Peeking {Max} {Side} messages of {Entity} in namespace {NamespaceId}",
@@ -376,5 +399,5 @@ public sealed partial class MessagesController : ApiControllerBase
     private static MessageResponse ToResponse(Message m) => new(
         m.MessageId, m.SequenceNumber, m.Body, m.ContentType, m.CorrelationId, m.SessionId, m.Subject,
         m.EnqueuedTime, m.DeliveryCount, m.DeadLetterReason, m.DeadLetterErrorDescription,
-        m.ApplicationProperties, m.SizeInBytes, m.IsFromDeadLetter);
+        m.ApplicationProperties, m.SizeInBytes, m.IsFromDeadLetter, m.State == MessageState.Deferred);
 }

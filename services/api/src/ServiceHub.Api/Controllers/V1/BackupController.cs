@@ -127,7 +127,102 @@ public sealed class BackupController : ApiControllerBase
         return check.CanRestore ? Ok(check) : Conflict(check);
     }
 
-    /// <summary>Unstages a restore waiting for the next start.</summary>
+    /// <summary>What a fresh-start request carries: the typed words, so it cannot be a slip.</summary>
+    /// <param name="Confirm">Must be <c>START FRESH</c>.</param>
+    public sealed record StartFreshRequest(string? Confirm);
+
+    /// <summary>
+    /// Stages a fresh start. The current state is backed up first — and if that fails, nothing is staged — then at the next start the
+    /// database is set aside and ServiceHub begins as a new installation. The backup (and every older one) can be restored afterwards.
+    /// </summary>
+    /// <param name="request">The typed confirmation.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    [HttpPost("start-fresh")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> StartFresh([FromBody] StartFreshRequest request, CancellationToken cancellationToken)
+    {
+        if (!IntentHeaders.Declares(Request, IntentHeaders.StartFresh))
+        {
+            return Problem(StatusCodes.Status428PreconditionRequired, ErrorCodes.IntentRequired, IntentHeaders.MissingDetail("start fresh", IntentHeaders.StartFresh));
+        }
+
+        if (!string.Equals(request?.Confirm, "START FRESH", StringComparison.Ordinal))
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "Type START FRESH to confirm. At the next start ServiceHub will begin empty; your current data is kept as a backup.");
+        }
+
+        if (await DeniedUnlessAsync(GovernanceRole.Admin, null, null, "start fresh", cancellationToken) is { } denied) return denied;
+
+        var backup = await _backups.CreateBackupAsync(cancellationToken);
+        if (backup.IsFailure)
+        {
+            await AuditAsync(AuditActions.BackupStartFresh, false, null, cancellationToken);
+            return Problem(StatusCodes.Status500InternalServerError, backup.Error.Code, "ServiceHub could not back up what it holds now, so it will not start fresh. Nothing was changed.");
+        }
+
+        _restore.StageFresh(backup.Value.BackupId);
+        await AuditAsync(AuditActions.BackupStartFresh, true, backup.Value.BackupId, cancellationToken);
+        return Ok(new { backupId = backup.Value.BackupId, pending = _restore.Pending() });
+    }
+
+    /// <summary>Downloads a backup as one portable zip (manifest + database), to import on another server.</summary>
+    /// <param name="id">The backup id.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    [HttpGet("{id}/export")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Export(string id, CancellationToken cancellationToken)
+    {
+        if (await DeniedUnlessAsync(GovernanceRole.Admin, null, null, "export a backup", cancellationToken) is { } denied) return denied;
+
+        var temp = new FileStream(Path.Combine(Path.GetTempPath(), $"servicehub-export-{Guid.NewGuid():N}.zip"),
+            FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 81920, FileOptions.DeleteOnClose);
+        if (!await _bundles.ExportAsync(id, temp, cancellationToken))
+        {
+            await temp.DisposeAsync();
+            return Problem(StatusCodes.Status404NotFound, ErrorCodes.NotFound, $"There is no backup called '{id}'.");
+        }
+
+        temp.Position = 0;
+        return File(temp, "application/zip", $"servicehub-backup-{id}.zip");
+    }
+
+    private const long MaxImportBytes = 4L * 1024 * 1024 * 1024;
+
+    /// <summary>
+    /// Brings an exported backup (.zip) into the backups folder as a new backup, after proving it is intact. Restoring it is a separate,
+    /// confirmed step — importing changes nothing that is running.
+    /// </summary>
+    /// <param name="file">The exported zip.</param>
+    /// <param name="cancellationToken">Cancellation.</param>
+    [HttpPost("import")]
+    [RequestSizeLimit(MaxImportBytes)]
+    [RequestFormLimits(MultipartBodyLengthLimit = MaxImportBytes)]
+    [ProducesResponseType(typeof(RestoreCheck), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Import(IFormFile? file, CancellationToken cancellationToken)
+    {
+        if (!IntentHeaders.Declares(Request, IntentHeaders.ImportBackup))
+        {
+            return Problem(StatusCodes.Status428PreconditionRequired, ErrorCodes.IntentRequired, IntentHeaders.MissingDetail("import a backup", IntentHeaders.ImportBackup));
+        }
+
+        if (await DeniedUnlessAsync(GovernanceRole.Admin, null, null, "import a backup", cancellationToken) is { } denied) return denied;
+
+        if (file is null || file.Length == 0)
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "Choose the .zip from a backup's Export button.");
+        }
+
+        await using var stream = file.OpenReadStream();
+        var (id, problem) = await _bundles.ImportAsync(stream, cancellationToken);
+        await AuditAsync(AuditActions.BackupImport, id is not null, id, cancellationToken);
+        return id is null
+            ? Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, problem ?? "That backup could not be imported.")
+            : Ok(await _restore.CheckAsync(id, cancellationToken));
+    }
+
+    /// <summary>Unstages a restore or fresh start waiting for the next start.</summary>
     /// <param name="cancellationToken">Cancellation.</param>
     [HttpDelete("pending")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
@@ -141,8 +236,8 @@ public sealed class BackupController : ApiControllerBase
 
         if (await DeniedUnlessAsync(GovernanceRole.Admin, null, null, "cancel a restore", cancellationToken) is { } denied) return denied;
         var pending = _restore.Pending();
-        if (!_restore.CancelPending()) return Problem(StatusCodes.Status404NotFound, ErrorCodes.NotFound, "No restore is waiting.");
-        await AuditAsync(AuditActions.BackupRestore, true, $"cancelled {pending?.BackupId}", cancellationToken);
+        if (!_restore.CancelPending()) return Problem(StatusCodes.Status404NotFound, ErrorCodes.NotFound, "Nothing is waiting for the next start.");
+        await AuditAsync(pending?.Kind == PendingRestore.FreshKind ? AuditActions.BackupStartFresh : AuditActions.BackupRestore, true, $"cancelled {pending?.BackupId}", cancellationToken);
         return NoContent();
     }
 

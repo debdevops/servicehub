@@ -32,7 +32,7 @@ function jsonProblem(body: string, contentType: string): string | null {
  * Send a message (unit 6.14, `?modal=send`): one test message onto a queue or topic, without leaving Home. No scheduling,
  * sessions or batches — the common case. Production namespaces are not offered: 4.1.0 stays out of production (D46).
  */
-export default function SendMessageModal({ close }: OverlayBodyProps) {
+export default function SendMessageModal({ close }: Pick<OverlayBodyProps, 'close'> & Partial<Pick<OverlayBodyProps, 'entry'>>) {
   const { selected } = useProviderScope()
   const [params] = useSearchParams()
   const all = useNamespaces().data ?? []

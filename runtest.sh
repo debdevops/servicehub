@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ServiceHub 4.1.0 — the test suites.
 #
-# Every test lives under tests/ — see tests/README.md. This is the local twin of .github/workflows/servicehub-4-1-0.yml.
+# Every test lives under tests/ — see tests/README.md. This is the local twin of .github/workflows/ci.yml.
 #
 # ⚠️  This script does NOT type-check the frontend, so local suites can be green while CI is red.
 #     Run `npm run typecheck` too — or use --all, which does everything CI does.
@@ -52,6 +52,8 @@ if [ "$MODE" != "--frontend" ]; then
     COV_DIR="$(mktemp -d)"
     dotnet test "$SLN" --nologo --collect:"XPlat Code Coverage" --results-directory "$COV_DIR"
     tests/scripts/check-backend-coverage.sh "$COV_DIR" 60
+    step "Every API endpoint is called by a test"
+    tests/scripts/check-endpoint-coverage.sh
     rm -rf "$COV_DIR"
   else
     step "Backend tests (unit + integration)"

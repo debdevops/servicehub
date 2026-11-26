@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using ServiceHub.Core.Components;
 using ServiceHub.Core.Constants;
 using ServiceHub.Core.Entities;
 using ServiceHub.Core.Enums;
@@ -33,6 +34,18 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
     private static readonly TimeSpan RecurrenceLookbackWindow = TimeSpan.FromDays(90);
 
     private const string ReasonReplayOutcomeUnknown = EscalationReasons.ReplayOutcomeUnknown;
+    /// <summary>A replay was asked for on a component where nothing can be put back from here: a person decides (plan G1).</summary>
+    public const string ReasonReplayHandOffOnly = "REPLAY_HAND_OFF_ONLY";
+
+    /// <summary>A replay was asked for through a connection the person declared read-only (plan C3).</summary>
+    public const string ReasonConnectionReadOnly = "CONNECTION_READ_ONLY";
+
+    /// <summary>A redrive was asked for by an Agent or a rule. Only a person may start one.</summary>
+    public const string ReasonRedriveAutomationProhibited = "REDRIVE_AUTOMATION_PROHIBITED";
+
+    /// <summary>The component's catalogue class does not offer a cloud redrive (not built, or not yet validated on a real cloud).</summary>
+    public const string ReasonRedriveNotOffered = "REDRIVE_NOT_OFFERED";
+
     private const string ReasonEmergencyStopActive = "EMERGENCY_STOP_ACTIVE";
     private const string ReasonEmergencyStopQueryError = "EMERGENCY_STOP_QUERY_ERROR";
     private const string ReasonPurgeAutomationProhibited = "PURGE_AUTOMATION_PROHIBITED";
@@ -141,6 +154,36 @@ public sealed class RecoveryEligibilityGate : IRecoveryEligibilityGate
                 _logger.LogError(ex, "Unresolved-attempt query failed for owner {OwnerId}; failing closed", request.OwnerId);
                 return new EligibilityDecision(EligibilityVerdict.Deny, ReasonReplayOutcomeUnknown);
             }
+        }
+
+        // Predicate -0.5 — hand-off only (plan G1): on a component whose class offers no replay, no actor may start one, however
+        // the request arrived. A Deny, not an Escalate: approving it would only repeat the refusal. No class means no change.
+        if (request.ActionKind == RecoveryOperationKind.Replay && request.Recoverability is { } recoverability
+            && recoverability.IsHandOffOnly())
+        {
+            return new EligibilityDecision(EligibilityVerdict.Deny, ReasonReplayHandOffOnly);
+        }
+
+        // Predicate -0.45 — a redrive (plan PP5) is a person's decision, never an Agent's or a rule's, and only on a component whose
+        // class offers a cloud redrive. Both are Denies: approving them would only repeat the refusal. A missing class is "not offered",
+        // unlike a replay's, because a redrive has no older behaviour to keep.
+        if (request.ActionKind == RecoveryOperationKind.Redrive)
+        {
+            if (request.ActorKind is RecoveryActorKind.Automation or RecoveryActorKind.System)
+            {
+                return new EligibilityDecision(EligibilityVerdict.Deny, ReasonRedriveAutomationProhibited);
+            }
+
+            if (request.Recoverability is not { } redriveClass || !redriveClass.OffersCloudRedrive())
+            {
+                return new EligibilityDecision(EligibilityVerdict.Deny, ReasonRedriveNotOffered);
+            }
+        }
+
+        // Predicate -0.4 — a connection declared read-only never sends (plan C3). Any actor; a Deny for the same reason as above.
+        if (request.ActionKind is RecoveryOperationKind.Replay or RecoveryOperationKind.Redrive && request.ConnectionCanSend == false)
+        {
+            return new EligibilityDecision(EligibilityVerdict.Deny, ReasonConnectionReadOnly);
         }
 
         // Predicate 0 — emergency stop (§9.4.2, §15.2): owner-scoped kill switch on new

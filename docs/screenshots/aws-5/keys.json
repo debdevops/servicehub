@@ -1,0 +1,226 @@
+{
+ "01-home-all.png": [
+  {
+   "n": 1,
+   "t": "The cloud switcher. All clouds shows every connection side by side; Azure, AWS and Google Cloud narrow every page to one cloud. The cloud is also in the address, so a link shows someone exactly what you see."
+  },
+  {
+   "n": 2,
+   "t": "What is waiting for a person across the clouds you connected. It is the number to watch."
+  },
+  {
+   "n": 3,
+   "t": "ServiceHub does not add the clouds together: one counts exactly, one approximately, one not at all, so a sum would mean nothing. Each cloud keeps its own number."
+  },
+  {
+   "n": 4,
+   "t": "Emergency stop. Switches off everything ServiceHub does on its own. It does not touch a replay a person starts."
+  }
+ ],
+ "02-connections.png": [
+  {
+   "n": 1,
+   "t": "Every cloud ServiceHub is connected to. Connecting is how ServiceHub gets read access to your queues and topics."
+  },
+  {
+   "n": 2,
+   "t": "Connect a cloud opens the connect window. Your credentials are encrypted before they are stored and never shown again."
+  }
+ ],
+ "03-connect-dialog.png": [
+  {
+   "n": 1,
+   "t": "Pick the cloud. This guide uses AWS."
+  },
+  {
+   "n": 2,
+   "t": "Say what this connection is: Development, UAT or Production. Start with Development. Production gets the strictest rules."
+  },
+  {
+   "n": 3,
+   "t": "Read only, or Read and send. Read only means ServiceHub can look and can never replay on this connection. Nothing is saved until you press Connect, at the bottom of this window."
+  }
+ ],
+ "04-home-cloud.png": [
+  {
+   "n": 1,
+   "t": "Operational Tools: the pages you use every day, the same for every cloud. Start with Needs your attention."
+  },
+  {
+   "n": 2,
+   "t": "The AWS services ServiceHub can read. An amber dot means a component has not been proven against a real cloud yet."
+  },
+  {
+   "n": 3,
+   "t": "The Agent is on. It watches and only replays what it has earned the right to. Hover the (i) beside it to see exactly what it may do."
+  },
+  {
+   "n": 4,
+   "t": "Cloud health: how many of this cloud’s components ServiceHub can reach right now."
+  },
+  {
+   "n": 5,
+   "t": "Every component you connected, whether it is reachable, what ServiceHub may do on it (Read only, or Read + Send), what is dead-lettered and what needs you. View opens it; the three dots hold Deallocate."
+  }
+ ],
+ "05a-look-now.png": [
+  {
+   "n": 1,
+   "t": "AWS is not watched in the background: there is no safe way to count dead letters without a delivery attempt. Look now records what is in the dead-letter queues right now, once, never faster than the cloud allows."
+  }
+ ],
+ "05-detail-overview.png": [
+  {
+   "n": 1,
+   "t": "The tabs of this connection. Dead-letter messages is where you read and replay; Recovery shows what was replayed and whether it held; Access shows what ServiceHub may do here; Audit is every action."
+  },
+  {
+   "n": 2,
+   "t": "How many messages are dead-lettered right now, and whether the number is exact or approximate on this cloud."
+  },
+  {
+   "n": 3,
+   "t": "Sends one harmless test message to a queue you choose, so you can watch it travel. Optional."
+  }
+ ],
+ "06-dead-letters.png": [
+  {
+   "n": 1,
+   "t": "Filter by queue, topic or state (Stuck now, No longer stuck, all)."
+  },
+  {
+   "n": 2,
+   "t": "Search by message id or by the reason it failed. It never searches inside message bodies."
+  },
+  {
+   "n": 3,
+   "t": "Tick one or more messages, then Replay selected. A preview opens first; nothing is sent until you confirm."
+  },
+  {
+   "n": 4,
+   "t": "Replay all N… opens the preview of every message that matches the filters (at most 500 in one replay, so it says \"first 500\" when more match). Nothing is sent until you confirm in the preview."
+  },
+  {
+   "n": 5,
+   "t": "Open one message to read why it failed, its body and its history."
+  }
+ ],
+ "07-message.png": [
+  {
+   "n": 1,
+   "t": "The reason and description the cloud recorded, and how many others failed the same way."
+  },
+  {
+   "n": 2,
+   "t": "The message exactly as it was sent. ServiceHub never changes a message body."
+  },
+  {
+   "n": 3,
+   "t": "Replay… opens the preview. It is always a preview first."
+  }
+ ],
+ "08-replay-preview.png": [
+  {
+   "n": 1,
+   "t": "The message that would be replayed, exactly as it is stored, and where it would go back to."
+  },
+  {
+   "n": 2,
+   "t": "Replay 1 message sends it back. This is the only button that changes anything, and ServiceHub then watches whether the fix held."
+  },
+  {
+   "n": 3,
+   "t": "Cancel closes the preview. Nothing has been sent."
+  }
+ ],
+ "09-attention.png": [
+  {
+   "n": 1,
+   "t": "Everything on this cloud that waits for a person: replays the Agent is holding, and items ServiceHub handed off. Review opens the decision."
+  }
+ ],
+ "10-approvals.png": [
+  {
+   "n": 1,
+   "t": "Replays the Agent stopped on because this kind of failure has not yet earned automatic replay. You approve or decline each, and the answer is recorded."
+  }
+ ],
+ "11-active.png": [
+  {
+   "n": 1,
+   "t": "Messages in the live queues now, not the dead-letter queues. Read-only."
+  }
+ ],
+ "12-replays.png": [
+  {
+   "n": 1,
+   "t": "Every replay: who or what started it, how many messages, and the outcome ServiceHub saw afterwards (Watching, Verified, Came back, Unverified)."
+  }
+ ],
+ "13-rules.png": [
+  {
+   "n": 1,
+   "t": "What the Agent may replay by itself. A rule is on only for a failure pattern that has earned it; it stops and asks a person when results turn bad."
+  }
+ ],
+ "14-signatures.png": [
+  {
+   "n": 1,
+   "t": "Failures grouped by how they fail, so a thousand messages become a handful of causes."
+  }
+ ],
+ "15-ledger.png": [
+  {
+   "n": 1,
+   "t": "The tamper-evident record of every decision. Export it and check it offline with verify-recovery-chain.py."
+  }
+ ],
+ "16-agents.png": [
+  {
+   "n": 1,
+   "t": "The background workers: what each does, when it last ran and whether it is healthy."
+  }
+ ],
+ "18-help.png": [
+  {
+   "n": 1,
+   "t": "Search the Help. Below it: short answers by task, then the step-by-step guide for each cloud. Press ? from any page to open Help."
+  }
+ ],
+ "19-search.png": [
+  {
+   "n": 1,
+   "t": "Search finds a connection, a queue, a page or an action from anywhere (Cmd-K or Ctrl-K). It never searches inside messages."
+  }
+ ],
+ "20-emergency-stop.png": [
+  {
+   "n": 1,
+   "t": "Exactly what stops (the Agent, automatic replays) and what does not (a replay a person starts, what is already recorded). Below: a reason, and you type STOP to confirm."
+  }
+ ],
+ "21-configuration.png": [
+  {
+   "n": 1,
+   "t": "Configuration: how ServiceHub looks, who may do what, backup and restore, and notifications."
+  }
+ ],
+ "22-coverage.png": [
+  {
+   "n": 1,
+   "t": "What ServiceHub covers: every component, per cloud, and how far each has been proven (Supported, or Being validated)."
+  }
+ ],
+ "23-add-component.png": [
+  {
+   "n": 1,
+   "t": "Add a component: pick the cloud, then tick each service to list its failed runs or dead-lettered events. Access is checked first, read-only. Unticking keeps every record it produced."
+  }
+ ],
+ "24-replay-result.png": [
+  {
+   "n": 1,
+   "t": "The result, in plain words: the message is back on its queue and the dead letter has left the list. Sent back is not the same as fixed. ServiceHub now watches it, and marks it Verified or Came back."
+  }
+ ]
+}

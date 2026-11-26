@@ -4,7 +4,8 @@ import { MemoryRouter } from 'react-router-dom'
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { guides } from '@/content/guides'
-import HelpPanel from '@/components/help/HelpPanel'
+import StepByStep from '@/next/overlays/StepByStep'
+import { guideClouds, guideTopic } from '@/content/guides/links'
 
 /**
  * Found live (2026-10-09, e2e loop 1): opening Help logged "Encountered two children with the same key" on every cloud, because the Google
@@ -26,7 +27,7 @@ describe('the cloud guides', () => {
 
   it('open in the Help panel without React warning about duplicate keys', () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    render(<MemoryRouter><HelpPanel /></MemoryRouter>)
+    render(<MemoryRouter><StepByStep topic={null} clouds={guideClouds} topicOf={guideTopic} /></MemoryRouter>)
     const duplicate = errors.mock.calls.filter((c: unknown[]) => String(c[0]).includes('same key'))
     expect(duplicate).toHaveLength(0)
   })

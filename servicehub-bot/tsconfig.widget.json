@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "es2022",
+    "moduleResolution": "bundler",
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "types": [],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "erasableSyntaxOnly": true,
+    "skipLibCheck": true,
+    "outDir": "widget/dist",
+    "rootDir": "widget",
+    "declaration": false,
+    "sourceMap": false,
+    "removeComments": false
+  },
+  "files": ["widget/servicehub-bot.ts"]
+}

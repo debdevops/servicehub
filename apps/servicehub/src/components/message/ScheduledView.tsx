@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
 import { fetchScheduled } from '../../lib/api/messages'
 import { formatBytes, formatWhen } from '../../lib/format'
+import { usePagedList } from '../../hooks/usePagedList'
+import { Pager } from '../ui/Pager'
 import { RetryLink } from '../ui/RetryLink'
 import { Skeleton } from '../ui/Skeleton'
 
@@ -12,6 +14,7 @@ import { Skeleton } from '../ui/Skeleton'
 export function ScheduledView({ namespaceId, entity, subscription }: { namespaceId: string; entity: string; subscription?: string }) {
   const q = useQuery({ queryKey: ['scheduled', namespaceId, entity, subscription], queryFn: () => fetchScheduled(namespaceId, { entity, subscription }) })
   const now = new Date()
+  const { items, pager } = usePagedList(q.data?.messages ?? [])
   return (
     <div>
       <div className="flex items-center border-b border-[var(--color-border)] px-4 py-2.5 text-[12.5px] text-[var(--color-text-muted)]">
@@ -28,7 +31,7 @@ export function ScheduledView({ namespaceId, entity, subscription }: { namespace
           <caption className="sr-only">Scheduled messages in {entity}, soonest first</caption>
           <thead><tr className="text-left text-[11px] uppercase tracking-wide text-[var(--color-text-muted)]"><th className="px-4 py-2">Due</th><th className="px-2 py-2">Message</th><th className="px-2 py-2 text-right">Size</th><th className="px-4 py-2">Body</th></tr></thead>
           <tbody className="divide-y divide-[var(--color-border)]">
-            {q.data.messages.map((m) => (
+            {items.map((m) => (
               <tr key={m.sequenceNumber}>
                 <td className="whitespace-nowrap px-4 py-2 font-semibold">{m.scheduledFor ? formatWhen(m.scheduledFor, now) : 'not given'}</td>
                 <td className="px-2 py-2 font-mono">{m.messageId}</td>
@@ -39,6 +42,7 @@ export function ScheduledView({ namespaceId, entity, subscription }: { namespace
           </tbody>
         </table>
       )}
+      <Pager {...pager} label="scheduled messages" />
       {q.data?.capped && <p className="border-t border-[var(--color-border)] px-4 py-2 text-[12px] text-[var(--color-text-muted)]">Showing the first {q.data.messages.length}; there may be more.</p>}
     </div>
   )

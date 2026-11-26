@@ -16,6 +16,7 @@ import { deadLetterKeys } from '../../hooks/useDeadLetters'
 import { replayKeys } from '../../hooks/useReplay'
 import { Skeleton } from '../ui/Skeleton'
 import { RetryLink } from '../ui/RetryLink'
+import { usePagedList } from '../../hooks/usePagedList'
 import { Pager } from '../ui/Pager'
 import { sectionHelp } from '../../content/sections'
 
@@ -36,6 +37,8 @@ export function Steps({ at }: { at: 1 | 2 | 3 }) {
 }
 
 /** Looks a validation-type failure up in words: those usually fail again unless the sender was fixed. */
+/** The API groups a message with no recorded reason as "Unknown"; the list says "No reason recorded", so the preview says the same. */
+const reasonLabel = (reason: string) => (reason === 'Unknown' ? 'No reason recorded' : reason)
 const looksLikeValidation = (reason: string) => /valid|schema|format|malformed|missing/i.test(reason)
 
 /**
@@ -43,7 +46,7 @@ const looksLikeValidation = (reason: string) => /valid|schema|format|malformed|m
  * without the preview — starting needs the stored preview's id, and only this modal makes one. Closing it does NOT stop
  * a running job: the run is the server's, and progress reappears from `?job=`.
  */
-export default function BulkReplayModal({ close }: OverlayBodyProps) {
+export default function BulkReplayModal({ close }: Pick<OverlayBodyProps, 'close'> & Partial<Pick<OverlayBodyProps, 'entry'>>) {
   const [params, setParams] = useSearchParams()
   const jobId = params.get('job')
   return jobId ? <Running id={jobId} close={close} /> : <Preview close={close} onStarted={(id) => setParams((c) => { const n = new URLSearchParams(c); n.set('job', id); return n }, { replace: true })} />
@@ -145,7 +148,7 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
         <ul className="divide-y divide-[var(--color-border)] rounded-xl border border-[var(--color-border)]">
           {p.groups.map((g) => (
             <li key={g.reason} className="flex items-center gap-3 px-3.5 py-2.5 text-sm">
-              <span className="rounded-full bg-[var(--color-error-light)] px-2.5 py-0.5 text-[11px] font-bold text-[#b91c1c]">{g.reason}</span>
+              <span className="rounded-full bg-[var(--color-error-light)] px-2.5 py-0.5 text-[11px] font-bold text-[#b91c1c]">{reasonLabel(g.reason)}</span>
               <span className="text-[var(--color-text-muted)]">{g.willReplay} will be replayed{g.heldBack > 0 ? `, ${g.heldBack} held back` : ''}</span>
               <span className="tabular ml-auto font-bold">{g.selected}</span>
             </li>
@@ -209,9 +212,7 @@ function Preview({ close, onStarted }: { close: () => void; onStarted: (id: stri
 
 /** What is about to be sent, and where to — one row per message, so a person can check before anything runs. */
 function SelectedMessages({ ids, heldBack }: { ids: readonly number[]; heldBack: readonly number[] }) {
-  const PAGE_SIZE = 10
-  const [page, setPage] = useState(1)
-  const pageIds = ids.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const { items: pageIds, pager } = usePagedList(ids)
   const namespaces = useNamespaces().data ?? []
   const results = useQueries({ queries: pageIds.map((id) => ({ queryKey: ['dead-letter', id], queryFn: () => fetchDeadLetter(id), staleTime: 30_000 })) })
   const held = new Set(heldBack)
@@ -226,7 +227,7 @@ function SelectedMessages({ ids, heldBack }: { ids: readonly number[]; heldBack:
   }
   return (
     <section aria-label="Messages that will be replayed">
-      <Collapsible title="Where each one goes" help={sectionHelp.bulk.where} summary={ids.length > PAGE_SIZE ? `${ids.length.toLocaleString()} messages, ${PAGE_SIZE} a page, grouped by failure reason` : 'grouped by failure reason'}>
+      <Collapsible title="Where each one goes" help={sectionHelp.bulk.where} summary={ids.length > pager.pageSize ? `${ids.length.toLocaleString()} messages, ${pager.pageSize} a page, grouped by failure reason` : 'grouped by failure reason'}>
         <div className="relative overflow-x-auto rounded-xl border border-[var(--color-border)]">
           <table className="w-full text-left text-[12.5px]">
             <caption className="sr-only">Selected messages, grouped by failure reason, and where each will be sent back</caption>
@@ -244,7 +245,7 @@ function SelectedMessages({ ids, heldBack }: { ids: readonly number[]; heldBack:
               <tbody key={reason}>
                 <tr className="border-t border-[var(--color-border)] bg-[var(--color-error-light)]">
                   <th scope="rowgroup" colSpan={6} className="px-3 py-1.5 text-left text-[12px]">
-                    <span className="font-bold text-[#b91c1c]">{reason}</span>
+                    <span className="font-bold text-[#b91c1c]">{reasonLabel(reason)}</span>
                     <span className="ml-2 font-normal text-[#4b5563]">{rows.length} {rows.length === 1 ? 'message' : 'messages'}</span>
                   </th>
                 </tr>
@@ -273,7 +274,7 @@ function SelectedMessages({ ids, heldBack }: { ids: readonly number[]; heldBack:
             )}
           </table>
         </div>
-        <Pager page={page} pageSize={PAGE_SIZE} total={ids.length} onPage={setPage} />
+        <Pager {...pager} label="messages to replay" />
       </Collapsible>
     </section>
   )
@@ -451,14 +452,14 @@ export function Progress({ p, close, onStop, onMinimize }: { p: BulkProgress; cl
       {ended && (
         <p className="flex items-start gap-2.5 rounded-xl border border-[#a7f3d0] bg-[#ecfdf5] px-3.5 py-2.5 text-[13px]">
           <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#047857]" aria-hidden="true" />
-          <span><b>{p.sent.toLocaleString()} {p.kind === 'purge' ? 'deleted' : 'replayed'}</b> and sent to cloud — navigate to <b>Replayed</b> tab to see the results. {p.kind === 'purge' ? '' : 'Sent back is not the same as fixed: each one is now watched, and any that fail again show as Came back.'}</span>
+          <span><b>{p.sent.toLocaleString()} {p.kind === 'purge' ? 'deleted' : 'replayed'}</b> and sent to cloud — open <b>Replay history</b> to see the results. {p.kind === 'purge' ? '' : 'Sent back is not the same as fixed: each one is now watched, and any that fail again show as Came back.'}</span>
         </p>
       )}
 
       {!ended && (
         <p className="flex items-start gap-2.5 rounded-xl border border-[var(--color-primary-200)] bg-[var(--color-primary-50)] px-3.5 py-2.5 text-[13px]">
           <Eye className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-primary-700)]" aria-hidden="true" />
-          <span>Close this whenever you like. Progress and the final verdict appear in <b>Replayed</b>, and in the bell if anything needs you.</span>
+          <span>Close this whenever you like. Progress and the final verdict appear in <b>Replay history</b>.</span>
         </p>
       )}
 

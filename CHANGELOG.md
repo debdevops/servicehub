@@ -2,6 +2,131 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`run.ps1` and `run.cmd`: start ServiceHub from a clone on Windows with no WSL.** Same job as `run.sh` (checks the machine, downloads .NET 10 and Node.js into your user folder if missing, verifies them, builds, starts, waits). `-Check` and `-NoInstall` work too. It does not start the help button. Not yet run on a real Windows machine.
+
+### Changed
+
+- **Pictures and videos re-shot for the new Home.** The README stills, all three cloud guides (`docs/clouds/*.md` and the in-app Help) and the six walkthrough videos in `docs/media/` now show the current screens.
+- **Home, from the new design.** The four tiles are tinted (pink for "Needs your attention", green for the new **Cloud health** tile, "1 / 1 Component connected"). The PaaS components table now has Status (Connected, or "+ Added") and Permissions (Read only, Read + Send) as separate columns, and **View** with a three-dot menu that holds Deallocate. "Items that need your attention" shows the five oldest as Decision and Next action, with a "View all N" link to Needs your attention (the full table with family and owner stays there). From 1650 px wide, How ServiceHub works, Failure signatures and Evidence sit in a column on the right.
+
+### Removed
+
+- The unused 4.2.0 Help panel and its question list (it still said "open the bell"), the 4.2.0 pictures in `docs/screenshots/{azure,aws,gcp}/`, the three 4.2.0 videos and GIFs in `docs/media/`, and the scripts that recorded them. The 5.0.0 pictures, videos and scripts replace them.
+
+### Fixed
+
+- `docs/RECOVERY-EVIDENCE.md`, `BACKUP-RESTORE.md` and `ENCRYPTION-KEY-ROTATION.md` named "Advanced → Recovery Ledger", which 5.0.0 does not have; they now say Evidence ledger.
+- **Supply chain:** every GitHub Action in every workflow is pinned to a commit (Dependabot keeps them current); `npm audit` is clean (minimatch patched in dev tooling).
+- **CI:** the workflow file is now `ci.yml` (job names unchanged, so required checks still match), and a Windows job runs `run.ps1` (not yet required).
+- **Event Grid's "Cloud console" link now opens the dead-lettered event itself** (the blob's page in the Azure portal, whose Edit tab shows the event's JSON) instead of only the container. Checked live in the portal; the earlier container-only link was used because a blob link had not been checked.
+
+### Added
+
+- **An environment for Event Grid, Logic Apps and Storage Queues.** Before connecting Azure sign-in, the Add a component window asks which environment (Development, UAT or Production). Each environment gets its own sign-in connection (Development keeps its old name), so they stay apart in the menu, on Home and in Replay history. A sign-in connection still reads every Azure subscription the signed-in account can see; limiting an environment to its own subscription is not built (it needs a database migration).
+- **Replay all.** The Dead-letter messages tab has **Replay all N…** beside Replay selected: it opens the same preview for every message that matches the filters (at most 500 in one replay, so it says "Replay first 500…" when more match). Nothing is sent until you confirm in the preview. It had gone since 4.2.0, and Replay selected could only select every match after a reason chip was chosen. Operators and above only.
+
+### Fixed
+
+- **Replay… was out of sight.** In a message's side window the Replay and Close buttons sat below the whole body (about 1,700 px down on a real message). They now stay at the bottom of the window.
+- **The help button covered the window's buttons.** The floating help-bot button sat on top of Replay, Close and the last table column. It steps aside while a window is open.
+- **Reasons were cut in the middle of a word** ("Deserializatio / nError", "MaxDeliveryC / ountExceeded") in Needs your attention, Pending approvals and the Dead-letter messages table. The Reason column keeps room for a whole word.
+- **Old words in the replay result.** The result said to look "under Replayed" and in "the bell"; both are gone in 5.0.0. It now says Replay history (replay, bulk replay and approve results).
+
+### Documentation
+
+- **New walkthrough videos for each cloud** (`docs/media/<cloud>-short.mp4`, about two minutes: the pain and what ServiceHub gives a person who works in that cloud, then the message list, detail, a replay preview, proof afterwards and how the Agent earns autonomy; `<cloud>-full.mp4`, about six minutes: every PaaS component of that cloud and every function; plus a GIF preview), recorded on 5.0.0 with `scripts/docs-shots/videos5.mjs` and built with `build-videos5.sh`. The README block that said the videos were from 4.2.0 is replaced.
+- **README rewritten for 5.0.0:** the pain and how ServiceHub resolves it, how to start on macOS, Linux and Windows, how to check it works and run the tests, the Docker steps, and a table of the three cloud guides.
+- **New [user guide](docs/USER-GUIDE.md)** for someone who has never used ServiceHub or a message queue: the problem in plain words, the map of the app, a fifteen-minute first run, "I want to…", a glossary.
+- **The Azure, AWS and Google Cloud guides are re-shot for 5.0.0** (about 22 annotated pictures each, from the real app on real dev clouds, one cloud at a time; a Google project id and any account id are replaced in the page text before each shot). Part 1 (the cloud's own console) is unchanged. The same guides are in the app under Help, and the note that said the pictures were from 4.2.0 is gone.
+
+## [5.0.0] — 2026-11-12
+
+**The layout changed.** 4.2.0 had a Simple surface (Home with tabs, panels and modals) and four read-only Advanced pages. 5.0.0 has one layout: a left menu with Home,
+Connections, the PaaS components you have ticked, and the Operational Tools; the cloud you are looking at is in the address (`/azure`, `/aws`, `/gcp`, `/all/…`).
+Until this release it was served under `/next`; it is now the app.
+
+### Changed — the cutover
+
+- **Every 4.2.0 address still works.** `/?tab=dlq&provider=aws` opens AWS Home, `/?tab=active` Active messages, `/?tab=replayed` Replay history, `/?panel=rules` Auto Replay
+  rules, `/advanced/ledger`, `/advanced/signatures` and `/advanced/agents` their pages, `/advanced` and `/fleet` the first screen, and `/next/…` the same page without the prefix.
+- **The demo addresses kept their meaning.** `/demo` is all three clouds, `/demo/azure`, `/demo/aws` and `/demo/gcp` one cloud, and every page stays beneath
+  (`/demo/aws/attention`). An address that names no cloud says the page does not exist instead of showing another cloud.
+- **Removed on purpose** (decided 2026-11-08): the Advanced Overview page and its Insights charts (Home and Failure signatures show the recovery summary), the in-app
+  bell and escalation toast (the menu badges, Needs your attention and the owner notification channel replace them), and the guided demo tour ("Show me around" now
+  opens Help, which carries the step-by-step guides).
+- **Upgrading from 4.2.0:** keep the same data folder and encryption key. The database is migrated on first start (`0016` to `0019`: per-connection components, trust
+  preconditions, the owner channel). Take a backup first (Settings → Backup in 4.2.0).
+
+### Added — reasons the cloud already wrote
+
+- **AWS: the failure reason inside Lambda and EventBridge dead letters.** A dead letter that reached SQS from an EventBridge rule target, a Lambda dead-letter queue or a
+  Lambda on-failure destination now shows the reason AWS itself recorded (`NO_PERMISSIONS`, the function's error type and message), and failure signatures use it. The
+  shapes were captured from a real account. **SNS subscription dead letters carry no reason at all**, so they still read "No reason recorded". Replay is unchanged.
+- **Google Cloud: the delivery error on an export subscription's dead letter.** Pub/Sub adds an error text only when a BigQuery or Cloud Storage export subscription
+  dead-letters a message; that text is now the description, under the reason "Delivery error". Dead letters from pull and push subscriptions carry no error (checked on
+  a real project), so they are unchanged.
+
+### Security
+
+- **A request that changes something is refused when another website sent it through your browser.** ServiceHub does not log the browser in, so on your own machine
+  every request is yours. Most changing endpoints already need an intent header or a JSON body, which a page on another site cannot send. Four took neither (pause an
+  agent, cancel a bulk run, test a connection, check a component's access) and could be triggered by any page you had open. Changing requests the browser labels as
+  coming from another site now get `403 cross_site_request`. Reads, ServiceHub's own page, and tools that are not web pages (curl, scripts, the MCP tool) are unaffected.
+- Dependency check on the release: no known-vulnerable .NET package (direct or transitive) and no advisory in the web app's production dependencies.
+
+### Fixed
+
+- **The "selected messages" bar on a connection's Dead-letter messages tab covered the table's header row and the top of the first message**, so the first "Open" could
+  not be clicked. It sat inside the table's own scroll box and stuck 60 px down. It now sits above the table and sticks to the top of the window.
+- **Tables no longer need a sideways scroll at 1280 px and wider** (Home's component table, Needs your attention, Pending approvals, Auto Replay rules, Failure
+  signatures): narrower padding, long names wrap, and Home's side panels move below the table until the window is 1700 px wide. On a 768 px tablet the header wraps and
+  the coverage table scrolls inside its own box, so the page itself never scrolls sideways.
+- **Seven dialogs read the cloud from the wrong place in the address** once the layout moved to the root (Replay, Bulk replay, Review, Send, Search, Help, Connect,
+  Add a component); they would have opened on "all clouds" whatever cloud you were on. One function now knows where the cloud sits in an address.
+
+### Added — the 5.0.0 layout
+
+- **Add a component.** One window, with a tab per cloud, lists every PaaS component ServiceHub can bring in. Each says where its failures end up, what it needs, and is
+  access-checked (list and describe calls only) before it is added. Ticking needs the `manage-components` intent and the Admin role; unticking keeps every record the
+  component produced. A component that is not ready says so ("Not yet validated") instead of being hidden. The old "Later (On request)" section is gone.
+- **Components that are not message stores, read-only:** AWS Step Functions and Kinesis / DynamoDB streams, Azure Logic Apps and Event Grid, Google Cloud Workflows and
+  Eventarc. They list failed runs or dead-lettered events with the cloud's own error text and hand the failure to a person; ServiceHub does not re-run them. Each has its own
+  menu entry and page once ticked, and an Access tab that shows the permissions it needs.
+- **Per-component access, stored.** New table `NamespaceComponents` (migration `0016_W5_NamespaceComponents`, signed off) remembers what is ticked per connection.
+  New audit actions `Component.Enable` and `Component.Disable`.
+- **Cloud Scheduler (Google), read-only.** Lists the jobs whose last attempt came back with an error, with the status Google recorded, across every location. Only the last
+  attempt is known, not a history, and a paused job is never counted. A job's target is never read; nothing is run, paused or changed. Shown as "Not yet validated".
+- **Redrive a failed Step Functions run (built, switched off until a live run is recorded).** An Approver can ask AWS to restart one failed Standard run from the step that
+  failed; AWS does the work, so ServiceHub never reads the run's input. It goes through the same gate and ledger as a replay, an Agent or a rule can never start one, and
+  the record always says Unverified. New ledger kind `Redrive` (no migration), intent `redrive-execution`, audit action `Redrive.Execution`.
+- **Health Keeper (a new agent).** ServiceHub watches itself and tells your notification channels once per problem: emergency stop left on for over an hour, an agent left
+  paused, a recovery attempt stuck for over 15 minutes, a replay that should have been closed hours ago, a failed connection test, or a ledger whose hash chain no longer
+  verifies. Fixed rules, no model; read-only, so it changes nothing. A problem is announced when it appears and again only if it clears and returns. It travels as an agent
+  escalation, so Slack, Teams, webhooks and the live stream carry it unchanged.
+- **A Connections page** to see and manage cloud connections, with the connection name explained where it is shown.
+- **What ServiceHub covers.** `GET /api/v1/fleet/coverage` and a page listing every component on every cloud: where failed work ends up, how it is found, and how far
+  ServiceHub can move it on. `GET /api/v1/fleet/components` (and `…/{namespaceId}/{componentKey}`) report each message store's dead-letter count, what ServiceHub recorded,
+  and what waits for a person, scoped to the caller exactly like the overview.
+- **Home, per cloud.** A dead-letter count tile, a clearer component table, a "How it works" panel, and cloud brand colours with checked contrast. All-clouds shows one card
+  per cloud, never summing one cloud into another.
+- **Agents can be resumed** from the agent's page and from the Agents list.
+- **Failure signatures** show tracing and incident information.
+- **Provider entity settings** are read per cloud (`ICloudMessagingProvider`), and DLQ scanning and the component overview were extended to use them.
+
+### Fixed
+
+- **The cloud cards on the first screen and the failure-signatures panel on a cloud's Home fit their columns.** On real names ("ServiceHub Lab (dev) — AWS")
+  their tables were wider than the card and the whole page scrolled sideways at 1366 px; headers now wrap and long names break.
+
+### Tests
+
+- Unit and browser tests for the 5.0.0 shell: overlay host, roles, words, Replay history, Auto Replay rules, Send dialog, Failure signatures, Step Functions and Workflows,
+  and accessibility (axe, with colour contrast) of the Logic Apps, Event Grid and Kinesis pages.
+- A layout gate for the 5.0.0 shell that puts real-length names into the narrow cards (the demo's short names hid the defect).
+- `PUT /namespaces/{id}/enabled-components/{key}` is proven Admin-only: a Viewer and an Operator are refused and nothing is saved.
+
 ## [4.2.1] — 2026-10-17
 
 A patch release: an easier way to start ServiceHub, a fix to how replays read on AWS and Google Cloud, and docs. No new product features, no database migration; 4.2.0 data opens as is.

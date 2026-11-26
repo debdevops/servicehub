@@ -62,13 +62,13 @@
  * the entire UI per provider would make the product feel like it had changed identity.
  */
 :root[data-provider='aws'] {
-  --color-accent: #f97316;
+  --color-accent: #ff9900;
 }
 :root[data-provider='gcp'] {
-  --color-accent: #22c55e;
+  --color-accent: #1a73e8;
 }
 :root {
-  --color-accent: var(--color-primary-600);
+  --color-accent: #0078d4;
 }
 
 /*
@@ -154,3 +154,23 @@ button:not(:disabled):hover,
     transition: filter 120ms ease, background-color 120ms ease;
   }
 }
+
+
+/*
+ * Stacked rows (`stack-table`). Below 1280 px a ten-column table scrolls sideways inside its box, which is no way to act on a row.
+ * The pages a person acts on (Needs your attention, Pending approvals) add this class to their table and a `data-label` to each cell:
+ * every row then becomes one card, label beside value, with the actions last. The header row stays for screen readers (it is clipped,
+ * not removed). At 1280 px and wider nothing changes.
+ */
+@media (max-width: 1279px) {
+  .stack-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .stack-table, .stack-table tbody, .stack-table tr, .stack-table td { display: block; width: auto; }
+  .stack-table tr { margin: 0.75rem; padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: 0.75rem; }
+  .stack-table td { position: relative; padding: 0.25rem 0 0.25rem 8.5rem; max-width: none; min-height: 1.5rem; }
+  .stack-table td[data-label]::before { content: attr(data-label); position: absolute; left: 0; top: 0.35rem; width: 8rem; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); }
+  .stack-table td:not([data-label]) { padding-left: 0; }
+}
+
+/* The Help bot's floating button sits bottom-right, exactly where a side window keeps its Replay and Close buttons. While any dialog or
+   side window is open the button steps aside; it comes back when the window closes. */
+body:has([role='dialog']) servicehub-bot { display: none; }

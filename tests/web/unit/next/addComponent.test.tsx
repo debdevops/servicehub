@@ -1,0 +1,286 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { createMemoryRouter, RouterProvider } from 'react-router-dom'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import * as agentsApi from '@/lib/api/agents'
+import * as componentsApi from '@/lib/api/components'
+import * as enablementApi from '@/lib/api/componentEnablement'
+import * as coverageApi from '@/lib/api/coverage'
+import * as identityApi from '@/lib/api/identity'
+import * as namespacesApi from '@/lib/api/namespaces'
+import * as settingsApi from '@/lib/api/settings'
+import { nextRoute } from '@/next/router'
+import { expectNoAxeViolations } from '@tests/support/axe'
+import { agent, coverageRows, me } from './homeData'
+
+vi.mock('@/lib/api/coverage', async (o) => ({ ...(await o<typeof coverageApi>()), fetchCoverage: vi.fn() }))
+vi.mock('@/lib/api/components', async (o) => ({ ...(await o<typeof componentsApi>()), fetchComponents: vi.fn(), fetchComponent: vi.fn() }))
+vi.mock('@/lib/api/componentEnablement', async (o) => ({
+  ...(await o<typeof enablementApi>()), fetchComponentList: vi.fn(), fetchEnabledComponents: vi.fn(), checkComponent: vi.fn(), setComponent: vi.fn(),
+}))
+vi.mock('@/lib/api/identity', async (o) => ({ ...(await o<typeof identityApi>()), fetchMe: vi.fn() }))
+vi.mock('@/lib/api/agents', async (o) => ({ ...(await o<typeof agentsApi>()), fetchAgents: vi.fn() }))
+vi.mock('@/lib/api/settings', async (o) => ({ ...(await o<typeof settingsApi>()), fetchEmergencyStop: vi.fn() }))
+vi.mock('@/lib/api/namespaces', async (o) => ({ ...(await o<typeof namespacesApi>()), fetchNamespaces: vi.fn(), fetchNamespace: vi.fn(), connectNamespace: vi.fn() }))
+
+const aws = { id: 'ns-1', name: 'acme', displayName: 'Acme Payments', provider: 'aws', environment: 'dev', authType: 'awsIamRole', awsRegion: 'eu-west-1', gcpProjectId: null, isActive: true, createdAt: '', lastConnectionTestAt: null, lastConnectionTestSucceeded: true, description: null, capabilities: null } as unknown as namespacesApi.Namespace
+
+const entry = (over: Partial<enablementApi.ComponentEntry>): enablementApi.ComponentEntry => ({
+  componentKey: 'x', name: 'X', stuckPlace: 'Somewhere', status: 'supported', statusWords: 'Supported', access: 'sameConnection', state: 'off', canToggle: false,
+  note: null, what: null, appears: null, needs: null, steps: [], snippets: [], permissions: [], includedIn: null, ...over,
+})
+const list: enablementApi.ComponentList = {
+  namespaceId: 'ns-1', connectionName: 'Acme Payments', cloud: 'AWS',
+  components: [
+    entry({ componentKey: 'sqs', name: 'SQS', state: 'alwaysOn', what: 'Messages SQS moved to a dead-letter queue.' }),
+    entry({
+      componentKey: 'step-functions', name: 'Step Functions', status: 'beingValidated', statusWords: 'Not yet validated', state: 'off', canToggle: true, stuckPlace: 'Failed runs',
+      what: 'State machine runs that ended failed.', appears: 'Appears in the menu as Step Functions.', needs: 'states:ListStateMachines and two more.',
+      steps: ['Add this policy.', 'Press Check access.'], snippets: [{ label: 'IAM policy', text: '{"Version":"2012-10-17"}' }],
+      permissions: ['states:ListStateMachines', 'states:ListExecutions', 'states:DescribeExecution'],
+    }),
+    entry({ componentKey: 'aws-streams', name: 'Kinesis, DynamoDB streams', status: 'onRequest', statusWords: 'On request', access: 'notBuildable', state: 'unavailable' }),
+  ],
+}
+
+function open(url: string) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(<QueryClientProvider client={client}><RouterProvider router={createMemoryRouter([nextRoute], { initialEntries: [url] })} /></QueryClientProvider>)
+}
+
+const dialog = async () => within(await screen.findByRole('dialog', { name: 'Add a component' }))
+
+describe('Add a component (one dialog: choose, connect, bring in)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(coverageApi.fetchCoverage).mockResolvedValue({ rows: coverageRows })
+    vi.mocked(componentsApi.fetchComponents).mockResolvedValue({ components: [], generatedAtUtc: '2026-10-23T10:00:00Z' })
+    vi.mocked(enablementApi.fetchEnabledComponents).mockResolvedValue([])
+    vi.mocked(identityApi.fetchMe).mockResolvedValue(me())
+    vi.mocked(agentsApi.fetchAgents).mockResolvedValue([agent()])
+    vi.mocked(settingsApi.fetchEmergencyStop).mockResolvedValue({ active: false, by: null, at: null, reason: null })
+    vi.mocked(namespacesApi.fetchNamespaces).mockResolvedValue([aws])
+    vi.mocked(enablementApi.fetchComponentList).mockResolvedValue(list)
+  })
+
+  it('lists every cloud’s components, uses the existing connection, shows what is on, and locks what cannot be ticked', async () => {
+    open('/aws?dialog=add-component')
+    const d = await dialog()
+    expect(await d.findByText('Acme Payments')).toBeInTheDocument()
+    expect(d.getByText(/never asks for a key/)).toBeInTheDocument()
+    // Every cloud has its own tab, not just the one the page is on; a cloud with no connection says so and still names what it can bring in.
+    expect(d.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Azure', 'AWS', 'Google Cloud'])
+    await userEvent.click(d.getByRole('tab', { name: 'Google Cloud' }))
+    expect(d.getByRole('tabpanel', { name: 'Google Cloud' })).toHaveTextContent(/It can bring in: Pub\/Sub/)
+    await userEvent.click(d.getByRole('tab', { name: 'Azure' }))
+    expect(d.getByRole('tabpanel', { name: 'Azure' })).toHaveTextContent(/Connect Azure first/)
+    await userEvent.click(d.getByRole('tab', { name: 'AWS' }))
+    expect(await d.findByRole('checkbox', { name: 'SQS (Supported)' })).toBeChecked()
+    expect(d.getByRole('checkbox', { name: 'SQS (Supported)' })).toBeDisabled()
+    expect(d.getByRole('checkbox', { name: 'Kinesis, DynamoDB streams (On request)' })).toBeDisabled()
+    expect(d.getByRole('checkbox', { name: 'Step Functions (Not yet validated)' })).toBeEnabled()
+    expect(d.getByRole('button', { name: 'Add 0 components' })).toBeDisabled()
+  })
+
+  it('shows a component ticked when it was added on another connection of the same cloud, and unticking acts on that connection', async () => {
+    vi.mocked(enablementApi.fetchEnabledComponents).mockResolvedValue([{ namespaceId: 'ns-other', cloud: 'aws', componentKey: 'step-functions' }])
+    vi.mocked(enablementApi.setComponent).mockResolvedValue(entry({ componentKey: 'step-functions' }))
+    open('/aws?dialog=add-component')
+    const d = await dialog()
+    expect(await d.findByText('Acme Payments')).toBeInTheDocument()
+    await userEvent.click(d.getByRole('tab', { name: 'AWS' }))
+    const box = await d.findByRole('checkbox', { name: 'Step Functions (Not yet validated)' })
+    await waitFor(() => expect(box).toBeChecked())
+    await userEvent.click(box)
+    await userEvent.click(d.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(enablementApi.setComponent).toHaveBeenCalledWith('ns-other', 'step-functions', false))
+  })
+
+  it('has one tab per cloud: the cloud you are on is selected, switching shows that cloud only, and each says what it holds', async () => {
+    open('/aws?dialog=add-component')
+    const d = await dialog()
+    const aws = await d.findByRole('tab', { name: 'AWS' })
+    const azure = d.getByRole('tab', { name: 'Azure' })
+    const gcp = d.getByRole('tab', { name: 'Google Cloud' })
+    expect(aws).toHaveAttribute('aria-selected', 'true')
+    expect(azure).toHaveAttribute('aria-selected', 'false')
+    expect(await d.findByText(/1 on · 1 on request/)).toBeInTheDocument()
+    expect(d.queryByRole('tabpanel', { name: 'Azure' })).not.toBeInTheDocument()
+
+    await userEvent.click(azure)
+    expect(azure).toHaveAttribute('aria-selected', 'true')
+    expect(aws).toHaveAttribute('aria-selected', 'false')
+    expect(d.getByRole('tabpanel', { name: 'Azure' })).toBeVisible()
+    expect(d.queryByRole('checkbox', { name: 'SQS (Supported)' })).not.toBeInTheDocument()
+    await userEvent.click(gcp)
+    expect(d.getByRole('tabpanel', { name: 'Google Cloud' })).toBeVisible()
+  })
+
+  it('a tick on a tab that is then switched away is kept and counted on its tab', async () => {
+    open('/aws?dialog=add-component')
+    const d = await dialog()
+    await userEvent.click(await d.findByRole('checkbox', { name: 'Step Functions (Not yet validated)' }))
+    await userEvent.click(d.getByRole('tab', { name: 'Azure' }))
+    expect(d.getByRole('tab', { name: /^AWS/ })).toHaveTextContent('1')
+    expect(d.getByRole('button', { name: 'Add 1 component' })).toBeEnabled()
+    await userEvent.click(d.getByRole('tab', { name: /^AWS/ }))
+    expect(d.getByRole('checkbox', { name: 'Step Functions (Not yet validated)' })).toBeChecked()
+  })
+
+  it('ticking opens the row in place with its prerequisites, a copyable policy and a read-only check', async () => {
+    open('/aws?dialog=add-component')
+    const d = await dialog()
+    await userEvent.click(await d.findByRole('checkbox', { name: 'Step Functions (Not yet validated)' }))
+    expect(d.getByText(/No key to paste/)).toBeInTheDocument()
+    expect(d.getByText('Add this policy.')).toBeInTheDocument()
+    expect(d.getByText('{"Version":"2012-10-17"}')).toBeInTheDocument()
+    expect(d.getByRole('button', { name: 'Add 1 component' })).toBeEnabled()
+
+    vi.mocked(enablementApi.checkComponent).mockResolvedValue({ componentKey: 'step-functions', ok: false, reason: 'Not enabled for this connection: needs states:ListExecutions.', permissions: list.components[1]!.permissions })
+    await userEvent.click(d.getByRole('button', { name: 'Check access' }))
+    expect(await d.findByText(/needs states:ListExecutions/)).toBeInTheDocument()
+    expect(enablementApi.setComponent).not.toHaveBeenCalled()
+  })
+
+  it('lists a failed-records component beside the run histories, tickable, with the Entra step an Azure connection needs', async () => {
+    const azure = { ...aws, id: 'ns-3', name: 'globex-entra', displayName: 'Globex Azure', provider: 'azure', authType: 'defaultAzureCredential', awsRegion: null } as unknown as namespacesApi.Namespace
+    vi.mocked(namespacesApi.fetchNamespaces).mockResolvedValue([azure])
+    vi.mocked(enablementApi.fetchComponentList).mockResolvedValue({
+      namespaceId: 'ns-3', connectionName: 'Globex Azure', cloud: 'Azure',
+      components: [
+        entry({ componentKey: 'service-bus', name: 'Service Bus', state: 'alwaysOn' }),
+        entry({
+          componentKey: 'event-grid', name: 'Event Grid', status: 'beingValidated', statusWords: 'Not yet validated', state: 'off', canToggle: true, stuckPlace: 'Dead-letter blobs',
+          what: 'Events Event Grid could not deliver.', appears: 'Appears in the menu as Event Grid. Read only.', needs: 'Reader, and Storage Blob Data Reader.',
+          steps: ['Use an Azure connection that signs in with Entra.', 'Press Check access.'], snippets: [{ label: 'Grant the reader role', text: 'az role assignment create --role Reader' }],
+          permissions: ['Reader', 'Storage Blob Data Reader'],
+        }),
+      ],
+    })
+    open('/azure?dialog=add-component')
+    const d = await dialog()
+
+    const box = await d.findByRole('checkbox', { name: 'Event Grid (Not yet validated)' })
+    expect(box).toBeEnabled()
+    await userEvent.click(box)
+    expect(d.getByText('Use an Azure connection that signs in with Entra.')).toBeInTheDocument()
+    expect(d.getByText('az role assignment create --role Reader')).toBeInTheDocument()
+    expect(d.getByRole('button', { name: 'Add 1 component' })).toBeEnabled()
+  })
+
+  it('Connect makes the Azure sign-in connection in one click, ticks Event Grid on it and checks access', async () => {
+    const serviceBus = { ...aws, id: 'ns-4', name: 'sb', displayName: 'Azure-Dev', provider: 'azure', authType: 'connectionString', awsRegion: null } as unknown as namespacesApi.Namespace
+    const entra = { ...serviceBus, id: 'ns-5', name: 'azure-entra', displayName: 'Azure sign-in', authType: 'defaultAzureCredential' } as namespacesApi.Namespace
+    // The list changes when the connection is made, not on the second read: another part of the page may read it too, and an extra read must not
+    // look like "the connection already exists".
+    let connected = false
+    vi.mocked(namespacesApi.fetchNamespaces).mockImplementation(async () => (connected ? [serviceBus, entra] : [serviceBus]))
+    vi.mocked(namespacesApi.connectNamespace).mockImplementation(async () => { connected = true; return entra })
+    const eventGrid = entry({
+      componentKey: 'event-grid', name: 'Event Grid', status: 'beingValidated', statusWords: 'Not yet validated', state: 'off', canToggle: true, stuckPlace: 'Dead-letter blobs',
+      what: 'Events Event Grid could not deliver.', needs: 'Reader.', steps: ['Press Check access.'], snippets: [], permissions: ['Reader'],
+    })
+    vi.mocked(enablementApi.fetchComponentList).mockImplementation(async (id: string) => ({ namespaceId: id, connectionName: 'Azure', cloud: 'Azure', components: [eventGrid] }))
+    vi.mocked(enablementApi.checkComponent).mockResolvedValue({ componentKey: 'event-grid', ok: true, reason: null, permissions: ['Reader'] })
+    open('/azure?dialog=add-component')
+    const d = await dialog()
+
+    await userEvent.click(await d.findByRole('checkbox', { name: 'Event Grid (Not yet validated)' }))
+    await userEvent.click(d.getByRole('button', { name: 'Connect with Azure sign-in' }))
+
+    // The connection is made after the click returns (the dialog reads first), so wait for it rather than assume the same tick.
+    await waitFor(() => expect(namespacesApi.connectNamespace).toHaveBeenCalledWith(expect.objectContaining({ provider: 'azure', authType: 'defaultAzureCredential' })))
+    await waitFor(() => expect(enablementApi.checkComponent).toHaveBeenCalledWith('ns-5', 'event-grid'))
+    expect(await d.findByText('present')).toBeInTheDocument() // the check's result, drawn on the row
+    // The panel stays where it was, disabled, and says it is connected.
+    expect(d.getByRole('button', { name: 'Connected with Azure sign-in' })).toBeDisabled()
+  })
+
+  it('The environment is chosen before Azure sign-in is connected: UAT makes its own connection, named for it, and leaves Development alone', async () => {
+    const serviceBus = { ...aws, id: 'ns-4', name: 'sb', displayName: 'Azure-Dev', provider: 'azure', authType: 'connectionString', awsRegion: null } as unknown as namespacesApi.Namespace
+    const entra = { ...serviceBus, id: 'ns-5', name: 'azure-entra-uat', displayName: 'Azure sign-in (UAT)', authType: 'defaultAzureCredential', environment: 'uat' } as namespacesApi.Namespace
+    // The list changes when the connection is made, not on the second read: another part of the page may read it too, and an extra read must not
+    // look like "the connection already exists".
+    let connected = false
+    vi.mocked(namespacesApi.fetchNamespaces).mockImplementation(async () => (connected ? [serviceBus, entra] : [serviceBus]))
+    vi.mocked(namespacesApi.connectNamespace).mockImplementation(async () => { connected = true; return entra })
+    const eventGrid = entry({
+      componentKey: 'event-grid', name: 'Event Grid', status: 'beingValidated', statusWords: 'Not yet validated', state: 'off', canToggle: true, stuckPlace: 'Dead-letter blobs',
+      what: 'Events Event Grid could not deliver.', needs: 'Reader.', steps: ['Press Check access.'], snippets: [], permissions: ['Reader'],
+    })
+    vi.mocked(enablementApi.fetchComponentList).mockImplementation(async (id: string) => ({ namespaceId: id, connectionName: 'Azure', cloud: 'Azure', components: [eventGrid] }))
+    vi.mocked(enablementApi.checkComponent).mockResolvedValue({ componentKey: 'event-grid', ok: true, reason: null, permissions: ['Reader'] })
+    open('/azure?dialog=add-component')
+    const d = await dialog()
+
+    await userEvent.click(await d.findByRole('checkbox', { name: 'Event Grid (Not yet validated)' }))
+    await userEvent.selectOptions(d.getByRole('combobox', { name: 'Environment of this Azure sign-in connection' }), 'uat')
+    await userEvent.click(d.getByRole('button', { name: 'Connect with Azure sign-in' }))
+
+    // The connection is made after the click returns (the dialog reads first), so wait for it rather than assume the same tick.
+    await waitFor(() => expect(namespacesApi.connectNamespace).toHaveBeenCalledWith(expect.objectContaining({ provider: 'azure', authType: 'defaultAzureCredential', environment: 'uat', name: 'azure-entra-uat', displayName: 'Azure sign-in (UAT)' })))
+    await waitFor(() => expect(enablementApi.checkComponent).toHaveBeenCalledWith('ns-5', 'event-grid'))
+    expect(await d.findByText('present')).toBeInTheDocument() // the check's result, drawn on the row
+    // The panel stays where it was, disabled, and says it is connected.
+    expect(d.getByRole('button', { name: 'Connected with Azure sign-in' })).toBeDisabled()
+  })
+
+  it('a cloud with no connection still names a failed-records component it can bring in', async () => {
+    const eventGrid = { ...coverageRows[0]!, id: 'event-grid.dead-letter-blobs', componentKey: 'event-grid', cloud: 'azure' as const, cloudName: 'Azure', name: 'Event Grid', detection: 'records' as const, status: 'beingValidated' as const, statusWords: 'Being validated', inSidebar: true }
+    vi.mocked(coverageApi.fetchCoverage).mockResolvedValue({ rows: [...coverageRows, eventGrid] })
+    open('/aws?dialog=add-component')
+    const d = await dialog()
+
+    await userEvent.click(await d.findByRole('tab', { name: 'Azure' }))
+
+    expect(d.getByRole('tabpanel', { name: 'Azure' })).toHaveTextContent(/It can bring in:.*Event Grid/)
+  })
+
+  it('Add saves the ticked row, says so on the row, and Done closes', async () => {
+    vi.mocked(enablementApi.setComponent).mockResolvedValue({ ...list.components[1]!, state: 'on' })
+    open('/aws?dialog=add-component')
+    const d = await dialog()
+    await userEvent.click(await d.findByRole('checkbox', { name: 'Step Functions (Not yet validated)' }))
+    await userEvent.click(d.getByRole('button', { name: 'Add 1 component' }))
+    expect(await d.findByText(/Added\. It is on the menu now/)).toBeInTheDocument()
+    expect(enablementApi.setComponent).toHaveBeenCalledWith('ns-1', 'step-functions', true)
+    await userEvent.click(d.getByRole('button', { name: 'Done' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add a component' })).not.toBeInTheDocument())
+  })
+
+  it('a refused row says what is missing, saves nothing for it, and never blocks the others', async () => {
+    const problem = Object.assign(new Error('x'), { isAxiosError: true, response: { status: 409, data: { code: 'capability_unavailable', detail: 'Not added. Not enabled for this connection: needs states:ListExecutions.' } } })
+    vi.mocked(enablementApi.setComponent).mockRejectedValue(problem)
+    open('/aws?dialog=add-component')
+    const d = await dialog()
+    await userEvent.click(await d.findByRole('checkbox', { name: 'Step Functions (Not yet validated)' }))
+    await userEvent.click(d.getByRole('button', { name: 'Add 1 component' }))
+    expect(await d.findByRole('alert')).toHaveTextContent(/needs states:ListExecutions/)
+    expect(d.getByText(/0 saved, 1 not saved/)).toBeInTheDocument()
+  })
+
+  it('a Viewer is told why they cannot add, before the click', async () => {
+    vi.mocked(identityApi.fetchMe).mockResolvedValue(me({ governanceActive: true, effectiveRole: 'Viewer', grantors: ['maya'] }))
+    open('/aws?dialog=add-component')
+    const d = await dialog()
+    expect(await d.findByText(/you need the Admin role/)).toBeInTheDocument()
+    expect(d.getByRole('checkbox', { name: 'Step Functions (Not yet validated)' })).toBeDisabled()
+  })
+
+  it('a cloud with no connection says so and links to Connect a cloud, never to a key box', async () => {
+    vi.mocked(namespacesApi.fetchNamespaces).mockResolvedValue([])
+    open('/gcp?dialog=add-component')
+    const d = await dialog()
+    expect(await d.findByText(/Connect Google Cloud first/)).toBeInTheDocument()
+    expect(d.getByRole('link', { name: 'Connect Google Cloud' })).toHaveAttribute('href', '/gcp?dialog=connect')
+    expect(enablementApi.fetchComponentList).not.toHaveBeenCalled()
+  })
+
+  it('has no accessibility violations and an (i) on its headings', async () => {
+    const { container } = open('/aws?dialog=add-component')
+    const d = await dialog()
+    await d.findByRole('checkbox', { name: 'Step Functions (Not yet validated)' })
+    await expectNoAxeViolations(container)
+  })
+})

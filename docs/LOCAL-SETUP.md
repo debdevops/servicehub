@@ -20,7 +20,7 @@ Putting it on a server for a team? That is the [Azure hosting guide](HOSTING-AZU
 
 **Operating systems.** macOS and Linux: `./run.sh`. **Windows (native):** `run` in Command Prompt or `.\run.cmd` in PowerShell — it calls `run.ps1`
 with the execution policy bypassed for that one process only, and takes the same options (`-Check`, `-NoInstall`, `-ApiOnly`, `-WebOnly`). Git Bash's `./run.sh` hands over to it too.
-WSL 2 also still works (use `./run.sh` inside it). For track B, Docker Desktop works.
+WSL 2 also still works (use `./run.sh` inside it). For track B, Docker Desktop works. `run.ps1` does not start the help button (ServiceHub Bot). The test scripts (`runtest.sh`) are bash: contributors on Windows run them in WSL 2.
 
 ---
 
@@ -35,7 +35,7 @@ Both downloads are verified before use: the Node archive against the SHA-256 pub
 | Tool | Version | Check with | If missing |
 |---|---|---|---|
 | **.NET SDK** | 10.0.302 or a later 10.0.x (`services/api/global.json` pins 10.0; an 11.x-only machine will not work) | `dotnet --version` | Installed for you (~250 MB). Manual: <https://dotnet.microsoft.com/download/dotnet/10.0> |
-| **Node.js** (with npm) | 22.12+ (22 LTS recommended) or 20.19+ | `node --version` | Installed for you (~40 MB). Manual: <https://nodejs.org> |
+| **Node.js** (with npm) | 22.12+ or 20.19+ for ServiceHub; **24+** for the help button (ServiceHub Bot). 24 LTS recommended | `node --version` | Node 24 LTS installed for you when Node is missing (~40 MB). Manual: <https://nodejs.org> |
 | `bash`, `curl` (or `wget`), `tar` | Any | `curl --version` | Present on macOS and nearly every Linux; Debian/Ubuntu `sudo apt install curl tar` |
 | git | Any (only to clone) | `git --version` | <https://git-scm.com> |
 | `lsof` (or `ss` / `fuser`) | Optional | | Used to find and stop a previous ServiceHub on the port; without any of them the port is only probed |
@@ -96,6 +96,7 @@ port, it never kills it: with the default ports it moves to the next free port a
    database answers.) From a terminal: `curl http://localhost:3000/health/ready`.
 2. **Demo.** Open <http://localhost:3000/demo> (or press **Demo** on Home). All three clouds are connected with made-up data, a tour walks through every page, and nothing is sent anywhere.
 3. **Your own cloud.** See [Connect a cloud](#connect-a-cloud) below.
+4. **Help button.** The round button at the bottom right is **ServiceHub Bot**. Ask it, for example, "how do I replay dlq". It answers from the Help and these docs, and in the real app (not the demo) adds your live numbers. It **guides; it never changes anything**: it reads ServiceHub as you, with read-only requests, and its links only open screens. It comes with `./run.sh` only (not with Docker), needs Node.js 24 or later, and is optional: if it cannot start, `run.sh` says why in one line and ServiceHub runs without it. Turn it off with `SERVICEHUB_BOT=0`. More: [`servicehub-bot/README.md`](../servicehub-bot/README.md).
 
 ## 4. Stop it, and where your data lives
 
@@ -131,6 +132,8 @@ SERVICEHUB_DATA_DIR="$HOME/servicehub-data" ./run.sh
 | `SERVICEHUB_READY_TIMEOUT` | `180` | Seconds to wait for startup (after the build) before giving up |
 | `SERVICEHUB_AUTO_INSTALL` | `1` | `0` = never download tools (same as `--no-install`) |
 | `SERVICEHUB_TOOLS_DIR` | `~/.servicehub/tools` | Where a missing .NET SDK / Node.js is installed |
+| `SERVICEHUB_BOT` | `1` | `0` = do not start ServiceHub Bot, the help button |
+| `SERVICEHUB_BOT_PORT` | `5160` | ServiceHub Bot's port; if it is busy, the next free one is used |
 | `ASPNETCORE_ENVIRONMENT` | `Development` | Leave it. `Production` refuses to start without an encryption key |
 
 To run a **second, separate copy** (say, to try a branch beside your usual one), give it its own ports *and* its own `SERVICEHUB_DATA_DIR`.
@@ -156,7 +159,7 @@ See [tests/README.md](../tests/README.md) and [CONTRIBUTING.md](../CONTRIBUTING.
 | `The API did not build` | A compile error (only if you changed code) or a package problem | Read the error above it; otherwise open an issue with that output |
 | `Cannot verify downloads: none of sha256sum, shasum or openssl…` | Downloads are never used unverified | Install one of them, or install .NET and Node yourself |
 | `Neither curl nor wget is installed` | Minimal Linux image | `sudo apt install curl` (or `dnf` / `apk add curl`) |
-| `This is a Windows shell` | Git Bash / PowerShell | Use a WSL 2 Ubuntu terminal and run it there |
+| `This is a Windows shell` | You ran `run.sh` in Git Bash / PowerShell | Use `.\run.ps1` (PowerShell) or `run.cmd` (Command Prompt) instead |
 | `✖ Port 5153 is held by something else (pid …)` | You pinned the port with `SERVICEHUB_API_PORT`, and another program, not a previous ServiceHub, uses it | Stop it, or pick another port (or unset the variable to let `run.sh` choose) |
 | `Another ServiceHub instance already holds the data directory` | A ServiceHub (maybe a forgotten one, or the Docker container) is using the same data folder | Stop it, or give this one its own `SERVICEHUB_DATA_DIR` |
 | `The database at '…' is not a ServiceHub 4.1.0 database` | The folder holds a 4.0.0 (or other) database. **There is no upgrade path from 4.0.0** | Point `SERVICEHUB_DATA_DIR` at an empty folder |

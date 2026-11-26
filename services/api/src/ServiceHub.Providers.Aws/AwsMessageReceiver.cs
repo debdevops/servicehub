@@ -1007,6 +1007,14 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                     kvp => kvp.Key,
                     kvp => (object)kvp.Value.StringValue);
 
+            // A dead letter Lambda or EventBridge put here carries AWS's own account of the failure (G3). Read only when neither
+            // ServiceHub nor the producer named a reason, so no existing reason changes.
+            msg.MessageAttributes.TryGetValue(ProducerErrorTypeAttribute, out var producerReason);
+            var producerNamed = fromDlq && !string.IsNullOrWhiteSpace(producerReason?.StringValue);
+            var envelope = fromDlq && dlReason is null && !producerNamed
+                ? AwsDeadLetterEnvelope.Read(msg.Body, msg.MessageAttributes)
+                : null;
+
             mapped.Add(new CoreMessage
             {
                 MessageId = msg.MessageId,
@@ -1031,11 +1039,8 @@ public sealed class AwsMessageReceiver : IMessageReceiver, IVisibilityStatusProv
                 IsFromDeadLetter = fromDlq,
                 DeadLetterSource = msg.Attributes.GetValueOrDefault("DeadLetterQueueSourceArn"),
                 DeadLetterReason = dlReason?.StringValue
-                    ?? (fromDlq && msg.MessageAttributes.TryGetValue(ProducerErrorTypeAttribute, out var producerReason)
-                        && !string.IsNullOrWhiteSpace(producerReason.StringValue)
-                        ? producerReason.StringValue
-                        : null),
-                DeadLetterErrorDescription = dlDescription?.StringValue,
+                    ?? (producerNamed ? producerReason!.StringValue : envelope?.Reason),
+                DeadLetterErrorDescription = dlDescription?.StringValue ?? envelope?.Description,
                 State = ServiceHub.Core.Enums.MessageState.Active
             });
         }

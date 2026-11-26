@@ -75,6 +75,22 @@ namespace ServiceHub.Core.Models;
 /// for all three current providers — Azure Service Bus subscriptions, SNS subscriptions (AWS),
 /// and Pub/Sub subscriptions (GCP).
 /// </param>
+/// <param name="CountsAreApproximate">
+/// Whether the counts the provider reports are the cloud's own estimates rather than exact numbers. True for AWS SQS, whose
+/// attributes are named <c>ApproximateNumberOfMessages</c>. A screen shows such a count as approximate, never as exact.
+/// </param>
+/// <param name="ReplayFansOutToTopic">
+/// Whether replaying a topic subscription's dead letter publishes to the <b>topic</b>, so every subscription on it that accepts the message receives it
+/// again, not only the one it failed on (Azure Service Bus and Google Pub/Sub have no way to publish to one subscription). False where a replay goes to one queue.
+/// </param>
+/// <param name="SupportsTransferDeadLetter">
+/// Whether the cloud has a transfer dead-letter queue that can be peeked: Azure Service Bus, where a failed send-via transaction leaves the message on the entity the
+/// transaction went through. Read only: the intended destination appears only in the reason text, so nothing is replayed from it.
+/// </param>
+/// <param name="MaxMessageAttributes">
+/// The most application properties/attributes one message may carry, or null when the cloud sets no such count. 10 on AWS SQS/SNS:
+/// a message already carrying that many has no room for the recovery marker, so a replay proposal must not promise one.
+/// </param>
 public sealed record ProviderCapabilities(
     bool SupportsMessageCounts,
     bool SupportsManualDeadLetter,
@@ -85,7 +101,11 @@ public sealed record ProviderCapabilities(
     bool SupportsRecoveryMarker,
     bool CanProveDlqAbsence,
     bool SupportsTopics = true,
-    bool SupportsSubscriptions = true)
+    bool SupportsSubscriptions = true,
+    bool CountsAreApproximate = false,
+    bool ReplayFansOutToTopic = false,
+    int? MaxMessageAttributes = null,
+    bool SupportsTransferDeadLetter = false)
 {
     /// <summary>Capabilities of Microsoft Azure Service Bus.</summary>
     public static readonly ProviderCapabilities Azure = new(
@@ -96,7 +116,9 @@ public sealed record ProviderCapabilities(
         SupportsRepeatablePeek: true,
         Notes: "Purge is not supported — the SDK has no reliable single-message delete by sequence number.",
         SupportsRecoveryMarker: true,
-        CanProveDlqAbsence: true);
+        CanProveDlqAbsence: true,
+        ReplayFansOutToTopic: true,
+        SupportsTransferDeadLetter: true);
 
     /// <summary>Capabilities of Amazon SQS/SNS.</summary>
     public static readonly ProviderCapabilities Aws = new(
@@ -107,7 +129,9 @@ public sealed record ProviderCapabilities(
         SupportsRepeatablePeek: false,
         Notes: "Scheduled messages are not supported — SQS only offers DelaySeconds (max 15 minutes) at send time. Repeated/live polling is also not supported — SQS has no non-destructive peek, so every call is a receive that counts toward the queue's maxReceiveCount.",
         SupportsRecoveryMarker: true,
-        CanProveDlqAbsence: false);
+        CanProveDlqAbsence: false,
+        CountsAreApproximate: true,
+        MaxMessageAttributes: 10);
 
     /// <summary>Capabilities of Google Cloud Pub/Sub.</summary>
     public static readonly ProviderCapabilities Gcp = new(
@@ -118,7 +142,8 @@ public sealed record ProviderCapabilities(
         SupportsRepeatablePeek: false,
         Notes: "Message counts and manual dead-lettering are not supported — Pub/Sub has no count API and dead-lettering is policy-driven via MaxDeliveryAttempts. Scheduled messages are not supported either. Repeated/live polling is also not supported — every pull-then-release still counts as a delivery attempt toward the subscription's MaxDeliveryAttempts, so watching a message repeatedly can dead-letter it by accident.",
         SupportsRecoveryMarker: true,
-        CanProveDlqAbsence: false);
+        CanProveDlqAbsence: false,
+        ReplayFansOutToTopic: true);
 
     /// <summary>
     /// Resolves the capabilities preset for a given provider type. This is the single place

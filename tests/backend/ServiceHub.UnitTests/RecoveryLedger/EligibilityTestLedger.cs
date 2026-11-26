@@ -54,6 +54,12 @@ internal sealed class EligibilityTestLedger : IRecoveryLedger
         return Result<RecoveryOperation>.Success(null!);
     }
 
+    public Task SetAutonomyGrantPreconditionsAsync(string ownerId, string signatureHash, RecoveryOperationKind actionKind, string? preconditionsHash, CancellationToken cancellationToken = default)
+    {
+        if (_grants.TryGetValue((ownerId, signatureHash, actionKind), out var g)) g.PreconditionsHash = preconditionsHash;
+        return Task.CompletedTask;
+    }
+
     public Task<Result<AutonomyGrant>> RecordAutonomyGrantTransitionAsync(
         string ownerId, string signatureHash, RecoveryOperationKind actionKind, AutonomyLevel previousLevel,
         AutonomyLevel newLevel, string reason, string? evidenceJson, CancellationToken cancellationToken = default)
@@ -121,6 +127,7 @@ internal sealed class EligibilityTestLedger : IRecoveryLedger
     public Task<RecoveryLedgerEntry?> FindByMarkerAsync(string ownerId, string marker, CancellationToken cancellationToken = default) => _real.FindByMarkerAsync(ownerId, marker, cancellationToken);
     public Task<IReadOnlyList<RecoveryLedgerEntry>> FindHeuristicRecurrenceCandidatesAsync(string ownerId, Guid? namespaceId, string entityName, string bodyHash, DateTimeOffset beganBefore, CancellationToken cancellationToken = default) => _real.FindHeuristicRecurrenceCandidatesAsync(ownerId, namespaceId, entityName, bodyHash, beganBefore, cancellationToken);
     public Task<bool> HasUnresolvedAttemptAsync(string ownerId, long? dlqMessageId, Guid? namespaceId, string? entityName, string? sourceMessageId, CancellationToken cancellationToken = default) => _real.HasUnresolvedAttemptAsync(ownerId, dlqMessageId, namespaceId, entityName, sourceMessageId, cancellationToken);
+    public Task<DateTimeOffset?> GetLastAcceptedRequestAtAsync(string ownerId, Guid namespaceId, string sourceMessageId, CancellationToken cancellationToken = default) => _real.GetLastAcceptedRequestAtAsync(ownerId, namespaceId, sourceMessageId, cancellationToken);
     public Task<int> ReconcileInterruptedAsync(DateTimeOffset processStartedAt, CancellationToken cancellationToken = default) => _real.ReconcileInterruptedAsync(processStartedAt, cancellationToken);
 
     public Task<bool> IsEmergencyStopActiveAsync(string ownerId, CancellationToken cancellationToken = default) => _real.IsEmergencyStopActiveAsync(ownerId, cancellationToken);

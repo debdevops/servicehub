@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ServiceHub 4.2.1 — run from source.
+# ServiceHub 5.0.0 — run from source.
 #
 # One command for anyone, developer or not:   ./run.sh
 #
@@ -23,10 +23,13 @@ WEB_PORT="${SERVICEHUB_WEB_PORT:-3000}";  WEB_PORT_FIXED=0; [ -n "${SERVICEHUB_W
 valid_port() { case "$1" in ""|*[!0-9]*) return 1 ;; esac; [ "${#1}" -le 5 ] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]; }
 valid_port "$API_PORT" || { echo "✖ SERVICEHUB_API_PORT='${API_PORT}' is not a valid port (use a number from 1 to 65535)." >&2; exit 1; }
 valid_port "$WEB_PORT" || { echo "✖ SERVICEHUB_WEB_PORT='${WEB_PORT}' is not a valid port (use a number from 1 to 65535)." >&2; exit 1; }
+# ServiceHub Bot is optional: a busy port is never fatal, the next free one is taken.
+BOT_PORT="${SERVICEHUB_BOT_PORT:-5160}";  BOT_PORT_FIXED=0
+valid_port "$BOT_PORT" || { echo "✖ SERVICEHUB_BOT_PORT='${BOT_PORT}' is not a valid port (use a number from 1 to 65535)." >&2; exit 1; }
 READY_TIMEOUT="${SERVICEHUB_READY_TIMEOUT:-180}"   # seconds to wait for startup (after the build)
 AUTO_INSTALL="${SERVICEHUB_AUTO_INSTALL:-ask}"     # ask (default) = confirm before each download · 1 = download without asking · 0 = never download
 TOOLS_DIR="${SERVICEHUB_TOOLS_DIR:-${HOME:-$ROOT}/.servicehub/tools}"   # where a missing .NET / Node is installed
-NODE_LTS_LINE="v22.x"                              # the Node line downloaded when Node is missing or too old
+NODE_LTS_LINE="v24.x"                              # the Node line downloaded when Node is missing or too old (24: ServiceHub Bot needs it)
 
 usage() {
   cat <<'USAGE'
@@ -51,6 +54,8 @@ Environment:
   SERVICEHUB_READY_TIMEOUT  Seconds to wait for startup before giving up (default 180)
   SERVICEHUB_AUTO_INSTALL   1 = same as --yes, 0 = same as --no-install (default: ask before downloading)
   SERVICEHUB_TOOLS_DIR      Where a missing .NET SDK / Node.js is installed (default ~/.servicehub/tools)
+  SERVICEHUB_BOT            0 = do not start ServiceHub Bot, the help button (default 1; it needs Node.js 24+)
+  SERVICEHUB_BOT_PORT       ServiceHub Bot's port (default 5160; if busy, the next free port is used)
   ASPNETCORE_ENVIRONMENT    Defaults to Development, which supplies a throw-away dev encryption key
 USAGE
 }
@@ -81,6 +86,7 @@ minor() { echo "${1#v}" | cut -d. -f2; }
 
 TMP_DIR=""
 PIDS=""   # space-separated; an empty array trips `set -u` on macOS's bash 3.2
+BOT_PID=""   # ServiceHub Bot, kept apart from PIDS: it is optional, so its exit never stops ServiceHub
 STOPPING=0
 
 kill_children() {   # direct children of $1, printed one per line; works with or without pgrep
@@ -98,17 +104,18 @@ kill_tree() {
 cleanup() {
   [ -n "$TMP_DIR" ] && rm -rf "$TMP_DIR" 2>/dev/null || true
   [ "$STOPPING" = 1 ] && return 0; STOPPING=1
-  [ -n "$PIDS" ] || return 0
+  local all="$PIDS $BOT_PID"
+  [ -n "${all// /}" ] || return 0
   echo; echo "■ Stopping ServiceHub…"
   local pid
-  for pid in $PIDS; do kill_tree "$pid" TERM; done
+  for pid in $all; do kill_tree "$pid" TERM; done
   for _ in $(seq 1 50); do   # up to 5 s to exit gracefully (the API flushes SQLite and releases its instance lock)
     local alive=0
-    for pid in $PIDS; do kill -0 "$pid" 2>/dev/null && alive=1; done
+    for pid in $all; do kill -0 "$pid" 2>/dev/null && alive=1; done
     [ "$alive" = 0 ] && return 0
     sleep 0.1
   done
-  for pid in $PIDS; do kill_tree "$pid" KILL; done
+  for pid in $all; do kill_tree "$pid" KILL; done
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
@@ -159,7 +166,7 @@ offline_help() {
   • Behind a proxy? Export HTTPS_PROXY (and HTTP_PROXY) in this shell and run ./run.sh again.
   • Offline / locked-down? Install these yourself, then run ./run.sh again:
       .NET 10 SDK  https://dotnet.microsoft.com/download/dotnet/10.0
-      Node.js 22   https://nodejs.org
+      Node.js 24   https://nodejs.org
 EOF
 }
 hash_of() {   # hash_of 256|512 FILE — empty output when no hashing tool exists
@@ -282,7 +289,7 @@ use_local_node() {
 install_node() {
   need_downloader; need_hasher
   have tar || die "tar is required to unpack Node.js. Install it (e.g. sudo apt install tar) and re-run."
-  [ "$ARCH" != "unsupported" ] || die "This CPU ($(uname -m)) has no official Node.js download. Install Node 22 LTS yourself: https://nodejs.org"
+  [ "$ARCH" != "unsupported" ] || die "This CPU ($(uname -m)) has no official Node.js download. Install Node 24 LTS yourself: https://nodejs.org"
   [ "$IS_MUSL" = 0 ] || die "This Linux uses musl (Alpine). Official Node builds do not run on it. Install Node with: apk add nodejs npm"
   step "Installing Node.js ${NODE_LTS_LINE%.x} LTS into $TOOLS_DIR/node (about 40 MB; your system is not touched)…"
   mkdir -p "$TOOLS_DIR"; check_disk "$TOOLS_DIR" 600 "Node.js"
@@ -290,7 +297,7 @@ install_node() {
   base="https://nodejs.org/dist/latest-${NODE_LTS_LINE}"
   fetch "$base/SHASUMS256.txt" "$tmp/SHASUMS256.txt" || { offline_help; die "Could not reach nodejs.org."; }
   line="$(grep -E " node-v[0-9.]+-${PLAT}-${ARCH}\.tar\.gz\$" "$tmp/SHASUMS256.txt" | head -1 || true)"
-  [ -n "$line" ] || die "nodejs.org lists no Node build for ${PLAT}-${ARCH}. Install Node 22 LTS yourself: https://nodejs.org"
+  [ -n "$line" ] || die "nodejs.org lists no Node build for ${PLAT}-${ARCH}. Install Node 24 LTS yourself: https://nodejs.org"
   sum="${line%% *}"; file="${line##* }"
   fetch "$base/$file" "$tmp/$file" || { offline_help; die "Could not download $file."; }
   got="$(hash_of 256 "$tmp/$file")"
@@ -308,9 +315,9 @@ ensure_node() {
   have node && why="$(node --version 2>/dev/null || echo '?') is too old or too new a line (needs 20.19+ or 22.12+)"
   have node && ! have npm && why="has no npm next to it"
   if [ "$MODE" = "check" ]; then echo "• Node.js $why — ./run.sh will download Node ${NODE_LTS_LINE%.x} LTS to $TOOLS_DIR/node"; return 0; fi
-  if [ "$AUTO_INSTALL" = 0 ]; then die "Node.js $why. Install Node 22 LTS from https://nodejs.org (or drop --no-install so run.sh can offer to do it)."; fi
+  if [ "$AUTO_INSTALL" = 0 ]; then die "Node.js $why. Install Node 24 LTS from https://nodejs.org (or drop --no-install so run.sh can offer to do it)."; fi
   echo "• Node.js $why."
-  confirm_install "Node.js 22 LTS" "40 MB"
+  confirm_install "Node.js 24 LTS" "40 MB"
   install_node
   echo "✔ Node $NODE_FOUND (installed by run.sh)"
 }
@@ -454,6 +461,24 @@ NEED_API=1; NEED_WEB=1
 
 [ "$NEED_API" = 1 ] && ensure_dotnet
 [ "$NEED_WEB" = 1 ] && ensure_node
+
+# ── ServiceHub Bot (optional) ───────────────────────────────────────────────────────────────────
+# The help button in servicehub-bot/. Owner's decision (c), 2026-11-15: it comes with run.sh and development only; the
+# Docker image does not include it. It reads ServiceHub with GET only, as the person using the page, and never acts. It is
+# optional: if it cannot start, ServiceHub starts without it and says why in one line.
+BOT_WANTED=0; BOT_WHY=""
+bot_check() {
+  [ "$MODE" = "both" ] || [ "$MODE" = "check" ] || { BOT_WHY="it starts only when the API and the web server start together"; return 0; }
+  [ "${SERVICEHUB_BOT:-1}" != 0 ] || { BOT_WHY="SERVICEHUB_BOT=0"; return 0; }
+  [ -f "$ROOT/servicehub-bot/src/serve.ts" ] || { BOT_WHY="servicehub-bot/ is not in this checkout"; return 0; }
+  # --check installs nothing: when Node is unusable, run.sh would install Node ${NODE_LTS_LINE}, which the bot runs on.
+  if [ "$MODE" = "check" ] && [ -z "$NODE_FOUND" ] && [ "$AUTO_INSTALL" = 1 ]; then BOT_WANTED=1; return 0; fi
+  local v ma; v="$(node --version 2>/dev/null || echo '?')"; ma="$(major "$v")"
+  case "$ma" in ''|*[!0-9]*) BOT_WHY="the Node.js version could not be read"; return 0 ;; esac
+  [ "$ma" -ge 24 ] || { BOT_WHY="it needs Node.js 24 or later, and this is ${v}"; return 0; }
+  BOT_WANTED=1
+}
+bot_check
 [ "$NEED_API" = 1 ] && [ "$MODE" != "check" ] && check_dotnet_runtime_libs
 
 # Where the API will keep its database — a read-only or missing parent here fails minutes in, with a stack trace.
@@ -472,6 +497,8 @@ if [ "$MODE" = "check" ]; then
     else echo "✔ Port $p is free"; fi
   done
   can_probe || warn "Neither curl nor wget found — run.sh cannot probe startup (and cannot download tools); install curl for the best experience."
+  if [ "$BOT_WANTED" = 1 ]; then echo "✔ ServiceHub Bot (the help button) will start on :${BOT_PORT} or the next free port"
+  else echo "• ServiceHub Bot (the help button) will not start: ${BOT_WHY}. ServiceHub works without it."; fi
   echo "✔ Check finished. Run ./run.sh"
   exit 0
 fi
@@ -512,6 +539,7 @@ build_api() {
 # ── Free the ports ──────────────────────────────────────────────────────────────────────────────
 [ "$NEED_API" = 1 ] && claim_port API "ServiceHub.Api" "API"
 [ "$NEED_WEB" = 1 ] && claim_port WEB "$ROOT/node_modules" "dev server"
+[ "$BOT_WANTED" = 1 ] && claim_port BOT "$ROOT/servicehub-bot/src/serve.ts" "ServiceHub Bot"
 
 # ── Start ───────────────────────────────────────────────────────────────────────────────────────
 if [ "$NEED_API" = 1 ]; then
@@ -526,10 +554,28 @@ if [ "$NEED_API" = 1 ]; then
   PIDS="$PIDS $!"
 fi
 
+# Before the web server, which needs to know whether to show the bot's button.
+if [ "$BOT_WANTED" = 1 ]; then
+  step "Building ServiceHub Bot's knowledge base (from the Help and docs in this checkout)…"
+  if node "$ROOT/servicehub-bot/scripts/build-kb.ts"; then
+    step "Starting ServiceHub Bot on http://127.0.0.1:${BOT_PORT} (reads ServiceHub with GET only; it never changes anything)"
+    # --disable-warning: Node calls its built-in type stripping experimental; the bot uses it on purpose (no build step).
+    BOT_PORT="$BOT_PORT" SERVICEHUB_API_URL="http://localhost:${API_PORT}" \
+      node --disable-warning=ExperimentalWarning "$ROOT/servicehub-bot/src/serve.ts" &
+    BOT_PID=$!
+  else
+    warn "ServiceHub Bot's knowledge base did not build (output above). ServiceHub starts without the bot."
+  fi
+elif [ "$NEED_WEB" = 1 ] && [ "$NEED_API" = 1 ]; then
+  echo "• ServiceHub Bot (the help button) is not started: ${BOT_WHY}. ServiceHub works without it."
+fi
+
 if [ "$NEED_WEB" = 1 ]; then
   step "Starting the web server on http://localhost:${WEB_PORT}"
   # Vite is started directly rather than through `npm run`, so stopping it does not end in a wall of npm errors.
+  bot_on=false; [ -n "$BOT_PID" ] && bot_on=true
   ( cd apps/servicehub && VITE_PROXY_TARGET="http://localhost:${API_PORT}" \
+      VITE_SERVICEHUB_BOT="$bot_on" VITE_BOT_PROXY_TARGET="http://127.0.0.1:${BOT_PORT}" \
       exec "$ROOT/node_modules/.bin/vite" --port "${WEB_PORT}" --strictPort ) &
   PIDS="$PIDS $!"
 fi
@@ -548,6 +594,12 @@ while :; do
       exit 1
     fi
   done
+  # The bot is optional: if it stops, say so once and carry on.
+  if [ -n "$BOT_PID" ] && ! kill -0 "$BOT_PID" 2>/dev/null; then
+    wait "$BOT_PID" 2>/dev/null || true
+    BOT_PID=""
+    warn "ServiceHub Bot stopped (its output is above). ServiceHub keeps running without the help button."
+  fi
 
   if [ "$announced" = 0 ]; then
     ok=1
@@ -562,6 +614,9 @@ while :; do
       echo "✔ ServiceHub is ready"
       if [ "$MODE" = "api" ]; then echo "   API  http://localhost:${API_PORT}   (health: /health/ready)"
       else echo "   Open http://localhost:${WEB_PORT}      (try /demo/azure first: made-up data, nothing is sent anywhere)"; fi
+      if [ -n "$BOT_PID" ] && up "http://localhost:${WEB_PORT}/bot/health"; then
+        echo "   Help: the round button at the bottom right is ServiceHub Bot. It guides; it never changes anything."
+      fi
       echo "   Ctrl-C to stop."
       echo
     elif [ "$waited" -ge "$READY_TIMEOUT" ]; then

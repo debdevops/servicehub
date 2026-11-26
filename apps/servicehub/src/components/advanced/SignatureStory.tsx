@@ -11,8 +11,14 @@ import { Skeleton } from '../ui/Skeleton'
 
 const dot: Readonly<Record<string, string>> = { first_seen: '#ef4444', came_back: '#fca5a5', replayed: '#0284c7', purged: '#6b7280', dead_lettered: '#ef4444' }
 
+/** Where the story's links go. The 4.2.0 Advanced page passes nothing and keeps its addresses; the 5.0.0 shell passes its own. */
+export interface StoryLinks {
+  readonly evidence: (entryId: string) => string
+  readonly message: (namespaceId: string, dlqMessageId: number) => string
+}
+
 /** Incident (unit 6.19): one signature's whole story, newest first. Read-only; every entry links to its evidence. */
-export function IncidentTimeline({ hash, provider }: { hash: string; provider: CloudProvider }) {
+export function IncidentTimeline({ hash, provider, links }: { hash: string; provider: CloudProvider; links?: StoryLinks }) {
   const q = useQuery({ queryKey: ['signatures', 'incident', hash, provider], queryFn: () => fetchIncident(hash, provider) })
   const now = new Date()
   if (q.isPending) return <Skeleton label="Reading its story…" rows={4} />
@@ -28,7 +34,7 @@ export function IncidentTimeline({ hash, provider }: { hash: string; provider: C
           <li key={n} className="relative">
             <span aria-hidden="true" className="absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full" style={{ background: dot[i.kind] }} />
             <p className="text-[11.5px] text-[var(--color-text-muted)]">{formatWhen(i.at, now)}</p>
-            <p>{i.text} {i.entryId && <Link to={`/advanced/ledger?entry=${i.entryId}&window=all`} className="font-medium text-[var(--color-primary-700)] hover:underline">Evidence ›</Link>}</p>
+            <p>{i.text} {i.entryId && <Link to={links ? links.evidence(i.entryId) : `/advanced/ledger?entry=${i.entryId}&window=all`} className="font-medium text-[var(--color-primary-700)] hover:underline">Evidence ›</Link>}</p>
           </li>
         ))}
       </ol>
@@ -37,7 +43,7 @@ export function IncidentTimeline({ hash, provider }: { hash: string; provider: C
 }
 
 /** Trace (unit 6.19): search a correlation id; every recorded sighting across connected clouds, oldest first. */
-export function TraceView() {
+export function TraceView({ links }: { links?: StoryLinks }) {
   const [draft, setDraft] = useState('')
   const [id, setId] = useState('')
   const q = useQuery({ queryKey: ['trace', id], queryFn: () => fetchTrace(id), enabled: id !== '' })
@@ -68,8 +74,8 @@ export function TraceView() {
                   {h.kind === 'dead_lettered' ? 'Dead-lettered' : h.kind === 'purged' ? 'Purged' : 'Replayed'} on <span className="font-mono">{h.entity}</span> in {h.place.namespaceName}{h.detail ? ` — ${h.detail}` : ''}
                   {h.messageId && <span className="mt-0.5 block font-mono text-[11.5px] text-[var(--color-text-muted)] [overflow-wrap:anywhere]">Message {h.messageId}</span>}
                 </span>
-                {h.kind === 'dead_lettered' && h.dlqMessageId !== null && <Link to={`/?tab=dlq&ns=${h.namespaceId}&message=${h.dlqMessageId}&status=all`} className="text-xs font-medium text-[var(--color-primary-700)] hover:underline">Open ›</Link>}
-                {h.entryId && <Link to={`/advanced/ledger?entry=${h.entryId}&window=all`} className="text-xs font-medium text-[var(--color-primary-700)] hover:underline">Evidence ›</Link>}
+                {h.kind === 'dead_lettered' && h.dlqMessageId !== null && <Link to={links ? links.message(h.namespaceId, h.dlqMessageId) : `/?tab=dlq&ns=${h.namespaceId}&message=${h.dlqMessageId}&status=all`} className="text-xs font-medium text-[var(--color-primary-700)] hover:underline">Open ›</Link>}
+                {h.entryId && <Link to={links ? links.evidence(h.entryId) : `/advanced/ledger?entry=${h.entryId}&window=all`} className="text-xs font-medium text-[var(--color-primary-700)] hover:underline">Evidence ›</Link>}
               </li>
             ))}
           </ol>

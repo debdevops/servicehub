@@ -43,10 +43,14 @@ public sealed record PendingWorkScope(
 /// <param name="ReasonCode">The gate's code (or AGENT_STALE / AGENT_FAILING), never flattened.</param>
 /// <param name="Reason">The same, in one plain sentence.</param>
 /// <param name="Since">When it started waiting.</param>
+/// <param name="ComponentKey">The component the item is on (<c>sqs</c>, <c>service-bus</c>…), from the catalogue. Null for a rule or an agent, or when the catalogue has no component for the entity.</param>
+/// <param name="Type"><c>approval</c> for a replay waiting for yes or no, <c>handOff</c> for an attempt with no recorded answer; null for a rule or an agent.</param>
+/// <param name="Family">The stop reason's family in camelCase (<c>policyBlocked</c>…), looked up from <paramref name="ReasonCode"/>; null for a code this version does not know. Never stored.</param>
 public sealed record PendingWorkItem(
     string Kind, string Id, Guid? EntryId, string? AgentId, long? DlqMessageId, Guid? NamespaceId, string? NamespaceName,
     string? Provider, string? Environment, string? Entity, string? DeadLetterReason, long? RuleId, string? RuleName,
-    string ReasonCode, string Reason, DateTimeOffset Since);
+    string ReasonCode, string Reason, DateTimeOffset Since,
+    string? ComponentKey = null, string? Type = null, string? Family = null);
 
 /// <summary>A count per cloud — "2 waiting, both on AWS".</summary>
 public sealed record PendingWorkProviderCount(string Provider, int Count);

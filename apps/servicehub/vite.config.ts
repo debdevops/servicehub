@@ -13,6 +13,10 @@ const appVersion = fs.readFileSync(resolve(import.meta.dirname, '../../.version'
 // in production they are the same origin anyway (ADR-0014 D3).
 const apiProxyTarget = process.env.VITE_PROXY_TARGET ?? 'http://localhost:5153'
 
+// ServiceHub Bot (`servicehub-bot/`), started by ./run.sh beside the API. Development only: the app asks `/bot` for nothing
+// unless run.sh also set VITE_SERVICEHUB_BOT=true, so this proxy is idle everywhere else.
+const botProxyTarget = process.env.VITE_BOT_PROXY_TARGET ?? 'http://127.0.0.1:5160'
+
 // The public demo page (`VITE_DEMO_ONLY=true`) is a client-rendered app, so a crawler or link-preview bot that does not run
 // JavaScript sees an empty page. For that build only, give <head> a real title, description, Open Graph / Twitter tags and a
 // canonical URL, and put a short plain-text description inside <noscript>. The real app's index.html is not touched.
@@ -28,6 +32,23 @@ const demoPageMeta = (): Plugin => ({
     handler(html) {
       if (process.env.VITE_DEMO_ONLY !== 'true') return html
       const image = `${DEMO_URL}og-image.png`
+      const jsonLd = JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'SoftwareApplication',
+        name: 'ServiceHub',
+        applicationCategory: 'DeveloperApplication',
+        operatingSystem: 'Windows, macOS, Linux, Docker',
+        description: DEMO_DESCRIPTION,
+        url: DEMO_URL,
+        image,
+        license: 'https://opensource.org/licenses/MIT',
+        isAccessibleForFree: true,
+        offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+        codeRepository: 'https://github.com/debdevops/servicehub',
+        sameAs: ['https://github.com/debdevops/servicehub'],
+        keywords:
+          'dead-letter queue, DLQ replay, Azure Service Bus, AWS SQS, AWS SNS, Google Pub/Sub, message recovery, self-hosted',
+      })
       const head = [
         `<link rel="canonical" href="${DEMO_URL}" />`,
         `<meta property="og:type" content="website" />`,
@@ -40,6 +61,7 @@ const demoPageMeta = (): Plugin => ({
         `<meta name="twitter:title" content="${DEMO_TITLE}" />`,
         `<meta name="twitter:description" content="${DEMO_DESCRIPTION}" />`,
         `<meta name="twitter:image" content="${image}" />`,
+        `<script type="application/ld+json">${jsonLd}</script>`,
       ].join('\n    ')
       const noscript =
         '<noscript><h1>ServiceHub demo</h1><p>' + DEMO_DESCRIPTION + '</p>' +
@@ -76,6 +98,7 @@ export default defineConfig({
     proxy: {
       '/api': { target: apiProxyTarget, changeOrigin: true },
       '/health': { target: apiProxyTarget, changeOrigin: true },
+      '/bot': { target: botProxyTarget },
     },
   },
 
@@ -110,6 +133,9 @@ export default defineConfig({
     include: ['../../tests/web/unit/**/*.test.{ts,tsx}'],
     exclude: ['node_modules/**'],
     setupFiles: ['../../tests/web/support/setup.ts'],
+    // The default is 5 s. A whole screen rendered and then scanned by axe takes far longer when ~100 files run in parallel under coverage,
+    // and a timeout there says nothing about the screen (found 2026-10-18: two unrelated tests timed out only in the full run).
+    testTimeout: 20_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],

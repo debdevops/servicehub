@@ -1,13 +1,13 @@
 {
   "name": "servicehub",
   "private": true,
-  "version": "4.2.1",
+  "version": "5.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "build:demo": "tsc -b && VITE_DEMO_ONLY=true VITE_BASE=${VITE_BASE:-/servicehub/} vite build --outDir dist-demo --emptyOutDir && cp dist-demo/index.html dist-demo/404.html && rm -f dist-demo/robots.txt dist-demo/sitemap.xml && cp ../../llms.txt dist-demo/llms.txt && cp ../../docs/screenshots/readme/home-all.png dist-demo/og-image.png",
+    "build:demo": "tsc -b && VITE_DEMO_ONLY=true VITE_BASE=${VITE_BASE:-/servicehub/} vite build --outDir dist-demo --emptyOutDir && cp dist-demo/index.html dist-demo/404.html && cp public-demo/robots.txt public-demo/sitemap.xml dist-demo/ && cp ../../llms.txt dist-demo/llms.txt && cp ../../docs/screenshots/readme/home-all.png dist-demo/og-image.png",
     "lint": "eslint . && npm run lint:tests",
     "lint:tests": "cd ../../tests && eslint -c eslint.config.mjs web e2e",
     "typecheck": "tsc -b && tsc -b tsconfig.tests.json tsconfig.e2e.json",
@@ -39,7 +39,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
-    "@vitest/coverage-v8": "^4.1.1",
+    "@vitest/coverage-v8": "^4.1.12",
     "axe-core": "^4.13.0",
     "eslint": "^9.17.0",
     "eslint-plugin-react-hooks": "^5.1.0",
@@ -49,6 +49,6 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.57.2",
     "vite": "^8.0.9",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.12"
   }
 }

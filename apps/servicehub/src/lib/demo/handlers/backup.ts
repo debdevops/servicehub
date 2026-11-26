@@ -14,7 +14,9 @@ export const backup: readonly Route[] = [
   })],
   ['get', /^\/admin\/backup\/([^/]+)\/check$/, (m): RestoreCheck => ({ backupId: decodeURIComponent(m[1]), canRestore: false, checks: [{ name: 'Demo', passed: false, detail: NO_DATABASE }] })],
   ['get', /^\/admin\/backup\/([^/]+)\/download$/, () => refuse(409, 'demo_no_database', NO_DATABASE)],
+  ['get', /^\/admin\/backup\/([^/]+)\/export$/, () => refuse(409, 'demo_no_database', NO_DATABASE)],
   ['post', /^\/admin\/backup$/, () => refuse(409, 'demo_no_database', NO_DATABASE)],
+  ['post', /^\/admin\/backup\/(start-fresh|import)$/, () => refuse(409, 'demo_no_database', NO_DATABASE)],
   ['post', /^\/admin\/backup\/([^/]+)\/restore$/, () => refuse(409, 'demo_no_database', NO_DATABASE)],
   ['delete', /^\/admin\/backup\/pending$/, () => refuse(409, 'demo_no_database', NO_DATABASE)],
 ]

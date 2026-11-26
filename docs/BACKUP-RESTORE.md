@@ -79,13 +79,37 @@ Restore **stages** a backup and applies it at the **next start**; ServiceHub nev
    A restore waiting for the next start shows in the list (`pending`) and can be withdrawn: *Cancel the restore*, or `DELETE /api/v1/admin/backup/pending` (same intent header).
 2. **Restart ServiceHub.** At start it moves the current database aside as `servicehub.db.before-restore-<timestamp>` (with its `-wal`/`-shm` files) and puts
    the backup in place. **Everything recorded since that backup is replaced** — keep the moved-aside file until you are sure.
-3. Check `/health/ready`, that your namespaces are there, and that the Recovery Ledger's chain still verifies (`GET /api/v1/recovery/chain` → `isValid: true`).
+3. Check `/health/ready`, that your namespaces are there, and that the evidence ledger's chain still verifies (`GET /api/v1/recovery/chain` → `isValid: true`).
 
 **Restoring onto a new server, or when ServiceHub cannot start:** stop it, copy the downloaded `servicehub-dlq.db` over `<data directory>/servicehub.db`, delete any
 `servicehub.db-wal` and `servicehub.db-shm` beside it, and start. Do the encryption-key comparison by hand first (manifest fingerprint vs. the server's; the
 Settings → *Access & security* panel shows the current one) — this path skips the app's checks.
 
-## 4. What this does not do
+## 4. Start fresh — and come back later
+
+*Settings → Backup → Start fresh…* (or `POST /api/v1/admin/backup/start-fresh` with intent `start-fresh` and `{"confirm":"START FRESH"}`) makes ServiceHub
+begin again as a new installation, **without losing anything**:
+
+1. It takes a backup of everything it holds now. **If that backup fails, nothing is staged** — a fresh start is only ever undoable because of it.
+2. At the **next start**, the database (with its `-wal`/`-shm`) is moved aside as `servicehub.db.before-fresh-<timestamp>` and the migrations create an empty one.
+   Your `backups` folder and the encryption key (configuration, not data) are untouched.
+3. Later, restore that backup — or any older one — from the same list (section 3). It was made with the same key, so its saved connections open.
+
+Until the restart nothing changes, and *Cancel the fresh start* (`DELETE /api/v1/admin/backup/pending`) withdraws it. A restore and a fresh start are never both
+waiting: staging one replaces the other.
+
+**A restore backs up first too.** Staging a restore takes a backup of the current state before it is staged (and refuses if that fails), so a restore can be undone
+from the list, not only from the moved-aside file. That backup is the newest one, so `Backup:RetentionCount` pruning will not remove it first.
+
+## 5. Moving a backup to another server
+
+*Export* on a backup downloads one `.zip` holding `manifest.json` and the database (`GET /api/v1/admin/backup/<id>/export`). On the other server, *Import a backup…*
+(`POST /api/v1/admin/backup/import`, intent `import-backup`, multipart field `file`) proves the database is the one the manifest checksummed, writes at most the
+size the manifest declares, and keeps it as a new backup called `imported-<timestamp>`. Importing changes nothing that is running; restoring it is the separate,
+confirmed step in section 3 — with the same five checks, including the encryption-key fingerprint. **Bring the encryption key to the new server first**, or the
+key check fails and says so. A zip that is not a ServiceHub export, or whose database was changed after export, is refused and leaves nothing behind.
+
+## 6. What this does not do
 
 - No off-host shipping (S3, blob storage) — moving backups elsewhere is yours to arrange.
 - No continuous or point-in-time recovery — backups are periodic snapshots.

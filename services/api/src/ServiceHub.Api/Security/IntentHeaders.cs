@@ -58,17 +58,35 @@ public static class IntentHeaders
     /// <summary>Intent for removing a notification channel.</summary>
     public const string RemoveChannel = "remove-channel";
 
+    /// <summary>Intent for switching a notification channel on or off.</summary>
+    public const string SwitchChannel = "switch-channel";
+
+    /// <summary>Intent for sending a test message to a notification channel.</summary>
+    public const string TestChannel = "test-channel";
+
     /// <summary>Intent for switching emergency stop on or off.</summary>
     public const string EmergencyStop = "emergency-stop";
 
     /// <summary>Intent for purging (deleting for good) one dead letter.</summary>
     public const string PurgeMessage = "purge-message";
 
+    /// <summary>Intent for asking a cloud to redrive one failed run of a component that is not a message store.</summary>
+    public const string RedriveExecution = "redrive-execution";
+
     /// <summary>Intent for sending one new message.</summary>
     public const string SendMessage = "send-message";
 
     /// <summary>Intent for turning a cloud's DLQ observer on or off, or changing where its log lives.</summary>
     public const string ConfigureDlqObserver = "configure-dlq-observer";
+
+    /// <summary>Declare whether ServiceHub may send through a connection.</summary>
+    public const string DeclareCanSend = "declare-can-send";
+
+    /// <summary>Choose which notification channel is told about a connection.</summary>
+    public const string SetOwnerChannel = "set-owner-channel";
+
+    /// <summary>Intent for ticking or unticking a component on a connection (Add a component).</summary>
+    public const string ManageComponents = "manage-components";
 
     /// <summary>Intent for re-signing a namespace's dead letters by error message — it rewrites signature identity, so it must be meant.</summary>
     public const string ResignSignatures = "resign-signatures";
@@ -78,6 +96,12 @@ public static class IntentHeaders
 
     /// <summary>Intent for staging a backup to be restored at the next start.</summary>
     public const string RestoreBackup = "restore-backup";
+
+    /// <summary>Intent for staging a fresh start: the current database is set aside at the next start and an empty one begins.</summary>
+    public const string StartFresh = "start-fresh";
+
+    /// <summary>Intent for bringing a backup file from elsewhere into the backups folder.</summary>
+    public const string ImportBackup = "import-backup";
 
     /// <summary>Intent for making an Auto Replay rule — it starts on, so it hands a machine the right to replay.</summary>
     public const string CreateRule = "create-rule";

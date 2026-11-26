@@ -21,6 +21,7 @@ namespace ServiceHub.Core.DTOs.Responses;
 /// <param name="ApplicationProperties">Application properties, or null.</param>
 /// <param name="SizeInBytes">Size on the wire.</param>
 /// <param name="IsFromDeadLetter">Whether it was peeked from a dead-letter queue.</param>
+/// <param name="IsDeferred">Whether a consumer deferred it: set aside to be received later by its sequence number (Service Bus). A deferred message is counted as active by the cloud.</param>
 public sealed record MessageResponse(
     string MessageId,
     long SequenceNumber,
@@ -35,7 +36,8 @@ public sealed record MessageResponse(
     string? DeadLetterErrorDescription,
     IReadOnlyDictionary<string, object>? ApplicationProperties,
     long SizeInBytes,
-    bool IsFromDeadLetter);
+    bool IsFromDeadLetter,
+    bool IsDeferred = false);
 
 /// <summary>How a peek was paged.</summary>
 /// <param name="Requested">How many were asked for (1–100).</param>

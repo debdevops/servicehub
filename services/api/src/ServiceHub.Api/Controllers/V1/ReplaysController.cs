@@ -53,11 +53,9 @@ public sealed class ReplaysController : ApiControllerBase
             return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "'ending' must be fixed, watching, returned, unproven or notsent; 'by' people or autonomous; 'window' 24h, 7d, 30d or all.");
         }
 
-        if (namespaceId is null && provider is null && dlqMessageId is null)
-        {
-            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed,
-                "Say which replays: give a 'namespaceId', a 'provider', or a 'dlqMessageId'.");
-        }
+        // No namespace, cloud or message given means every connection the caller can see: the all-clouds Replay history page asks exactly
+        // that. It used to be refused with a 400, so that page showed nothing on a real server (found live 2026-11-10; the demo answered).
+        // The list below is still cut down to the caller's own visible connections, so nothing wider is ever returned.
 
         if (page is < 1 || pageSize is < 1 or > 100)
         {
@@ -81,7 +79,7 @@ public sealed class ReplaysController : ApiControllerBase
             candidates = candidates.Where(n => n.Id == id);
             if (!candidates.Any())
             {
-                return Problem(StatusCodes.Status404NotFound, ErrorCodes.Namespace.NotFound, $"Namespace with ID '{id}' was not found.");
+                return Problem(StatusCodes.Status404NotFound, ErrorCodes.Namespace.NotFound, $"Connection with ID '{id}' was not found.");
             }
         }
 

@@ -53,6 +53,12 @@ public interface IRecoveryLedger
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// When the cloud last accepted a request to move this source item on (an entry that closed <c>Unverified</c> for it), or null when it
+    /// never did. Read-only; used to warn before a second request on the same run, never to block one.
+    /// </summary>
+    Task<DateTimeOffset?> GetLastAcceptedRequestAtAsync(string ownerId, Guid namespaceId, string sourceMessageId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Settles the entries a restart left behind. An entry still <c>Executing</c> that began before
     /// <paramref name="processStartedAt"/> cannot belong to a live call (one instance runs at a time, and nothing from
     /// before this process started is still running), so it becomes <c>ExecutionUnknown</c> — never success, never failure —
@@ -149,6 +155,14 @@ public interface IRecoveryLedger
     Task<Result<AutonomyGrant>> RecordAutonomyGrantTransitionAsync(
         string ownerId, string signatureHash, Enums.RecoveryOperationKind actionKind,
         Enums.AutonomyLevel previousLevel, Enums.AutonomyLevel newLevel, string reason, string? evidenceJson,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Stores, or clears with <see langword="null"/>, the fingerprint of the settings a grant was earned under (plan G2). Not a
+    /// transition: the level and the chain are untouched. Does nothing when there is no grant.
+    /// </summary>
+    Task SetAutonomyGrantPreconditionsAsync(
+        string ownerId, string signatureHash, Enums.RecoveryOperationKind actionKind, string? preconditionsHash,
         CancellationToken cancellationToken = default);
 
     /// <summary>

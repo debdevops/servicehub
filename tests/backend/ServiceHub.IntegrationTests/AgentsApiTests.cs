@@ -38,15 +38,15 @@ public sealed class AgentsApiTests
         // Nothing is connected here, so only the agents that matter whatever is connected run. The ones that need a cloud ServiceHub
         // watches on its own, or one that can prove a fix held, are off and not listed — the host decides on its first pass.
         List<JsonElement> agents = [];
-        for (var i = 0; i < 100 && agents.Count != 3; i++)
+        for (var i = 0; i < 100 && agents.Count != 4; i++)
         {
             agents = (await Json(await client.GetAsync("/api/v1/agents"))).EnumerateArray().ToList();
-            if (agents.Count != 3) await Task.Delay(50);
+            if (agents.Count != 4) await Task.Delay(50);
         }
 
         agents.Select(a => a.GetProperty("id").GetString()).Should().BeEquivalentTo(
-            ["recovery-verification", "bulk-replay", "auto-replay"],
-            "the screen can only show what runs — and an agent no connected cloud gives anything to do does not (Auto Replay is always kept)");
+            ["recovery-verification", "bulk-replay", "auto-replay", "health"],
+            "the screen can only show what runs — and an agent no connected cloud gives anything to do does not (Auto Replay and the Health Keeper are always kept: ServiceHub watching itself needs no cloud)");
         (await Json(await client.GetAsync("/api/v1/agents/dormant"))).EnumerateArray().Select(d => d.GetProperty("id").GetString()).Should().BeEquivalentTo(
             ["dlq-monitor", "autonomy-evaluation", "dead-letter-view", "insights-anomaly", "insights-backlog", "insights-correlation", "insights-narration"],
             "the page can say which agents are off, and why");

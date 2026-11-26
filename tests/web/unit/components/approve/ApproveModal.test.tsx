@@ -145,25 +145,29 @@ describe('Approve and Decline', () => {
     expect(sent.closest('[role=status]')).not.toBeNull() // the result is announced, not only drawn (6.6)
   })
 
-  it('pages the waiting messages 10 at a time, lets you choose 20 or 50, and select all covers every page', async () => {
-    const many = Array.from({ length: 30 }, (_, i) => ({ ...item(`e${i}`, 'orders-sqs'), dlqMessageId: null }))
-    vi.mocked(api.fetchPendingWork).mockResolvedValue({ items: many, total: 30, byProvider: [], agents: 0 })
-    open()
-    expect(await screen.findByText('1–10 of 30')).toBeInTheDocument()
-    expect(screen.getAllByRole('checkbox', { name: 'Include orders-sqs' })).toHaveLength(10)
-    expect(screen.getByRole('button', { name: /Approve 30 replays/ })).toBeEnabled()
+  it('pages the waiting messages 25 at a time, lets you choose 10 or 50, and select all covers every page', async () => {
+    const many = Array.from({ length: 60 }, (_, i) => ({ ...item(`e${i}`, 'orders-sqs'), dlqMessageId: null }))
+    vi.mocked(api.fetchPendingWork).mockResolvedValue({ items: many, total: 60, byProvider: [], agents: 0 })
+    try {
+      open()
+      expect(await screen.findByText('1–25 of 60')).toBeInTheDocument()
+      expect(screen.getAllByRole('checkbox', { name: 'Include orders-sqs' })).toHaveLength(25)
+      expect(screen.getByRole('button', { name: /Approve 60 replays/ })).toBeEnabled()
 
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Select all 30 waiting replays' }))
-    expect(screen.getByRole('button', { name: /Approve 0 replays/ })).toBeDisabled()
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Select all 30 waiting replays' }))
-    expect(screen.getByRole('button', { name: /Approve 30 replays/ })).toBeEnabled()
+      await userEvent.click(screen.getByRole('checkbox', { name: 'Select all 60 waiting replays' }))
+      expect(screen.getByRole('button', { name: /Approve 0 replays/ })).toBeDisabled()
+      await userEvent.click(screen.getByRole('checkbox', { name: 'Select all 60 waiting replays' }))
+      expect(screen.getByRole('button', { name: /Approve 60 replays/ })).toBeEnabled()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Next page' }))
-    expect(screen.getByText('11–20 of 30')).toBeInTheDocument()
-    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument()
-    await choose(screen.getByLabelText('Rows per page'), '20')
-    expect(screen.getByText('1–20 of 30')).toBeInTheDocument()
-    expect(screen.getAllByRole('checkbox', { name: 'Include orders-sqs' })).toHaveLength(20)
+      await userEvent.click(screen.getByRole('button', { name: 'Next page' }))
+      expect(screen.getByText('26–50 of 60')).toBeInTheDocument()
+      expect(screen.getByText('Page 2 of 3')).toBeInTheDocument()
+      await choose(screen.getByLabelText('Rows per page'), '50')
+      expect(screen.getByText('1–50 of 60')).toBeInTheDocument()
+      expect(screen.getAllByRole('checkbox', { name: 'Include orders-sqs' })).toHaveLength(50)
+    } finally {
+      localStorage.removeItem('servicehub.pageSize') // the choice is remembered across grids; it must not leak into the next test
+    }
   })
 
   it('opens the message when its row is clicked, and shows the body laid out, then the properties and the delivery facts', async () => {
@@ -226,6 +230,22 @@ describe('Approve and Decline', () => {
     const done = await screen.findByText(/Declined 2 replays\./)
     expect(done.closest('[role=status]')).not.toBeNull() // and so is the decline (6.6)
     expect(screen.getByRole('status')).toHaveTextContent('still in the dead-letter queue')
+  })
+
+  it('opened on one row, still says how many OTHER replays wait after it is declined (found live: "Nothing else is waiting" with 9 held)', async () => {
+    let declined = false
+    vi.mocked(api.fetchPendingWork).mockImplementation(async () => (declined
+      ? { items: [item('e2', 'payments-sqs')], total: 1, byProvider: [], agents: 0 }
+      : { items: [item('e1', 'orders-sqs'), item('e2', 'payments-sqs')], total: 2, byProvider: [], agents: 0 }))
+    vi.mocked(api.declinePending).mockImplementation(async () => { declined = true; return {} as never })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={['/?modal=approve&entry=e1']}><ApproveModal entry={{} as never} close={close} /></MemoryRouter></QueryClientProvider>)
+    await userEvent.click(await screen.findByRole('button', { name: 'Decline…' }))
+    await userEvent.type(screen.getByLabelText(/Why not/), 'Downstream still down')
+    await userEvent.click(screen.getByRole('button', { name: 'Decline 1 replay' }))
+    await screen.findByText(/Declined 1 replay\./)
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('1 replay is still waiting for you'))
+    expect(screen.getByRole('status')).not.toHaveTextContent('Nothing else is waiting')
   })
 
   it('Go back from Decline returns to Approve without changing anything', async () => {

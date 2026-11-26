@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using ServiceHub.Api.Security;
+using ServiceHub.Core.Components;
 using ServiceHub.Core.Constants;
 using ServiceHub.Core.DTOs.Requests;
 using ServiceHub.Core.DTOs.Responses;
@@ -38,15 +39,20 @@ public sealed class NamespacesController : ApiControllerBase
     private readonly INamespaceRepository _namespaces;
     private readonly IAuditTrail _audit;
     private readonly ICloudProviderRouter _router;
+    private readonly IComponentSourceRouter _sources;
+    private readonly IComponentRedriveService _redrive;
     private readonly ILogger<NamespacesController> _logger;
 
     /// <summary>Creates the controller.</summary>
     public NamespacesController(
-        INamespaceRepository namespaces, IAuditTrail audit, ICloudProviderRouter router, ILogger<NamespacesController> logger)
+        INamespaceRepository namespaces, IAuditTrail audit, ICloudProviderRouter router, IComponentSourceRouter sources, IComponentRedriveService redrive,
+        ILogger<NamespacesController> logger)
     {
+        _redrive = redrive ?? throw new ArgumentNullException(nameof(redrive));
         _namespaces = namespaces ?? throw new ArgumentNullException(nameof(namespaces));
         _audit = audit ?? throw new ArgumentNullException(nameof(audit));
         _router = router ?? throw new ArgumentNullException(nameof(router));
+        _sources = sources ?? throw new ArgumentNullException(nameof(sources));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -96,7 +102,7 @@ public sealed class NamespacesController : ApiControllerBase
             return Problem(
                 StatusCodes.Status503ServiceUnavailable,
                 ErrorCodes.CapabilityUnavailable,
-                $"This build of ServiceHub has no adapter for '{request.Provider}', so a namespace on it cannot be connected.");
+                $"This build of ServiceHub has no adapter for '{request.Provider}', so a connection to it cannot be made.");
         }
 
         var credentialCheck = NamespaceCredentials.Validate(request.Provider, request.AuthType, request.ConnectionString);
@@ -118,7 +124,7 @@ public sealed class NamespacesController : ApiControllerBase
         if (pool.Value.Any(n => string.Equals(n.Name, name, StringComparison.Ordinal)))
         {
             return Problem(StatusCodes.Status409Conflict, ErrorCodes.Namespace.AlreadyExists,
-                $"A namespace named '{request.Name}' is already connected.");
+                $"A connection named '{request.Name}' already exists.");
         }
 
         // The hash is taken from the plaintext so the same credential is recognised without ever
@@ -142,6 +148,7 @@ public sealed class NamespacesController : ApiControllerBase
             return Problem(created.Error);
         }
 
+        created.Value.DeclareCanSend(request.CanSend);
         var saved = await _namespaces.AddAsync(created.Value, cancellationToken);
         if (saved.IsFailure)
         {
@@ -153,6 +160,104 @@ public sealed class NamespacesController : ApiControllerBase
 
         _logger.LogInformation("Namespace {NamespaceId} connected", created.Value.Id);
         return CreatedAtAction(nameof(Get), new { id = created.Value.Id }, ToResponse(created.Value));
+    }
+
+    /// <summary>The body of <c>PUT .../can-send</c>.</summary>
+    /// <param name="CanSend">False is read-only; true is read and send; null clears the declaration (treated as may send).</param>
+    public sealed record DeclareCanSendRequest(bool? CanSend);
+
+    /// <summary>
+    /// Says whether ServiceHub may send through this connection (C3). A cloud cannot always be asked what a credential may do, so
+    /// the person declares it; a read-only connection refuses replay and manual Send. Requires the <c>declare-can-send</c> intent
+    /// header and the Admin role for this namespace.
+    /// </summary>
+    [HttpPut("{id:guid}/can-send")]
+    [ProducesResponseType(typeof(NamespaceResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
+    public async Task<IActionResult> DeclareCanSend(Guid id, [FromBody] DeclareCanSendRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (!IntentHeaders.Declares(Request, IntentHeaders.DeclareCanSend))
+        {
+            return Problem(
+                StatusCodes.Status428PreconditionRequired,
+                ErrorCodes.IntentRequired,
+                IntentHeaders.MissingDetail("say whether this connection may send", IntentHeaders.DeclareCanSend));
+        }
+
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        var ns = found.Value;
+        if (await DeniedUnlessAsync(GovernanceRole.Admin, id, null, "say whether this connection may send", cancellationToken) is { } denied) return denied;
+
+        ns.DeclareCanSend(request.CanSend);
+        var saved = await _namespaces.UpdateAsync(ns, cancellationToken);
+        if (saved.IsFailure)
+        {
+            await RecordAsync(AuditActions.NamespaceDeclareCanSend, AuditActions.Failure, ns, saved.Error.Message, cancellationToken);
+            return Problem(saved.Error);
+        }
+
+        await RecordAsync(AuditActions.NamespaceDeclareCanSend, AuditActions.Success, ns, null, cancellationToken);
+        return Ok(ToResponse(ns));
+    }
+
+    /// <summary>The body of <c>PUT .../owner-channel</c>.</summary>
+    /// <param name="ChannelId">The notification channel to tell about this connection; null means every enabled channel.</param>
+    public sealed record SetOwnerChannelRequest(Guid? ChannelId);
+
+    /// <summary>
+    /// Chooses the one notification channel that is told about this connection (G7). Needs the <c>set-owner-channel</c> intent
+    /// header and the Admin role for this namespace; the channel must be one of this owner's.
+    /// </summary>
+    [HttpPut("{id:guid}/owner-channel")]
+    [ProducesResponseType(typeof(NamespaceResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
+    public async Task<IActionResult> SetOwnerChannel(
+        Guid id, [FromBody] SetOwnerChannelRequest request, [FromServices] ServiceHubDbContext db, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(db);
+        if (!IntentHeaders.Declares(Request, IntentHeaders.SetOwnerChannel))
+        {
+            return Problem(
+                StatusCodes.Status428PreconditionRequired,
+                ErrorCodes.IntentRequired,
+                IntentHeaders.MissingDetail("choose who is told about this connection", IntentHeaders.SetOwnerChannel));
+        }
+
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        var ns = found.Value;
+        if (await DeniedUnlessAsync(GovernanceRole.Admin, id, null, "choose who is told about this connection", cancellationToken) is { } denied) return denied;
+
+        if (request.ChannelId is { } channelId
+            && !await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.AnyAsync(
+                db.NotificationChannels, c => c.Id == channelId && c.OwnerId == OwnerId, cancellationToken))
+        {
+            return Problem(StatusCodes.Status404NotFound, ErrorCodes.NotFound, "That notification channel was not found.");
+        }
+
+        ns.AssignOwnerChannel(request.ChannelId);
+        var saved = await _namespaces.UpdateAsync(ns, cancellationToken);
+        if (saved.IsFailure)
+        {
+            await RecordAsync(AuditActions.NamespaceSetOwnerChannel, AuditActions.Failure, ns, saved.Error.Message, cancellationToken);
+            return Problem(saved.Error);
+        }
+
+        await RecordAsync(AuditActions.NamespaceSetOwnerChannel, AuditActions.Success, ns, null, cancellationToken);
+        return Ok(ToResponse(ns));
     }
 
     /// <summary>Probes the namespace live and records the outcome. A failed probe is a 200 that says so.</summary>
@@ -174,6 +279,16 @@ public sealed class NamespacesController : ApiControllerBase
         }
 
         var probe = await _router.Resolve(ns.Provider).ValidateConnectionAsync(ns, cancellationToken);
+        if (probe.IsFailure && probe.Error.Code == ErrorCodes.Namespace.ConnectionStringRequired)
+        {
+            // A sign-in connection made only to read components has no message store, so there is nothing for this test to reach. It
+            // used to answer "Connection string is required for ConnectionString authentication" and record a failed test, on a
+            // connection that works (found live 2026-11-10). Nothing is recorded: no test was run.
+            return Ok(new ConnectionTestResponse(false,
+                "Nothing to test here: this connection signs in with your cloud identity and reads components only, so it has no queues or topics. Use Check access on its components instead.",
+                DateTimeOffset.UtcNow));
+        }
+
         ns.RecordConnectionTest(probe.IsSuccess);
 
         try
@@ -583,10 +698,470 @@ public sealed class NamespacesController : ApiControllerBase
                 Kind(e),
                 counts ? e.ActiveMessageCount : null,
                 counts ? e.DeadLetterCount : null,
-                e.DeadLetterTargetName))
+                e.DeadLetterTargetName,
+                counts && capabilities.SupportsTransferDeadLetter ? e.TransferDeadLetterCount : null))
             .ToList();
 
         return Ok(new EntityListResponse(id, items));
+    }
+
+    /// <summary>
+    /// Reads one entity's limits and settings (lock or visibility timeout, time to live, maximum deliveries) from the cloud.
+    /// <c>settings</c> is null when the cloud does not read them for this kind of entity: "not read", never an empty list.
+    /// </summary>
+    [HttpGet("{id:guid}/entities/settings")]
+    [ProducesResponseType(typeof(EntitySettingsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> EntitySettings(Guid id, [FromQuery] string? name, [FromQuery] string? kind, CancellationToken cancellationToken)
+    {
+        var wanted = kind?.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(name) || wanted is null || !EntityKinds.Contains(wanted))
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed,
+                $"'name' is required and 'kind' must be one of: {string.Join(", ", EntityKinds)}.");
+        }
+
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        var ns = found.Value;
+        if (!_router.IsRegistered(ns.Provider))
+        {
+            return NoAdapter(ns);
+        }
+
+        var read = await _router.Resolve(ns.Provider).GetEntitySettingsAsync(ns.Id, name.Trim(), wanted, cancellationToken);
+        if (read.IsFailure)
+        {
+            return Problem(read.Error);
+        }
+
+        return Ok(new EntitySettingsResponse(
+            name.Trim(),
+            wanted,
+            read.Value?.Select(s => new EntitySettingResponse(s.Label, s.Value)).ToList()));
+    }
+
+    /// <summary>
+    /// Whether this connection can read a component that is not a message store (failed runs, failed deliveries), and its places.
+    /// Read-only. When the credential cannot read it, <c>available</c> is false and <c>reason</c> says why.
+    /// </summary>
+    [HttpGet("{id:guid}/components/{componentKey}/source")]
+    [ProducesResponseType(typeof(ComponentSourceResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ComponentSource(Guid id, string componentKey, [FromServices] INamespaceComponentService stored, CancellationToken cancellationToken)
+    {
+        var resolved = await ResolveSourceAsync(id, componentKey, cancellationToken);
+        if (resolved.Failure is not null)
+        {
+            return resolved.Failure;
+        }
+
+        var (ns, source) = (resolved.Namespace!, resolved.Source!);
+        // Opt-in first: an unticked component never reaches the cloud, not even for the access check.
+        if (await NotTickedReasonAsync(ns, componentKey, stored, cancellationToken) is { } off)
+        {
+            return Ok(new ComponentSourceResponse(source.ComponentKey, false, off, source.Capabilities.ReasonInList, []));
+        }
+
+        var access = await source.ValidateAccessAsync(ns, cancellationToken);
+        if (access.IsFailure)
+        {
+            return Ok(new ComponentSourceResponse(source.ComponentKey, false, access.Error.Message, source.Capabilities.ReasonInList, []));
+        }
+
+        var places = await source.ListPlacesAsync(ns, cancellationToken);
+        return places.IsFailure
+            ? Ok(new ComponentSourceResponse(source.ComponentKey, false, places.Error.Message, source.Capabilities.ReasonInList, []))
+            : Ok(new ComponentSourceResponse(
+                source.ComponentKey, true, null, source.Capabilities.ReasonInList,
+                [.. places.Value.Items.Select(p => new SourcePlaceResponse(p.Id, p.Name, p.Kind, p.ConsoleUrl, p.Detail))],
+                places.Value.ReachedLimit, places.Value.Incomplete));
+    }
+
+    // ── Add a component (5.0.0): what can be brought in on a connection, a read-only access check, and ticking ─────────────────────
+    // The listing is a read under components/. Everything that changes a choice lives under enabled-components/, so the rule that every
+    // components/ route is a GET (ComponentModuleTests) stays true.
+
+    /// <summary>
+    /// The components the Add a component dialog lists for this connection: what each is, how it is reached (the connection already
+    /// there, or its own credential), its prerequisites, and whether it is on. Read-only.
+    /// </summary>
+    [HttpGet("{id:guid}/components")]
+    [ProducesResponseType(typeof(ComponentListResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Components(Guid id, [FromServices] INamespaceComponentService stored, CancellationToken cancellationToken)
+    {
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        var ns = found.Value;
+        if (ComponentCatalog.CloudOf(ns.Provider) is not { } cloud)
+        {
+            return Problem(StatusCodes.Status404NotFound, ErrorCodes.NotFound, "No components are listed for this connection's cloud.");
+        }
+
+        var choices = (await stored.ListAsync(OwnerId, id, cancellationToken)).ToDictionary(c => c.ComponentKey, StringComparer.Ordinal);
+        var entries = ComponentAccessRules.Listed(cloud).Select(row => ToEntry(row, ns, choices)).ToList();
+        return Ok(new ComponentListResponse(ns.Id, ns.DisplayName ?? ns.Name, ComponentCatalog.CloudName(cloud), entries));
+    }
+
+    /// <summary>
+    /// Check access: asks the cloud, with list and describe calls only, whether this connection's credential may read the component.
+    /// Nothing is saved and nothing in the cloud is changed. A "no" is a state with the reason, not an error.
+    /// </summary>
+    [HttpPost("{id:guid}/enabled-components/{componentKey}/check")]
+    [ProducesResponseType(typeof(ComponentCheckResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> CheckComponent(Guid id, string componentKey, CancellationToken cancellationToken)
+    {
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        var permissions = ComponentAccessRules.SetupFor(componentKey)?.Permissions ?? [];
+        var source = _sources.Find(componentKey, found.Value.Provider);
+        if (source is null)
+        {
+            return Ok(new ComponentCheckResponse(componentKey, false, "No access check is written for this component yet.", permissions));
+        }
+
+        var access = await source.ValidateAccessAsync(found.Value, cancellationToken);
+        return Ok(new ComponentCheckResponse(componentKey, access.IsSuccess, access.IsSuccess ? null : access.Error.Message, permissions));
+    }
+
+    /// <summary>
+    /// Ticks or unticks one component on this connection. Ticking checks access first and saves nothing if the check fails; unticking
+    /// keeps every record the component produced. Requires the <c>manage-components</c> intent header and the Admin role.
+    /// </summary>
+    [HttpPut("{id:guid}/enabled-components/{componentKey}")]
+    [ProducesResponseType(typeof(ComponentEntryResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status428PreconditionRequired)]
+    public async Task<IActionResult> SetComponent(
+        Guid id, string componentKey, [FromBody] SetComponentRequest request, [FromServices] INamespaceComponentService stored, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (!IntentHeaders.Declares(Request, IntentHeaders.ManageComponents))
+        {
+            return Problem(
+                StatusCodes.Status428PreconditionRequired, ErrorCodes.IntentRequired,
+                IntentHeaders.MissingDetail("add or remove a component", IntentHeaders.ManageComponents));
+        }
+
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        var ns = found.Value;
+        if (await DeniedUnlessAsync(GovernanceRole.Admin, id, null, "add or remove a component", cancellationToken) is { } denied) return denied;
+
+        var cloud = ComponentCatalog.CloudOf(ns.Provider);
+        var row = cloud is { } c ? ComponentAccessRules.Listed(c).FirstOrDefault(r => r.ComponentKey == componentKey) : null;
+        if (row is null)
+        {
+            return Problem(StatusCodes.Status404NotFound, ErrorCodes.NotFound, $"'{componentKey}' is not a component of this connection's cloud.");
+        }
+
+        // Only a component read on demand can be ticked here. A message store is watched on every connection (removing the connection
+        // removes it), and a component nothing reads yet cannot be switched on.
+        // A watched message store can be hidden from ServiceHub and shown again: that is only a saved choice here. Nothing is read, changed or
+        // removed in the cloud, the connection stays, and its history is kept.
+        var hideable = ComponentAccessRules.IsAlwaysOn(row);
+        if (!hideable && (!ComponentAccessRules.ReadsOnDemand(row) || ComponentAccessRules.Of(row) is not (ComponentAccess.SameConnection or ComponentAccess.OwnCredential)))
+        {
+            return Problem(StatusCodes.Status409Conflict, ErrorCodes.CapabilityUnavailable, $"{row.Name} cannot be ticked or unticked here.");
+        }
+
+        if (request.Enabled && !hideable)
+        {
+            var source = _sources.Find(componentKey, ns.Provider);
+            if (source is null)
+            {
+                return Problem(StatusCodes.Status409Conflict, ErrorCodes.CapabilityUnavailable, $"No reader is registered for {row.Name} on this connection.");
+            }
+
+            var access = await source.ValidateAccessAsync(ns, cancellationToken);
+            if (access.IsFailure)
+            {
+                await RecordAsync(AuditActions.ComponentEnable, AuditActions.Failure, ns, $"{row.Name}: {access.Error.Message}", cancellationToken);
+                return Problem(StatusCodes.Status409Conflict, ErrorCodes.CapabilityUnavailable, $"Not added. {access.Error.Message}");
+            }
+        }
+
+        var saved = await stored.SetAsync(OwnerId, id, componentKey, request.Enabled, Actor.Identity, cancellationToken);
+        if (saved.IsFailure)
+        {
+            await RecordAsync(request.Enabled ? AuditActions.ComponentEnable : AuditActions.ComponentDisable, AuditActions.Failure, ns, saved.Error.Message, cancellationToken);
+            return Problem(saved.Error);
+        }
+
+        await RecordAsync(request.Enabled ? AuditActions.ComponentEnable : AuditActions.ComponentDisable, AuditActions.Success, ns, row.Name, cancellationToken);
+        return Ok(ToEntry(row, ns, new Dictionary<string, NamespaceComponent>(StringComparer.Ordinal) { [componentKey] = saved.Value }));
+    }
+
+    /// <summary>Every component ticked on any connection, for the menu: a read-on-demand component is listed only where someone turned it on.</summary>
+    [HttpGet("components/enabled")]
+    [ProducesResponseType(typeof(IReadOnlyList<EnabledComponentResponse>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> EnabledComponents([FromServices] INamespaceComponentService stored, CancellationToken cancellationToken)
+    {
+        var all = await stored.ListAllAsync(OwnerId, cancellationToken);
+        var namespaces = await _namespaces.GetAllAsync(cancellationToken);
+        if (namespaces.IsFailure)
+        {
+            return Problem(namespaces.Error);
+        }
+
+        var byId = namespaces.Value.ToDictionary(n => n.Id);
+        var enabled = all
+            .Where(c => c.Enabled && byId.ContainsKey(c.NamespaceId))
+            .Select(c => (Row: c, Cloud: ComponentCatalog.CloudOf(byId[c.NamespaceId].Provider)))
+            .Where(x => x.Cloud is not null)
+            // A watched store that was hidden and shown again keeps a saved "on" row. It is already listed from the queue store, so it is not an added component.
+            .Where(x => !ComponentAccessRules.Listed(x.Cloud!.Value).Any(r => r.ComponentKey == x.Row.ComponentKey && ComponentAccessRules.IsAlwaysOn(r)))
+            .Select(x => new EnabledComponentResponse(x.Row.NamespaceId, Camel(x.Cloud!.Value.ToString()), x.Row.ComponentKey))
+            .ToList();
+        return Ok(enabled);
+    }
+
+    /// <summary>Every watched message store a person has hidden from ServiceHub on a connection. Hiding is only a saved choice: nothing changes in the cloud.</summary>
+    [HttpGet("components/hidden")]
+    [ProducesResponseType(typeof(IReadOnlyList<EnabledComponentResponse>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> HiddenComponents([FromServices] INamespaceComponentService stored, CancellationToken cancellationToken)
+    {
+        var all = await stored.ListAllAsync(OwnerId, cancellationToken);
+        var namespaces = await _namespaces.GetAllAsync(cancellationToken);
+        if (namespaces.IsFailure)
+        {
+            return Problem(namespaces.Error);
+        }
+
+        var byId = namespaces.Value.ToDictionary(n => n.Id);
+        var hidden = new List<EnabledComponentResponse>();
+        foreach (var c in all.Where(c => !c.Enabled && byId.ContainsKey(c.NamespaceId)))
+        {
+            var ns = byId[c.NamespaceId];
+            if (ComponentCatalog.CloudOf(ns.Provider) is not { } cloud)
+            {
+                continue;
+            }
+
+            var row = ComponentAccessRules.Listed(cloud).FirstOrDefault(r => r.ComponentKey == c.ComponentKey);
+            if (row is not null && ComponentAccessRules.IsAlwaysOn(row))
+            {
+                hidden.Add(new EnabledComponentResponse(c.NamespaceId, Camel(cloud.ToString()), c.ComponentKey));
+            }
+        }
+
+        return Ok(hidden);
+    }
+
+    /// <summary>Whether a person ticks this component on a connection (a run history read on demand), as opposed to a message store that is always watched.</summary>
+    private static bool IsToggleable(ComponentDescriptor row) =>
+        ComponentAccessRules.ReadsOnDemand(row) && ComponentAccessRules.Of(row) is ComponentAccess.SameConnection or ComponentAccess.OwnCredential;
+
+    /// <summary>
+    /// Why a component a person ticks is off on this connection, or null when it is on (or is not one a person ticks). Unticking means
+    /// ServiceHub neither reads nor acts on it here, so every read and the redrive refuse until it is ticked again.
+    /// </summary>
+    private async Task<string?> NotTickedReasonAsync(Namespace ns, string componentKey, INamespaceComponentService stored, CancellationToken cancellationToken)
+    {
+        if (ComponentCatalog.CloudOf(ns.Provider) is not { } cloud)
+        {
+            return null;
+        }
+
+        var row = ComponentAccessRules.Listed(cloud).FirstOrDefault(r => string.Equals(r.ComponentKey, componentKey, StringComparison.Ordinal));
+        if (row is null || !IsToggleable(row))
+        {
+            return null;
+        }
+
+        var choices = await stored.ListAsync(OwnerId, ns.Id, cancellationToken);
+        return choices.Any(c => c.ComponentKey == row.ComponentKey && c.Enabled)
+            ? null
+            : $"{row.Name} is not added on this connection. Add it under Add a component first: ServiceHub reads nothing and changes nothing here until then.";
+    }
+
+    private static string Camel(string word) => char.ToLowerInvariant(word[0]) + word[1..];
+
+    private static ComponentEntryResponse ToEntry(ComponentDescriptor row, Namespace ns, IReadOnlyDictionary<string, NamespaceComponent> choices)
+    {
+        var access = ComponentAccessRules.Of(row);
+        var setup = ComponentAccessRules.SetupFor(row.ComponentKey);
+        var alwaysOn = ComponentAccessRules.IsAlwaysOn(row);
+        var toggleable = IsToggleable(row);
+        var state = access switch
+        {
+            ComponentAccess.Included => "included",
+            ComponentAccess.NotBuildable => "unavailable",
+            _ when alwaysOn => choices.TryGetValue(row.ComponentKey, out var h) && !h.Enabled ? "hidden" : "alwaysOn",
+            _ => choices.TryGetValue(row.ComponentKey, out var c) && c.Enabled ? "on" : "off",
+        };
+        return new ComponentEntryResponse(
+            row.ComponentKey, row.Name, row.StuckPlace, Camel(row.Status.ToString()),
+            ComponentCatalog.StatusWords(row.Status), Camel(access.ToString()), state, toggleable || alwaysOn,
+            row.Note, setup?.What, setup?.Appears, setup?.Needs, setup?.Steps ?? [], [.. (setup?.Snippets ?? []).Select(x => new SetupSnippetResponse(x.Label, x.Text))],
+            setup?.Permissions ?? [], setup?.IncludedIn);
+    }
+
+    /// <summary>Failed runs or deliveries of a component that is not a message store, newest first and capped. Read-only.</summary>
+    [HttpGet("{id:guid}/components/{componentKey}/failed")]
+    [ProducesResponseType(typeof(FailedItemsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ComponentFailed(Guid id, string componentKey, [FromQuery] string? place, [FromServices] INamespaceComponentService stored, CancellationToken cancellationToken)
+    {
+        var resolved = await ResolveSourceAsync(id, componentKey, cancellationToken);
+        if (resolved.Failure is not null)
+        {
+            return resolved.Failure;
+        }
+
+        if (await NotTickedReasonAsync(resolved.Namespace!, componentKey, stored, cancellationToken) is { } off)
+        {
+            return Problem(StatusCodes.Status409Conflict, ErrorCodes.ComponentNotEnabled, off);
+        }
+
+        var read = await resolved.Source!.ListFailedAsync(resolved.Namespace!, string.IsNullOrWhiteSpace(place) ? null : place, cancellationToken);
+        return read.IsFailure
+            ? Problem(read.Error)
+            : Ok(new FailedItemsResponse(resolved.Source.ComponentKey, [.. read.Value.Items.Select(ToResponse)], read.Value.ReachedLimit, read.Value.Incomplete));
+    }
+
+    /// <summary>One failed item in full, redacted. Read-only. The id is a query value because clouds use paths and colons in theirs.</summary>
+    [HttpGet("{id:guid}/components/{componentKey}/failed/detail")]
+    [ProducesResponseType(typeof(FailedItemDetailResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ComponentFailedDetail(Guid id, string componentKey, [FromQuery] string? itemId, [FromServices] INamespaceComponentService stored, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(itemId))
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "'itemId' is required.");
+        }
+
+        var resolved = await ResolveSourceAsync(id, componentKey, cancellationToken);
+        if (resolved.Failure is not null)
+        {
+            return resolved.Failure;
+        }
+
+        if (await NotTickedReasonAsync(resolved.Namespace!, componentKey, stored, cancellationToken) is { } off)
+        {
+            return Problem(StatusCodes.Status409Conflict, ErrorCodes.ComponentNotEnabled, off);
+        }
+
+        var read = await resolved.Source!.GetFailedAsync(resolved.Namespace!, itemId.Trim(), cancellationToken);
+        if (read.IsFailure)
+        {
+            return Problem(read.Error);
+        }
+
+        return Ok(read.Value is null
+            ? new FailedItemDetailResponse(null, null, null, null, null)
+            : new FailedItemDetailResponse(ToResponse(read.Value.Item), read.Value.Reason, read.Value.Cause, read.Value.StartedUtc, read.Value.StoppedUtc));
+    }
+
+    /// <summary>
+    /// Whether the gate would let a person ask the cloud to redrive one failed run now, and if not, why. Records nothing and calls no cloud.
+    /// </summary>
+    [HttpGet("{id:guid}/component-redrives/{componentKey}/check")]
+    [ProducesResponseType(typeof(RedriveCheck), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ComponentRedriveCheck(Guid id, string componentKey, [FromQuery] string? itemId, [FromServices] INamespaceComponentService stored, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(itemId))
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "'itemId' is required.");
+        }
+
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        if (await NotTickedReasonAsync(found.Value, componentKey, stored, cancellationToken) is { } off)
+        {
+            return Problem(StatusCodes.Status409Conflict, ErrorCodes.ComponentNotEnabled, off);
+        }
+
+        var check = await _redrive.CheckAsync(found.Value, componentKey, itemId.Trim(), Actor, cancellationToken);
+        return check.IsFailure ? Problem(check.Error) : Ok(check.Value);
+    }
+
+    /// <summary>
+    /// Asks the cloud to redrive one failed run (plan PP5): through the eligibility gate, recorded in the ledger before and after the cloud
+    /// is touched, once, never retried, and only by an Approver. Needs <c>X-ServiceHub-Intent: redrive-execution</c>. The answer says what
+    /// the cloud accepted and nothing more.
+    /// </summary>
+    [HttpPost("{id:guid}/component-redrives/{componentKey}")]
+    [ProducesResponseType(typeof(RedriveOutcome), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ComponentRedrive(Guid id, string componentKey, [FromQuery] string? itemId, [FromServices] INamespaceComponentService stored, CancellationToken cancellationToken)
+    {
+        if (!IntentHeaders.Declares(Request, IntentHeaders.RedriveExecution))
+        {
+            return Problem(
+                StatusCodes.Status400BadRequest, ErrorCodes.IntentRequired,
+                IntentHeaders.MissingDetail("redrive this run", IntentHeaders.RedriveExecution));
+        }
+
+        if (string.IsNullOrWhiteSpace(itemId))
+        {
+            return Problem(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, "'itemId' is required.");
+        }
+
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Problem(found.Error);
+        }
+
+        if (await DeniedUnlessAsync(GovernanceRole.Approver, found.Value.Id, PillarKind.Recover, "redrive this run", cancellationToken) is { } denied) return denied;
+        if (await NotTickedReasonAsync(found.Value, componentKey, stored, cancellationToken) is { } off)
+        {
+            return Problem(StatusCodes.Status409Conflict, ErrorCodes.ComponentNotEnabled, off);
+        }
+
+        var outcome = await _redrive.RequestRedriveAsync(found.Value, componentKey, itemId.Trim(), Actor, IntentHeaders.RedriveExecution, HttpContext.TraceIdentifier, cancellationToken);
+        return outcome.IsFailure ? Problem(outcome.Error) : Ok(outcome.Value);
+    }
+
+    private static FailedItemResponse ToResponse(FailedItem i) =>
+        new(i.Id, i.Place, i.AtUtc, i.Status, i.ReasonCode, i.Summary, i.Copy.ToString().ToLowerInvariant(), i.ConsoleUrl,
+            i.HeldIn is null ? null : new HeldInResponse(i.HeldIn.ComponentKey, i.HeldIn.Entity));
+
+    private readonly record struct ResolvedSource(Namespace? Namespace, IComponentSource? Source, IActionResult? Failure);
+
+    private async Task<ResolvedSource> ResolveSourceAsync(Guid id, string componentKey, CancellationToken cancellationToken)
+    {
+        var found = await GetVisibleNamespaceAsync(_namespaces, id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return new ResolvedSource(null, null, Problem(found.Error));
+        }
+
+        var source = _sources.Find(componentKey, found.Value.Provider);
+        return source is null
+            ? new ResolvedSource(null, null, Problem(StatusCodes.Status404NotFound, ErrorCodes.NotFound, $"No reader is registered for '{componentKey}' on this connection."))
+            : new ResolvedSource(found.Value, source, null);
     }
 
     private async Task<Listing> ListEntitiesAsync(Guid id, CancellationToken cancellationToken)
@@ -656,14 +1231,7 @@ public sealed class NamespacesController : ApiControllerBase
     /// The contract's three words. An adapter may describe an entity in its own service's terms ("sns topic"); the API
     /// answers in queue, topic or subscription — a screen indexes its wording by these and must never meet a fourth.
     /// </summary>
-    internal static string Kind(CloudEntity entity)
-    {
-        var raw = entity.EntityType.Trim().ToLowerInvariant();
-        return raw.Contains("subscription", StringComparison.Ordinal) ? "subscription"
-            : raw.Contains("topic", StringComparison.Ordinal) ? "topic"
-            : raw.Contains("queue", StringComparison.Ordinal) ? "queue"
-            : raw;
-    }
+    internal static string Kind(CloudEntity entity) => CloudEntityKinds.Of(entity);
 
     private NamespaceResponse ToResponse(Namespace ns) => new(
         ns.Id,
@@ -679,7 +1247,9 @@ public sealed class NamespacesController : ApiControllerBase
         ns.CreatedAt,
         ns.LastConnectionTestAt,
         ns.LastConnectionTestSucceeded,
-        _router.IsRegistered(ns.Provider) ? _router.Resolve(ns.Provider).Capabilities : null);
+        _router.IsRegistered(ns.Provider) ? _router.Resolve(ns.Provider).Capabilities : null,
+        ns.CanSend,
+        ns.OwnerChannelId);
 
     private readonly record struct Listing((Namespace Ns, ProviderCapabilities Capabilities, IReadOnlyList<CloudEntity> Entities)? Success, ObjectResult? Failure)
     {

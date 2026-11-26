@@ -33,6 +33,21 @@ export const stateMeaning: Readonly<Record<EntryState, string>> = {
   Declined: 'blocked before any cloud was contacted',
 }
 
+/**
+ * What a state means for a cloud redrive (kind `Redrive`). Queue-replay wording ("replayed", "the dead-letter queue", "the queue stayed
+ * empty") would be false here: a redrive restarts a failed run inside the cloud, and acceptance says nothing about how the run then ends.
+ */
+const redriveMeaning: Readonly<Partial<Record<EntryState, string>>> = {
+  Executing: 'the request to move the run on is in flight',
+  ExecutionFailed: 'nothing was changed — the cloud refused the request, or this connection may not do it',
+  ExecutionUnknown: 'contact was lost, or ServiceHub stopped, before the answer was recorded — whether the cloud took the request is not known; nothing tries again until a person looks',
+  Unverified: 'the cloud accepted the request, but ServiceHub cannot confirm the run then finished fixed',
+}
+
+/** The meaning of a state for an entry of this kind. A kind with no words of its own gets the replay words. */
+export const meaningOf = (state: EntryState, kind?: string): string =>
+  (kind === 'Redrive' ? redriveMeaning[state] : undefined) ?? stateMeaning[state]
+
 /** Tone for a state chip: green only for proof, red for a return or failure, amber for "unproven / unknown". */
 export const stateTone = (s: EntryState): 'good' | 'bad' | 'warn' | 'neutral' =>
   s === 'Recovered' ? 'good' : s === 'Returned' || s === 'ExecutionFailed' ? 'bad' : s === 'Unverified' || s === 'ExecutionUnknown' ? 'warn' : 'neutral'
@@ -53,16 +68,17 @@ function detailOf(json: string | null): Record<string, unknown> {
 }
 
 /** One event as a person reads it: a headline and, when there is one, the fact behind it. */
-export function describeEvent(e: LedgerEvent, cloud: string): { title: string; note: string | null } {
+export function describeEvent(e: LedgerEvent, cloud: string, kind?: string): { title: string; note: string | null } {
   const d = detailOf(e.detail)
+  const redrive = kind === 'Redrive'
   switch (e.eventType) {
     case 'OperationOpened': return { title: 'Decision recorded', note: null }
-    case 'EntryBegun': return { title: 'Replay begun', note: null }
-    case 'ProviderAccepted': return { title: `Sent, and accepted by ${cloud}`, note: null }
+    case 'EntryBegun': return { title: redrive ? 'Request to move the run on' : 'Replay begun', note: null }
+    case 'ProviderAccepted': return { title: redrive ? `${cloud} accepted the request` : `Sent, and accepted by ${cloud}`, note: null }
     case 'ProviderRejected': {
       const code = typeof d.errorCode === 'string' ? d.errorCode : null
       // "Not found" is not a refusal: the cloud was never asked to take it, because the message was not in the dead-letter queue.
-      return /NotFound|NOT_FOUND/.test(code ?? '')
+      return !redrive && /NotFound|NOT_FOUND/.test(code ?? '')
         ? { title: 'Not sent — the message was not found in the dead-letter queue', note: code }
         : { title: `${cloud} rejected it`, note: code }
     }

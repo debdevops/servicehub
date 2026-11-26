@@ -23,6 +23,8 @@ export interface CloudForm {
   /** GCP. */
   readonly gcpProjectId: string
   readonly gcpServiceAccountJson: string
+  /** What ServiceHub may do through this connection. Read-only until the person says otherwise. */
+  readonly canSend: boolean
 }
 
 export const emptyForm = (cloud: CloudProvider): CloudForm => ({
@@ -35,6 +37,7 @@ export const emptyForm = (cloud: CloudProvider): CloudForm => ({
   awsRegion: '',
   gcpProjectId: '',
   gcpServiceAccountJson: '',
+  canSend: false,
 })
 
 export type BuiltInput = { readonly ok: true; readonly input: ConnectNamespaceInput } | { readonly ok: false; readonly problem: string }
@@ -51,7 +54,7 @@ export function azureNamespaceName(connectionString: string): string | null {
 export function buildConnectInput(form: CloudForm): BuiltInput {
   const displayName = form.displayName.trim()
   if (displayName === '') return { ok: false, problem: 'Give this cloud a name so you can tell it apart later.' }
-  const common = { displayName, environment: form.environment }
+  const common = { displayName, environment: form.environment, canSend: form.canSend }
 
   switch (form.cloud) {
     case 'azure': {

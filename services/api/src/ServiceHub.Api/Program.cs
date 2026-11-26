@@ -53,6 +53,7 @@ builder.Services.AddAgent<DeadLetterViewAgent>(); // ADR-0018: idle unless a per
 builder.Services.AddAgent<BulkOperationAgent>();
 builder.Services.AddAgent<ServiceHub.Infrastructure.Rules.AutoReplayAgent>();
 builder.Services.AddAgent<AutonomyEvaluationAgent>();
+builder.Services.AddAgent<HealthAgent>(); // ServiceHub watching itself: rule-based, read-only, tells your channels once per problem
 builder.Services.AddAgent<ServiceHub.Infrastructure.Insights.AnomalyInsightAgent>();
 builder.Services.AddAgent<ServiceHub.Infrastructure.Insights.BacklogInsightAgent>();
 builder.Services.AddAgent<ServiceHub.Infrastructure.Insights.CorrelationInsightAgent>();
@@ -84,6 +85,7 @@ await app.Services.InitializeServiceHubDatabaseAsync().ConfigureAwait(false);
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseMiddleware<HostAllowListMiddleware>(); // refuse a Host that is not ours: DNS rebinding would otherwise make this no-login API reachable from any web page
+app.UseMiddleware<CrossSiteRequestMiddleware>(); // refuse a changing request another website sent through the owner's browser
 
 app.UseExceptionHandler(handler => handler.Run(async context =>
 {

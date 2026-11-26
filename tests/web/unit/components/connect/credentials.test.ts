@@ -22,6 +22,7 @@ describe('buildConnectInput', () => {
         connectionString: azureCs,
         displayName: 'Orders',
         environment: 'uat',
+        canSend: false,
       },
     })
   })

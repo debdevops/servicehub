@@ -170,8 +170,10 @@ function Test-DotnetOk {
   # Run from the API folder so global.json is honoured (it pins the 10.0 SDK).
   if (-not (Have 'dotnet')) { return $false }
   Push-Location (Join-Path $ROOT 'services\api')
-  try { $v = (& dotnet --version 2>$null | Select-Object -First 1) } finally { Pop-Location }
-  if ($LASTEXITCODE -ne 0 -or -not $v) { return $false }
+  # Read all of the output, then take the first line: stopping the pipeline early can leave a bad exit code when output is redirected.
+  try { $out = @(& dotnet --version 2>$null); $code = $LASTEXITCODE } finally { Pop-Location }
+  $v = if ($out.Count -gt 0) { "$($out[0])".Trim() } else { '' }
+  if ($code -ne 0 -or -not $v) { return $false }
   if (($v -split '\.')[0] -ne '10') { return $false }
   $script:DotnetFound = "$v".Trim(); return $true
 }
@@ -225,14 +227,17 @@ function Ensure-Dotnet {
 $script:NodeFound = ''
 # Matches package.json "engines": ^20.19.0 || >=22.12.0 (Vite 7 needs it).
 function Test-NodeVersion([string]$v) {
-  if ($v -notmatch '^v?(\d+)\.(\d+)') { return $false }
-  $ma = [int]$Matches[1]; $mi = [int]$Matches[2]
+  $m = [regex]::Match($v, '^v?(\d+)\.(\d+)')
+  if (-not $m.Success) { return $false }
+  $ma = [int]$m.Groups[1].Value; $mi = [int]$m.Groups[2].Value
   return ($ma -ge 23) -or ($ma -eq 22 -and $mi -ge 12) -or ($ma -eq 20 -and $mi -ge 19)
 }
 function Test-NodeOk {
-  if (-not ((Have 'node') -and (Have 'npm.cmd'))) { return $false }
-  $v = (& node --version 2>$null | Select-Object -First 1)
-  if ($LASTEXITCODE -ne 0 -or -not $v -or -not (Test-NodeVersion "$v")) { return $false }
+  if (-not ((Have 'node') -and ((Have 'npm.cmd') -or (Have 'npm')))) { return $false }
+  $out = @(& node --version 2>$null)
+  $code = $LASTEXITCODE
+  $v = if ($out.Count -gt 0) { "$($out[0])".Trim() } else { '' }
+  if ($code -ne 0 -or -not $v -or -not (Test-NodeVersion $v)) { return $false }
   $script:NodeFound = "$v".Trim(); return $true
 }
 function Use-LocalNode {
@@ -495,6 +500,7 @@ try {
   if ($NEED_WEB) {
     Step "Starting the web server on http://localhost:$WEB_PORT"
     $env:VITE_PROXY_TARGET = "http://localhost:$API_PORT"
+    $env:VITE_SERVICEHUB_BOT = 'false'   # this script does not start ServiceHub Bot, so the help button is not shown
     # Vite is started with node directly rather than through `npm run`, so stopping it is clean.
     $nodeExe = (Get-Command node).Source
     $script:Started += Start-Process -FilePath $nodeExe -PassThru -NoNewWindow -WorkingDirectory (Join-Path $ROOT 'apps\servicehub') `

@@ -30,6 +30,11 @@ public sealed class CloudEntity
     public long DeadLetterCount { get; init; }
 
     /// <summary>
+    /// Gets or sets the number of messages in the transfer dead-letter queue, where the cloud has one (Azure Service Bus); null elsewhere.
+    /// </summary>
+    public long? TransferDeadLetterCount { get; init; }
+
+    /// <summary>
     /// Gets or sets the cloud provider that owns this entity.
     /// </summary>
     public CloudProviderType Provider { get; init; }

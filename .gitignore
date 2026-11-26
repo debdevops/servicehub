@@ -248,6 +248,7 @@ deploy/
 *.dll
 *.pdb
 *.xml
+!apps/servicehub/public-demo/sitemap.xml
 *.sourcelink.json
 project.assets.json
 project.nuget.cache

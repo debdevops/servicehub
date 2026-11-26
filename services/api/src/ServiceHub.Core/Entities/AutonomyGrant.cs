@@ -27,6 +27,13 @@ public sealed class AutonomyGrant
     /// <summary>The currently earned autonomy level for this (owner, signature, action) triple.</summary>
     public required AutonomyLevel CurrentLevel { get; set; }
 
+    /// <summary>
+    /// A fingerprint of the connection settings this trust was earned under (<see cref="Models.TrustPreconditions"/>), stored when the
+    /// grant is promoted. A later change demotes it (plan G2). <see langword="null"/> means it was earned before this column existed
+    /// and is never demoted by it.
+    /// </summary>
+    public string? PreconditionsHash { get; set; }
+
     /// <summary>Informational only — last-evaluated timestamp. Carries no concurrency-safety
     /// role; <see cref="ConcurrencyStamp"/> is the actual optimistic-concurrency token
     /// (roadmap §9.4.4 Correction).</summary>

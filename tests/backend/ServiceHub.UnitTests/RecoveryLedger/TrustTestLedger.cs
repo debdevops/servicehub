@@ -24,6 +24,8 @@ internal sealed class TrustTestLedger(ServiceHubDbContext db)
     public Task<Result<RecoveryLedgerEntry>> RecordExecutionAsync(RecordExecutionRequest request, CancellationToken cancellationToken = default) => Real.RecordExecutionAsync(request, cancellationToken);
     public Task<Result<RecoveryLedgerEntry>> RecordObservationAsync(RecordObservationRequest request, CancellationToken cancellationToken = default) => Real.RecordObservationAsync(request, cancellationToken);
     public Task<AutonomyGrant?> GetAutonomyGrantAsync(string ownerId, string signatureHash, RecoveryOperationKind actionKind, CancellationToken cancellationToken = default) => Real.GetAutonomyGrantAsync(ownerId, signatureHash, actionKind, cancellationToken);
+    public Task SetAutonomyGrantPreconditionsAsync(string ownerId, string signatureHash, RecoveryOperationKind actionKind, string? preconditionsHash, CancellationToken cancellationToken = default) =>
+        Real.SetAutonomyGrantPreconditionsAsync(ownerId, signatureHash, actionKind, preconditionsHash, cancellationToken);
     public Task<Result<AutonomyGrant>> RecordAutonomyGrantTransitionAsync(string ownerId, string signatureHash, RecoveryOperationKind actionKind, AutonomyLevel previousLevel, AutonomyLevel newLevel, string reason, string? evidenceJson, CancellationToken cancellationToken = default) =>
         Real.RecordAutonomyGrantTransitionAsync(ownerId, signatureHash, actionKind, previousLevel, newLevel, reason, evidenceJson, cancellationToken);
 

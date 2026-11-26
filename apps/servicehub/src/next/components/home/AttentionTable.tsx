@@ -1,0 +1,121 @@
+import { useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
+import type { Me } from '../../../lib/api/identity'
+import type { PendingWorkItem } from '../../../lib/api/pendingWork'
+import type { CoverageRow } from '../../../lib/api/coverage'
+import { formatAge } from '../../../lib/format'
+import { permission } from '../../../lib/permissions'
+import { usePagedList } from '../../../hooks/usePagedList'
+import { Pager } from '../../../components/ui/Pager'
+import { cloudLabel } from '../../lib/clouds'
+import { familyWords } from '../../lib/words'
+import { useOwnerWords } from '../../lib/ownerWords'
+import { Th } from '../Tip'
+import { Tip } from '../Tip'
+import { camelBreaks } from '../../lib/camelBreaks'
+
+export type AttentionTab = 'all' | 'approvals' | 'handOffs'
+type Tab = AttentionTab
+// Narrow padding and long names that may break anywhere: eleven columns have to fit a 1366 px window without a side-scroll.
+// Narrow side padding (like the signatures table): eleven columns have to fit a 1280 px window without a side-scroll on any machine's fonts.
+const td = 'px-1.5 py-2.5 align-top text-sm'
+const th = 'px-1.5 py-2 text-left text-xs font-semibold text-[var(--color-text-muted)]'
+const wrap = '[overflow-wrap:anywhere]'
+
+const isMine = (i: PendingWorkItem) => i.kind === 'approval' || i.kind === 'unresolved'
+const typeOf = (i: PendingWorkItem) => i.type ?? (i.kind === 'unresolved' ? 'handOff' : 'approval')
+
+/**
+ * Items that need a person (build-plan unit C1), from the one pending-work read. Review opens the approval dialog and View the
+ * hand-off panel (both are carried in the URL; F-units build them). The owner column says "All channels": a notification channel has
+ * no component field in 5.0.0 (decision F2, option A), so it is not drawn as if each item had its own.
+ */
+export function AttentionTable({ items, coverage, me, showCloud = false, tab: controlledTab, onTab, compact = false, limit, allHref }: {
+  items: readonly PendingWorkItem[]; coverage: readonly CoverageRow[]; me: Me | undefined; showCloud?: boolean
+  /** Home's short form: the columns of the design (Decision, Next action), the newest few rows, and a link to the whole list. */
+  compact?: boolean; limit?: number; allHref?: string
+  /** A page that keeps the tab in its address passes both; Home keeps it here. */
+  tab?: AttentionTab; onTab?: (tab: AttentionTab) => void
+}) {
+  const { pathname } = useLocation()
+  const ownerOf = useOwnerWords()
+  const [ownTab, setOwnTab] = useState<Tab>('all')
+  const tab = controlledTab ?? ownTab
+  const setTab = onTab ?? setOwnTab
+  const mine = items.filter(isMine)
+  const approvals = mine.filter((i) => typeOf(i) === 'approval')
+  const handOffs = mine.filter((i) => typeOf(i) === 'handOff')
+  const { items: paged, pager } = usePagedList(tab === 'approvals' ? approvals : tab === 'handOffs' ? handOffs : mine, tab)
+  const source = tab === 'approvals' ? approvals : tab === 'handOffs' ? handOffs : mine
+  const shown = limit ? source.slice(0, limit) : paged
+  const now = new Date()
+  const nameOf = (key: string | null | undefined) => coverage.find((r) => r.componentKey === key)?.name ?? '—'
+  const tabs: { id: Tab; text: string }[] = [
+    { id: 'all', text: `All (${mine.length})` },
+    { id: 'approvals', text: `Pending approvals (${approvals.length})` },
+    { id: 'handOffs', text: `Hand-offs (${handOffs.length})` },
+  ]
+
+  return (
+    <section aria-labelledby="attention-title" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+      <h2 id="attention-title" className="px-4 pt-4 text-base font-semibold">Items that need your attention ({mine.length})<Tip label="section:Items that need your attention" /></h2>
+      <div role="tablist" aria-label="Items that need your attention" className="flex gap-5 border-b border-[var(--color-border)] px-4">
+        {tabs.map((t) => (
+          <button key={t.id} role="tab" type="button" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
+            className={`-mb-px border-b-2 px-1 py-2.5 text-sm font-semibold ${tab === t.id ? 'border-[var(--color-primary-600)] text-[var(--color-primary-700)]' : 'border-transparent text-[var(--color-text-muted)]'}`}>
+            {t.text}
+          </button>
+        ))}
+      </div>
+      <Tip label="Tabs" />
+      {pager.total === 0 ? (
+        <p className="px-4 py-6 text-sm text-[var(--color-text-muted)]">Nothing here needs a person right now.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="stack-table w-full">
+            <thead>
+              <tr>
+                {showCloud && <Th className={th} context="attention">Cloud</Th>}
+                <Th className={th} context="attention">Message</Th><Th className={th} context="attention">Component</Th><Th className={th} context="attention">Entity</Th><Th className={th} context="attention">Reason</Th>
+                {!compact && <Th className={th} context="attention">Family (if hand-off)</Th>}<Th className={th} context="attention">Age</Th>
+                {compact ? <><Th className={th} context="attention" label="Type">Decision</Th><Th className={th} context="attention" label="What’s needed">Next action</Th></> : <><Th className={th} context="attention">Type</Th><Th className={th} context="attention">What’s needed</Th></>}
+                {!compact && <Th className={th} context="attention">Owner (notification channel)</Th>}<Th className={th} context="attention">Actions</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((i) => {
+                const hand = typeOf(i) === 'handOff'
+                const may = permission(me, 'Approver', 'approve or decline a replay', { recover: true, namespaceId: i.namespaceId ?? undefined })
+                const open = `${pathname}?${hand ? 'panel=hand-off' : 'dialog=review'}&entry=${encodeURIComponent(i.entryId ?? i.id)}`
+                return (
+                  <tr key={i.id} className="border-t border-[var(--color-border)]">
+                    {showCloud && <td data-label="Cloud" className={td}>{i.provider ? cloudLabel[i.provider] : '—'}</td>}
+                    <td data-label="Message" className={`${td} font-mono text-xs`}>{i.dlqMessageId !== null ? `#${i.dlqMessageId}` : '—'}</td>
+                    <td data-label="Component" className={`${td} ${wrap}`}>{nameOf(i.componentKey)}{i.namespaceName && <span className="block text-xs text-[var(--color-text-muted)]">{i.namespaceName}</span>}</td>
+                    <td data-label="Entity" className={`${td} ${wrap}`}>{i.entity ?? '—'}</td>
+                    <td data-label="Reason" className={`${td} ${wrap}`}>{i.deadLetterReason ? camelBreaks(i.deadLetterReason) : <span className="text-[var(--color-text-muted)]">No reason recorded</span>}</td>
+                    {!compact && <td data-label="Family" className={td}>{hand && familyWords(i.family) ? <span className="rounded-md bg-purple-50 px-2 py-0.5 text-xs font-semibold text-purple-800">{familyWords(i.family)}</span> : '—'}</td>}
+                    <td data-label="Age" className={td}>{formatAge(i.since, now)}</td>
+                    {compact
+                      ? <td data-label={hand ? 'Hand-off' : 'Approval'} className={td}><span className={`inline-block rounded-md px-2 py-0.5 text-xs font-bold ${hand ? 'bg-amber-50 text-amber-800' : 'bg-red-50 text-red-700'}`}>{hand ? 'Hand-off' : 'Approval'}</span></td>
+                      : <td data-label="Type" className={`${td} font-semibold ${hand ? 'text-amber-700' : 'text-red-700'}`}>{hand ? 'Hand-off' : 'Approval'}</td>}
+                    <td data-label="What’s needed" className={td}>{hand ? 'Investigate and decide' : 'Approve or reject'}{!compact && <span className="block text-xs text-[var(--color-text-muted)]">{i.reason}</span>}</td>
+                    {!compact && <td data-label="Owner" className={`${td} ${wrap}`}>{ownerOf(i.namespaceId)}</td>}
+                    <td className={td}>
+                      {hand || may.allowed
+                        ? <Link to={open} className="rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-xs font-semibold text-[var(--color-primary-700)] hover:bg-[var(--color-primary-50)]">{hand ? 'View' : 'Review'}</Link>
+                        : <span title={may.reason ?? undefined} className="text-xs text-[var(--color-text-muted)]">Needs an Approver</span>}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {limit
+        ? source.length > limit && allHref && <p className="border-t border-[var(--color-border)] px-4 py-2.5 text-right text-sm"><Link to={allHref} className="font-semibold text-[var(--color-primary-700)] hover:underline">View all {source.length.toLocaleString('en-US')} →</Link></p>
+        : <Pager {...pager} label="items that need your attention" />}
+    </section>
+  )
+}

@@ -475,6 +475,25 @@ public sealed class WebhookNotifier : IWebhookNotifier
     }
 
     /// <summary>
+    /// True when the address names this machine or a private network without any lookup: <c>localhost</c>, or an IP literal that is
+    /// loopback, private, link-local (cloud metadata) or unspecified. Used when a channel is saved, so an address that can never be
+    /// delivered to is refused then, in words, rather than stored and refused on every send. It is a convenience only: a hostname is
+    /// not resolved here, and the full check in <see cref="TryGetSafeWebhookTargetAsync"/> still runs on every send.
+    /// </summary>
+    /// <param name="uri">The webhook address.</param>
+    public static bool IsObviouslyInternal(Uri uri)
+    {
+        ArgumentNullException.ThrowIfNull(uri);
+        var host = uri.DnsSafeHost;
+        if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) || host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return System.Net.IPAddress.TryParse(host, out var literal) && IsDisallowedWebhookAddress(NormalizeForClassification(literal));
+    }
+
+    /// <summary>
     /// Maps an IPv4-mapped IPv6 address (e.g. <c>::ffff:127.0.0.1</c>) to its IPv4 form before
     /// loopback/private-range classification, so the mapping can't be used to sneak a local or
     /// private IPv4 target past checks written against IPv6 address bytes. A no-op for every other

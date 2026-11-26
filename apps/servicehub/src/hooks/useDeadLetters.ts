@@ -40,10 +40,12 @@ export function useLookAtDeadLetters() {
       for (const id of namespaceIds) results.push(await lookAtDeadLetters(id))
       return summariseLooks(results, new Date())
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: deadLetterKeys.all })
-      void queryClient.invalidateQueries({ queryKey: ['audit'] })
-    },
+    // Returned, not fired and forgotten: the mutation stays pending ("Looking…") until the lists have
+    // refetched, so the screen never sits idle and then changes by itself a few seconds later.
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: deadLetterKeys.all }),
+      queryClient.invalidateQueries({ queryKey: ['audit'] }),
+    ]),
   })
 }
 

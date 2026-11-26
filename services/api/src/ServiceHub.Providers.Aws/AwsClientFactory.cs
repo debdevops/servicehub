@@ -3,6 +3,8 @@ using Amazon;
 using Amazon.DynamoDBv2;
 using Amazon.Runtime;
 using Amazon.SQS;
+using Amazon.Lambda;
+using Amazon.StepFunctions;
 using Amazon.SimpleNotificationService;
 using Microsoft.Extensions.Logging;
 using ServiceHub.Core.Entities;
@@ -31,6 +33,8 @@ public sealed class AwsClientFactory : IAwsClientFactory
     private readonly ConcurrentDictionary<Guid, IAmazonSQS> _sqsCache = new();
     private readonly ConcurrentDictionary<Guid, IAmazonSimpleNotificationService> _snsCache = new();
     private readonly ConcurrentDictionary<Guid, IAmazonDynamoDB> _dynamoDbCache = new();
+    private readonly ConcurrentDictionary<Guid, IAmazonStepFunctions> _stepFunctionsCache = new();
+    private readonly ConcurrentDictionary<Guid, IAmazonLambda> _lambdaCache = new();
 
     /// <summary>
     /// Initialises a new instance of <see cref="AwsClientFactory"/>.
@@ -67,6 +71,20 @@ public sealed class AwsClientFactory : IAwsClientFactory
     }
 
     /// <inheritdoc/>
+    public IAmazonStepFunctions GetStepFunctionsClient(Namespace ns)
+    {
+        ArgumentNullException.ThrowIfNull(ns);
+        return _stepFunctionsCache.GetOrAdd(ns.Id, _ => new AmazonStepFunctionsClient(ResolveCredentials(ns), ResolveRegion(ns)));
+    }
+
+    /// <inheritdoc/>
+    public IAmazonLambda GetLambdaClient(Namespace ns)
+    {
+        ArgumentNullException.ThrowIfNull(ns);
+        return _lambdaCache.GetOrAdd(ns.Id, _ => new AmazonLambdaClient(ResolveCredentials(ns), ResolveRegion(ns)));
+    }
+
+    /// <inheritdoc/>
     public void RemoveClient(Guid namespaceId)
     {
         if (_sqsCache.TryRemove(namespaceId, out var sqsClient))
@@ -79,6 +97,16 @@ public sealed class AwsClientFactory : IAwsClientFactory
         {
             _logger.LogInformation("Removing and disposing SNS client for namespace {NamespaceId}", namespaceId);
             snsClient.Dispose();
+        }
+
+        if (_stepFunctionsCache.TryRemove(namespaceId, out var stepFunctionsClient))
+        {
+            stepFunctionsClient.Dispose();
+        }
+
+        if (_lambdaCache.TryRemove(namespaceId, out var lambdaClient))
+        {
+            lambdaClient.Dispose();
         }
 
         if (_dynamoDbCache.TryRemove(namespaceId, out var dynamoDbClient))

@@ -5,6 +5,7 @@ import type { LedgerEntry } from '../../api/recovery'
 import type { ReplayListItem, ReplayVerification } from '../../api/replay'
 import type { Rule } from '../../api/rules'
 import type { Signature, SignatureTrust } from '../../api/signatures'
+import { familyOf, rowFor } from './catalogue'
 import type { DemoDeadLetter, DemoEntry, DemoRule, World } from './model'
 import { capabilities, gistOf, stories } from './seed'
 
@@ -187,6 +188,8 @@ export function toRule(w: World, rule: DemoRule): Rule {
   }
 }
 
+const kindOf = (w: World, namespaceId: string, entityName: string): string => w.entities[namespaceId]?.find((e) => e.name === entityName)?.kind ?? 'queue'
+
 /** Everything waiting for a person: replays an agent may not make alone, and rules that stopped themselves. */
 export function pendingOf(w: World, scope: Scope & { reason?: string }): PendingWorkItem[] {
   const items: PendingWorkItem[] = []
@@ -200,13 +203,14 @@ export function pendingOf(w: World, scope: Scope & { reason?: string }): Pending
       items.push({
         kind: 'approval', id: `demo-held-${d.id}`, entryId: `demo-held-${d.id}`, agentId: null, dlqMessageId: d.id, namespaceId: ns.id, namespaceName: ns.displayName, provider: ns.provider, environment: ns.environment,
         entity: d.entityName, deadLetterReason: d.deadLetterReason, ruleId: rule.id, ruleName: rule.name, reasonCode: code, reason, since: d.detectedAtUtc,
+        componentKey: rowFor(ns.provider, kindOf(w, ns.id, d.entityName))?.componentKey ?? null, type: 'approval', family: familyOf(code),
       })
     }
     if (!rule.enabled && rule.disabledReason === 'CircuitBreaker') {
       const ns = nsOf(w, rule.namespaceId)
       items.push({
         kind: 'rule', id: `demo-rule-${rule.id}`, entryId: null, agentId: null, dlqMessageId: null, namespaceId: ns.id, namespaceName: ns.displayName, provider: ns.provider, environment: ns.environment,
-        entity: rule.entityName, deadLetterReason: rule.reason, ruleId: rule.id, ruleName: rule.name, reasonCode: 'CIRCUIT_BREAKER_TRIPPED', reason: rule.disabledDetail ?? 'It stopped itself because its replays were not staying fixed.', since: rule.updatedAt ?? ns.createdAt,
+        entity: rule.entityName, deadLetterReason: rule.reason, ruleId: rule.id, ruleName: rule.name, reasonCode: 'RULE_CIRCUIT_BREAKER', reason: rule.disabledDetail ?? 'It stopped itself because its replays were not staying fixed.', since: rule.updatedAt ?? ns.createdAt,
       })
     }
   }

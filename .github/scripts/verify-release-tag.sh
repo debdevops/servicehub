@@ -2,7 +2,7 @@
 # Pick the codebase a release tag publishes, and refuse any tag that does not match it (ADR-0013 D6).
 #
 # Two generations live in this repo: the frozen ServiceHub 4.0.x archive (archive/servicehub-4.0.0/) and
-# ServiceHub 4.1.x at the repo root. A v4.0.x tag builds the archive; a v4.1.x tag builds the root. The tag
+# ServiceHub 4.1.x and later (4.2.x, 5.x) at the repo root. A v4.0.x tag builds the archive; any later tag builds the root. The tag
 # must equal the .version of the codebase it selects — otherwise one generation would be published under the
 # other's version (e.g. archived 4.0.0 code as ":4.1.0" and ":latest").
 #
@@ -22,9 +22,9 @@ fi
 TAG_VERSION="${REF_NAME#v}"
 case "${TAG_VERSION}" in
   4.0.*) CONTEXT="archive/servicehub-4.0.0" ;;
-  4.1.*|4.2.*) CONTEXT="." ;;
+  4.1.*|4.2.*|5.*) CONTEXT="." ;;
   *)
-    echo "❌ Tag '${REF_NAME}' is not a release line this workflow knows (v4.0.x → archive, v4.1.x and v4.2.x → root)."
+    echo "❌ Tag '${REF_NAME}' is not a release line this workflow knows (v4.0.x → archive, v4.1.x, v4.2.x and v5.x → root)."
     echo "   A new release line needs its own build path (ADR-0013 D6)."
     exit 1
     ;;

@@ -196,6 +196,22 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
     }
 
     /// <inheritdoc />
+    public async Task<DateTimeOffset?> GetLastAcceptedRequestAtAsync(string ownerId, Guid namespaceId, string sourceMessageId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(sourceMessageId))
+        {
+            return null;
+        }
+
+        // Few entries match one run, and BegunAt is sortable text, so the latest is taken in memory.
+        var begun = await _db.RecoveryLedgerEntries.AsNoTracking()
+            .Where(e => e.OwnerId == ownerId && e.NamespaceId == namespaceId && e.SourceMessageIdSnapshot == sourceMessageId && e.State == RecoveryEntryState.Unverified)
+            .Select(e => e.BegunAt)
+            .ToListAsync(cancellationToken);
+        return begun.Count == 0 ? null : begun.Max();
+    }
+
+    /// <inheritdoc />
     public async Task<int> ReconcileInterruptedAsync(DateTimeOffset processStartedAt, CancellationToken cancellationToken = default)
     {
         // Few rows are ever Executing (a call is seconds long), so the cutoff is compared in memory: BegunAt is sortable text.
@@ -275,6 +291,16 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
                 entry.ObservationWindowEndsAt = now.AddHours(_observationWindowHours);
                 eventType = RecoveryEventType.ProviderAccepted;
                 opensObservationWindow = true;
+                break;
+
+            case RecoveryExecutionOutcome.Accepted when operation.Kind == RecoveryOperationKind.Redrive:
+                // The cloud accepted a restart it carries out itself. Nothing ServiceHub can read says the run then finished fixed,
+                // so the entry closes at once as Unverified; it never opens an observation window and earns no trust.
+                entry.State = RecoveryEntryState.Unverified;
+                entry.Disposition = RecoveryDisposition.Unverified;
+                entry.VerificationResult = VerificationResult.Unverified;
+                entry.ClosedAt = now;
+                eventType = RecoveryEventType.ProviderAccepted;
                 break;
 
             case RecoveryExecutionOutcome.Accepted: // Purge
@@ -711,6 +737,21 @@ public sealed class RecoveryLedgerService : IRecoveryLedger
         }
 
         return new EmergencyStopState(latest.EventType == RecoveryEventType.EmergencyStopActivated, latest.ActorIdentity, latest.OccurredAt, reason);
+    }
+
+    /// <inheritdoc />
+    public async Task SetAutonomyGrantPreconditionsAsync(
+        string ownerId, string signatureHash, RecoveryOperationKind actionKind, string? preconditionsHash, CancellationToken cancellationToken = default)
+    {
+        var grant = await _db.AutonomyGrants.FirstOrDefaultAsync(
+            g => g.OwnerId == ownerId && g.SignatureHash == signatureHash && g.ActionKind == actionKind, cancellationToken);
+        if (grant is null || grant.PreconditionsHash == preconditionsHash)
+        {
+            return;
+        }
+
+        grant.PreconditionsHash = preconditionsHash;
+        await _db.SaveChangesAsync(cancellationToken);
     }
 
     /// <inheritdoc />

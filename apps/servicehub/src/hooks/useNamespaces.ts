@@ -9,6 +9,8 @@ import {
   fetchNamespaceStats,
   fetchNamespaces,
   removeNamespace,
+  declareCanSend,
+  setOwnerChannel,
   testConnection,
   type ConfigureDlqObserverInput,
   type ConnectNamespaceInput,
@@ -66,6 +68,22 @@ export function useTestConnection() {
   return useMutation({
     mutationFn: (id: string) => testConnection(id),
     // The test records its outcome on the namespace, so the namespace is stale afterwards.
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: namespaceKeys.all }),
+  })
+}
+
+export function useDeclareCanSend() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, canSend }: { id: string; canSend: boolean | null }) => declareCanSend(id, canSend),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: namespaceKeys.all }),
+  })
+}
+
+export function useSetOwnerChannel() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, channelId }: { id: string; channelId: string | null }) => setOwnerChannel(id, channelId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: namespaceKeys.all }),
   })
 }

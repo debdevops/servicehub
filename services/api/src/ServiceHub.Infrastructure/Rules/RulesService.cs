@@ -92,15 +92,39 @@ public sealed class RulesService : IRulesService
             return Result<RuleView>.Failure(paceError);
         }
 
-        var rule = new AutoReplayRule
+        // Two rules with the same conditions match the same messages, so each replay would be asked about twice and counted against two paces.
+        // One ServiceHub instance owns the database (the instance lock enforces it), so serializing the check and the insert in
+        // this process makes the pair atomic without a migration; two concurrent creates can no longer both pass the check.
+        var (sameReason, sameEntity, sameSignature) = (Clean(reason), Clean(entity), Clean(signatureHash));
+        AutoReplayRule rule;
+        await CreateGate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
-            OwnerId = ownerId, Name = name.Trim(), Provider = provider, Reason = Clean(reason), EntityName = Clean(entity), SignatureHash = Clean(signatureHash),
-            MaxPerHour = maxPerHour, WaitSeconds = waitSeconds, BackOff = backOff, CreatedAt = _time.GetUtcNow(),
-        };
-        _db.AutoReplayRules.Add(rule);
-        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            var twin = await _db.AutoReplayRules.AsNoTracking().FirstOrDefaultAsync(
+                r => r.OwnerId == ownerId && r.Provider == provider && r.Reason == sameReason && r.EntityName == sameEntity && r.SignatureHash == sameSignature, ct).ConfigureAwait(false);
+            if (twin is not null)
+            {
+                return Result<RuleView>.Failure(Error.Conflict("RULE_ALREADY_EXISTS", $"The rule '{twin.Name}' already has exactly these conditions. Change that rule, or give this one different conditions."));
+            }
+
+            rule = new AutoReplayRule
+            {
+                OwnerId = ownerId, Name = name.Trim(), Provider = provider, Reason = sameReason, EntityName = sameEntity, SignatureHash = sameSignature,
+                MaxPerHour = maxPerHour, WaitSeconds = waitSeconds, BackOff = backOff, CreatedAt = _time.GetUtcNow(),
+            };
+            _db.AutoReplayRules.Add(rule);
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            CreateGate.Release();
+        }
+
         return Result<RuleView>.Success(await ViewAsync(rule, ct).ConfigureAwait(false));
     }
+
+    /// <summary>Makes "no rule with these conditions yet, then add one" a single step within this process.</summary>
+    private static readonly SemaphoreSlim CreateGate = new(1, 1);
 
     private static Error? PaceError(int maxPerHour, int waitSeconds) =>
         maxPerHour is < 1 or > 1000 || waitSeconds is < 0 or > 86400

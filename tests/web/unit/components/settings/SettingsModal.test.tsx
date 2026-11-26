@@ -9,7 +9,6 @@ import type { Me } from '@/lib/api/identity'
 import * as namespaces from '@/lib/api/namespaces'
 import * as agents from '@/lib/api/agents'
 import SettingsModal from '@/components/settings/SettingsModal'
-import { SafetyBanners } from '@/components/banners/SafetyBanners'
 
 vi.mock('@/lib/api/settings', async (o) => ({ ...(await o<typeof settings>()), fetchSettings: vi.fn(), addChannel: vi.fn(), setEmergencyStop: vi.fn(), fetchEmergencyStop: vi.fn(), fetchGrants: vi.fn() }))
 vi.mock('@/lib/api/identity', async (o) => ({ ...(await o<typeof identity>()), fetchMe: vi.fn() }))
@@ -87,35 +86,11 @@ describe('Settings', () => {
   })
 })
 
-describe('Safety banners', () => {
+describe('Settings, per connection', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(identity.fetchMe).mockResolvedValue(admin)
     vi.mocked(agents.fetchAgents).mockResolvedValue([])
-  })
-
-  it('says what emergency stop really does — automatic actions refused, a person still can', async () => {
-    vi.mocked(settings.fetchEmergencyStop).mockResolvedValue({ active: true, by: 'ApiKey:lead', at: new Date().toISOString(), reason: 'incident 42' })
-    wrap(<SafetyBanners />)
-    const banner = await screen.findByRole('alert')
-    expect(banner).toHaveTextContent('ServiceHub will not act on its own')
-    expect(banner).toHaveTextContent('a replay a person starts still goes through its checks')
-    expect(banner).toHaveTextContent('incident 42')
-  })
-
-  it('renders nothing while nothing is true', async () => {
-    vi.mocked(settings.fetchEmergencyStop).mockResolvedValue(stopOff)
-    const { container } = wrap(<SafetyBanners />)
-    await new Promise((r) => setTimeout(r, 50))
-    expect(container).toBeEmptyDOMElement()
-  })
-
-  it('offers Resume on Simple but only a link on Advanced — Advanced never gives authority back', async () => {
-    vi.mocked(settings.fetchEmergencyStop).mockResolvedValue(stopOff)
-    vi.mocked(agents.fetchAgents).mockResolvedValue([{ id: 'auto-replay', canAct: true, isPaused: true } as never])
-    wrap(<SafetyBanners />, '/advanced/agents')
-    expect(await screen.findByText('Resume on Home')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Resume' })).not.toBeInTheDocument()
   })
 
   describe('confirming fixes', () => {

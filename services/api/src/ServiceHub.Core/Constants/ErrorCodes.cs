@@ -23,6 +23,9 @@ public static class ErrorCodes
     /// <summary>The request was malformed or failed validation.</summary>
     public const string ValidationFailed = "validation_failed";
 
+    /// <summary>The component is not ticked on this connection, so ServiceHub neither reads nor acts on it there until a person adds it.</summary>
+    public const string ComponentNotEnabled = "component_not_enabled";
+
     /// <summary>The thing being asked about does not exist, or is not visible to this caller.</summary>
     public const string NotFound = "not_found";
 
@@ -52,6 +55,9 @@ public static class ErrorCodes
 
     /// <summary>The request's <c>Host</c> header is not one this ServiceHub answers to (<c>AllowedHosts</c>).</summary>
     public const string HostNotAllowed = "host_not_allowed";
+
+    /// <summary>A request that changes something was sent by a page on another website, through the browser.</summary>
+    public const string CrossSiteRequest = "cross_site_request";
 
     /// <summary>Codes for failures that belong to no single screen.</summary>
     /// <remarks>Raised by <c>ConnectionStringProtector</c>.</remarks>
