@@ -23,8 +23,9 @@ public sealed class CrossSiteRequestTests
     // The label wins over Origin: a dev proxy changes the port, never the label.
     [InlineData("POST", "same-origin", "http://localhost:3000", false)]
     // An older browser: Origin only.
-    [InlineData("POST", null, "http://localhost:5153", false)]
+    [InlineData("POST", null, "http://localhost:3000", false)]
     [InlineData("POST", null, "http://LOCALHOST:3000", false)]
+    [InlineData("POST", null, "http://localhost:3001", true)]    // another site on the same host, different port
     [InlineData("POST", null, "https://evil.example", true)]
     [InlineData("POST", null, "null", true)]               // a sandboxed frame or a file: page
     [InlineData("POST", "", "https://evil.example", true)]
@@ -36,11 +37,11 @@ public sealed class CrossSiteRequestTests
     [InlineData("HEAD", "cross-site", null, false)]
     [InlineData("OPTIONS", "cross-site", null, false)]
     public void A_changing_request_is_refused_only_when_a_browser_says_another_site_sent_it(string method, string? fetchSite, string? origin, bool refused) =>
-        CrossSiteRequestMiddleware.IsCrossSite(method, fetchSite, origin, "localhost").Should().Be(refused);
+        CrossSiteRequestMiddleware.IsCrossSite(method, fetchSite, origin, "localhost:3000").Should().Be(refused);
 
     [Fact]
     public void An_ipv6_loopback_origin_matches_its_host() =>
-        CrossSiteRequestMiddleware.IsCrossSite("POST", null, "http://[::1]:5153", "[::1]").Should().BeFalse();
+        CrossSiteRequestMiddleware.IsCrossSite("POST", null, "http://[::1]:5153", "[::1]:5153").Should().BeFalse();
 
     [Fact]
     public async Task A_refused_request_gets_403_with_a_code_and_never_reaches_the_endpoint()

@@ -225,14 +225,17 @@ function Ensure-Dotnet {
 $script:NodeFound = ''
 # Matches package.json "engines": ^20.19.0 || >=22.12.0 (Vite 7 needs it).
 function Test-NodeVersion([string]$v) {
-  if ($v -notmatch '^v?(\d+)\.(\d+)') { return $false }
-  $ma = [int]$Matches[1]; $mi = [int]$Matches[2]
+  $m = [regex]::Match($v, '^v?(\d+)\.(\d+)')
+  if (-not $m.Success) { return $false }
+  $ma = [int]$m.Groups[1].Value; $mi = [int]$m.Groups[2].Value
   return ($ma -ge 23) -or ($ma -eq 22 -and $mi -ge 12) -or ($ma -eq 20 -and $mi -ge 19)
 }
 function Test-NodeOk {
-  if (-not ((Have 'node') -and (Have 'npm.cmd'))) { return $false }
-  $v = (& node --version 2>$null | Select-Object -First 1)
-  if ($LASTEXITCODE -ne 0 -or -not $v -or -not (Test-NodeVersion "$v")) { return $false }
+  if (-not ((Have 'node') -and ((Have 'npm.cmd') -or (Have 'npm')))) { return $false }
+  $out = @(& node --version 2>$null)
+  $code = $LASTEXITCODE
+  $v = if ($out.Count -gt 0) { "$($out[0])".Trim() } else { '' }
+  if ($code -ne 0 -or -not $v -or -not (Test-NodeVersion $v)) { return $false }
   $script:NodeFound = "$v".Trim(); return $true
 }
 function Use-LocalNode {

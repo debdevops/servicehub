@@ -762,15 +762,16 @@ public sealed class NamespacesController : ApiControllerBase
         }
 
         var (ns, source) = (resolved.Namespace!, resolved.Source!);
+        // Opt-in first: an unticked component never reaches the cloud, not even for the access check.
+        if (await NotTickedReasonAsync(ns, componentKey, stored, cancellationToken) is { } off)
+        {
+            return Ok(new ComponentSourceResponse(source.ComponentKey, false, off, source.Capabilities.ReasonInList, []));
+        }
+
         var access = await source.ValidateAccessAsync(ns, cancellationToken);
         if (access.IsFailure)
         {
             return Ok(new ComponentSourceResponse(source.ComponentKey, false, access.Error.Message, source.Capabilities.ReasonInList, []));
-        }
-
-        if (await NotTickedReasonAsync(ns, componentKey, stored, cancellationToken) is { } off)
-        {
-            return Ok(new ComponentSourceResponse(source.ComponentKey, false, off, source.Capabilities.ReasonInList, []));
         }
 
         var places = await source.ListPlacesAsync(ns, cancellationToken);

@@ -25,7 +25,7 @@ public sealed class CrossSiteRequestMiddleware
 
     /// <summary>
     /// True when a changing request must be refused. <paramref name="fetchSite"/> and <paramref name="origin"/> are the request's
-    /// <c>Sec-Fetch-Site</c> and <c>Origin</c> headers (null when absent); <paramref name="host"/> is the host name it was sent to, no port.
+    /// <c>Sec-Fetch-Site</c> and <c>Origin</c> headers (null when absent); <paramref name="host"/> is the <c>Host</c> header it was sent to (with its port, when it has one).
     /// </summary>
     public static bool IsCrossSite(string method, string? fetchSite, string? origin, string host)
     {
@@ -45,7 +45,11 @@ public sealed class CrossSiteRequestMiddleware
         }
 
         // "null" is what a sandboxed frame or a file: page sends. It is not ServiceHub's page.
-        return !Uri.TryCreate(origin, UriKind.Absolute, out var from) || !string.Equals(from.Host.Trim('[', ']'), host.Trim('[', ']'), StringComparison.OrdinalIgnoreCase);
+        // Same host AND same port: http://localhost:3001 is another site from http://localhost:3000.
+        return !Uri.TryCreate(origin, UriKind.Absolute, out var from)
+            || !Uri.TryCreate($"{from.Scheme}://{host}", UriKind.Absolute, out var self)
+            || !string.Equals(from.Host.Trim('[', ']'), self.Host.Trim('[', ']'), StringComparison.OrdinalIgnoreCase)
+            || from.Port != self.Port;
     }
 
     /// <summary>Runs the middleware.</summary>
@@ -54,7 +58,7 @@ public sealed class CrossSiteRequestMiddleware
         ArgumentNullException.ThrowIfNull(context);
         var request = context.Request;
 
-        if (!IsCrossSite(request.Method, request.Headers["Sec-Fetch-Site"].ToString(), request.Headers.Origin.ToString(), request.Host.Host))
+        if (!IsCrossSite(request.Method, request.Headers["Sec-Fetch-Site"].ToString(), request.Headers.Origin.ToString(), request.Host.Value ?? string.Empty))
         {
             await _next(context).ConfigureAwait(false);
             return;
