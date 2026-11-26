@@ -243,12 +243,11 @@ jobs:
           docker rm -f servicehub-ci
           exit 1
 
-  # The Windows start script (run.ps1 / run.cmd). Not part of ci-status and allowed to fail while it is new: it gives a signal without blocking a merge.
+  # The Windows start script (run.ps1 / run.cmd). Part of ci-status, so a broken start script on Windows blocks the merge.
   # Uses the runner's own Windows PowerShell 5.1 (what a Windows user has), with .NET and Node installed by the actions below.
   windows-start-script:
     name: Windows start script (run.ps1)
     runs-on: windows-latest
-    continue-on-error: true
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -334,6 +333,7 @@ jobs:
       - plan-and-provenance-guards
       - container-smoke-test
       - servicehub-bot
+      - windows-start-script
       - infra-validate
     if: always()
     steps:
@@ -353,6 +353,7 @@ jobs:
           check "Plan & provenance guards" "${{ needs.plan-and-provenance-guards.result }}"
           check "Container smoke test"   "${{ needs.container-smoke-test.result }}"
           check "ServiceHub Bot"         "${{ needs.servicehub-bot.result }}"
+          check "Windows start script"   "${{ needs.windows-start-script.result }}"
           check "Terraform validate"     "${{ needs.infra-validate.result }}"
           [ "$fail" -eq 0 ] || exit 1
           echo "✅ ServiceHub 4.1.0: everything passed."

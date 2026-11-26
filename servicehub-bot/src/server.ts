@@ -50,7 +50,7 @@ function oneLine(value: string): string {
 export function createBotServer(options: BotServerOptions): Server {
   const cache = new ReadCache()
   const limiter = rateLimiter(options.perMinute ?? 30, options.now ?? Date.now)
-  const sink = options.log ?? ((line: string) => console.log(line))
+  const sink = options.log ?? ((line: string) => console.log(line.replace(/[\r\n]/g, ' ')))
   // Every line passes through here, at the one place that writes it, so no request value can add a line of its own.
   const log = (line: string): void => {
     const oneLineOnly = line.replace(/\r|\n/g, ' ')

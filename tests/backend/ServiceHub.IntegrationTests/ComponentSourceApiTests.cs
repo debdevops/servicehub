@@ -153,7 +153,7 @@ public sealed class ComponentSourceApiTests
     {
         var (host, source) = Host();
         using var _h = host;
-        var aws = await DeadLettersApiTests.Connect(host.Client, "aws");
+        var aws = await ConnectTicked(host.Client);
         source.Access = Result.Failure(Error.Forbidden("AWS.StepFunctions.NotEnabled", "Not enabled for this connection: needs states:ListStateMachines."));
 
         var body = await Get(host.Client, $"/api/v1/namespaces/{aws}/components/step-functions/source");
@@ -354,7 +354,7 @@ public sealed class ComponentSourceApiTests
     }
 
     [Fact]
-    public async Task A_credential_that_cannot_read_it_keeps_its_own_reason_even_when_the_component_is_not_added()
+    public async Task A_component_that_is_not_added_says_so_and_never_reaches_the_cloud_for_the_access_check()
     {
         var (host, source) = Host();
         using var _h = host;
@@ -363,7 +363,9 @@ public sealed class ComponentSourceApiTests
 
         var body = await Get(host.Client, $"/api/v1/namespaces/{aws}/components/step-functions/source");
 
-        body.GetProperty("reason").GetString().Should().StartWith("Not enabled", "what the credential is missing is the more useful answer");
+        body.GetProperty("available").GetBoolean().Should().BeFalse();
+        body.GetProperty("reason").GetString().Should().Contain("is not added on this connection", "opting in comes first; an unticked component is never read");
+        source.Calls.Should().BeEmpty();
     }
 
     private static async Task Refused(HttpClient client, string url)
