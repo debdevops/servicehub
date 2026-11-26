@@ -170,8 +170,10 @@ function Test-DotnetOk {
   # Run from the API folder so global.json is honoured (it pins the 10.0 SDK).
   if (-not (Have 'dotnet')) { return $false }
   Push-Location (Join-Path $ROOT 'services\api')
-  try { $v = (& dotnet --version 2>$null | Select-Object -First 1) } finally { Pop-Location }
-  if ($LASTEXITCODE -ne 0 -or -not $v) { return $false }
+  # Read all of the output, then take the first line: stopping the pipeline early can leave a bad exit code when output is redirected.
+  try { $out = @(& dotnet --version 2>$null); $code = $LASTEXITCODE } finally { Pop-Location }
+  $v = if ($out.Count -gt 0) { "$($out[0])".Trim() } else { '' }
+  if ($code -ne 0 -or -not $v) { return $false }
   if (($v -split '\.')[0] -ne '10') { return $false }
   $script:DotnetFound = "$v".Trim(); return $true
 }

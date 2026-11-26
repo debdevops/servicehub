@@ -39,6 +39,13 @@ public sealed class CrossSiteRequestTests
     public void A_changing_request_is_refused_only_when_a_browser_says_another_site_sent_it(string method, string? fetchSite, string? origin, bool refused) =>
         CrossSiteRequestMiddleware.IsCrossSite(method, fetchSite, origin, "localhost:3000").Should().Be(refused);
 
+    [Theory]
+    [InlineData("https://localhost:3000", "http", true)]   // same host and port number, another scheme
+    [InlineData("http://localhost:3000", "http", false)]
+    [InlineData("https://localhost:3000", "https", false)]
+    public void An_origin_with_another_scheme_is_another_site(string origin, string scheme, bool refused) =>
+        CrossSiteRequestMiddleware.IsCrossSite("POST", null, origin, "localhost:3000", scheme).Should().Be(refused);
+
     [Fact]
     public void An_ipv6_loopback_origin_matches_its_host() =>
         CrossSiteRequestMiddleware.IsCrossSite("POST", null, "http://[::1]:5153", "[::1]:5153").Should().BeFalse();
